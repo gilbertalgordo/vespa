@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.config.server.application;
 
 import com.yahoo.cloud.config.ConfigserverConfig;
@@ -48,7 +48,7 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 import static com.yahoo.vespa.curator.Curator.CompletionWaiter;
-import static com.yahoo.vespa.flags.FetchVector.Dimension.INSTANCE_ID;
+import static com.yahoo.vespa.flags.Dimension.INSTANCE_ID;
 import static java.util.stream.Collectors.toSet;
 
 /**

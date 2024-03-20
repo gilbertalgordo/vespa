@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.model.container.ml;
 
 import ai.vespa.models.evaluation.ModelsEvaluator;
@@ -115,27 +115,27 @@ public class ModelsEvaluatorTester {
     }
 
     private static RankProfilesConfig getRankProfilesConfig(RankProfileList rankProfileList) {
-        RankProfilesConfig.Builder builder = new RankProfilesConfig.Builder();
-        rankProfileList.getConfig(builder);
-        return builder.build();
+        return new RankProfilesConfig.Builder()
+                .rankprofile(rankProfileList.getRankProfilesConfig())
+                .build();
     }
 
     private static RankingConstantsConfig getRankingConstantConfig(RankProfileList rankProfileList) {
-        RankingConstantsConfig.Builder builder = new RankingConstantsConfig.Builder();
-        rankProfileList.getConfig(builder);
-        return builder.build();
+        return new RankingConstantsConfig.Builder()
+                .constant(rankProfileList.getConstantsConfig())
+                .build();
     }
 
     private static RankingExpressionsConfig getRankingExpressionsConfig(RankProfileList rankProfileList) {
-        RankingExpressionsConfig.Builder builder = new RankingExpressionsConfig.Builder();
-        rankProfileList.getConfig(builder);
-        return builder.build();
+        return new RankingExpressionsConfig.Builder()
+                .expression(rankProfileList.getExpressionsConfig())
+                .build();
     }
 
     private static OnnxModelsConfig getOnnxModelsConfig(RankProfileList rankProfileList) {
-        OnnxModelsConfig.Builder builder = new OnnxModelsConfig.Builder();
-        rankProfileList.getConfig(builder);
-        return builder.build();
+        return new OnnxModelsConfig.Builder()
+                .model(rankProfileList.getOnnxConfig())
+                .build();
     }
 
     private static FileAcquirer createFileAcquirer(MockFileRegistry fileRegistry, File appDir) {

@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.hosted.provision.node;
 
 import com.google.common.net.InetAddresses;
@@ -222,6 +222,14 @@ public record IP() {
             this.hostnames = List.copyOf(Objects.requireNonNull(hostnames, "hostnames must be non-null"));
         }
 
+        /** The number of hosts in this pool: each host has a name and/or one or two IP addresses. */
+        public long size() {
+            return hostnames().isEmpty() ?
+                   Math.max(ipAddresses.addresses.stream().filter(IP::isV4).count(),
+                            ipAddresses.addresses.stream().filter(IP::isV6).count()) :
+                   hostnames().size();
+        }
+
         public List<String> ips() { return ipAddresses.addresses; }
 
         /**
@@ -320,7 +328,7 @@ public record IP() {
 
             public NameResolver resolver() { return resolver; }
 
-            public boolean allocateFromUnusedHostname() { return exclave; }
+            public boolean allocateFromUnusedHostname() { return exclave || cloudName == CloudName.AZURE; }
 
             public boolean hasIpNotInDns(Version version) {
                 if (exclave && cloudName == CloudName.GCP && version.is4()) {

@@ -1,4 +1,4 @@
-<!-- Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root. -->
+<!-- Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root. -->
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
     <modelVersion>4.0.0</modelVersion>
@@ -100,7 +100,7 @@
             <groupId>com.yahoo.vespa</groupId>
             <artifactId>zookeeper-client-common</artifactId>
             <version>${project.version}</version>
-            <scope>compile</scope>
+            <scope>provided</scope>
         </dependency>
         <dependency>
             <!-- Not used by this module, but compilation fails without it because zookeeper uses these annotations.
@@ -137,6 +137,10 @@
                 <configuration>
                     <forkCount>4</forkCount>
                     <rerunFailingTestsCount>5</rerunFailingTestsCount>
+                    <systemPropertyVariables>
+                        <!-- Avoid 64 MiB default in favor of just 64 KiB -->
+                        <zookeeper.preAllocSize>64</zookeeper.preAllocSize>
+                    </systemPropertyVariables>
                 </configuration>
             </plugin>
         </plugins>

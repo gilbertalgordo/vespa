@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 /**
  * This conformance test class has been created in order to run the same tests
  * on multiple implementations of the persistence SPI.
@@ -151,6 +151,13 @@ protected:
     void test_iterate_empty_or_missing_bucket(bool bucket_exists);
 
     void test_empty_bucket_info(bool bucket_exists, bool active);
+
+    void assert_remove_by_gid(PersistenceProvider& spi,
+                              const Bucket& bucket,
+                              std::vector<DocTypeGidAndTimestamp> ids,
+                              size_t exp_removed,
+                              size_t exp_remaining,
+                              const vespalib::string& label);
 
     ConformanceTest();
     ConformanceTest(const std::string &docType);

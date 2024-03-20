@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include "documentsubdbcollection.h"
 #include "combiningfeedview.h"
@@ -34,10 +34,10 @@ DocumentSubDBCollection::DocumentSubDBCollection(
         MetricsWireService &metricsWireService,
         DocumentDBTaggedMetrics &metrics,
         matching::QueryLimiter &queryLimiter,
-        const vespalib::Clock &clock,
+        const std::atomic<vespalib::steady_time> & now_ref,
         std::mutex &configMutex,
         const vespalib::string &baseDir,
-        const HwInfo &hwInfo)
+        const vespalib::HwInfo &hwInfo)
     : _subDBs(),
       _owner(owner),
       _calc(),
@@ -64,7 +64,7 @@ DocumentSubDBCollection::DocumentSubDBCollection(
                                                                     metrics.ready.attributes,
                                                                     metricsWireService,
                                                                     attribute_interlock),
-                                        queryLimiter, clock, warmupExecutor)));
+                                        queryLimiter, now_ref, warmupExecutor)));
 
     _subDBs.push_back
         (new StoreOnlyDocSubDB(StoreOnlyDocSubDB::Config(docTypeName, "1.removed", baseDir, _remSubDbId, SubDbType::REMOVED),

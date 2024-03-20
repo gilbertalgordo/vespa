@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.hosted.provision.restapi;
 
 import com.yahoo.application.container.handler.Request;
@@ -395,11 +395,11 @@ public class NodesV2ApiTest {
         assertFile(new Request("http://localhost:8080/nodes/v2/node/host4.yahoo.com"), "node4.json");
 
         tester.assertResponse(new Request("http://localhost:8080/nodes/v2/node/host4.yahoo.com",
-                        Utf8.toBytes("{\"wireguardPubkey\": \"not a wg key\"}"), Request.Method.PATCH), 400,
-                "{\"error-code\":\"BAD_REQUEST\",\"message\":\"Could not set field 'wireguardPubkey': Wireguard key must match '^[A-Za-z0-9+/]{42}[AEIMQUYcgkosw480]=$', but got: 'not a wg key'\"}");
+                        Utf8.toBytes("{\"wireguard\":{\"key\": \"not a wg key\"}}"), Request.Method.PATCH), 400,
+                "{\"error-code\":\"BAD_REQUEST\",\"message\":\"Could not set field 'wireguard': Wireguard key must match '^[A-Za-z0-9+/]{42}[AEIMQUYcgkosw480]=$', but got: 'not a wg key'\"}");
 
         assertResponse(new Request("http://localhost:8080/nodes/v2/node/host4.yahoo.com",
-                        Utf8.toBytes("{\"wireguardPubkey\": \"lololololololololololololololololololololoo=\"}"), Request.Method.PATCH),
+                        Utf8.toBytes("{\"wireguard\":{\"key\": \"lololololololololololololololololololololoo=\"}}"), Request.Method.PATCH),
                 "{\"message\":\"Updated host4.yahoo.com\"}");
 
         assertFile(new Request("http://localhost:8080/nodes/v2/node/host4.yahoo.com"), "node4-wg.json");
@@ -1020,9 +1020,13 @@ public class NodesV2ApiTest {
         String url = "http://localhost:8080/nodes/v2/node/dockerhost1.yahoo.com";
         tester.assertPartialResponse(new Request(url), "exclusiveTo", false); // Initially there is no exclusiveTo
 
-        assertResponse(new Request(url, Utf8.toBytes("{\"exclusiveToApplicationId\": \"t1:a1:i1\"}"), Request.Method.PATCH),
+        assertResponse(new Request(url, Utf8.toBytes("{\"exclusiveTo\": \"t1:a1:i1\"}"), Request.Method.PATCH),
                 "{\"message\":\"Updated dockerhost1.yahoo.com\"}");
         tester.assertPartialResponse(new Request(url), "\"exclusiveTo\":\"t1:a1:i1\",", true);
+
+        assertResponse(new Request(url, Utf8.toBytes("{\"provisionedFor\": \"t1:a1:i1\"}"), Request.Method.PATCH),
+                       "{\"message\":\"Updated dockerhost1.yahoo.com\"}");
+        tester.assertPartialResponse(new Request(url), "\"provisionedFor\":\"t1:a1:i1\",", true);
 
         assertResponse(new Request(url, Utf8.toBytes("{\"hostTTL\": 86400000}"), Request.Method.PATCH),
                        "{\"message\":\"Updated dockerhost1.yahoo.com\"}");
@@ -1033,11 +1037,17 @@ public class NodesV2ApiTest {
         tester.assertPartialResponse(new Request(url), "\"hostEmptyAt\":789", true);
 
         assertResponse(new Request(url, Utf8.toBytes("{\"exclusiveToClusterType\": \"admin\"}"), Request.Method.PATCH),
-                "{\"message\":\"Updated dockerhost1.yahoo.com\"}");
+                       "{\"message\":\"Updated dockerhost1.yahoo.com\"}");
         tester.assertPartialResponse(new Request(url), "\"exclusiveToClusterType\":\"admin\",", true);
 
+        tester.assertResponse(new Request(url, Utf8.toBytes("{\"exclusiveTo\": \"t1:a1:i2\"}"), Request.Method.PATCH),
+                       400, "{\"error-code\":\"BAD_REQUEST\",\"message\":\"Could not set field 'exclusiveTo': exclusiveToApplicationId must be the same as provisionedForApplicationId when this is set\"}");
+
+        assertResponse(new Request(url, Utf8.toBytes("{\"provisionedFor\": null}"), Request.Method.PATCH),
+                       "{\"message\":\"Updated dockerhost1.yahoo.com\"}");
         assertResponse(new Request(url, Utf8.toBytes("{\"exclusiveTo\": null, \"hostTTL\":null, \"hostEmptyAt\":null, \"exclusiveToClusterType\": null}"), Request.Method.PATCH),
-                "{\"message\":\"Updated dockerhost1.yahoo.com\"}");
+                       "{\"message\":\"Updated dockerhost1.yahoo.com\"}");
+
         tester.assertPartialResponse(new Request(url), "\"exclusiveTo", false);
         tester.assertPartialResponse(new Request(url), "\"hostTTL\"", false);
         tester.assertPartialResponse(new Request(url), "\"hostEmptyAt\"", false);
@@ -1093,7 +1103,7 @@ public class NodesV2ApiTest {
                createIpAddresses(ipAddress) +
                "\"flavor\":\"" + flavor + "\"" +
                (reservedTo.map(tenantName -> ", \"reservedTo\":\"" + tenantName.value() + "\"").orElse("")) +
-               (exclusiveTo.map(appId -> ", \"exclusiveTo\":\"" + appId.serializedForm() + "\"").orElse("")) +
+               (exclusiveTo.map(appId -> ", \"provisionedFor\":\"" + appId.serializedForm() + "\"").orElse("")) +
                (switchHostname.map(s -> ", \"switchHostname\":\"" + s + "\"").orElse("")) +
                (additionalIpAddresses.isEmpty() ? "" : ", \"additionalIpAddresses\":[\"" + String.join("\",\"", additionalIpAddresses) + "\"]") +
                (additionalHostnames.isEmpty() ? "" : ", \"additionalHostnames\":[\"" + String.join("\",\"", additionalHostnames) + "\"]") +

@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.streamingvisitors;
 
 import com.yahoo.component.chain.Chain;
@@ -134,9 +134,9 @@ public class MetricsSearcherTestCase {
 
         private void assignContextProperties(Query query, String loadType) {
             if (loadType != null && loadType.equals(LOADTYPE1)) {
-                query.getContext(true).setProperty(StreamingSearcher.STREAMING_STATISTICS, visitorStats);
+                query.getContext(true).setProperty(StreamingBackend.STREAMING_STATISTICS, visitorStats);
             } else {
-                query.getContext(true).setProperty(StreamingSearcher.STREAMING_STATISTICS, null);
+                query.getContext(true).setProperty(StreamingBackend.STREAMING_STATISTICS, null);
             }
         }
     }

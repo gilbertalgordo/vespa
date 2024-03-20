@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.search.searchchain;
 
 import com.yahoo.component.chain.Chain;
@@ -8,7 +8,7 @@ import com.yahoo.prelude.IndexFacts;
 import com.yahoo.prelude.Ping;
 import com.yahoo.prelude.Pong;
 import com.yahoo.language.process.SpecialTokenRegistry;
-import com.yahoo.prelude.fastsearch.VespaBackEndSearcher;
+import com.yahoo.prelude.fastsearch.VespaBackend;
 import com.yahoo.processing.Processor;
 import com.yahoo.processing.Request;
 import com.yahoo.processing.Response;
@@ -534,7 +534,7 @@ public class Execution extends com.yahoo.processing.execution.Execution {
      */
     @Deprecated  // TODO Remove on Vespa 9.
     public void fillAttributes(Result result) {
-        fill(result, VespaBackEndSearcher.SORTABLE_ATTRIBUTES_SUMMARY_CLASS);
+        fill(result, VespaBackend.SORTABLE_ATTRIBUTES_SUMMARY_CLASS);
     }
 
     /**

@@ -1,9 +1,9 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include "featuretest.h"
 #include <vespa/searchlib/fef/utils.h>
 #include <vespa/searchlib/fef/blueprint.h>
-#include <vespa/vespalib/testkit/test_kit.h>
+#include <sstream>
 
 #include <vespa/log/log.h>
 LOG_SETUP(".fef.featuretest");

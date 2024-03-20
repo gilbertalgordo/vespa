@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vdslib.distribution;
 
 import com.yahoo.vespa.config.content.StorDistributionConfig;
@@ -337,7 +337,7 @@ public class DistributionTestCase {
     @Test
     public void testDistributorGroupTakeover() throws Exception {
         test = new DistributionTestFactory("hierarchical-grouping-distributor-takeover")
-                .setDistribution(buildHierarchicalConfig(6, 3, 1, "1|2|*", 3).distributor_auto_ownership_transfer_on_whole_group_down(true))
+                .setDistribution(buildHierarchicalConfig(6, 3, 1, "1|2|*", 3))
                 .setNodeType(NodeType.DISTRIBUTOR)
                 .setClusterState(new ClusterState("distributor:2 storage:9"));
         for (BucketId bucket : getTestBuckets()) {

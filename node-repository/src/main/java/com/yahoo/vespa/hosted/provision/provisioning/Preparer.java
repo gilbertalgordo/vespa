@@ -1,8 +1,9 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.hosted.provision.provisioning;
 
 import com.yahoo.component.Version;
 import com.yahoo.config.provision.ApplicationId;
+import com.yahoo.config.provision.ApplicationMutex;
 import com.yahoo.config.provision.CloudAccount;
 import com.yahoo.config.provision.ClusterSpec;
 import com.yahoo.config.provision.NodeAllocationException;
@@ -11,6 +12,7 @@ import com.yahoo.config.provision.NodeType;
 import com.yahoo.jdisc.Metric;
 import com.yahoo.text.internal.SnippetGenerator;
 import com.yahoo.transaction.Mutex;
+import com.yahoo.vespa.applicationmodel.InfrastructureApplication;
 import com.yahoo.vespa.hosted.provision.LockedNodeList;
 import com.yahoo.vespa.hosted.provision.Node;
 import com.yahoo.vespa.hosted.provision.NodeList;
@@ -18,6 +20,7 @@ import com.yahoo.vespa.hosted.provision.NodeRepository;
 import com.yahoo.vespa.hosted.provision.node.Agent;
 import com.yahoo.vespa.hosted.provision.node.IP;
 import com.yahoo.vespa.hosted.provision.provisioning.HostProvisioner.HostSharing;
+import com.yahoo.yolean.Exceptions;
 
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -74,7 +77,7 @@ public class Preparer {
         LockedNodeList allNodes = nodeRepository.nodes().list(PROBE_LOCK);
         NodeIndices indices = new NodeIndices(cluster.id(), allNodes);
         NodeAllocation probeAllocation = prepareAllocation(application, cluster, requested, indices::probeNext, allNodes);
-        if (probeAllocation.fulfilledAndNoChanges()) {
+        if (probeAllocation.fulfilledWithoutChanges()) {
             List<Node> acceptedNodes = probeAllocation.finalNodes();
             indices.commitProbe();
             return acceptedNodes;
@@ -85,9 +88,18 @@ public class Preparer {
         }
     }
 
+    private ApplicationMutex parentLockOrNull(NodeType type) {
+        return NodeCandidate.canMakeHostExclusive(type, nodeRepository.zone().cloud().allowHostSharing()) ?
+               nodeRepository.applications().lock(InfrastructureApplication.withNodeType(type.parentNodeType()).id()) :
+               null;
+    }
+
     /// Note that this will write to the node repo.
     private List<Node> prepareWithLocks(ApplicationId application, ClusterSpec cluster, NodeSpec requested, NodeIndices indices) {
+        Runnable waiter = null;
+        List<Node> acceptedNodes;
         try (Mutex lock = nodeRepository.applications().lock(application);
+             ApplicationMutex parentLockOrNull = parentLockOrNull(requested.type());
              Mutex allocationLock = nodeRepository.nodes().lockUnallocated()) {
             LockedNodeList allNodes = nodeRepository.nodes().list(allocationLock);
             NodeAllocation allocation = prepareAllocation(application, cluster, requested, indices::next, allNodes);
@@ -126,13 +138,15 @@ public class Preparer {
                                                                             Optional.of(cluster.id()),
                                                                             requested.cloudAccount(),
                                                                             deficit.dueToFlavorUpgrade());
-                    Predicate<NodeResources> realHostResourcesWithinLimits = resources -> nodeRepository.nodeResourceLimits().isWithinRealLimits(resources, application, cluster);
-                    hostProvisioner.get().provisionHosts(request, realHostResourcesWithinLimits, whenProvisioned);
+                    Predicate<NodeResources> realHostResourcesWithinLimits =
+                            resources -> nodeRepository.nodeResourceLimits().isWithinRealLimits(resources, cluster);
+                    waiter = hostProvisioner.get().provisionHosts(request, realHostResourcesWithinLimits, whenProvisioned);
                 } catch (NodeAllocationException e) {
                     // Mark the nodes that were written to ZK in the consumer for deprovisioning. While these hosts do
                     // not exist, we cannot remove them from ZK here because other nodes may already have been
                     // allocated on them, so let HostDeprovisioner deal with it
-                    hosts.forEach(host -> nodeRepository.nodes().deprovision(host.hostname(), Agent.system, nodeRepository.clock().instant()));
+                    hosts.forEach(host -> nodeRepository.nodes().parkRecursively(host.hostname(), Agent.system, true,
+                            "Failed to provision: " + Exceptions.toMessageString(e)));
                     throw e;
                 }
             } else if (allocation.hostDeficit().isPresent() && requested.canFail() &&
@@ -150,7 +164,12 @@ public class Preparer {
                                                   allocation.allocationFailureDetails(), true);
 
             // Carry out and return allocation
-            List<Node> acceptedNodes = allocation.finalNodes();
+            if (parentLockOrNull != null) {
+                List<Node> exclusiveParents = allocation.parentsRequiredToBeExclusive();
+                nodeRepository.nodes().setExclusiveToApplicationId(exclusiveParents, parentLockOrNull, application);
+                hostProvisioner.ifPresent(provisioner -> provisioner.updateAllocation(exclusiveParents, application));
+            }
+            acceptedNodes = allocation.finalNodes();
             nodeRepository.nodes().reserve(allocation.reservableNodes());
             nodeRepository.nodes().addReservedNodes(new LockedNodeList(allocation.newNodes(), allocationLock));
 
@@ -160,27 +179,37 @@ public class Preparer {
                                              .filter(node -> node.parentHostname().isEmpty() || activeHosts.parentOf(node).isPresent())
                                              .toList();
             }
-            return acceptedNodes;
         }
+
+        if (waiter != null) waiter.run();
+        return acceptedNodes;
     }
 
     private NodeAllocation prepareAllocation(ApplicationId application, ClusterSpec cluster, NodeSpec requested,
                                              Supplier<Integer> nextIndex, LockedNodeList allNodes) {
         validateAccount(requested.cloudAccount(), application, allNodes);
         NodeAllocation allocation = new NodeAllocation(allNodes, application, cluster, requested, nextIndex, nodeRepository);
-        var allocationContext = IP.Allocation.Context.from(nodeRepository.zone().cloud().name(),
-                                                           requested.cloudAccount().isExclave(nodeRepository.zone()),
-                                                           nodeRepository.nameResolver());
+        IP.Allocation.Context allocationContext = IP.Allocation.Context.from(nodeRepository.zone().cloud().name(),
+                                                                             requested.cloudAccount().isExclave(nodeRepository.zone()),
+                                                                             nodeRepository.nameResolver());
         NodePrioritizer prioritizer = new NodePrioritizer(allNodes,
                                                           application,
                                                           cluster,
                                                           requested,
                                                           nodeRepository.zone().cloud().dynamicProvisioning(),
+                                                          nodeRepository.zone().cloud().allowHostSharing(),
                                                           allocationContext,
                                                           nodeRepository.nodes(),
                                                           nodeRepository.resourcesCalculator(),
-                                                          nodeRepository.spareCount());
+                                                          nodeRepository.spareCount(),
+                                                          nodeRepository.exclusiveAllocation(cluster));
         allocation.offer(prioritizer.collect());
+        if (requested.type() == NodeType.tenant && !requested.canFail() && allocation.changes()) {
+            // This should not happen and indicates a bug in the allocation code because boostrap redeployment
+            // resulted in allocation changes
+            throw new IllegalArgumentException("Refusing change to allocated nodes for " + cluster + " in " +
+                                               application + " during bootstrap deployment: " + requested);
+        }
         return allocation;
     }
 
@@ -208,7 +237,9 @@ public class Preparer {
 
     private HostSharing hostSharing(ClusterSpec cluster, NodeType hostType) {
         if ( hostType.isSharable())
-            return nodeRepository.exclusiveAllocation(cluster) ? HostSharing.exclusive : HostSharing.any;
+            return nodeRepository.exclusiveProvisioning(cluster) ? HostSharing.provision :
+                   nodeRepository.exclusiveAllocation(cluster) ? HostSharing.exclusive :
+                   HostSharing.any;
         else
             return HostSharing.any;
     }

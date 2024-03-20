@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include "reference_operations.h"
 #include <vespa/vespalib/util/overload.h>
@@ -171,6 +171,52 @@ TensorSpec ReferenceOperations::map(const TensorSpec &in_a, map_fun_t func) {
     }
     for (const auto & [ addr, value ]: a.cells()) {
         result.add(addr, func(value));
+    }
+    return result.normalize();
+}
+
+
+TensorSpec ReferenceOperations::map_subspaces(const TensorSpec &a, map_subspace_fun_t fun) {
+    auto type = ValueType::from_spec(a.type());
+    auto outer_type = type.strip_indexed_dimensions();
+    auto inner_type = type.strip_mapped_dimensions();
+    auto inner_type_str = inner_type.to_spec();
+    auto lambda_res_type = ValueType::from_spec(fun(TensorSpec(inner_type_str).normalize()).type());
+    auto res_type = outer_type.wrap(lambda_res_type);
+    auto split = [](const auto &addr) {
+                     TensorSpec::Address outer;
+                     TensorSpec::Address inner;
+                     for (const auto &[name, label]: addr) {
+                         if (label.is_mapped()) {
+                             outer.insert_or_assign(name, label);
+                         } else {
+                             inner.insert_or_assign(name, label);
+                         }
+                     }
+                     return std::make_pair(outer, inner);
+                 };
+    auto combine = [](const auto &outer, const auto &inner) {
+                       TensorSpec::Address addr;
+                       for (const auto &[name, label]: outer) {
+                           addr.insert_or_assign(name, label);
+                       }
+                       for (const auto &[name, label]: inner) {
+                           addr.insert_or_assign(name, label);
+                       }
+                       return addr;
+                   };
+    std::map<TensorSpec::Address,TensorSpec> subspaces;
+    for (const auto &[addr, value]: a.cells()) {
+        auto [outer, inner] = split(addr);
+        auto &subspace = subspaces.try_emplace(outer, inner_type_str).first->second;
+        subspace.add(inner, value);
+    }
+    TensorSpec result(res_type.to_spec());
+    for (const auto &[outer, subspace]: subspaces) {
+        auto mapped = fun(subspace);
+        for (const auto &[inner, value]: mapped.cells()) {
+            result.add(combine(outer, inner), value);
+        }        
     }
     return result.normalize();
 }

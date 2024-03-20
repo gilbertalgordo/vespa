@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.search.result;
 
 import com.yahoo.container.protect.Error;
@@ -161,6 +161,14 @@ public class ErrorMessage extends com.yahoo.processing.request.ErrorMessage {
      */
     public static ErrorMessage createInternalServerError(String detailedMessage) {
         return new ErrorMessage(INTERNAL_SERVER_ERROR.code, "Internal server error.", detailedMessage);
+    }
+
+    /**
+     * Creates an error analog to HTTP internal server error. If this error is present, a
+     * HTTP layer will return 500.
+     */
+    public static ErrorMessage createInternalServerError(String detailedMessage, Throwable cause) {
+        return new ErrorMessage(INTERNAL_SERVER_ERROR.code, "Internal server error.", detailedMessage, cause);
     }
 
     /** Wraps an error message received in a SearchReply packet */

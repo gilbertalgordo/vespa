@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.schema.processing;
 
 import com.yahoo.schema.ApplicationBuilder;
@@ -62,4 +62,23 @@ public class IndexingOutputsTestCase {
         }
     }
 
+    @Test
+    void requireThatSummaryFieldSourceIsPopulated() throws ParseException {
+        var sd = """
+                search renamed {
+                  document renamed {
+                    field foo type string { }
+                  }
+                  field bar type string {
+                    indexing: input foo | summary
+                    summary baz { }
+                    summary dyn_baz { dynamic }
+                  }
+                }
+                """;
+        var builder = ApplicationBuilder.createFromString(sd);
+        var schema = builder.getSchema();
+        assertEquals("{ input foo | summary baz | summary bar; }",
+                schema.getConcreteField("bar").getIndexingScript().toString());
+    }
 }

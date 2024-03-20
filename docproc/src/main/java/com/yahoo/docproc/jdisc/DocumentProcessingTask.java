@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.docproc.jdisc;
 
 import com.yahoo.collections.Tuple2;
@@ -26,7 +26,7 @@ import java.util.logging.Logger;
  */
 public class DocumentProcessingTask implements Runnable {
 
-    private static Logger log = Logger.getLogger(DocumentProcessingTask.class.getName());
+    private static final Logger log = Logger.getLogger(DocumentProcessingTask.class.getName());
     private final List<Processing> processings = new ArrayList<>();
     private final List<Processing> processingsDone = new ArrayList<>();
 

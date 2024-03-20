@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.schema.processing;
 
 import com.yahoo.config.model.application.provider.BaseDeployLogger;
@@ -48,7 +48,7 @@ public class IndexingScriptRewriterTestCase extends AbstractSchemaTestCase {
     void testDynamicSummaryRewriting() {
         SDField field = createField("test", DataType.STRING, "{ summary }");
         field.addSummaryField(createDynamicSummaryField(field, "dyn"));
-        assertIndexingScript("{ input test | tokenize normalize stem:\"BEST\" | summary dyn; }", field);
+        assertIndexingScript("{ input test | summary test; }", field);
     }
 
     @Test
@@ -64,7 +64,7 @@ public class IndexingScriptRewriterTestCase extends AbstractSchemaTestCase {
         field.addSummaryField(createStaticSummaryField(field, "test"));
         field.addSummaryField(createStaticSummaryField(field, "other"));
         field.addSummaryField(createDynamicSummaryField(field, "dyn2"));
-        assertIndexingScript("{ input test | tokenize normalize stem:\"BEST\" | summary dyn | summary dyn2 | summary other | " +
+        assertIndexingScript("{ input test | tokenize normalize stem:\"BEST\" | summary other | " +
                 "summary test | index test; }", field);
     }
 
@@ -111,9 +111,9 @@ public class IndexingScriptRewriterTestCase extends AbstractSchemaTestCase {
                         "clear_state | guard { input categories_src | lowercase | normalize | tokenize normalize stem:\"BEST\" | index categories; }",
                         "clear_state | guard { input categoriesagain_src | lowercase | normalize | tokenize normalize stem:\"BEST\" | index categoriesagain; }",
                         "clear_state | guard { input chatter | tokenize normalize stem:\"BEST\" | index chatter; }",
-                        "clear_state | guard { input description | tokenize normalize stem:\"BEST\" | summary description | summary dyndesc | index description; }",
+                        "clear_state | guard { input description | tokenize normalize stem:\"BEST\" | summary description | index description; }",
                         "clear_state | guard { input exactemento_src | lowercase | tokenize normalize stem:\"BEST\" | index exactemento | summary exactemento; }",
-                        "clear_state | guard { input longdesc | tokenize normalize stem:\"BEST\" | summary dyndesc2 | summary dynlong | summary longdesc | summary longstat; }",
+                        "clear_state | guard { input longdesc | summary longdesc | summary longstat; }",
                         "clear_state | guard { input measurement | attribute measurement | summary measurement; }",
                         "clear_state | guard { input measurement | to_array | attribute measurement_arr; }",
                         "clear_state | guard { input popularity | attribute popularity; }",
@@ -145,6 +145,15 @@ public class IndexingScriptRewriterTestCase extends AbstractSchemaTestCase {
                 "{ 2 | set_var arity | 0L | set_var lower_bound | 1023L | set_var upper_bound | " +
                         "{ input test | optimize_predicate | attribute test; }; }",
                 createPredicateField("test", DataType.PREDICATE, "{ attribute; }", 2, OptionalLong.of(0L), OptionalLong.of(1023L)));
+    }
+
+    @Test
+    void requireThatMaxTermOccurrencesIsPropagated() {
+        var field = new SDField("test", DataType.STRING);
+        field.getMatching().maxTermOccurrences(10);
+        field.parseIndexingScript("{ summary | index }");
+        assertIndexingScript("{ input test | tokenize normalize stem:\"BEST\" max-occurrences:10 | summary test | index test; }",
+                field);
     }
 
     private static void assertIndexingScript(String expectedScript, SDField unprocessedField) {

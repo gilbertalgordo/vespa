@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 // Author: arnej
 
 package services
@@ -8,7 +8,7 @@ import (
 
 	"github.com/vespa-engine/vespa/client/go/internal/admin/envvars"
 	"github.com/vespa-engine/vespa/client/go/internal/admin/trace"
-	"github.com/vespa-engine/vespa/client/go/internal/util"
+	"github.com/vespa-engine/vespa/client/go/internal/osutil"
 	"github.com/vespa-engine/vespa/client/go/internal/vespa"
 )
 
@@ -21,11 +21,11 @@ func VespaStopServices() int {
 	}
 	err := vespa.LoadDefaultEnv()
 	if err != nil {
-		util.JustExitWith(err)
+		osutil.ExitErr(err)
 	}
 	err = vespa.MaybeSwitchUser("vespa-stop-services")
 	if err != nil {
-		util.JustExitWith(err)
+		osutil.ExitErr(err)
 	}
 	vespa.CheckCorrectUser()
 	trace.Debug("running as correct user")

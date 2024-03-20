@@ -1,4 +1,4 @@
-# Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+# Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 vespa_define_module(
     DEPENDS
     vespalib
@@ -29,6 +29,7 @@ vespa_define_module(
     src/tests/eval/int8float
     src/tests/eval/interpreted_function
     src/tests/eval/llvm_stress
+    src/tests/eval/map_subspaces
     src/tests/eval/multiply_add
     src/tests/eval/nested_loop
     src/tests/eval/node_tools

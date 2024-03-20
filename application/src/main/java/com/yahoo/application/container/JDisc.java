@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.application.container;
 
 import com.yahoo.api.annotations.Beta;
@@ -168,6 +168,9 @@ public final class JDisc implements AutoCloseable {
     public ComponentRegistry<AbstractComponent> components() {
         return container.getComponentRegistry();
     }
+
+    /** @return registry of all request handlers configured */
+    public ComponentRegistry<RequestHandler> handlers() { return container.getRequestHandlerRegistry(); }
 
     /**
      * Handles the given {@link com.yahoo.application.container.handler.Request} by passing it to the {@link RequestHandler}

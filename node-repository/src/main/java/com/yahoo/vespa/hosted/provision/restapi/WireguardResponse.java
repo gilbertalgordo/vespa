@@ -1,3 +1,4 @@
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.hosted.provision.restapi;
 
 import com.yahoo.config.provision.NodeType;
@@ -43,11 +44,6 @@ public class WireguardResponse extends SlimeJsonResponse {
     private void addConfigserver(Cursor cfgEntry, String hostname, WireguardKeyWithTimestamp keyWithTimestamp,
                                  List<String> ipAddresses) {
         cfgEntry.setString("hostname", hostname);
-
-        // TODO wg: remove when all nodes are using new key+timestamp format
-        cfgEntry.setString("wireguardPubkey", keyWithTimestamp.key().value());
-        cfgEntry.setLong("wireguardKeyTimestamp", keyWithTimestamp.timestamp().toEpochMilli());
-
         NodesResponse.ipAddressesToSlime(ipAddresses, cfgEntry.setArray("ipAddresses"));
         toSlime(keyWithTimestamp, cfgEntry.setObject("wireguard"));
     }

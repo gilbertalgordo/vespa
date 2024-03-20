@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include "docsumstate.h"
 #include "docsum_field_writer_state.h"
@@ -43,10 +43,10 @@ GetDocsumsState::GetDocsumsState(GetDocsumsStateCallback &callback)
       _attrCtx(),
       _attributes(),
       _stash(),
+      _normalization(nullptr),
       _fieldWriterStates(),
       _parsedLocations(),
       _summaryFeatures(nullptr),
-      _summaryFeaturesCached(false),
       _omit_summary_features(false),
       _rankFeatures(nullptr),
       _matching_elements()

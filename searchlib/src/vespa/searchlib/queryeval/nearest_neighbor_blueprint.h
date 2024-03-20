@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 #pragma once
 
 #include "blueprint.h"
@@ -69,6 +69,10 @@ public:
     Algorithm get_algorithm() const { return _algorithm; }
     double get_distance_threshold() const { return _distance_threshold; }
 
+    FlowStats calculate_flow_stats(uint32_t docid_limit) const override {
+        return default_flow_stats(docid_limit, getState().estimate().estHits, 0);
+    }
+    
     std::unique_ptr<SearchIterator> createLeafSearch(const search::fef::TermFieldMatchDataArray& tfmda,
                                                      bool strict) const override;
     SearchIteratorUP createFilterSearch(bool strict, FilterConstraint constraint) const override {

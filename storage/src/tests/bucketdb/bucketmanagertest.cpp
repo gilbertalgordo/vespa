@@ -1,29 +1,29 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
+#include <tests/common/dummystoragelink.h>
+#include <tests/common/testhelper.h>
+#include <tests/common/teststorageapp.h>
 #include <vespa/config/helper/configgetter.hpp>
-#include <vespa/document/config/documenttypes_config_fwd.h>
 #include <vespa/document/config/config-documenttypes.h>
 #include <vespa/document/datatype/documenttype.h>
 #include <vespa/document/fieldvalue/document.h>
-#include <vespa/document/update/documentupdate.h>
 #include <vespa/document/repo/documenttyperepo.h>
-#include <vespa/document/test/make_document_bucket.h>
 #include <vespa/document/test/make_bucket_space.h>
+#include <vespa/document/test/make_document_bucket.h>
+#include <vespa/document/update/documentupdate.h>
+#include <vespa/metrics/updatehook.h>
 #include <vespa/storage/bucketdb/bucketmanager.h>
 #include <vespa/storage/common/global_bucket_space_distribution_converter.h>
 #include <vespa/storage/persistence/filestorage/filestormanager.h>
+#include <vespa/storageapi/message/bucketsplitting.h>
 #include <vespa/storageapi/message/persistence.h>
 #include <vespa/storageapi/message/state.h>
-#include <vespa/storageapi/message/bucketsplitting.h>
-#include <vespa/metrics/updatehook.h>
-#include <tests/common/teststorageapp.h>
-#include <tests/common/dummystoragelink.h>
-#include <tests/common/testhelper.h>
-#include <vespa/vdslib/state/random.h>
 #include <vespa/vdslib/distribution/distribution.h>
 #include <vespa/vdslib/state/clusterstate.h>
-#include <vespa/vespalib/stllike/asciistream.h>
+#include <vespa/vdslib/state/random.h>
 #include <vespa/vespalib/gtest/gtest.h>
+#include <vespa/vespalib/stllike/asciistream.h>
+#include <vespa/config-stor-filestor.h>
 #include <future>
 
 #include <vespa/log/log.h>
@@ -148,7 +148,9 @@ void BucketManagerTest::setupTestEnvironment(bool fakePersistenceLayer, bool noD
     _node->setTypeRepo(repo);
     _node->setupDummyPersistence();
     // Set up the 3 links
-    auto manager = std::make_unique<BucketManager>(config::ConfigUri(config.getConfigId()), _node->getComponentRegister());
+    auto config_uri = config::ConfigUri(config.getConfigId());
+    using vespa::config::content::core::StorServerConfig;
+    auto manager = std::make_unique<BucketManager>(*config_from<StorServerConfig>(config_uri), _node->getComponentRegister());
     _manager = manager.get();
     _top->push_back(std::move(manager));
     if (fakePersistenceLayer) {
@@ -156,7 +158,8 @@ void BucketManagerTest::setupTestEnvironment(bool fakePersistenceLayer, bool noD
         _bottom = bottom.get();
         _top->push_back(std::move(bottom));
     } else {
-        auto bottom = std::make_unique<FileStorManager>(config::ConfigUri(config.getConfigId()),
+        using StorFilestorConfig = vespa::config::content::internal::InternalStorFilestorType;
+        auto bottom = std::make_unique<FileStorManager>(*config_from<StorFilestorConfig>(config_uri),
                                                         _node->getPersistenceProvider(), _node->getComponentRegister(),
                                                         *_node, _node->get_host_info());
         _top->push_back(std::move(bottom));
@@ -450,7 +453,8 @@ TEST_F(BucketManagerTest, metrics_are_tracked_per_bucket_space) {
     auto& repo = _node->getComponentRegister().getBucketSpaceRepo();
     {
         bucketdb::StorageBucketInfo entry;
-        api::BucketInfo info(50, 100, 200);
+        // checksum, doc count, doc size, meta count, total bucket size (incl meta)
+        api::BucketInfo info(50, 100, 200, 101, 211);
         info.setReady(true);
         entry.setBucketInfo(info);
         repo.get(document::FixedBucketSpaces::default_space()).bucketDatabase()
@@ -458,7 +462,7 @@ TEST_F(BucketManagerTest, metrics_are_tracked_per_bucket_space) {
     }
     {
         bucketdb::StorageBucketInfo entry;
-        api::BucketInfo info(60, 150, 300);
+        api::BucketInfo info(60, 150, 300, 153, 307);
         info.setActive(true);
         entry.setBucketInfo(info);
         repo.get(document::FixedBucketSpaces::global_space()).bucketDatabase()
@@ -472,6 +476,7 @@ TEST_F(BucketManagerTest, metrics_are_tracked_per_bucket_space) {
     auto default_m = spaces.find(document::FixedBucketSpaces::default_space());
     ASSERT_TRUE(default_m != spaces.end());
     EXPECT_EQ(1,   default_m->second->buckets_total.getLast());
+    EXPECT_EQ(101, default_m->second->entries.getLast());
     EXPECT_EQ(100, default_m->second->docs.getLast());
     EXPECT_EQ(200, default_m->second->bytes.getLast());
     EXPECT_EQ(0,   default_m->second->active_buckets.getLast());
@@ -482,6 +487,7 @@ TEST_F(BucketManagerTest, metrics_are_tracked_per_bucket_space) {
     auto global_m = spaces.find(document::FixedBucketSpaces::global_space());
     ASSERT_TRUE(global_m != spaces.end());
     EXPECT_EQ(1,   global_m->second->buckets_total.getLast());
+    EXPECT_EQ(153, global_m->second->entries.getLast());
     EXPECT_EQ(150, global_m->second->docs.getLast());
     EXPECT_EQ(300, global_m->second->bytes.getLast());
     EXPECT_EQ(1,   global_m->second->active_buckets.getLast());
@@ -496,7 +502,11 @@ TEST_F(BucketManagerTest, metrics_are_tracked_per_bucket_space) {
     jsonStream << End();
     EXPECT_EQ(std::string("{\"values\":["
               "{\"name\":\"vds.datastored.bucket_space.buckets_total\",\"values\":{\"last\":1},\"dimensions\":{\"bucketSpace\":\"global\"}},"
+              "{\"name\":\"vds.datastored.bucket_space.entries\",\"values\":{\"last\":153},\"dimensions\":{\"bucketSpace\":\"global\"}},"
+              "{\"name\":\"vds.datastored.bucket_space.docs\",\"values\":{\"last\":150},\"dimensions\":{\"bucketSpace\":\"global\"}},"
               "{\"name\":\"vds.datastored.bucket_space.buckets_total\",\"values\":{\"last\":1},\"dimensions\":{\"bucketSpace\":\"default\"}},"
+              "{\"name\":\"vds.datastored.bucket_space.entries\",\"values\":{\"last\":101},\"dimensions\":{\"bucketSpace\":\"default\"}},"
+              "{\"name\":\"vds.datastored.bucket_space.docs\",\"values\":{\"last\":100},\"dimensions\":{\"bucketSpace\":\"default\"}},"
               "{\"name\":\"vds.datastored.alldisks.docs\",\"values\":{\"last\":250}},"
               "{\"name\":\"vds.datastored.alldisks.bytes\",\"values\":{\"last\":500}},"
               "{\"name\":\"vds.datastored.alldisks.buckets\",\"values\":{\"last\":2}}"
@@ -679,7 +689,7 @@ public:
 
     static std::unique_ptr<lib::Distribution> default_grouped_distribution() {
         return std::make_unique<lib::Distribution>(
-                GlobalBucketSpaceDistributionConverter::string_to_config(vespalib::string(
+                lib::Distribution::ConfigWrapper(GlobalBucketSpaceDistributionConverter::string_to_config(vespalib::string(
 R"(redundancy 2
 group[3]
 group[0].name "invalid"
@@ -698,7 +708,7 @@ group[2].nodes[3]
 group[2].nodes[0].index 3
 group[2].nodes[1].index 4
 group[2].nodes[2].index 5
-)")));
+)"))));
     }
 
     static std::shared_ptr<lib::Distribution> derived_global_grouped_distribution() {

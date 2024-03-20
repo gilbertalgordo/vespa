@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.clustercontroller.apps.clustercontroller;
 
 import com.yahoo.component.annotation.Inject;
@@ -11,7 +11,7 @@ import com.yahoo.vespa.config.content.FleetcontrollerConfig;
 import com.yahoo.cloud.config.SlobroksConfig;
 import com.yahoo.vespa.config.content.StorDistributionConfig;
 import com.yahoo.cloud.config.ZookeepersConfig;
-import com.yahoo.vespa.zookeeper.VespaZooKeeperServer;
+import com.yahoo.vespa.zookeeper.server.VespaZooKeeperServer;
 
 import java.time.Duration;
 import java.util.Map;

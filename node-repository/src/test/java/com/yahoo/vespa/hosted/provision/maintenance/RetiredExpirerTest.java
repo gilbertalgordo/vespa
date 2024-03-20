@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.hosted.provision.maintenance;
 
 import ai.vespa.http.DomainName;
@@ -73,7 +73,7 @@ public class RetiredExpirerTest {
     public void setup() throws OrchestrationException {
         // By default, orchestrator should deny all request for suspension so we can test expiration
         doThrow(new RuntimeException()).when(orchestrator).acquirePermissionToRemove(any());
-        when(orchestrator.getNodeStatus(any())).thenReturn(HostStatus.NO_REMARKS);
+        when(orchestrator.getNodeStatus(any(HostName.class))).thenReturn(HostStatus.NO_REMARKS);
     }
 
     @Test

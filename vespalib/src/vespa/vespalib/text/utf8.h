@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 // $Id$
 
 #pragma once
@@ -304,7 +304,7 @@ public:
      *
      * @return a valid UCS-4 codepoint
      **/
-    uint32_t getChar() noexcept{ return getChar(Utf8::REPLACEMENT_CHAR); }
+    uint32_t getChar() noexcept { return getChar(Utf8::REPLACEMENT_CHAR); }
 
     /**
      * count the number of UCS-4 characters will be returned when

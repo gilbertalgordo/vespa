@@ -1,6 +1,5 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
-#include <vespa/vespalib/testkit/testapp.h>
 #include <vespa/searchlib/queryeval/weighted_set_term_search.h>
 
 #include <vespa/searchlib/query/tree/simplequery.h>
@@ -11,7 +10,9 @@
 #include <vespa/searchlib/queryeval/emptysearch.h>
 #include <vespa/searchlib/queryeval/fake_searchable.h>
 #include <vespa/searchlib/queryeval/fake_requestcontext.h>
+#define ENABLE_GTEST_MIGRATION
 #include <vespa/searchlib/test/weightedchildrenverifiers.h>
+#include <vespa/vespalib/gtest/gtest.h>
 
 using namespace search;
 using namespace search::query;
@@ -68,7 +69,7 @@ struct WS {
         FieldSpecList fields;
         fields.add(FieldSpec(field, fieldId, handle));
         auto bp = searchable.createBlueprint(requestContext, fields, *node);
-        bp->fetchPostings(ExecuteInfo::create(strict));
+        bp->fetchPostings(ExecuteInfo::createForTest(strict));
         auto sb = bp->createSearch(*md, strict);
         return (dynamic_cast<WeightedSetTermSearch*>(sb.get()) != nullptr);
     }
@@ -83,7 +84,7 @@ struct WS {
         FieldSpecList fields;
         fields.add(FieldSpec(field, fieldId, handle, field_is_filter));
         auto bp = searchable.createBlueprint(requestContext, fields, *node);
-        bp->fetchPostings(ExecuteInfo::create(strict));
+        bp->fetchPostings(ExecuteInfo::createForTest(strict));
         auto sb = bp->createSearch(*md, strict);
         sb->initFullRange();
         FakeResult result;
@@ -112,8 +113,9 @@ WS::WS()
       term_is_not_needed(false)
 {
     MatchData::UP tmp = layout.createMatchData();
-    ASSERT_TRUE(tmp->resolveTermField(handle)->getFieldId() == fieldId);
+    assert(tmp->resolveTermField(handle)->getFieldId() == fieldId);
 }
+
 WS::~WS() = default;
 
 struct MockSearch : public SearchIterator {
@@ -143,7 +145,10 @@ struct MockFixture {
         weights.push_back(1);
         search = WeightedSetTermSearch::create(children, tfmd, false, weights, {});
     }
+    ~MockFixture();
 };
+
+MockFixture::~MockFixture() = default;
 
 } // namespace <unnamed>
 
@@ -179,42 +184,50 @@ void run_simple(bool field_is_filter, bool term_is_not_needed, bool singleTerm)
     EXPECT_TRUE(ws.isGenericSearch(index, "multi-field", true));
     EXPECT_TRUE(ws.isGenericSearch(index, "multi-field", false));
 
-    EXPECT_EQUAL(expect, ws.search(index, "field", true));
-    EXPECT_EQUAL(expect, ws.search(index, "field", false));
-    EXPECT_EQUAL(expect, ws.search(index, "multi-field", true));
-    EXPECT_EQUAL(expect, ws.search(index, "multi-field", false));
+    EXPECT_EQ(expect, ws.search(index, "field", true));
+    EXPECT_EQ(expect, ws.search(index, "field", false));
+    EXPECT_EQ(expect, ws.search(index, "multi-field", true));
+    EXPECT_EQ(expect, ws.search(index, "multi-field", false));
 }
 
-TEST("testSimple") {
-    TEST_DO(run_simple(false, false, false));
+TEST(WeightedSetTermTest, test_simple)
+{
+    run_simple(false, false, false);
 }
 
-TEST("testSimple filter field") {
-    TEST_DO(run_simple(true, false, false));
+TEST(WeightedSetTermTest, test_simple_filter_field)
+{
+    run_simple(true, false, false);
 }
 
-TEST("testSimple unranked") {
-    TEST_DO(run_simple(false, true, false));
+TEST(WeightedSetTermTest, test_simple_unranked)
+{
+    run_simple(false, true, false);
 }
 
-TEST("testSimple unranked filter filed") {
-    TEST_DO(run_simple(true, true, false));
+TEST(WeightedSetTermTest, test_simple_unranked_filter_field)
+{
+    run_simple(true, true, false);
 }
 
-TEST("testSimple single") {
-    TEST_DO(run_simple(false, false, true));
+TEST(WeightedSetTermTest, test_simple_single)
+{
+    run_simple(false, false, true);
 }
 
-TEST("testSimple single filter field") {
-    TEST_DO(run_simple(true, false, true));
+TEST(WeightedSetTermTest, test_simple_single_filter_field)
+{
+    run_simple(true, false, true);
 }
 
-TEST("testSimple single unranked") {
-    TEST_DO(run_simple(false, true, true));
+TEST(WeightedSetTermTest, test_simple_single_unranked)
+{
+    run_simple(false, true, true);
 }
 
-TEST("testSimple single unranked filter field") {
-    TEST_DO(run_simple(true, true, true));
+TEST(WeightedSetTermTest, test_simple_single_unranked_filter_field)
+{
+    run_simple(true, true, true);
 }
 
 void run_multi(bool field_is_filter, bool term_is_not_needed)
@@ -240,46 +253,53 @@ void run_multi(bool field_is_filter, bool term_is_not_needed)
     EXPECT_TRUE(ws.isGenericSearch(index, "multi-field", true));
     EXPECT_TRUE(ws.isGenericSearch(index, "multi-field", false));
 
-    EXPECT_EQUAL(expect, ws.search(index, "multi-field", true));
-    EXPECT_EQUAL(expect, ws.search(index, "multi-field", false));
+    EXPECT_EQ(expect, ws.search(index, "multi-field", true));
+    EXPECT_EQ(expect, ws.search(index, "multi-field", false));
 }
 
-TEST("testMulti") {
-    TEST_DO(run_multi(false, false));
+TEST(WeightedSetTermTest, test_multi)
+{
+    run_multi(false, false);
 }
 
-TEST("testMulti filter field") {
-    TEST_DO(run_multi(true, false));
+TEST(WeightedSetTermTest, test_multi_filter_field)
+{
+    run_multi(true, false);
 }
 
-TEST("testMulti unranked") {
-    TEST_DO(run_multi(false, true));
+TEST(WeightedSetTermTest, test_multi_unranked)
+{
+    run_multi(false, true);
 }
 
-TEST_F("test Eager Empty Child", MockFixture(search::endDocId)) {
+TEST(WeightedSetTermTest, test_eager_empty_child)
+{
+    MockFixture f1(search::endDocId);
     MockSearch *mock = f1.mock;
     SearchIterator &search = *f1.search;
     search.initFullRange();
-    EXPECT_EQUAL(search.beginId(), search.getDocId());
+    EXPECT_EQ(search.beginId(), search.getDocId());
     EXPECT_TRUE(!search.seek(1));
     EXPECT_TRUE(search.isAtEnd());
-    EXPECT_EQUAL(0, mock->seekCnt);
+    EXPECT_EQ(0, mock->seekCnt);
 }
 
-TEST_F("test Eager Matching Child", MockFixture(5)) {
+TEST(WeightedSetTermTest, test_eager_matching_child)
+{
+    MockFixture f1(5);
     MockSearch *mock = f1.mock;
     SearchIterator &search = *f1.search;
     search.initFullRange();
-    EXPECT_EQUAL(search.beginId(), search.getDocId());
+    EXPECT_EQ(search.beginId(), search.getDocId());
     EXPECT_TRUE(!search.seek(3));
-    EXPECT_EQUAL(5u, search.getDocId());
-    EXPECT_EQUAL(0, mock->seekCnt);
+    EXPECT_EQ(5u, search.getDocId());
+    EXPECT_EQ(0, mock->seekCnt);
     EXPECT_TRUE(search.seek(5));
-    EXPECT_EQUAL(5u, search.getDocId());
-    EXPECT_EQUAL(0, mock->seekCnt);
+    EXPECT_EQ(5u, search.getDocId());
+    EXPECT_EQ(0, mock->seekCnt);
     EXPECT_TRUE(!search.seek(7));
     EXPECT_TRUE(search.isAtEnd());
-    EXPECT_EQUAL(1, mock->seekCnt);
+    EXPECT_EQ(1, mock->seekCnt);
 }
 
 class IteratorChildrenVerifier : public search::test::IteratorChildrenVerifier {
@@ -289,19 +309,21 @@ private:
     }
 };
 
-class WeightIteratorChildrenVerifier : public search::test::DwaIteratorChildrenVerifier {
+class WeightIteratorChildrenVerifier : public search::test::DwwIteratorChildrenVerifier {
 private:
-    SearchIterator::UP create(std::vector<DocumentWeightIterator> && children) const override {
-        return WeightedSetTermSearch::create(_tfmd, false, _weights, std::move(children));
+    SearchIterator::UP create(std::vector<DocidWithWeightIterator> && children) const override {
+        return WeightedSetTermSearch::create(_tfmd, false, std::cref(_weights), std::move(children));
     }
 };
 
-TEST("verify search iterator conformance with search iterator children") {
+TEST(WeightedSetTermTest, verify_search_iterator_conformance_with_search_iterator_children)
+{
     IteratorChildrenVerifier verifier;
     verifier.verify();
 }
 
-TEST("verify search iterator conformance with document weight iterator children") {
+TEST(WeightedSetTermTest, verify_search_iterator_conformance_with_document_weight_iterator_children)
+{
     WeightIteratorChildrenVerifier verifier;
     verifier.verify();
 }
@@ -312,15 +334,18 @@ struct VerifyMatchData {
         MyBlueprint(VerifyMatchData &vmd_in, FieldSpecBase spec_in)
             : SimpleLeafBlueprint(spec_in), vmd(vmd_in) {}
         [[nodiscard]] SearchIterator::UP createLeafSearch(const fef::TermFieldMatchDataArray &tfmda, bool) const override {
-            EXPECT_EQUAL(tfmda.size(), 1u);
+            EXPECT_EQ(tfmda.size(), 1u);
             EXPECT_TRUE(tfmda[0] != nullptr);
             if (vmd.child_tfmd == nullptr) {
                 vmd.child_tfmd = tfmda[0];
             } else {
-                EXPECT_EQUAL(vmd.child_tfmd, tfmda[0]);
+                EXPECT_EQ(vmd.child_tfmd, tfmda[0]);
             }
             ++vmd.child_cnt;
             return std::make_unique<EmptySearch>();
+        }
+        FlowStats calculate_flow_stats(uint32_t docid_limit) const override {
+            return default_flow_stats(docid_limit, 0, 0);
         }
         [[nodiscard]] SearchIteratorUP createFilterSearch(bool strict, FilterConstraint constraint) const override {
             return create_default_filter(strict, constraint);
@@ -333,7 +358,8 @@ struct VerifyMatchData {
     }
 };
 
-TEST("require that children get a common (yet separate) term field match data") {
+TEST(WeightedSetTermTest, require_that_children_get_a_common_yet_separate_term_field_match_data)
+{
     VerifyMatchData vmd;
     MatchDataLayout layout;
     auto top_handle = layout.allocTermField(42);
@@ -347,9 +373,9 @@ TEST("require that children get a common (yet separate) term field match data") 
     auto match_data = layout.createMatchData();
     auto search = blueprint.createSearch(*match_data, true);
     auto top_tfmd = match_data->resolveTermField(top_handle);
-    EXPECT_EQUAL(vmd.child_cnt, 5u);
+    EXPECT_EQ(vmd.child_cnt, 5u);
     EXPECT_TRUE(vmd.child_tfmd != nullptr);
-    EXPECT_NOT_EQUAL(top_tfmd, vmd.child_tfmd);
+    EXPECT_NE(top_tfmd, vmd.child_tfmd);
 }
 
-TEST_MAIN() { TEST_RUN_ALL(); }
+GTEST_MAIN_RUN_ALL_TESTS()

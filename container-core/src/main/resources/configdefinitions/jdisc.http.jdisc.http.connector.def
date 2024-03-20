@@ -1,4 +1,4 @@
-# Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+# Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 namespace=jdisc.http
 
 # The TCP port to listen to for this connector.
@@ -22,14 +22,19 @@ responseHeaderSize                  int      default=65536
 # The accept queue size (also known as accept backlog).
 acceptQueueSize                     int      default=0
 
-# Max content size allowed for requests. Set to -1 to disable.
+# Max content size allowed for requests. Set to -1 to disable. Set to 0 for auto (50% of heap size, max 2GB).
 maxContentSize                      long     default=-1
+
+maxContentSizeErrorMessageTemplate  string   default="Request content length %1$d exceeds limit of %2$d bytes"
 
 # Whether the server socket reuses addresses.
 reuseAddress                        bool     default=true
 
 # The maximum idle time for a connection, which roughly translates to the Socket.setSoTimeout(int).
 idleTimeout                         double   default=180.0
+
+# The idle timeout that takes effect during graceful shutdown of Jetty
+shutdownIdleTimeout                 double   default=1.0
 
 # TODO Vespa 9 Remove
 # Has no effect since Jetty 11 upgrade
@@ -131,13 +136,16 @@ http2Enabled                   bool  default=true
 
 http2.streamIdleTimeout double default=600
 
-http2.maxConcurrentStreams int default=4096
+http2.maxConcurrentStreams int default=512
 
 # Override the default server name when authority is missing from request.
 serverName.fallback string default=""
 
 # The list of accepted server names. Empty list to accept any. Elements follows format of 'serverName.default'.
 serverName.allowed[] string
+
+# The list of known server names. Used for e.g matching metric dimensions.
+serverName.known[] string
 
 # HTTP request headers that contain remote address
 accessLog.remoteAddressHeaders[]      string

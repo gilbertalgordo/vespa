@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.security.tls;
 
 import com.yahoo.security.KeyUtils;
@@ -10,6 +10,7 @@ import javax.security.auth.x500.X500Principal;
 import java.security.KeyPair;
 import java.security.cert.X509Certificate;
 import java.time.Instant;
+import java.util.List;
 
 import static com.yahoo.security.KeyAlgorithm.EC;
 import static com.yahoo.security.SignatureAlgorithm.SHA256_WITH_ECDSA;
@@ -40,8 +41,8 @@ public class DefaultTlsContextTest {
                                 singletonList(RequiredPeerCredential.of(RequiredPeerCredential.Field.CN, "dummy")))));
 
         DefaultTlsContext tlsContext =
-                new DefaultTlsContext(
-                        singletonList(certificate), keyPair.getPrivate(), singletonList(certificate), authorizedPeers,
+                DefaultTlsContext.of(
+                        List.of(certificate), keyPair.getPrivate(), List.of(certificate), authorizedPeers,
                         AuthorizationMode.ENFORCE, PeerAuthentication.NEED, HostnameVerification.ENABLED);
 
         SSLEngine sslEngine = tlsContext.createSslEngine();

@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.schema.processing;
 
 import com.yahoo.config.application.api.DeployLogger;
@@ -88,7 +88,7 @@ public class MatchedElementsOnlyResolver extends Processor {
     }
 
     private String formatError(Schema schema, DocumentSummary summary, SummaryField field, String msg) {
-        return "For " + schema + ", document summary '" + summary.getName()
+        return "For " + schema + ", document-summary '" + summary.getName()
                + "', summary field '" + field.getName() + "': " + msg;
     }
 

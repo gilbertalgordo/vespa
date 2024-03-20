@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.config.proxy;
 
 import com.yahoo.vespa.config.RawConfig;
@@ -38,7 +38,7 @@ public class ResponseHandler  {
                               config.applyOnRestart(),
                               config.getPayloadChecksums());
         log.log(Level.FINE, () -> "Return response: " + request.getShortDescription() + ",config checksums=" + config.getPayloadChecksums() +
-                ",generation=" + config.getGeneration());
+                ",generation=" + config.getGeneration() + ",applyOnRestart=" + config.applyOnRestart());
         log.log(Level.FINEST, () -> "Config payload in response for " + request.getShortDescription() + ":" + config.getPayload());
 
 

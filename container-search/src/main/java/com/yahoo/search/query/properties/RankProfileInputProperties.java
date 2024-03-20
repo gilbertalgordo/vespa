@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.search.query.properties;
 
 import com.yahoo.api.annotations.Beta;
@@ -6,6 +6,8 @@ import com.yahoo.language.process.Embedder;
 import com.yahoo.processing.IllegalInputException;
 import com.yahoo.processing.request.CompoundName;
 import com.yahoo.search.Query;
+import com.yahoo.search.schema.RankProfile;
+import com.yahoo.search.schema.RankProfile.InputType;
 import com.yahoo.search.schema.SchemaInfo;
 import com.yahoo.search.schema.internal.TensorConverter;
 import com.yahoo.search.query.Properties;
@@ -38,17 +40,19 @@ public class RankProfileInputProperties extends Properties {
     @Override
     public void set(CompoundName name, Object value, Map<String, String> context) {
         if (RankFeatures.isFeatureName(name.toString())) {
-            TensorType expectedType = typeOf(name);
-            if (expectedType != null) {
-                try {
-                    value = tensorConverter.convertTo(expectedType,
+            try {
+                var expectedType = typeOf(name);
+                if (expectedType != null && ! expectedType.declaredString()) {
+                    value = tensorConverter.convertTo(expectedType.tensorType(),
                                                       name.last(),
                                                       value,
-                                                      query.getModel().getLanguage());
+                                                      query.getModel().getLanguage(),
+                                                      context,
+                                                      query.properties());
                 }
-                catch (IllegalArgumentException e) {
-                    throw new IllegalInputException("Could not set '" + name + "' to '" + value + "'", e);
-                }
+            }
+            catch (IllegalArgumentException e) {
+                throw new IllegalInputException("Could not set '" + name + "' to '" + value + "'", e);
             }
         }
         super.set(name, value, context);
@@ -57,14 +61,14 @@ public class RankProfileInputProperties extends Properties {
     @Override
     public void requireSettable(CompoundName name, Object value, Map<String, String> context) {
         if (RankFeatures.isFeatureName(name.toString())) {
-            TensorType expectedType = typeOf(name);
-            if (expectedType != null)
-                verifyType(name, value, expectedType);
+            var expectedType = typeOf(name);
+            if (expectedType != null && ! expectedType.declaredString())
+                verifyType(name, value, expectedType.tensorType());
         }
         super.requireSettable(name, value, context);
     }
 
-    private TensorType typeOf(CompoundName name) {
+    private RankProfile.InputType typeOf(CompoundName name) {
         // Session is lazily resolved because order matters:
         // model.sources+restrict must be set in the query before this is done
         if (session == null)

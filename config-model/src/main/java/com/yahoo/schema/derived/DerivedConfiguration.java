@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.schema.derived;
 
 import com.yahoo.config.ConfigInstance;
@@ -12,6 +12,7 @@ import com.yahoo.schema.RankProfileRegistry;
 import com.yahoo.schema.Schema;
 import com.yahoo.schema.derived.validation.Validation;
 import com.yahoo.vespa.config.search.AttributesConfig;
+import com.yahoo.vespa.config.search.core.OnnxModelsConfig;
 import com.yahoo.vespa.config.search.core.RankingConstantsConfig;
 import com.yahoo.vespa.model.container.search.QueryProfiles;
 
@@ -24,9 +25,10 @@ import java.io.Writer;
  *
  * @author bratseth
  */
-public class DerivedConfiguration implements AttributesConfig.Producer {
+public class DerivedConfiguration {
 
     private final Schema schema;
+    private final SchemaInfo.IndexMode indexMode;
     private Summaries summaries;
     private Juniperrc juniperrc;
     private AttributeFields attributeFields;
@@ -55,7 +57,8 @@ public class DerivedConfiguration implements AttributesConfig.Producer {
     }
 
     DerivedConfiguration(Schema schema, RankProfileRegistry rankProfileRegistry, QueryProfileRegistry queryProfiles) {
-        this(schema, new DeployState.Builder().rankProfileRegistry(rankProfileRegistry).queryProfiles(queryProfiles).build());
+        this(new DeployState.Builder().rankProfileRegistry(rankProfileRegistry).queryProfiles(queryProfiles).build(),
+                schema, SchemaInfo.IndexMode.INDEX);
     }
 
     /**
@@ -65,7 +68,8 @@ public class DerivedConfiguration implements AttributesConfig.Producer {
      *               argument is live. Which means that this object will be inconsistent if the given
      *               schema is later modified.
      */
-    public DerivedConfiguration(Schema schema, DeployState deployState) {
+    public DerivedConfiguration(DeployState deployState, Schema schema, SchemaInfo.IndexMode indexMode) {
+        this.indexMode = indexMode;
         try {
             Validator.ensureNotNull("Schema", schema);
             this.schema = schema;
@@ -74,15 +78,13 @@ public class DerivedConfiguration implements AttributesConfig.Producer {
             if (!schema.isDocumentsOnly()) {
                 streamingFields = new VsmFields(schema);
                 streamingSummary = new VsmSummary(schema);
-            }
-            if (!schema.isDocumentsOnly()) {
                 attributeFields = new AttributeFields(schema);
                 summaries = new Summaries(schema, deployState.getDeployLogger(), deployState.getProperties().featureFlags());
                 juniperrc = new Juniperrc(schema);
                 rankProfileList = new RankProfileList(schema, schema.rankExpressionFiles(), attributeFields, deployState);
-                indexingScript = new IndexingScript(schema);
-                indexInfo = new IndexInfo(schema);
-                schemaInfo = new SchemaInfo(schema, deployState.rankProfileRegistry(), summaries);
+                indexingScript = new IndexingScript(schema, isStreaming());
+                indexInfo = new IndexInfo(schema, isStreaming());
+                schemaInfo = new SchemaInfo(schema, indexMode, deployState.rankProfileRegistry(), summaries);
                 indexSchema = new IndexSchema(schema);
                 importedFields = new ImportedFields(schema);
             }
@@ -128,9 +130,14 @@ public class DerivedConfiguration implements AttributesConfig.Producer {
     }
 
     public void exportConstants(String toDirectory) throws IOException {
-        RankingConstantsConfig.Builder b = new RankingConstantsConfig.Builder();
-        rankProfileList.getConfig(b);
+        var b = new RankingConstantsConfig.Builder()
+                .constant(rankProfileList.getConstantsConfig());
         exportCfg(b.build(), toDirectory + "/" + "ranking-constants.cfg");
+    }
+    public void exportOnnxModels(String toDirectory) throws IOException {
+        var b = new OnnxModelsConfig.Builder()
+                .model(rankProfileList.getOnnxConfig());
+        exportCfg(b.build(), toDirectory + "/" + "onnx-models.cfg");
     }
 
     private static void exportCfg(ConfigInstance instance, String fileName) throws IOException {
@@ -146,6 +153,10 @@ public class DerivedConfiguration implements AttributesConfig.Producer {
         }
     }
 
+    public boolean isStreaming() {
+        return indexMode == SchemaInfo.IndexMode.STREAMING;
+    }
+
     public Summaries getSummaries() {
         return summaries;
     }
@@ -154,7 +165,6 @@ public class DerivedConfiguration implements AttributesConfig.Producer {
         return attributeFields;
     }
 
-    @Override
     public void getConfig(AttributesConfig.Builder builder) {
         getConfig(builder, AttributeFields.FieldSet.ALL);
     }

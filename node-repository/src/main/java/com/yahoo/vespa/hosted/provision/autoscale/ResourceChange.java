@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.hosted.provision.autoscale;
 
 import com.yahoo.config.provision.ClusterSpec;
@@ -32,14 +32,6 @@ public class ResourceChange {
             if (requiresNodeReplacement()) return toHours(model.nodeReplacementDuration()) * from.cost();
             return 0;
         }
-    }
-
-    private boolean requiresRedistribution() {
-        if ( ! model.clusterSpec().type().isContent()) return false;
-        if (from.nodes() != to.nodes()) return true;
-        if (from.groups() != to.groups()) return true;
-        if (requiresNodeReplacement()) return true;
-        return false;
     }
 
     /**

@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.schema;
 
 import com.yahoo.io.IOUtils;
@@ -47,6 +47,7 @@ public abstract class AbstractSchemaTestCase {
         StringBuilder b = new StringBuilder();
         try (BufferedReader r = IOUtils.createReader(file)) {
             int character;
+            int lastChar = -1;
             boolean lastWasNewline = false;
             boolean inBrackets = false;
             while (-1 != (character = r.read())) {
@@ -72,8 +73,9 @@ public abstract class AbstractSchemaTestCase {
                     inBrackets = false;
                 if (! inBrackets)
                     b.appendCodePoint(character);
-                if (character == '[')
+                if (character == '[' && lastChar != '{')
                     inBrackets = true;
+                lastChar = character;
             }
         }
         return b.toString();

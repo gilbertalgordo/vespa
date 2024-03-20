@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include "avx2.h"
 #include "avxprivate.hpp"
@@ -26,13 +26,13 @@ Avx2Accelrator::squaredEuclideanDistance(const double * a, const double * b, siz
 }
 
 void
-Avx2Accelrator::and64(size_t offset, const std::vector<std::pair<const void *, bool>> &src, void *dest) const noexcept {
-    helper::andChunks<32u, 2u>(offset, src, dest);
+Avx2Accelrator::and128(size_t offset, const std::vector<std::pair<const void *, bool>> &src, void *dest) const noexcept {
+    helper::andChunks<32u, 4u>(offset, src, dest);
 }
 
 void
-Avx2Accelrator::or64(size_t offset, const std::vector<std::pair<const void *, bool>> &src, void *dest) const noexcept {
-    helper::orChunks<32u, 2u>(offset, src, dest);
+Avx2Accelrator::or128(size_t offset, const std::vector<std::pair<const void *, bool>> &src, void *dest) const noexcept {
+    helper::orChunks<32u, 4u>(offset, src, dest);
 }
 
 }

@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.clustercontroller.core.database;
 
 /**
@@ -9,9 +9,9 @@ package com.yahoo.vespa.clustercontroller.core.database;
 public interface DatabaseFactory {
 
     class Params {
-        String dbAddress;
-        int dbSessionTimeout;
-        Database.DatabaseListener listener;
+        public String dbAddress;
+        public int dbSessionTimeout;
+        public Database.DatabaseListener listener;
 
         Params databaseAddress(String address) { this.dbAddress = address; return this; }
         Params databaseSessionTimeout(int timeout) { this.dbSessionTimeout = timeout; return this; }

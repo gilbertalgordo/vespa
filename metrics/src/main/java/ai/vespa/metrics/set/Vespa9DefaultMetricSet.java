@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 // TODO: This class to be used for managed Vespa.
 // TODO: Vespa 9: Let this class replace DefaultMetrics.
@@ -7,6 +7,7 @@ package ai.vespa.metrics.set;
 import ai.vespa.metrics.ClusterControllerMetrics;
 import ai.vespa.metrics.ContainerMetrics;
 import ai.vespa.metrics.DistributorMetrics;
+import ai.vespa.metrics.LogdMetrics;
 import ai.vespa.metrics.NodeAdminMetrics;
 import ai.vespa.metrics.SearchNodeMetrics;
 import ai.vespa.metrics.SentinelMetrics;
@@ -164,6 +165,8 @@ public class Vespa9DefaultMetricSet {
     private static MetricSet getOtherMetrics() {
         // Metrics needed for alerting
         return new MetricSet.Builder("default-other")
+                .metric(LogdMetrics.LOGD_PROCESSED_LINES.count())
+        
                 .metric(NodeAdminMetrics.ENDPOINT_CERTIFICATE_EXPIRY_SECONDS.baseName())
                 .metric(NodeAdminMetrics.NODE_CERTIFICATE_EXPIRY_SECONDS.baseName())
                 .build();

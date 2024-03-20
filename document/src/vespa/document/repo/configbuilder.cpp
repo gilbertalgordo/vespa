@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include "configbuilder.h"
 #include <vespa/document/datatype/structdatatype.h>
@@ -19,6 +19,7 @@ DatatypeConfig::DatatypeConfig() {
 }
 
 DatatypeConfig::DatatypeConfig(const DatatypeConfig&) = default;
+DatatypeConfig::~DatatypeConfig() = default;
 DatatypeConfig& DatatypeConfig::operator=(const DatatypeConfig&) = default;
 
 void DatatypeConfig::addNestedType(const TypeOrId &t) {

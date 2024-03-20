@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.config.server.modelfactory;
 
 import com.google.common.collect.ImmutableSet;
@@ -6,6 +6,7 @@ import com.yahoo.cloud.config.ConfigserverConfig;
 import com.yahoo.component.Version;
 import com.yahoo.config.application.api.ApplicationPackage;
 import com.yahoo.config.model.api.ConfigDefinitionRepo;
+import com.yahoo.config.model.api.EndpointCertificateSecretStore;
 import com.yahoo.config.model.api.Model;
 import com.yahoo.config.model.api.ModelContext;
 import com.yahoo.config.model.api.ModelFactory;
@@ -13,6 +14,7 @@ import com.yahoo.config.model.api.OnnxModelCost;
 import com.yahoo.config.model.api.Provisioned;
 import com.yahoo.config.model.application.provider.MockFileRegistry;
 import com.yahoo.config.provision.ApplicationId;
+import com.yahoo.config.provision.ClusterSpec;
 import com.yahoo.config.provision.DockerImage;
 import com.yahoo.config.provision.TenantName;
 import com.yahoo.config.provision.Zone;
@@ -33,7 +35,12 @@ import com.yahoo.vespa.config.server.tenant.EndpointCertificateRetriever;
 import com.yahoo.vespa.config.server.tenant.TenantRepository;
 import com.yahoo.vespa.curator.Curator;
 import com.yahoo.vespa.flags.FlagSource;
+import com.yahoo.vespa.model.VespaModel;
+import com.yahoo.vespa.model.container.ApplicationContainerCluster;
+import com.yahoo.vespa.model.content.cluster.ContentCluster;
+
 import java.util.Comparator;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ExecutorService;
@@ -60,6 +67,7 @@ public class ActivatedModelsBuilder extends ModelsBuilder<Application> {
     private final SecretStore secretStore;
     private final ExecutorService executor;
     private final OnnxModelCost onnxModelCost;
+    private final List<EndpointCertificateSecretStore> endpointCertificateSecretStores;
 
     public ActivatedModelsBuilder(TenantName tenant,
                                   long applicationGeneration,
@@ -75,7 +83,8 @@ public class ActivatedModelsBuilder extends ModelsBuilder<Application> {
                                   Zone zone,
                                   ModelFactoryRegistry modelFactoryRegistry,
                                   ConfigDefinitionRepo configDefinitionRepo,
-                                  OnnxModelCost onnxModelCost) {
+                                  OnnxModelCost onnxModelCost,
+                                  List<EndpointCertificateSecretStore> endpointCertificateSecretStores) {
         super(modelFactoryRegistry, configserverConfig, zone, hostProvisionerProvider, new SilentDeployLogger());
         this.tenant = tenant;
         this.applicationGeneration = applicationGeneration;
@@ -88,6 +97,7 @@ public class ActivatedModelsBuilder extends ModelsBuilder<Application> {
         this.secretStore = secretStore;
         this.executor = executor;
         this.onnxModelCost = onnxModelCost;
+        this.endpointCertificateSecretStores = endpointCertificateSecretStores;
     }
 
     @Override
@@ -155,7 +165,7 @@ public class ActivatedModelsBuilder extends ModelsBuilder<Application> {
                                                LegacyFlags.from(applicationPackage, flagSource),
                                                new EndpointCertificateMetadataStore(curator, TenantRepository.getTenantPath(tenant))
                                                        .readEndpointCertificateMetadata(applicationId)
-                                                       .flatMap(new EndpointCertificateRetriever(secretStore)::readEndpointCertificateSecrets),
+                                                       .flatMap(new EndpointCertificateRetriever(endpointCertificateSecretStores)::readEndpointCertificateSecrets),
                                                zkClient.readAthenzDomain(),
                                                zkClient.readQuota(),
                                                zkClient.readTenantSecretStores(),

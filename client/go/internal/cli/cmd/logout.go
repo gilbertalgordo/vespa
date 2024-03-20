@@ -1,3 +1,4 @@
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package cmd
 
 import (
@@ -14,7 +15,7 @@ func newLogoutCmd(cli *CLI) *cobra.Command {
 		DisableAutoGenTag: true,
 		SilenceUsage:      true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			targetType, err := cli.targetType(true)
+			targetType, err := cli.targetType(cloudTargetOnly)
 			if err != nil {
 				return err
 			}

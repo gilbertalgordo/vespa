@@ -1,6 +1,7 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.hosted.provision.lb;
 
+import com.yahoo.config.provision.ClusterSpec;
 import com.yahoo.vespa.applicationmodel.InfrastructureApplication;
 import com.yahoo.vespa.hosted.provision.maintenance.LoadBalancerExpirer;
 
@@ -17,12 +18,14 @@ import java.util.Set;
 public class LoadBalancer {
 
     private final LoadBalancerId id;
+    private final String idSeed;
     private final Optional<LoadBalancerInstance> instance;
     private final State state;
     private final Instant changedAt;
 
-    public LoadBalancer(LoadBalancerId id, Optional<LoadBalancerInstance> instance, State state, Instant changedAt) {
+    public LoadBalancer(LoadBalancerId id, String idSeed, Optional<LoadBalancerInstance> instance, State state, Instant changedAt) {
         this.id = Objects.requireNonNull(id, "id must be non-null");
+        this.idSeed = Objects.requireNonNull(idSeed, "idSeed must be non-null");
         this.instance = Objects.requireNonNull(instance, "instance must be non-null");
         this.state = Objects.requireNonNull(state, "state must be non-null");
         this.changedAt = Objects.requireNonNull(changedAt, "changedAt must be non-null");
@@ -38,6 +41,11 @@ public class LoadBalancer {
     /** An identifier for this load balancer. The ID is unique inside the zone */
     public LoadBalancerId id() {
         return id;
+    }
+
+    /** Seed to use for generating resource IDs for provisioned resources in this. */
+    public String idSeed() {
+        return idSeed;
     }
 
     /** The instance associated with this */
@@ -64,12 +72,17 @@ public class LoadBalancer {
         if (this.state != State.reserved && state == State.reserved) {
             throw new IllegalArgumentException("Invalid state transition: " + this.state + " -> " + state);
         }
-        return new LoadBalancer(id, instance, state, changedAt);
+        return new LoadBalancer(id, idSeed, instance, state, changedAt);
     }
 
     /** Returns a copy of this with instance set to given instance */
     public LoadBalancer with(LoadBalancerInstance instance) {
-        return new LoadBalancer(id, Optional.of(instance), state, changedAt);
+        return new LoadBalancer(id, idSeed, Optional.of(instance), state, changedAt);
+    }
+
+    /** Returns the effective container ID of given cluster. For combined clusters this returns the ID of the container cluster */
+    public static ClusterSpec.Id containerId(ClusterSpec cluster) {
+        return cluster.combinedId().orElse(cluster.id());
     }
 
     public enum State {

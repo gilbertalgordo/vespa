@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.clustercontroller.core;
 
 import com.yahoo.document.FixedBucketSpaces;
@@ -8,7 +8,6 @@ import com.yahoo.vdslib.state.Node;
 import com.yahoo.vdslib.state.NodeState;
 import com.yahoo.vdslib.state.State;
 import com.yahoo.vespa.clustercontroller.core.database.DatabaseHandler;
-import com.yahoo.vespa.clustercontroller.core.database.ZooKeeperDatabaseFactory;
 import com.yahoo.vespa.clustercontroller.core.hostinfo.HostInfo;
 import com.yahoo.vespa.clustercontroller.core.listeners.NodeListener;
 import com.yahoo.vespa.clustercontroller.core.listeners.SlobrokListener;
@@ -152,7 +151,7 @@ public class FleetController implements NodeListener, SlobrokListener, SystemSta
                 options.nodeStateRequestTimeoutEarliestPercentage(),
                 options.nodeStateRequestTimeoutLatestPercentage(),
                 options.nodeStateRequestRoundTripTimeMaxSeconds());
-        var database = new DatabaseHandler(context, new ZooKeeperDatabaseFactory(context), timer, options.zooKeeperServerAddress(), timer);
+        var database = new DatabaseHandler(context, options.dbFactoryFn().apply(context), timer, options.zooKeeperServerAddress(), timer);
         var lookUp = new SlobrokClient(context, timer, options.slobrokConnectionSpecs());
         var stateGenerator = new StateChangeHandler(context, timer, log);
         var stateBroadcaster = new SystemStateBroadcaster(context, timer, timer);

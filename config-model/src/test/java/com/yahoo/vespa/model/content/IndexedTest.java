@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.model.content;
 
 import com.yahoo.cloud.config.ClusterListConfig;
@@ -113,7 +113,7 @@ public class IndexedTest extends ContentBaseTest {
         VespaModelCreatorWithMockPkg creator = getIndexedVespaModelCreator();
         VespaModel model = creator.create();
         DeployState deployState = creator.deployState;
-        IndexedSearchCluster cluster = model.getContentClusters().get("test").getSearch().getIndexed();
+        IndexedSearchCluster cluster = model.getContentClusters().get("test").getSearch().getSearchCluster();
         assertEquals(3, cluster.getDocumentDbs().size());
         NewDocumentType type1 = deployState.getDocumentModel().getDocumentManager().getDocumentType("type1");
         NewDocumentType type2 = deployState.getDocumentModel().getDocumentManager().getDocumentType("type2");
@@ -163,7 +163,6 @@ public class IndexedTest extends ContentBaseTest {
         //                               "transactionlogserver"};
         // DomContentBuilderTest.assertServices(h, expectedServices);
         ContentCluster s = model.getContentClusters().get("test");
-        assertFalse(s.getSearch().hasIndexedCluster());
 
         StorServerConfig.Builder builder = new StorServerConfig.Builder();
         s.getStorageCluster().getConfig(builder);
@@ -175,7 +174,6 @@ public class IndexedTest extends ContentBaseTest {
         VespaModel model = getStreamingVespaModel();
         ContentCluster s = model.getContentClusters().get("test");
         assertNotNull(s);
-        assertFalse(s.getSearch().hasIndexedCluster());
         ClusterListConfig config = model.getConfig(ClusterListConfig.class, VespaModel.ROOT_CONFIGID);
         assertEquals(1, config.storage().size());
         assertEquals("test", config.storage(0).name());

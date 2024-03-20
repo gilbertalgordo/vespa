@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.model.content.cluster;
 
 import com.yahoo.config.application.api.ApplicationPackage;
@@ -8,7 +8,7 @@ import com.yahoo.vespa.config.search.DispatchConfig;
 import com.yahoo.vespa.config.search.DispatchNodesConfig;
 import com.yahoo.vespa.config.search.core.ProtonConfig;
 import com.yahoo.vespa.model.content.Content;
-import com.yahoo.vespa.model.search.IndexedSearchCluster;
+import com.yahoo.vespa.model.search.SearchCluster;
 import com.yahoo.vespa.model.test.utils.ApplicationPackageUtils;
 import org.junit.jupiter.api.Test;
 
@@ -30,7 +30,7 @@ public class ClusterTest {
                 "  <query-timeout>1.1</query-timeout>",
                 "  <visibility-delay>2.3</visibility-delay>",
                 "</search>"));
-        IndexedSearchCluster searchCluster = cluster.getSearch().getIndexed();
+        SearchCluster searchCluster = cluster.getSearch().getSearchCluster();
         assertNotNull(searchCluster);
         assertEquals(1.1, searchCluster.getQueryTimeout(), DELTA);
         assertEquals(2.3, searchCluster.getVisibilityDelay(), DELTA);

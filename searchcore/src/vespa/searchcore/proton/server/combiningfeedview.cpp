@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include "combiningfeedview.h"
 #include <vespa/searchcore/proton/documentmetastore/i_document_meta_store.h>
@@ -191,6 +191,13 @@ CombiningFeedView::handleDeleteBucket(const DeleteBucketOperation &delOp, DoneCa
     for (const auto &view : _views) {
         view->handleDeleteBucket(delOp, onDone);
     }
+}
+
+bool
+CombiningFeedView::isMoveStillValid(const MoveOperation & moveOp) const {
+    uint32_t subDbId = moveOp.getPrevSubDbId();
+    assert(subDbId < _views.size());
+    return  _views[subDbId]->isMoveStillValid(moveOp);
 }
 
 void

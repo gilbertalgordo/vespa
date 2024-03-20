@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.schema.derived;
 
 import com.yahoo.schema.Schema;
@@ -9,14 +9,18 @@ import com.yahoo.vespa.documentmodel.DocumentSummary;
 import com.yahoo.vespa.documentmodel.SummaryField;
 import com.yahoo.vespa.config.search.vsm.VsmsummaryConfig;
 
-import java.util.*;
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
 
 /**
  * Vertical streaming matcher summary specification
  *
  * @author bratseth
  */
-public class VsmSummary extends Derived implements VsmsummaryConfig.Producer {
+public class VsmSummary extends Derived {
 
     private final Map<SummaryField, List<String>> summaryMap = new java.util.LinkedHashMap<>(1);
 
@@ -38,7 +42,7 @@ public class VsmSummary extends Derived implements VsmsummaryConfig.Producer {
             if (doMapField(schema, summaryField)) {
                 SDField sdField = schema.getConcreteField(summaryField.getName());
                 if (sdField != null && GeoPos.isAnyPos(sdField)) {
-                    summaryMap.put(summaryField, Collections.singletonList(summaryField.getName()));
+                    summaryMap.put(summaryField, List.of(summaryField.getName()));
                 } else {
                     summaryMap.put(summaryField, from);
                 }
@@ -89,21 +93,24 @@ public class VsmSummary extends Derived implements VsmsummaryConfig.Producer {
         return ret;
     }
 
-    @Override
-    public String getDerivedName() {
+    @Override public String getDerivedName() {
         return "vsmsummary";
     }
 
-    @Override
     public void getConfig(VsmsummaryConfig.Builder vB) {
-        for (Map.Entry<SummaryField, List<String>> entry : summaryMap.entrySet()) {
-            VsmsummaryConfig.Fieldmap.Builder fmB = new VsmsummaryConfig.Fieldmap.Builder().summary(entry.getKey().getName());
-            for (String field : entry.getValue()) {
-                fmB.document(new VsmsummaryConfig.Fieldmap.Document.Builder().field(field));
-            }
-            fmB.command(VsmsummaryConfig.Fieldmap.Command.Enum.valueOf(entry.getKey().getVsmCommand().toString()));
-            vB.fieldmap(fmB);
-        }
+        // Replace
+        vB.fieldmap(
+                summaryMap.entrySet().stream().map(entry -> new VsmsummaryConfig.Fieldmap.Builder()
+                        .summary(entry.getKey().getName())
+                        .document(entry.getValue().stream().map(field -> new VsmsummaryConfig.Fieldmap.Document.Builder().field(field)).toList())
+                        .command(VsmsummaryConfig.Fieldmap.Command.Enum.valueOf(entry.getKey().getVsmCommand().toString()))
+                ).toList()
+        );
     }
-    
+
+    public void export(String toDirectory) throws IOException {
+        var builder = new VsmsummaryConfig.Builder();
+        getConfig(builder);
+        export(toDirectory, builder.build());
+    }
 }

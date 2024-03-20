@@ -1,3 +1,4 @@
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package vespa
 
 import (
@@ -9,7 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/vespa-engine/vespa/client/go/internal/util"
+	"github.com/vespa-engine/vespa/client/go/internal/ioutil"
 )
 
 type ApplicationPackage struct {
@@ -23,7 +24,7 @@ func (ap *ApplicationPackage) HasDeploymentSpec() bool { return ap.hasFile("depl
 
 func (ap *ApplicationPackage) hasFile(pathSegment ...string) bool {
 	if !ap.IsZip() {
-		return util.PathExists(filepath.Join(append([]string{ap.Path}, pathSegment...)...))
+		return ioutil.Exists(filepath.Join(append([]string{ap.Path}, pathSegment...)...))
 	}
 	zipName := filepath.Join(pathSegment...)
 	return ap.hasZipEntry(func(name string) bool { return zipName == name })
@@ -49,7 +50,7 @@ func (ap *ApplicationPackage) IsJava() bool {
 	if ap.IsZip() {
 		return ap.hasZipEntry(func(name string) bool { return filepath.Ext(name) == ".jar" })
 	}
-	return util.PathExists(filepath.Join(ap.Path, "pom.xml"))
+	return ioutil.Exists(filepath.Join(ap.Path, "pom.xml"))
 }
 
 func (ap *ApplicationPackage) Validate() error {
@@ -73,11 +74,11 @@ func (ap *ApplicationPackage) Validate() error {
 func isZip(filename string) bool { return filepath.Ext(filename) == ".zip" }
 
 func zipDir(dir string, destination string) error {
-	if !util.PathExists(dir) {
+	if !ioutil.Exists(dir) {
 		message := "'" + dir + "' should be an application package zip or dir, but does not exist"
 		return errors.New(message)
 	}
-	if !util.IsDirectory(dir) {
+	if !ioutil.IsDir(dir) {
 		message := "'" + dir + "' should be an application package dir, but is a (non-zip) file"
 		return errors.New(message)
 	}
@@ -159,7 +160,7 @@ func (ap *ApplicationPackage) zipReader(test bool) (io.ReadCloser, error) {
 	}
 	f, err := os.Open(zipFile)
 	if err != nil {
-		return nil, fmt.Errorf("could not open application package at %s: %w", ap.Path, err)
+		return nil, fmt.Errorf("could not open application package at '%s': %w", ap.Path, err)
 	}
 	return f, nil
 }
@@ -233,6 +234,14 @@ func copyFile(src *zip.File, dst string) error {
 	return err
 }
 
+type PackageOptions struct {
+	// If true, a Maven-based Vespa application package is required to be compiled
+	Compiled bool
+
+	// If true, only consider the source directores of the application package
+	SourceOnly bool
+}
+
 // FindApplicationPackage finds the path to an application package from the zip file or directory zipOrDir. If
 // requirePackaging is true, the application package is required to be packaged with mvn package.
 //
@@ -241,8 +250,8 @@ func copyFile(src *zip.File, dst string) error {
 // 2. target/application
 // 3. src/main/application
 // 4. Given path, if it contains services.xml
-func FindApplicationPackage(zipOrDir string, requirePackaging bool) (ApplicationPackage, error) {
-	pkg, err := findApplicationPackage(zipOrDir, requirePackaging)
+func FindApplicationPackage(zipOrDir string, options PackageOptions) (ApplicationPackage, error) {
+	pkg, err := findApplicationPackage(zipOrDir, options)
 	if err != nil {
 		return ApplicationPackage{}, err
 	}
@@ -252,32 +261,32 @@ func FindApplicationPackage(zipOrDir string, requirePackaging bool) (Application
 	return pkg, nil
 }
 
-func findApplicationPackage(zipOrDir string, requirePackaging bool) (ApplicationPackage, error) {
+func findApplicationPackage(zipOrDir string, options PackageOptions) (ApplicationPackage, error) {
 	if isZip(zipOrDir) {
 		return ApplicationPackage{Path: zipOrDir}, nil
 	}
 	// Pre-packaged application. We prefer the uncompressed application because this allows us to add
 	// security/clients.pem to the package on-demand
-	hasPOM := util.PathExists(filepath.Join(zipOrDir, "pom.xml"))
-	if hasPOM {
+	hasPOM := ioutil.Exists(filepath.Join(zipOrDir, "pom.xml"))
+	if hasPOM && !options.SourceOnly {
 		path := filepath.Join(zipOrDir, "target", "application")
-		if util.PathExists(path) {
+		if ioutil.Exists(path) {
 			testPath := existingPath(filepath.Join(zipOrDir, "target", "application-test"))
 			return ApplicationPackage{Path: path, TestPath: testPath}, nil
 		}
-		if requirePackaging {
+		if options.Compiled {
 			return ApplicationPackage{}, fmt.Errorf("found pom.xml, but %s does not exist: run 'mvn package' first", path)
 		}
 	}
 	// Application with Maven directory structure, but with no POM or no hard requirement on packaging
-	if path := filepath.Join(zipOrDir, "src", "main", "application"); util.PathExists(path) {
+	if path := filepath.Join(zipOrDir, "src", "main", "application"); ioutil.Exists(path) {
 		testPath := existingPath(filepath.Join(zipOrDir, "src", "test", "application"))
 		return ApplicationPackage{Path: path, TestPath: testPath}, nil
 	}
 	// Application without Java components
-	if util.PathExists(filepath.Join(zipOrDir, "services.xml")) {
+	if ioutil.Exists(filepath.Join(zipOrDir, "services.xml")) {
 		testPath := ""
-		if util.PathExists(filepath.Join(zipOrDir, "tests")) {
+		if ioutil.Exists(filepath.Join(zipOrDir, "tests")) {
 			testPath = zipOrDir
 		}
 		return ApplicationPackage{Path: zipOrDir, TestPath: testPath}, nil
@@ -286,7 +295,7 @@ func findApplicationPackage(zipOrDir string, requirePackaging bool) (Application
 }
 
 func existingPath(path string) string {
-	if util.PathExists(path) {
+	if ioutil.Exists(path) {
 		return path
 	}
 	return ""

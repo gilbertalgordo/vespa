@@ -1,24 +1,20 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
-#include <vespa/vespalib/testkit/testapp.h>
-
+#include <vespa/searchcommon/attribute/config.h>
 #include <vespa/searchlib/attribute/attribute.h>
 #include <vespa/searchlib/attribute/attributefactory.h>
-#include <vespa/searchlib/util/randomgenerator.h>
-#include <vespa/vespalib/util/compress.h>
-#include <vespa/searchlib/fef/termfieldmatchdata.h>
-#include <vespa/searchlib/attribute/i_document_weight_attribute.h>
-#include <vespa/searchlib/queryeval/document_weight_search_iterator.h>
-#include <vespa/searchlib/test/searchiteratorverifier.h>
+#include <vespa/searchlib/attribute/i_docid_with_weight_posting_store.h>
 #include <vespa/searchlib/common/bitvectoriterator.h>
-#include <vespa/searchlib/queryeval/executeinfo.h>
+#include <vespa/searchlib/fef/termfieldmatchdata.h>
 #include <vespa/searchlib/parsequery/parse.h>
-#include <vespa/searchcommon/attribute/config.h>
+#include <vespa/searchlib/queryeval/docid_with_weight_search_iterator.h>
+#include <vespa/searchlib/queryeval/executeinfo.h>
+#define ENABLE_GTEST_MIGRATION
+#include <vespa/searchlib/test/searchiteratorverifier.h>
+#include <vespa/searchlib/util/randomgenerator.h>
+#include <vespa/vespalib/gtest/gtest.h>
 #include <vespa/vespalib/stllike/asciistream.h>
-
-#include <vespa/log/log.h>
-
-LOG_SETUP("bitvector_test");
+#include <vespa/vespalib/util/compress.h>
 
 using search::AttributeFactory;
 using search::AttributeVector;
@@ -39,13 +35,37 @@ using search::queryeval::SearchIterator;
 using SearchContextPtr = std::unique_ptr<SearchContext>;
 using SearchBasePtr = std::unique_ptr<search::queryeval::SearchIterator>;
 
-struct BitVectorTest
+namespace search::attribute {
+
+void PrintTo(const BasicType& bt, std::ostream* os) {
+    *os << bt.asString();
+}
+
+void PrintTo(const CollectionType& ct, std::ostream* os) {
+    *os << ct.asString();
+}
+
+}
+
+std::string
+param_as_string(const testing::TestParamInfo<std::tuple<BasicType, CollectionType, bool, bool>>& info)
 {
+    std::ostringstream os;
+    auto& param = info.param;
+    os << std::get<0>(param).asString() << "_";
+    os << std::get<1>(param).asString();
+    os << (std::get<2>(param) ? "_fs" : "");
+    os << (std::get<3>(param) ? "_filter" : "");
+    return os.str();
+}
+
+class BitVectorTest : public ::testing::TestWithParam<std::tuple<BasicType, CollectionType, bool, bool>>
+{
+public:
     using AttributePtr = AttributeVector::SP;
 
-    BitVectorTest() { }
-
-    ~BitVectorTest() { }
+    BitVectorTest();
+    ~BitVectorTest() override;
 
     template <typename VectorType>
     VectorType & as(AttributePtr &v);
@@ -93,14 +113,13 @@ struct BitVectorTest
                 bool weights,
                 bool checkStride);
 
-    template <typename VectorType, typename BufferType>
+    template <typename VectorType>
     void
     test(BasicType bt, CollectionType ct, const vespalib::string &pref, bool fastSearch, bool filter);
-
-    template <typename VectorType, typename BufferType>
-    void
-    test(BasicType bt, CollectionType ct, const vespalib::string &pref);
 };
+
+BitVectorTest::BitVectorTest() = default;
+BitVectorTest::~BitVectorTest() = default;
 
 
 template <typename VectorType>
@@ -371,29 +390,29 @@ BitVectorTest::checkSearch(AttributePtr v,
     uint32_t docId = sb->getDocId();
     uint32_t lastDocId = 0;
     uint32_t docFreq = 0;
-    EXPECT_EQUAL(expFirstDocId, docId);
+    EXPECT_EQ(expFirstDocId, docId);
     while (docId != search::endDocId) {
         lastDocId = docId;
         ++docFreq,
         assert(!checkStride || (docId % 5) == 2u);
         sb->unpack(docId);
-        EXPECT_EQUAL(md.getDocId(), docId);
+        EXPECT_EQ(md.getDocId(), docId);
         if (v->getCollectionType() == CollectionType::SINGLE || !weights) {
-            EXPECT_EQUAL(1, md.getWeight());
+            EXPECT_EQ(1, md.getWeight());
         } else if (v->getCollectionType() == CollectionType::ARRAY) {
-            EXPECT_EQUAL(2, md.getWeight());
+            EXPECT_EQ(2, md.getWeight());
         } else {
             if (v->getBasicType() == BasicType::STRING) {
-                EXPECT_EQUAL(24, md.getWeight());
+                EXPECT_EQ(24, md.getWeight());
             } else {
-                EXPECT_EQUAL(-3, md.getWeight());
+                EXPECT_EQ(-3, md.getWeight());
             }
         }
         sb->seek(docId + 1);
         docId = sb->getDocId();
     }
-    EXPECT_EQUAL(expLastDocId, lastDocId);
-    EXPECT_EQUAL(expDocFreq, docFreq);
+    EXPECT_EQ(expLastDocId, lastDocId);
+    EXPECT_EQ(expDocFreq, docFreq);
 }
 
 
@@ -415,7 +434,7 @@ BitVectorTest::checkSearch(AttributePtr v,
 }
 
 
-template <typename VectorType, typename BufferType>
+template <typename VectorType>
 void
 BitVectorTest::test(BasicType bt, CollectionType ct, const vespalib::string &pref, bool fastSearch, bool filter)
 {
@@ -427,104 +446,64 @@ BitVectorTest::test(BasicType bt, CollectionType ct, const vespalib::string &pre
 
     SearchContextPtr sc = getSearch<VectorType>(tv, true);
     checkSearch(v, std::move(sc), 2, 1022, 205, !fastSearch && !filter, true);
-    sc = getSearch<VectorType>(tv, false);
+    sc = getSearch<VectorType>(tv, filter);
     checkSearch(v, std::move(sc), 2, 1022, 205, !filter, true);
-    const search::IDocumentWeightAttribute *dwa = v->asDocumentWeightAttribute();
-    if (dwa != nullptr) {
-        search::IDocumentWeightAttribute::LookupResult lres = 
-            dwa->lookup(getSearchStr<VectorType>(), dwa->get_dictionary_snapshot());
-        using DWSI = search::queryeval::DocumentWeightSearchIterator;
-        using SI = search::queryeval::SearchIterator;
+    const auto* dww = v->as_docid_with_weight_posting_store();
+    if ((dww != nullptr) && (bt == BasicType::STRING)) {
+        // This way of doing lookup is only supported by string attributes.
+        auto lres = dww->lookup(getSearchStr<VectorType>(), dww->get_dictionary_snapshot());
+        using DWSI = search::queryeval::DocidWithWeightSearchIterator;
         TermFieldMatchData md;
-        SI::UP dwsi(new DWSI(md, *dwa, lres));
+        auto dwsi = std::make_unique<DWSI>(md, *dww, lres);
         if (!filter) {
-            TEST_DO(checkSearch(v, std::move(dwsi), md, 2, 1022, 205, !filter, true));
+            SCOPED_TRACE("dww without filter");
+            checkSearch(v, std::move(dwsi), md, 2, 1022, 205, !filter, true);
         } else {
             dwsi->initRange(1, v->getCommittedDocIdLimit());
             EXPECT_TRUE(dwsi->isAtEnd());
         }
     }
     populate(tv, 2, 973, false);
-    sc = getSearch<VectorType>(tv, true);
+    sc = getSearch<VectorType>(tv, filter);
     checkSearch(v, std::move(sc), 977, 1022, 10, !filter, true);
     populate(tv, 2, 973, true);
     sc = getSearch<VectorType>(tv, true);
     checkSearch(v, std::move(sc), 2, 1022, 205, !fastSearch && !filter, true);
     addDocs(v, 15000);
-    sc = getSearch<VectorType>(tv, true);
+    sc = getSearch<VectorType>(tv, filter);
     checkSearch(v, std::move(sc), 2, 1022, 205, !filter, true);
     populateAll(tv, 10, 15000, true);
     sc = getSearch<VectorType>(tv, true);
     checkSearch(v, std::move(sc), 2, 14999, 14992, !fastSearch && !filter, false);
 }
 
-
-template <typename VectorType, typename BufferType>
-void
-BitVectorTest::test(BasicType bt, CollectionType ct, const vespalib::string &pref)
+TEST_P(BitVectorTest, test_bitvectors)
 {
-    LOG(info, "test run, pref is %s", pref.c_str());
-    test<VectorType, BufferType>(bt, ct, pref, false, false);
-    test<VectorType, BufferType>(bt, ct, pref, false, true);
-    test<VectorType, BufferType>(bt, ct, pref, true, false);
-    test<VectorType, BufferType>(bt, ct, pref, true, true);
+    const auto& param = GetParam();
+    auto bt = std::get<0>(param);
+    auto ct = std::get<1>(param);
+    auto fast_search = std::get<2>(param);
+    auto filter = std::get<3>(param);
+    vespalib::asciistream pref;
+    pref << bt.asString() << "_" << ct.asString();
+    switch (bt.type()) {
+    case BasicType::INT32:
+        test<IntegerAttribute>(bt, ct, pref.str(), fast_search, filter);
+        break;
+    case BasicType::DOUBLE:
+        test<FloatingPointAttribute>(bt, ct, pref.str(), fast_search, filter);
+        break;
+    case BasicType::STRING:
+        test<StringAttribute>(bt, ct, pref.str(), fast_search, filter);
+        break;
+    default:
+        FAIL() << "Cannot handle basic type " << bt.asString();
+    }
 }
 
+auto test_values = testing::Combine(testing::Values(BasicType::INT32, BasicType::DOUBLE, BasicType::STRING), testing::Values(CollectionType::SINGLE, CollectionType::ARRAY, CollectionType::WSET),testing::Bool(), testing::Bool());
 
-TEST_F("Test bitvectors with single value int32", BitVectorTest)
-{
-    f.template test<IntegerAttribute,
-        IntegerAttribute::largeint_t>(BasicType::INT32, CollectionType::SINGLE, "int32_sv");
-}
-
-TEST_F("Test bitvectors with array value int32", BitVectorTest)
-{
-    f.template test<IntegerAttribute,
-        IntegerAttribute::largeint_t>(BasicType::INT32, CollectionType::ARRAY, "int32_a");
-}
-
-TEST_F("Test bitvectors with weighted set value int32", BitVectorTest)
-{
-    f.template test<IntegerAttribute,
-        IntegerAttribute::WeightedInt>(BasicType::INT32, CollectionType::WSET, "int32_sv");
-}
-
-TEST_F("Test bitvectors with single value double", BitVectorTest)
-{
-    f.template test<FloatingPointAttribute,
-        double>(BasicType::DOUBLE, CollectionType::SINGLE, "double_sv");
-}
-
-TEST_F("Test bitvectors with array value double", BitVectorTest)
-{
-    f.template test<FloatingPointAttribute,
-        double>(BasicType::DOUBLE, CollectionType::ARRAY, "double_a");
-}
-
-TEST_F("Test bitvectors with weighted set value double", BitVectorTest)
-{
-    f.template test<FloatingPointAttribute,
-        FloatingPointAttribute::WeightedFloat>(BasicType::DOUBLE, CollectionType::WSET, "double_ws");
-}
-
-TEST_F("Test bitvectors with single value string", BitVectorTest)
-{
-    f.template test<StringAttribute,
-        vespalib::string>(BasicType::STRING, CollectionType::SINGLE, "string_sv");
-}
-
-TEST_F("Test bitvectors with array value string", BitVectorTest)
-{
-    f.template test<StringAttribute,
-        vespalib::string>(BasicType::STRING, CollectionType::ARRAY, "string_a");
-}
-
-TEST_F("Test bitvectors with weighted set value string", BitVectorTest)
-{
-    f.template test<StringAttribute,
-        StringAttribute::WeightedString>(BasicType::STRING, CollectionType::WSET, "string_ws");
-}
-
+INSTANTIATE_TEST_SUITE_P(Attributes, BitVectorTest, test_values, param_as_string);
 
 class Verifier : public search::test::SearchIteratorVerifier {
 public:
@@ -558,7 +537,8 @@ Verifier::Verifier(bool inverted)
 }
 Verifier::~Verifier() = default;
 
-TEST("Test that bitvector iterators adheres to SearchIterator requirements") {
+TEST(BitVectorVerifierTest, test_that_bitvector_iterators_adheres_to_SearchIterator_requirements)
+{
     {
         Verifier searchIteratorVerifier(false);
         searchIteratorVerifier.verify();
@@ -569,4 +549,4 @@ TEST("Test that bitvector iterators adheres to SearchIterator requirements") {
     }
 }
 
-TEST_MAIN() { TEST_RUN_ALL(); }
+GTEST_MAIN_RUN_ALL_TESTS()

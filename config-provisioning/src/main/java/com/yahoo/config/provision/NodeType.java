@@ -1,7 +1,7 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.config.provision;
 
-import java.util.List;
+import java.util.Optional;
 
 /**
  * The possible types of nodes in the node repository
@@ -35,15 +35,26 @@ public enum NodeType {
     controllerhost("Controller host", controller);
 
     private final String description;
-    private final List<NodeType> childNodeTypes;
+    private final Optional<NodeType> childNodeType;
 
-    NodeType(String description, NodeType... childNodeTypes) {
-        this.childNodeTypes = List.of(childNodeTypes);
+    public static Optional<NodeType> ofOptional(String name) {
+        for (var type : values()) {
+            if (type.name().equals(name)) return Optional.of(type);
+        }
+        return Optional.empty();
+    }
+
+    NodeType(String description) {
+        this(description, null);
+    }
+
+    NodeType(String description, NodeType childNodeTypes) {
+        this.childNodeType = Optional.ofNullable(childNodeTypes);
         this.description = description;
     }
 
     public boolean isHost() {
-        return !childNodeTypes.isEmpty();
+        return childNodeType.isPresent();
     }
 
     /** either config server or controller */
@@ -66,38 +77,33 @@ public enum NodeType {
     }
 
     /**
-     * @return {@link NodeType} of the node(s) that run on this host
+     * @return {@link NodeType} of the node that run on this host
      * @throws IllegalStateException if this type is not a host
      */
     public NodeType childNodeType() {
-        return childNodeTypes().get(0);
-    }
-
-    /**
-     * @return all {@link NodeType}s that can run on this host
-     * @throws IllegalStateException if this type is not a host
-     */
-    public List<NodeType> childNodeTypes() {
-        if (! isHost())
-            throw new IllegalStateException(this + " has no children");
-        return childNodeTypes;
+        return childNodeType.orElseThrow(() -> new IllegalStateException(this + " is not a host"));
     }
 
     /** Returns whether given node type can run on this */
     public boolean canRun(NodeType type) {
-        return childNodeTypes.contains(type);
+        return childNodeType.map(t -> t == type).orElse(false);
+    }
+
+    /** Returns the parent host type. */
+    public NodeType parentNodeType() {
+        for (var type : values()) {
+            if (type.canRun(this)) return type;
+        }
+        throw new IllegalStateException(this + " has no parent");
     }
 
     /** Returns the host type of this */
     public NodeType hostType() {
         if (isHost()) return this;
-        for (NodeType nodeType : values()) {
-            // Ignore host types that support multiple node types
-            if (nodeType.childNodeTypes.size() == 1 && nodeType.canRun(this)) {
-                return nodeType;
-            }
+        for (NodeType type : values()) {
+            if (type.canRun(this)) return type;
         }
-        throw new IllegalArgumentException("No host of " + this + " exists");
+        throw new IllegalStateException("No host of " + this + " exists");
     }
 
 }

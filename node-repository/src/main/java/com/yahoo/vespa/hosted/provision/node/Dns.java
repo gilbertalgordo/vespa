@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.hosted.provision.node;
 
 import com.yahoo.config.provision.CloudAccount;
@@ -25,12 +25,7 @@ public class Dns {
 
     /** Returns the set of DNS record types for a host and its children and the given version (ipv6), host type, etc. */
     public static Set<RecordType> recordTypesFor(IP.Version ipVersion, NodeType hostType, CloudName cloudName, boolean enclave) {
-        if (cloudName == CloudName.AWS)
-            return enclave ?
-                   EnumSet.of(RecordType.FORWARD, RecordType.PUBLIC_FORWARD) :
-                   EnumSet.of(RecordType.FORWARD, RecordType.PUBLIC_FORWARD, RecordType.REVERSE);
-
-        if (cloudName == CloudName.GCP) {
+        if (cloudName == CloudName.AWS || cloudName == CloudName.GCP) {
             if (enclave) {
                 return ipVersion.is6() ?
                        EnumSet.of(RecordType.FORWARD, RecordType.PUBLIC_FORWARD) :
@@ -40,6 +35,15 @@ public class Dns {
                        EnumSet.of(RecordType.FORWARD, RecordType.REVERSE, RecordType.PUBLIC_FORWARD) :
                        EnumSet.of(RecordType.FORWARD, RecordType.REVERSE);
             }
+        }
+
+        if (cloudName == CloudName.AZURE) {
+            return ipVersion.is6() ? EnumSet.noneOf(RecordType.class) :
+                   // Each Azure enclave and cfg host and child gets one private 10.* address and one public address.
+                   // The private DNS zone resolves to the private, while the public DNS zone resolves to the public,
+                   // which is why we return FORWARD and PUBLIC_FORWARD here.  The node repo only contains the private addresses.
+                   enclave || hostType == confighost ? EnumSet.of(RecordType.FORWARD, RecordType.PUBLIC_FORWARD) :
+                   EnumSet.of(RecordType.FORWARD);
         }
 
         throw new IllegalArgumentException("Does not manage DNS for cloud " + cloudName);

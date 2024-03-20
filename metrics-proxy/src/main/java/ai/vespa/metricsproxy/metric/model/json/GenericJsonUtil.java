@@ -1,11 +1,10 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package ai.vespa.metricsproxy.metric.model.json;
 
 import ai.vespa.metricsproxy.http.application.Node;
 import ai.vespa.metricsproxy.metric.model.MetricsPacket;
 import ai.vespa.metricsproxy.metric.model.ServiceId;
 import ai.vespa.metricsproxy.metric.model.StatusCode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -18,7 +17,7 @@ import java.util.stream.Collectors;
 import static ai.vespa.metricsproxy.metric.ExternalMetrics.VESPA_NODE_SERVICE_ID;
 import static ai.vespa.metricsproxy.metric.model.DimensionId.toDimensionId;
 import static ai.vespa.metricsproxy.metric.model.MetricId.toMetricId;
-import static ai.vespa.metricsproxy.metric.model.json.JacksonUtil.createObjectMapper;
+import static ai.vespa.metricsproxy.metric.model.json.JacksonUtil.objectMapper;
 import static java.util.Collections.emptyList;
 import static java.util.Collections.singletonList;
 import static java.util.logging.Level.WARNING;
@@ -87,8 +86,7 @@ public class GenericJsonUtil {
 
     public static List<MetricsPacket.Builder> toMetricsPackets(String jsonString) {
         try {
-            ObjectMapper mapper = createObjectMapper();
-            GenericJsonModel jsonModel = mapper.readValue(jsonString, GenericJsonModel.class);
+            GenericJsonModel jsonModel = objectMapper().readValue(jsonString, GenericJsonModel.class);
             return toMetricsPackets(jsonModel);
         } catch (IOException e) {
             log.log(WARNING, "Could not create metrics packet from string:\n" + jsonString, e);

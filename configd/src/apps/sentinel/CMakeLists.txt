@@ -1,4 +1,4 @@
-# Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+# Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 vespa_add_executable(configd_config-sentinel_app
     SOURCES
     check-completion-handler.cpp
@@ -14,6 +14,7 @@ vespa_add_executable(configd_config-sentinel_app
     output-connection.cpp
     outward-check.cpp
     peer-check.cpp
+    platform-specific.cpp
     report-connectivity.cpp
     rpchooks.cpp
     rpcserver.cpp

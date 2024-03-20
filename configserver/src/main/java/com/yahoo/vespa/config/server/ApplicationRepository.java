@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.config.server;
 
 import ai.vespa.http.DomainName;
@@ -15,6 +15,7 @@ import com.yahoo.config.model.api.HostInfo;
 import com.yahoo.config.model.api.ServiceInfo;
 import com.yahoo.config.provision.ActivationContext;
 import com.yahoo.config.provision.ApplicationId;
+import com.yahoo.config.provision.ApplicationLockException;
 import com.yahoo.config.provision.ApplicationTransaction;
 import com.yahoo.config.provision.Capacity;
 import com.yahoo.config.provision.EndpointsChecker;
@@ -24,6 +25,7 @@ import com.yahoo.config.provision.EndpointsChecker.HealthCheckerProvider;
 import com.yahoo.config.provision.Environment;
 import com.yahoo.config.provision.HostFilter;
 import com.yahoo.config.provision.InfraDeployer;
+import com.yahoo.config.provision.ParentHostUnavailableException;
 import com.yahoo.config.provision.Provisioner;
 import com.yahoo.config.provision.RegionName;
 import com.yahoo.config.provision.SystemName;
@@ -41,6 +43,7 @@ import com.yahoo.slime.Slime;
 import com.yahoo.transaction.NestedTransaction;
 import com.yahoo.transaction.Transaction;
 import com.yahoo.vespa.applicationmodel.InfrastructureApplication;
+import com.yahoo.vespa.config.server.application.ActiveTokenFingerprints;
 import com.yahoo.vespa.config.server.application.ActiveTokenFingerprints.Token;
 import com.yahoo.vespa.config.server.application.ActiveTokenFingerprintsClient;
 import com.yahoo.vespa.config.server.application.Application;
@@ -52,10 +55,10 @@ import com.yahoo.vespa.config.server.application.ClusterReindexing;
 import com.yahoo.vespa.config.server.application.ClusterReindexingStatusClient;
 import com.yahoo.vespa.config.server.application.CompressedApplicationInputStream;
 import com.yahoo.vespa.config.server.application.ConfigConvergenceChecker;
-import com.yahoo.vespa.config.server.application.ActiveTokenFingerprints;
 import com.yahoo.vespa.config.server.application.DefaultClusterReindexingStatusClient;
 import com.yahoo.vespa.config.server.application.FileDistributionStatus;
 import com.yahoo.vespa.config.server.application.HttpProxy;
+import com.yahoo.vespa.config.server.application.PendingRestarts;
 import com.yahoo.vespa.config.server.application.TenantApplications;
 import com.yahoo.vespa.config.server.configchange.ConfigChangeActions;
 import com.yahoo.vespa.config.server.configchange.RefeedActions;
@@ -70,6 +73,7 @@ import com.yahoo.vespa.config.server.http.LogRetriever;
 import com.yahoo.vespa.config.server.http.SecretStoreValidator;
 import com.yahoo.vespa.config.server.http.SimpleHttpFetcher;
 import com.yahoo.vespa.config.server.http.TesterClient;
+import com.yahoo.vespa.config.server.http.v2.PrepareAndActivateResult;
 import com.yahoo.vespa.config.server.http.v2.PrepareResult;
 import com.yahoo.vespa.config.server.http.v2.response.DeploymentMetricsResponse;
 import com.yahoo.vespa.config.server.http.v2.response.SearchNodeMetricsResponse;
@@ -107,7 +111,6 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Collection;
 import java.util.Comparator;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -361,36 +364,40 @@ public class ApplicationRepository implements com.yahoo.config.provision.Deploye
         return deployment;
     }
 
-    public PrepareResult deploy(CompressedApplicationInputStream in, PrepareParams prepareParams) {
+    public PrepareAndActivateResult deploy(CompressedApplicationInputStream in, PrepareParams prepareParams) {
         DeployHandlerLogger logger = DeployHandlerLogger.forPrepareParams(prepareParams);
         File tempDir = uncheck(() -> Files.createTempDirectory("deploy")).toFile();
         ThreadLockStats threadLockStats = LockStats.getForCurrentThread();
-        PrepareResult prepareResult;
+        PrepareAndActivateResult result;
         try {
             threadLockStats.startRecording("deploy of " + prepareParams.getApplicationId().serializedForm());
-            prepareResult = deploy(decompressApplication(in, tempDir), prepareParams, logger);
+            result = deploy(decompressApplication(in, tempDir), prepareParams, logger);
         } finally {
             threadLockStats.stopRecording();
             cleanupTempDirectory(tempDir, logger);
         }
-        return prepareResult;
+        return result;
     }
 
     public PrepareResult deploy(File applicationPackage, PrepareParams prepareParams) {
-        return deploy(applicationPackage, prepareParams, DeployHandlerLogger.forPrepareParams(prepareParams));
+        return deploy(applicationPackage, prepareParams, DeployHandlerLogger.forPrepareParams(prepareParams)).deployResult();
     }
 
-    private PrepareResult deploy(File applicationDir, PrepareParams prepareParams, DeployHandlerLogger logger) {
+    private PrepareAndActivateResult deploy(File applicationDir, PrepareParams prepareParams, DeployHandlerLogger logger) {
         long sessionId = createSession(prepareParams.getApplicationId(),
                                        prepareParams.getTimeoutBudget(),
                                        applicationDir,
                                        logger);
         Deployment deployment = prepare(sessionId, prepareParams, logger);
 
-        if ( ! prepareParams.isDryRun())
+        RuntimeException activationFailure = null;
+        if ( ! prepareParams.isDryRun()) try {
             deployment.activate();
-
-        return new PrepareResult(sessionId, deployment.configChangeActions(), logger);
+        }
+        catch (ParentHostUnavailableException | ApplicationLockException e) {
+            activationFailure = e;
+        }
+        return new PrepareAndActivateResult(new PrepareResult(sessionId, deployment.configChangeActions(), logger), activationFailure);
     }
 
     /**
@@ -476,10 +483,17 @@ public class ApplicationRepository implements com.yahoo.config.provision.Deploye
                 .flatMap(ApplicationData::lastDeployedSession);
         if (lastDeployedSession.isEmpty()) return activationTime(application);
 
-        Instant createTime = getRemoteSession(tenant, lastDeployedSession.get()).getCreateTime();
+        Optional<Instant> createTime;
+        try {
+            createTime = Optional.of(getRemoteSession(tenant, lastDeployedSession.get()).getCreateTime());
+        }
+        catch (Exception e) {
+            // Fallback to activation time, e.g. when last deployment failed before writing session data for new session
+            createTime = activationTime(application);
+        }
         log.log(Level.FINEST, application + " last deployed " + createTime);
 
-        return Optional.of(createTime);
+        return createTime;
     }
 
     @Override
@@ -528,7 +542,7 @@ public class ApplicationRepository implements com.yahoo.config.provision.Deploye
     static void checkIfActiveHasChanged(Session session, Session activeSession, boolean ignoreStaleSessionFailure) {
         long activeSessionAtCreate = session.getActiveSessionAtCreate();
         log.log(Level.FINE, () -> activeSession.logPre() + "active session id at create time=" + activeSessionAtCreate);
-        if (activeSessionAtCreate == 0) return; // No active session at create time
+        if (activeSessionAtCreate == 0) return; // No active session at create time, or session created for indeterminate app.
 
         long sessionId = session.getSessionId();
         long activeSessionSessionId = activeSession.getSessionId();
@@ -536,10 +550,10 @@ public class ApplicationRepository implements com.yahoo.config.provision.Deploye
                             ", current active session=" + activeSessionSessionId);
         if (activeSession.isNewerThan(activeSessionAtCreate) &&
             activeSessionSessionId != sessionId) {
-            String errMsg = activeSession.logPre() + "Cannot activate session " +
-                            sessionId + " because the currently active session (" +
-                            activeSessionSessionId + ") has changed since session " + sessionId +
-                            " was created (was " + activeSessionAtCreate + " at creation time)";
+            String errMsg = activeSession.logPre() + "Cannot activate session " + sessionId +
+                            " because the currently active session (" + activeSessionSessionId +
+                            ") has changed since session " + sessionId + " was created (was " +
+                            activeSessionAtCreate + " at creation time)";
             if (ignoreStaleSessionFailure) {
                 log.warning(errMsg + " (Continuing because of force.)");
             } else {
@@ -653,11 +667,14 @@ public class ApplicationRepository implements com.yahoo.config.provision.Deploye
         log.log(Level.FINE, () -> "Remove unused file references last modified before " + instant);
 
         List<String> fileReferencesToDelete = sortedUnusedFileReferences(fileDirectory.getRoot(), fileReferencesInUse, instant);
-        if (fileReferencesToDelete.size() > 0) {
-            log.log(Level.FINE, () -> "Will delete file references not in use: " + fileReferencesToDelete);
-            fileReferencesToDelete.forEach(fileReference -> fileDirectory.delete(new FileReference(fileReference), this::isFileReferenceInUse));
+        // Do max 20 at a time
+        var toDelete = fileReferencesToDelete.subList(0, Math.min(fileReferencesToDelete.size(), 20));
+        if (toDelete.size() > 0) {
+            log.log(Level.FINE, () -> "Will delete file references not in use: " + toDelete);
+            toDelete.forEach(fileReference -> fileDirectory.delete(new FileReference(fileReference), this::isFileReferenceInUse));
+            log.log(Level.FINE, () -> "Deleted " + toDelete.size() + " file references not in use");
         }
-        return fileReferencesToDelete;
+        return toDelete;
     }
 
     private boolean isFileReferenceInUse(FileReference fileReference) {
@@ -677,7 +694,7 @@ public class ApplicationRepository implements com.yahoo.config.provision.Deploye
 
     private List<String> sortedUnusedFileReferences(File fileReferencesPath, Set<String> fileReferencesInUse, Instant instant) {
         Set<String> fileReferencesOnDisk = getFileReferencesOnDisk(fileReferencesPath);
-        log.log(Level.FINE, () -> "File references on disk (in " + fileReferencesPath + "): " + fileReferencesOnDisk);
+        log.log(Level.FINEST, () -> "File references on disk (in " + fileReferencesPath + "): " + fileReferencesOnDisk);
         return fileReferencesOnDisk
                 .stream()
                 .filter(fileReference -> ! fileReferencesInUse.contains(fileReference))
@@ -778,7 +795,10 @@ public class ApplicationRepository implements com.yahoo.config.provision.Deploye
     public ServiceListResponse servicesToCheckForConfigConvergence(ApplicationId applicationId,
                                                                    Duration timeoutPerService,
                                                                    Optional<Version> vespaVersion) {
-        return convergeChecker.checkConvergenceForAllServices(getApplication(applicationId, vespaVersion), timeoutPerService);
+        ServiceListResponse response = convergeChecker.checkConvergenceForAllServices(getApplication(applicationId, vespaVersion), timeoutPerService);
+        if (response.converged && ! getPendingRestarts(applicationId).isEmpty())
+            response = response.unconverged();
+        return response;
     }
 
     public ConfigConvergenceChecker configConvergenceChecker() { return convergeChecker; }
@@ -935,28 +955,23 @@ public class ApplicationRepository implements com.yahoo.config.provision.Deploye
     }
 
     public void deleteExpiredLocalSessions() {
-        Map<Tenant, Collection<LocalSession>> sessionsPerTenant = new HashMap<>();
-        tenantRepository.getAllTenants()
-                        .forEach(tenant -> sessionsPerTenant.put(tenant, tenant.getSessionRepository().getLocalSessions()));
-
-        Set<ApplicationId> applicationIds = new HashSet<>();
-        sessionsPerTenant.values()
-                .forEach(sessionList -> sessionList.stream()
-                        .map(Session::getOptionalApplicationId)
-                        .filter(Optional::isPresent)
-                        .forEach(appId -> applicationIds.add(appId.get())));
-
-        Map<ApplicationId, Long> activeSessions = new HashMap<>();
-        applicationIds.forEach(applicationId -> getActiveSession(applicationId).ifPresent(session -> activeSessions.put(applicationId, session.getSessionId())));
-        sessionsPerTenant.keySet().forEach(tenant -> tenant.getSessionRepository().deleteExpiredSessions(activeSessions));
+        for (Tenant tenant : tenantRepository.getAllTenants()) {
+            tenant.getSessionRepository().deleteExpiredSessions(session -> sessionIsActiveForItsApplication(tenant, session));
+        }
     }
 
     public int deleteExpiredRemoteSessions(Clock clock) {
         return tenantRepository.getAllTenants()
                 .stream()
-                .map(tenant -> tenant.getSessionRepository().deleteExpiredRemoteSessions(clock))
+                .map(tenant -> tenant.getSessionRepository().deleteExpiredRemoteSessions(clock, session -> sessionIsActiveForItsApplication(tenant, session)))
                 .mapToInt(i -> i)
                 .sum();
+    }
+
+    private boolean sessionIsActiveForItsApplication(Tenant tenant, Session session) {
+        Optional<ApplicationId> owner = session.getOptionalApplicationId();
+        if (owner.isEmpty()) return true; // Chicken out ~(˘▾˘)~
+        return tenant.getApplicationRepo().activeSessionOf(owner.get()).equals(Optional.of(session.getSessionId()));
     }
 
     // ---------------- Tenant operations ----------------------------------------------------------------
@@ -1031,6 +1046,15 @@ public class ApplicationRepository implements com.yahoo.config.provision.Deploye
         tenant.getApplicationRepo().database().modifyReindexing(id, ApplicationReindexing.empty(), modifications);
     }
 
+    public PendingRestarts getPendingRestarts(ApplicationId id) {
+        return requireDatabase(id).readPendingRestarts(id);
+    }
+
+    public void modifyPendingRestarts(ApplicationId id, UnaryOperator<PendingRestarts> modifications) {
+        if (hostProvisioner.isEmpty()) return;
+        getTenant(id).getApplicationRepo().database().modifyPendingRestarts(id, modifications);
+    }
+
     public ConfigserverConfig configserverConfig() {
         return configserverConfig;
     }
@@ -1071,12 +1095,6 @@ public class ApplicationRepository implements com.yahoo.config.provision.Deploye
         return getTenant(appId).getSessionRepository().activeApplicationVersions(appId);
     }
 
-    public Application getActiveApplication(ApplicationId applicationId) {
-        return getActiveApplicationSet(applicationId)
-                .map(a -> a.getForVersionOrLatest(Optional.empty(), clock.instant()))
-                .orElseThrow(() -> new RuntimeException("Found no active application for " + applicationId));
-    }
-
     private File decompressApplication(InputStream in, String contentType, File tempDir) {
         try (CompressedApplicationInputStream application =
                      CompressedApplicationInputStream.createFromCompressedStream(in, contentType, configserverConfig.maxApplicationPackageSize())) {
@@ -1089,8 +1107,8 @@ public class ApplicationRepository implements com.yahoo.config.provision.Deploye
     private File decompressApplication(CompressedApplicationInputStream in, File tempDir) {
         try {
             return in.decompress(tempDir);
-        } catch (IOException e) {
-            throw new IllegalArgumentException("Unable to decompress stream", e);
+        } catch (IOException | UncheckedIOException e) {
+            throw new IllegalArgumentException("Unable to decompress application stream", e);
         }
     }
 

@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include "indexcollection.h"
 #include "indexsearchablevisitor.h"
@@ -206,6 +206,7 @@ private:
     void visit(RegExpTerm &n)      override { visitTerm(n); }
     void visit(NearestNeighborTerm &n) override { visitTerm(n); }
     void visit(FuzzyTerm &n) override { visitTerm(n); }
+    void visit(InTerm& n)          override { visitTerm(n); }
 
 public:
     CreateBlueprintVisitor(const IIndexCollection &indexes,

@@ -1,22 +1,24 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include "attribute_blueprint_factory.h"
-#include "attribute_weighted_set_blueprint.h"
-#include "i_document_weight_attribute.h"
-#include "iterator_pack.h"
-#include "predicate_attribute.h"
 #include "attribute_blueprint_params.h"
-#include "document_weight_or_filter_search.h"
+#include "attribute_object_visitor.h"
+#include "attribute_weighted_set_blueprint.h"
+#include "direct_multi_term_blueprint.h"
+#include "i_docid_posting_store.h"
+#include "i_docid_with_weight_posting_store.h"
+#include "in_term_search.h"
+#include "multi_term_or_filter_search.h"
+#include "predicate_attribute.h"
 #include <vespa/eval/eval/value.h>
+#include <vespa/searchcommon/attribute/config.h>
 #include <vespa/searchlib/common/location.h>
 #include <vespa/searchlib/common/locationiterators.h>
-#include <vespa/searchlib/common/matching_elements_fields.h>
 #include <vespa/searchlib/query/query_term_decoder.h>
 #include <vespa/searchlib/query/query_term_ucs4.h>
 #include <vespa/searchlib/query/tree/stackdumpcreator.h>
 #include <vespa/searchlib/queryeval/andsearchstrict.h>
 #include <vespa/searchlib/queryeval/create_blueprint_visitor_helper.h>
-#include <vespa/searchlib/queryeval/document_weight_search_iterator.h>
 #include <vespa/searchlib/queryeval/dot_product_blueprint.h>
 #include <vespa/searchlib/queryeval/dot_product_search.h>
 #include <vespa/searchlib/queryeval/emptysearch.h>
@@ -25,9 +27,9 @@
 #include <vespa/searchlib/queryeval/get_weight_from_node.h>
 #include <vespa/searchlib/queryeval/intermediate_blueprints.h>
 #include <vespa/searchlib/queryeval/leaf_blueprints.h>
-#include <vespa/searchlib/queryeval/matching_elements_search.h>
 #include <vespa/searchlib/queryeval/nearest_neighbor_blueprint.h>
 #include <vespa/searchlib/queryeval/orlikesearch.h>
+#include <vespa/searchlib/queryeval/flow_tuning.h>
 #include <vespa/searchlib/queryeval/predicate_blueprint.h>
 #include <vespa/searchlib/queryeval/wand/parallel_weak_and_blueprint.h>
 #include <vespa/searchlib/queryeval/wand/parallel_weak_and_search.h>
@@ -39,17 +41,17 @@
 #include <vespa/vespalib/util/stringfmt.h>
 #include <vespa/vespalib/util/exceptions.h>
 #include <vespa/vespalib/util/issue.h>
-#include <sstream>
 #include <charconv>
 
 #include <vespa/log/log.h>
 LOG_SETUP(".searchlib.attribute.attribute_blueprint_factory");
 
 using search::attribute::BasicType;
-using search::attribute::SearchContextParams;
 using search::attribute::CollectionType;
+using search::attribute::Config;
 using search::attribute::IAttributeVector;
 using search::attribute::ISearchContext;
+using search::attribute::SearchContextParams;
 using search::fef::TermFieldMatchData;
 using search::fef::TermFieldMatchDataArray;
 using search::fef::TermFieldMatchDataPosition;
@@ -86,7 +88,12 @@ using search::queryeval::PredicateBlueprint;
 using search::queryeval::SearchIterator;
 using search::queryeval::Searchable;
 using search::queryeval::SimpleLeafBlueprint;
+using search::queryeval::StrictHeapOrSearch;
 using search::queryeval::WeightedSetTermBlueprint;
+using search::queryeval::flow::btree_cost;
+using search::queryeval::flow::btree_strict_cost;
+using search::queryeval::flow::lookup_cost;
+using search::queryeval::flow::lookup_strict_cost;
 using search::tensor::DenseTensorAttribute;
 using search::tensor::ITensorAttribute;
 using vespalib::Issue;
@@ -98,7 +105,7 @@ using vespalib::stringref;
 namespace search {
 namespace {
 
-class NodeAsKey final : public IDocumentWeightAttribute::LookupKey {
+class NodeAsKey final : public IDirectPostingStore::LookupKey {
 public:
     NodeAsKey(const Node & node, vespalib::string & scratchPad)
         : _node(node),
@@ -115,6 +122,19 @@ private:
 };
 //-----------------------------------------------------------------------------
 
+size_t
+get_num_indirections(const BasicType& basic_type, const CollectionType& col_type)
+{
+    size_t res = 0;
+    if (basic_type == BasicType::STRING) {
+        res += 1;
+    }
+    if (col_type != CollectionType::SINGLE) {
+        res += 1;
+    }
+    return res;
+}
+
 /**
  * Blueprint for creating regular, stack-based attribute iterators.
  **/
@@ -126,6 +146,7 @@ private:
     // as only a few ISearchContext implementations exposes the query term.
     vespalib::string _query_term;
     ISearchContext::UP _search_context;
+    attribute::HitEstimate _hit_estimate;
     enum Type {INT, FLOAT, OTHER};
     Type _type;
 
@@ -135,6 +156,19 @@ public:
     AttributeFieldBlueprint(FieldSpecBase field, const IAttributeVector &attribute,
                             QueryTermSimple::UP term, const SearchContextParams &params);
     ~AttributeFieldBlueprint() override;
+
+    search::queryeval::FlowStats calculate_flow_stats(uint32_t docid_limit) const override {
+        if (_hit_estimate.is_unknown()) {
+            // E.g. attributes without fast-search are not able to provide a hit estimate.
+            // In this case we just assume matching half of the document corpus.
+            // In addition, matching is lookup based, and we are not able to skip documents efficiently when being strict.
+            size_t indirections = get_num_indirections(_attr.getBasicType(), _attr.getCollectionType());
+            return {0.5, lookup_cost(indirections), lookup_strict_cost(indirections)};
+        } else {
+            double rel_est = abs_to_rel_est(_hit_estimate.est_hits(), docid_limit);
+            return {rel_est, btree_cost(), btree_strict_cost(rel_est)};
+        }
+    }
 
     SearchIteratorUP createLeafSearch(const TermFieldMatchDataArray &tfmda, bool strict) const override {
         assert(tfmda.size() == 1);
@@ -160,7 +194,7 @@ public:
 
     void visitMembers(vespalib::ObjectVisitor &visitor) const override;
 
-    const attribute::ISearchContext *get_attribute_search_context() const override {
+    const attribute::ISearchContext *get_attribute_search_context() const noexcept final {
         return _search_context.get();
     }
     bool getRange(vespalib::string &from, vespalib::string &to) const override;
@@ -179,9 +213,10 @@ AttributeFieldBlueprint::AttributeFieldBlueprint(FieldSpecBase field, const IAtt
       _attr(attribute),
       _query_term(term->getTermString()),
       _search_context(attribute.createSearchContext(std::move(term), params)),
+      _hit_estimate(_search_context->calc_hit_estimate()),
       _type(OTHER)
 {
-    uint32_t estHits = _search_context->approximateHits();
+    uint32_t estHits = _hit_estimate.est_hits();
     HitEstimate estimate(estHits, estHits == 0);
     setEstimate(estimate);
     if (attribute.isFloatingPointType()) {
@@ -189,30 +224,6 @@ AttributeFieldBlueprint::AttributeFieldBlueprint(FieldSpecBase field, const IAtt
     } else if (attribute.isIntegerType()) {
         _type = INT;
     }
-}
-
-vespalib::string
-get_type(const IAttributeVector& attr)
-{
-    auto coll_type = CollectionType(attr.getCollectionType());
-    auto basic_type = BasicType(attr.getBasicType());
-    if (coll_type.type() == CollectionType::SINGLE) {
-        return basic_type.asString();
-    }
-    std::ostringstream oss;
-    oss << coll_type.asString() << "<" << basic_type.asString() << ">";
-    return oss.str();
-}
-
-void
-visit_attribute(vespalib::ObjectVisitor& visitor, const IAttributeVector& attr)
-{
-    visitor.openStruct("attribute", "IAttributeVector");
-    visitor.visitString("name", attr.getName());
-    visitor.visitString("type", get_type(attr));
-    visitor.visitBool("fast_search", attr.getIsFastSearch());
-    visitor.visitBool("filter", attr.getIsFilter());
-    visitor.closeStruct();
 }
 
 void
@@ -225,19 +236,21 @@ AttributeFieldBlueprint::visitMembers(vespalib::ObjectVisitor &visitor) const
 
 //-----------------------------------------------------------------------------
 
-template <bool is_strict>
-struct LocationPreFilterIterator : public OrLikeSearch<is_strict, NoUnpack>
+template <bool is_strict, typename Parent>
+struct LocationPreFilterIterator : public Parent
 {
     explicit LocationPreFilterIterator(OrSearch::Children children)
-        : OrLikeSearch<is_strict, NoUnpack>(std::move(children), NoUnpack()) {}
+      : Parent(std::move(children), NoUnpack()) {}
     void doUnpack(uint32_t) override {}
 };
 
 class LocationPreFilterBlueprint : public ComplexLeafBlueprint
 {
 private:
+    using AttrHitEstimate = attribute::HitEstimate;
     const IAttributeVector &_attribute;
     std::vector<ISearchContext::UP> _rangeSearches;
+    std::vector<AttrHitEstimate> _estimates;
     bool _should_use;
 
 public:
@@ -245,6 +258,7 @@ public:
         : ComplexLeafBlueprint(field),
           _attribute(attribute),
           _rangeSearches(),
+          _estimates(),
           _should_use(false)
     {
         uint64_t estHits(0);
@@ -254,7 +268,8 @@ public:
             query::SimpleRangeTerm rt(qr, "", 0, query::Weight(0));
             string stack(StackDumpCreator::create(rt));
             _rangeSearches.push_back(attr.createSearchContext(QueryTermDecoder::decodeTerm(stack), scParams));
-            estHits += _rangeSearches.back()->approximateHits();
+            _estimates.push_back(_rangeSearches.back()->calc_hit_estimate());
+            estHits += _estimates.back().est_hits();
             LOG(debug, "Range '%s' estHits %" PRId64, qr.getRangeString().c_str(), estHits);
         }
         if (estHits > attr.getNumDocs()) {
@@ -272,6 +287,24 @@ public:
 
     bool should_use() const { return _should_use; }
 
+    queryeval::FlowStats calculate_flow_stats(uint32_t docid_limit) const override {
+        using OrFlow = search::queryeval::OrFlow;
+        struct MyAdapter {
+            uint32_t docid_limit;
+            explicit MyAdapter(uint32_t docid_limit_in) noexcept : docid_limit(docid_limit_in) {}
+            double estimate(const AttrHitEstimate &est) const noexcept {
+                return est.is_unknown() ? 0.5 : abs_to_rel_est(est.est_hits(), docid_limit);
+            }
+            double cost(const AttrHitEstimate &) const noexcept { return 1.0; }
+            double strict_cost(const AttrHitEstimate &est) const noexcept {
+                return est.is_unknown() ? 1.0 : abs_to_rel_est(est.est_hits(), docid_limit);
+            }
+        };
+        double est = OrFlow::estimate_of(MyAdapter(docid_limit), _estimates);
+        return {est, OrFlow::cost_of(MyAdapter(docid_limit), _estimates, false),
+                OrFlow::cost_of(MyAdapter(docid_limit), _estimates, true) + queryeval::flow::array_cost(est, _estimates.size())};
+    }
+
     SearchIterator::UP
     createLeafSearch(const TermFieldMatchDataArray &tfmda, bool strict) const override
     {
@@ -280,9 +313,16 @@ public:
             children.push_back(search->createIterator(tfmda[0], strict));
         }
         if (strict) {
-            return std::make_unique<LocationPreFilterIterator<true>>(std::move(children));
+            if (children.size() < 0x70) {
+                using Parent = StrictHeapOrSearch<NoUnpack, vespalib::LeftArrayHeap, uint8_t>;
+                return std::make_unique<LocationPreFilterIterator<true, Parent>>(std::move(children));
+            } else {
+                using Parent = StrictHeapOrSearch<NoUnpack, vespalib::LeftHeap, uint32_t>;
+                return std::make_unique<LocationPreFilterIterator<true, Parent>>(std::move(children));
+            }
         } else {
-            return std::make_unique<LocationPreFilterIterator<false>>(std::move(children));
+            using Parent = OrLikeSearch<false, NoUnpack>;
+            return std::make_unique<LocationPreFilterIterator<false, Parent>>(std::move(children));
         }
     }
     SearchIteratorUP createFilterSearch(bool strict, FilterConstraint constraint) const override {
@@ -330,6 +370,10 @@ public:
     ~LocationPostFilterBlueprint() override;
 
     const common::Location &location() const { return _location; }
+
+    queryeval::FlowStats calculate_flow_stats(uint32_t) const override {
+        return default_flow_stats(0);
+    }
 
     SearchIterator::UP
     createLeafSearch(const TermFieldMatchDataArray &tfmda, bool strict) const override
@@ -388,7 +432,7 @@ make_location_blueprint(const FieldSpec &field, const IAttributeVector &attribut
 
 LocationPostFilterBlueprint::~LocationPostFilterBlueprint() = default;
 
-class LookupKey : public IDocumentWeightAttribute::LookupKey {
+class LookupKey : public IDirectPostingStore::LookupKey {
 public:
     LookupKey(MultiTerm & terms, uint32_t index) : _terms(terms), _index(index) {}
 
@@ -408,118 +452,20 @@ private:
 
 //-----------------------------------------------------------------------------
 
-template <typename SearchType>
-class DirectWeightedSetBlueprint : public ComplexLeafBlueprint
-{
-private:
-    std::vector<int32_t>                                _weights;
-    std::vector<IDocumentWeightAttribute::LookupResult> _terms;
-    const IAttributeVector                             &_iattr;
-    const IDocumentWeightAttribute                     &_attr;
-    vespalib::datastore::EntryRef                       _dictionary_snapshot;
-
-public:
-    DirectWeightedSetBlueprint(const FieldSpec &field, const IAttributeVector &iattr, const IDocumentWeightAttribute &attr, size_t size_hint)
-        : ComplexLeafBlueprint(field),
-          _weights(),
-          _terms(),
-          _iattr(iattr),
-          _attr(attr),
-          _dictionary_snapshot(_attr.get_dictionary_snapshot())
-    {
-        set_allow_termwise_eval(true);
-        _weights.reserve(size_hint);
-        _terms.reserve(size_hint);
-    }
-    ~DirectWeightedSetBlueprint() override;
-
-    void addTerm(const IDocumentWeightAttribute::LookupKey & key, int32_t weight, HitEstimate & estimate) {
-        IDocumentWeightAttribute::LookupResult result = _attr.lookup(key, _dictionary_snapshot);
-        HitEstimate childEst(result.posting_size, (result.posting_size == 0));
-        if (!childEst.empty) {
-            if (estimate.empty) {
-                estimate = childEst;
-            } else {
-                estimate.estHits += childEst.estHits;
-            }
-            _weights.push_back(weight);
-            _terms.push_back(result);
-        }
-    }
-    void complete(HitEstimate estimate) {
-        setEstimate(estimate);
-    }
-
-    SearchIterator::UP createLeafSearch(const TermFieldMatchDataArray &tfmda, bool) const override;
-
-    std::unique_ptr<SearchIterator> createFilterSearch(bool strict, FilterConstraint constraint) const override;
-    std::unique_ptr<queryeval::MatchingElementsSearch> create_matching_elements_search(const MatchingElementsFields &fields) const override {
-        if (fields.has_field(_iattr.getName())) {
-            return queryeval::MatchingElementsSearch::create(_iattr, _dictionary_snapshot, vespalib::ConstArrayRef<IDocumentWeightAttribute::LookupResult>(_terms));
-        } else {
-            return {};
-        }
-    }
-    void visitMembers(vespalib::ObjectVisitor& visitor) const override {
-        LeafBlueprint::visitMembers(visitor);
-        visit_attribute(visitor, _iattr);
-    }
-};
-
-template <typename SearchType>
-SearchIterator::UP
-DirectWeightedSetBlueprint<SearchType>::createLeafSearch(const TermFieldMatchDataArray &tfmda, bool) const
-{
-    assert(tfmda.size() == 1);
-    assert(getState().numFields() == 1);
-    if (_terms.empty()) {
-        return std::make_unique<queryeval::EmptySearch>();
-    }
-    std::vector<DocumentWeightIterator> iterators;
-    const size_t numChildren = _terms.size();
-    iterators.reserve(numChildren);
-    for (const IDocumentWeightAttribute::LookupResult &r : _terms) {
-        _attr.create(r.posting_idx, iterators);
-    }
-    bool field_is_filter = getState().fields()[0].isFilter();
-    if (field_is_filter && tfmda[0]->isNotNeeded()) {
-        return attribute::DocumentWeightOrFilterSearch::create(std::move(iterators));
-    }
-    return SearchType::create(*tfmda[0], field_is_filter, _weights, std::move(iterators));
-}
-
-
-template <typename SearchType>
-DirectWeightedSetBlueprint<SearchType>::~DirectWeightedSetBlueprint() = default;
-
-template <typename SearchType>
-std::unique_ptr<SearchIterator>
-DirectWeightedSetBlueprint<SearchType>::createFilterSearch(bool, FilterConstraint) const
-{
-    std::vector<DocumentWeightIterator> iterators;
-    iterators.reserve(_terms.size());
-    for (const IDocumentWeightAttribute::LookupResult &r : _terms) {
-        _attr.create(r.posting_idx, iterators);
-    }
-    return attribute::DocumentWeightOrFilterSearch::create(std::move(iterators));
-}
-
-//-----------------------------------------------------------------------------
-
 class DirectWandBlueprint : public queryeval::ComplexLeafBlueprint
 {
 private:
-    mutable queryeval::SharedWeakAndPriorityQueue       _scores;
-    const queryeval::wand::score_t                      _scoreThreshold;
-    double                                              _thresholdBoostFactor;
-    const uint32_t                                      _scoresAdjustFrequency;
-    std::vector<int32_t>                                _weights;
-    std::vector<IDocumentWeightAttribute::LookupResult> _terms;
-    const IDocumentWeightAttribute                     &_attr;
-    vespalib::datastore::EntryRef                       _dictionary_snapshot;
+    mutable queryeval::SharedWeakAndPriorityQueue  _scores;
+    const queryeval::wand::score_t                 _scoreThreshold;
+    double                                         _thresholdBoostFactor;
+    const uint32_t                                 _scoresAdjustFrequency;
+    std::vector<int32_t>                           _weights;
+    std::vector<IDirectPostingStore::LookupResult> _terms;
+    const IDocidWithWeightPostingStore            &_attr;
+    vespalib::datastore::EntryRef                  _dictionary_snapshot;
 
 public:
-    DirectWandBlueprint(const FieldSpec &field, const IDocumentWeightAttribute &attr, uint32_t scoresToTrack,
+    DirectWandBlueprint(const FieldSpec &field, const IDocidWithWeightPostingStore &attr, uint32_t scoresToTrack,
                         queryeval::wand::score_t scoreThreshold, double thresholdBoostFactor, size_t size_hint)
         : ComplexLeafBlueprint(field),
           _scores(scoresToTrack),
@@ -537,8 +483,8 @@ public:
 
     ~DirectWandBlueprint() override;
 
-    void addTerm(const IDocumentWeightAttribute::LookupKey & key, int32_t weight, HitEstimate & estimate) {
-        IDocumentWeightAttribute::LookupResult result = _attr.lookup(key, _dictionary_snapshot);
+    void addTerm(const IDirectPostingStore::LookupKey & key, int32_t weight, HitEstimate & estimate) {
+        IDirectPostingStore::LookupResult result = _attr.lookup(key, _dictionary_snapshot);
         HitEstimate childEst(result.posting_size, (result.posting_size == 0));
         if (!childEst.empty) {
             if (estimate.empty) {
@@ -552,6 +498,29 @@ public:
     }
     void complete(HitEstimate estimate) {
         setEstimate(estimate);
+    }
+
+    queryeval::FlowStats calculate_flow_stats(uint32_t docid_limit) const override {
+        using OrFlow = search::queryeval::OrFlow;
+        struct MyAdapter {
+            uint32_t docid_limit;
+            explicit MyAdapter(uint32_t docid_limit_in) noexcept : docid_limit(docid_limit_in) {}
+            double estimate(const IDirectPostingStore::LookupResult &term) const noexcept {
+                return abs_to_rel_est(term.posting_size, docid_limit);
+            }
+            double cost(const IDirectPostingStore::LookupResult &) const noexcept {
+                return btree_cost();
+            }
+            double strict_cost(const IDirectPostingStore::LookupResult &term) const noexcept {
+                double rel_est = abs_to_rel_est(term.posting_size, docid_limit);
+                return btree_strict_cost(rel_est);
+            }
+        };
+        double child_est = OrFlow::estimate_of(MyAdapter(docid_limit), _terms);
+        double my_est = abs_to_rel_est(_scores.getScoresToTrack(), docid_limit);
+        double est = (child_est + my_est) / 2.0;
+        return {est, OrFlow::cost_of(MyAdapter(docid_limit), _terms, false),
+                OrFlow::cost_of(MyAdapter(docid_limit), _terms, true) + queryeval::flow::heap_cost(est, _terms.size())};
     }
 
     SearchIterator::UP createLeafSearch(const TermFieldMatchDataArray &tfmda, bool strict) const override {
@@ -575,12 +544,12 @@ std::unique_ptr<SearchIterator>
 DirectWandBlueprint::createFilterSearch(bool, FilterConstraint constraint) const
 {
     if (constraint == Blueprint::FilterConstraint::UPPER_BOUND) {
-        std::vector<DocumentWeightIterator> iterators;
+        std::vector<DocidWithWeightIterator> iterators;
         iterators.reserve(_terms.size());
-        for (const IDocumentWeightAttribute::LookupResult &r : _terms) {
+        for (const IDirectPostingStore::LookupResult &r : _terms) {
             _attr.create(r.posting_idx, iterators);
         }
-        return attribute::DocumentWeightOrFilterSearch::create(std::move(iterators));
+        return attribute::MultiTermOrFilterSearch::create(std::move(iterators));
     } else {
         return std::make_unique<queryeval::EmptySearch>();
     }
@@ -605,69 +574,6 @@ AttributeFieldBlueprint::getRange(vespalib::string &from, vespalib::string &to) 
     return false;
 }
 
-//-----------------------------------------------------------------------------
-
-class DirectAttributeBlueprint : public queryeval::SimpleLeafBlueprint
-{
-private:
-    const IAttributeVector                 &_iattr;
-    const IDocumentWeightAttribute         &_attr;
-    vespalib::datastore::EntryRef           _dictionary_snapshot;
-    IDocumentWeightAttribute::LookupResult  _dict_entry;
-
-public:
-    DirectAttributeBlueprint(const FieldSpec &field, const IAttributeVector &iattr,
-                             const IDocumentWeightAttribute &attr,
-                             const IDocumentWeightAttribute::LookupKey & key)
-        : SimpleLeafBlueprint(field),
-          _iattr(iattr),
-          _attr(attr),
-          _dictionary_snapshot(_attr.get_dictionary_snapshot()),
-          _dict_entry(_attr.lookup(key, _dictionary_snapshot))
-    {
-        setEstimate(HitEstimate(_dict_entry.posting_size, (_dict_entry.posting_size == 0)));
-    }
-
-    SearchIterator::UP createLeafSearch(const TermFieldMatchDataArray &tfmda, bool strict) const override {
-        assert(tfmda.size() == 1);
-        if (_dict_entry.posting_size == 0) {
-            return std::make_unique<queryeval::EmptySearch>();
-        }
-        if (tfmda[0]->isNotNeeded()) {
-            auto bitvector_iterator = _attr.make_bitvector_iterator(_dict_entry.posting_idx, get_docid_limit(), *tfmda[0], strict);
-            if (bitvector_iterator) {
-                return bitvector_iterator;
-            }
-        }
-        if (_attr.has_weight_iterator(_dict_entry.posting_idx)) {
-            return std::make_unique<queryeval::DocumentWeightSearchIterator>(*tfmda[0], _attr, _dict_entry);
-        } else {
-            return _attr.make_bitvector_iterator(_dict_entry.posting_idx, get_docid_limit(), *tfmda[0], strict);
-        }
-    }
-
-    SearchIteratorUP createFilterSearch(bool strict, FilterConstraint constraint) const override {
-        (void) constraint; // We provide an iterator with exact results, so no need to take constraint into consideration.
-        auto wrapper = std::make_unique<FilterWrapper>(getState().numFields());
-        wrapper->wrap(createLeafSearch(wrapper->tfmda(), strict));
-        return wrapper;
-    }
-
-    void visitMembers(vespalib::ObjectVisitor &visitor) const override {
-        LeafBlueprint::visitMembers(visitor);
-        visit_attribute(visitor, _iattr);
-    }
-    std::unique_ptr<queryeval::MatchingElementsSearch> create_matching_elements_search(const MatchingElementsFields &fields) const override {
-        if (fields.has_field(_iattr.getName())) {
-            return queryeval::MatchingElementsSearch::create(_iattr, _dictionary_snapshot, vespalib::ConstArrayRef<IDocumentWeightAttribute::LookupResult>(&_dict_entry, 1));
-        } else {
-            return {};
-        }
-    }
-};
-
-//-----------------------------------------------------------------------------
-
 bool check_valid_diversity_attr(const IAttributeVector *attr) {
     if ((attr == nullptr) || attr->hasMultiValue()) {
         return false;
@@ -686,8 +592,13 @@ class CreateBlueprintVisitor : public CreateBlueprintVisitorHelper
 private:
     const FieldSpec &_field;
     const IAttributeVector &_attr;
-    const IDocumentWeightAttribute *_dwa;
+    const IDocidPostingStore *_dps;
+    const IDocidWithWeightPostingStore *_dwwps;
     vespalib::string _scratchPad;
+
+    bool has_always_btree_iterators_with_docid_and_weight() const {
+        return (_dwwps != nullptr) && (_dwwps->has_always_btree_iterator());
+    }
 
 public:
     CreateBlueprintVisitor(Searchable &searchable, const IRequestContext &requestContext,
@@ -695,21 +606,13 @@ public:
         : CreateBlueprintVisitorHelper(searchable, field, requestContext),
           _field(field),
           _attr(attr),
-          _dwa(attr.asDocumentWeightAttribute()),
+          _dps(attr.as_docid_posting_store()),
+          _dwwps(attr.as_docid_with_weight_posting_store()),
           _scratchPad()
     {
     }
     ~CreateBlueprintVisitor() override;
 
-    template <class TermNode>
-    void visitSimpleTerm(TermNode &n) {
-        if ((_dwa != nullptr) && !_field.isFilter() && n.isRanked() && !Term::isPossibleRangeTerm(n.getTerm())) {
-            NodeAsKey key(n, _scratchPad);
-            setResult(std::make_unique<DirectAttributeBlueprint>(_field, _attr, *_dwa, key));
-        } else {
-            visitTerm(n);
-        }
-    }
     template <class TermNode>
     void visitTerm(TermNode &n) {
         SearchContextParams scParams = createContextParams(_field.isFilter());
@@ -732,7 +635,7 @@ public:
         }
     }
 
-    void visit(NumberTerm & n) override { visitSimpleTerm(n); }
+    void visit(NumberTerm & n) override { visitTerm(n); }
     void visit(LocationTerm &n) override { visitLocation(n); }
     void visit(PrefixTerm & n) override { visitTerm(n); }
 
@@ -756,7 +659,7 @@ public:
         }
     }
 
-    void visit(StringTerm & n) override { visitSimpleTerm(n); }
+    void visit(StringTerm & n) override { visitTerm(n); }
     void visit(SubstringTerm & n) override {
         query::SimpleRegExpTerm re(vespalib::RegexpUtil::make_from_substring(n.getTerm()),
                                    n.getView(), n.getId(), n.getWeight());
@@ -770,8 +673,8 @@ public:
     void visit(PredicateQuery &n) override { visitPredicate(n); }
     void visit(RegExpTerm & n) override { visitTerm(n); }
 
-    template <typename WS>
-    void createDirectWeightedSet(WS *bp, MultiTerm &n);
+    template <typename BlueprintType>
+    void createDirectMultiTerm(BlueprintType *bp, MultiTerm &n);
 
     template <typename WS>
     void createShallowWeightedSet(WS *bp, MultiTerm &n, const FieldSpec &fs, bool isInteger);
@@ -784,33 +687,44 @@ public:
         return std::make_unique<QueryTermUCS4>(term, QueryTermSimple::Type::WORD);
     }
 
-    void visit(query::WeightedSetTerm &n) override {
-        bool isSingleValue = !_attr.hasMultiValue();
-        bool isString = (_attr.isStringType() && _attr.hasEnum());
-        bool isInteger = _attr.isIntegerType();
-        if (isSingleValue && (isString || isInteger)) {
-            auto ws = std::make_unique<AttributeWeightedSetBlueprint>(_field, _attr);
-            SearchContextParams scParams = createContextParams();
-            for (size_t i = 0; i < n.getNumTerms(); ++i) {
-                auto term = n.getAsString(i);
-                ws->addToken(_attr.createSearchContext(extractTerm(term.first, isInteger), scParams), term.second.percent());
-            }
-            setResult(std::move(ws));
+    template <typename TermType, typename SearchType>
+    void visit_wset_or_in_term(TermType& n) {
+        if (_dps != nullptr) {
+            auto* bp = new attribute::DirectMultiTermBlueprint<IDocidPostingStore, SearchType>
+                    (_field, _attr, *_dps, n.getNumTerms());
+            createDirectMultiTerm(bp, n);
+        } else if (_dwwps != nullptr) {
+            auto* bp = new attribute::DirectMultiTermBlueprint<IDocidWithWeightPostingStore, SearchType>
+                    (_field, _attr, *_dwwps, n.getNumTerms());
+            createDirectMultiTerm(bp, n);
         } else {
-            if (_dwa != nullptr) {
-                auto *bp = new DirectWeightedSetBlueprint<queryeval::WeightedSetTermSearch>(_field, _attr, *_dwa, n.getNumTerms());
-                createDirectWeightedSet(bp, n);
+            bool isSingleValue = !_attr.hasMultiValue();
+            bool isString = (_attr.isStringType() && _attr.hasEnum());
+            bool isInteger = _attr.isIntegerType();
+            if (isSingleValue && (isString || isInteger)) {
+                auto ws = std::make_unique<AttributeWeightedSetBlueprint>(_field, _attr);
+                SearchContextParams scParams = createContextParams();
+                for (size_t i = 0; i < n.getNumTerms(); ++i) {
+                    auto term = n.getAsString(i);
+                    ws->addToken(_attr.createSearchContext(extractTerm(term.first, isInteger), scParams), term.second.percent());
+                }
+                setResult(std::move(ws));
             } else {
-                auto *bp = new WeightedSetTermBlueprint(_field);
+                auto* bp = new WeightedSetTermBlueprint(_field);
                 createShallowWeightedSet(bp, n, _field, _attr.isIntegerType());
             }
         }
     }
 
+    void visit(query::WeightedSetTerm &n) override {
+        visit_wset_or_in_term<query::WeightedSetTerm, queryeval::WeightedSetTermSearch>(n);
+    }
+
     void visit(query::DotProduct &n) override {
-        if (_dwa != nullptr) {
-            auto *bp = new DirectWeightedSetBlueprint<queryeval::DotProductSearch>(_field, _attr, *_dwa, n.getNumTerms());
-            createDirectWeightedSet(bp, n);
+        if (has_always_btree_iterators_with_docid_and_weight()) {
+            auto *bp = new attribute::DirectMultiTermBlueprint<IDocidWithWeightPostingStore, queryeval::DotProductSearch>
+                    (_field, _attr, *_dwwps, n.getNumTerms());
+            createDirectMultiTerm(bp, n);
         } else {
             auto *bp = new DotProductBlueprint(_field);
             createShallowWeightedSet(bp, n, _field, _attr.isIntegerType());
@@ -818,11 +732,11 @@ public:
     }
 
     void visit(query::WandTerm &n) override {
-        if (_dwa != nullptr) {
-            auto *bp = new DirectWandBlueprint(_field, *_dwa,
+        if (has_always_btree_iterators_with_docid_and_weight()) {
+            auto *bp = new DirectWandBlueprint(_field, *_dwwps,
                                                n.getTargetNumHits(), n.getScoreThreshold(), n.getThresholdBoostFactor(),
                                                n.getNumTerms());
-            createDirectWeightedSet(bp, n);
+            createDirectMultiTerm(bp, n);
         } else {
             auto *bp = new ParallelWeakAndBlueprint(_field,
                     n.getTargetNumHits(),
@@ -831,6 +745,11 @@ public:
             createShallowWeightedSet(bp, n, _field, _attr.isIntegerType());
         }
     }
+
+    void visit(query::InTerm &n) override {
+        visit_wset_or_in_term<query::InTerm, attribute::InTermSearch>(n);
+    }
+
     void fail_nearest_neighbor_term(query::NearestNeighborTerm&n, const vespalib::string& error_msg) {
         Issue::report("NearestNeighborTerm(%s, %s): %s. Returning empty blueprint",
                       _field.getName().c_str(), n.get_query_tensor_name().c_str(), error_msg.c_str());
@@ -863,9 +782,9 @@ public:
     void visit(query::FuzzyTerm &n) override { visitTerm(n); }
 };
 
-template <typename WS>
+template <typename BlueprintType>
 void
-CreateBlueprintVisitor::createDirectWeightedSet(WS *bp, MultiTerm &n) {
+CreateBlueprintVisitor::createDirectMultiTerm(BlueprintType *bp, MultiTerm &n) {
     Blueprint::UP result(bp);
     Blueprint::HitEstimate estimate;
     for (uint32_t i(0); i < n.getNumTerms(); i++) {

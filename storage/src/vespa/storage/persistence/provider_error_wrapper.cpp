@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include "provider_error_wrapper.h"
 #include <vespa/persistence/spi/docentry.h>
@@ -163,6 +163,14 @@ ProviderErrorWrapper::removeAsync(const spi::Bucket &bucket, std::vector<spi::Id
 {
     onComplete->addResultHandler(this);
     _impl.removeAsync(bucket, std::move(ids), std::move(onComplete));
+}
+
+void
+ProviderErrorWrapper::removeByGidAsync(const spi::Bucket &bucket, std::vector<spi::DocTypeGidAndTimestamp> ids,
+                                       std::unique_ptr<spi::OperationComplete> onComplete)
+{
+    onComplete->addResultHandler(this);
+    _impl.removeByGidAsync(bucket, std::move(ids), std::move(onComplete));
 }
 
 void

@@ -1,11 +1,10 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.docproc.jdisc.messagebus;
 
 import com.yahoo.component.provider.ComponentRegistry;
 import com.yahoo.concurrent.CopyOnWriteHashMap;
 import com.yahoo.container.core.document.ContainerDocumentConfig;
 import com.yahoo.docproc.AbstractConcreteDocumentFactory;
-import com.yahoo.docproc.impl.DocprocService;
 import com.yahoo.docproc.impl.HandledProcessingException;
 import com.yahoo.docproc.Processing;
 import com.yahoo.docproc.impl.TransientFailureException;
@@ -41,6 +40,7 @@ public class MbusRequestContext implements RequestContext, ResponseHandler {
 
     private final static Logger log = Logger.getLogger(MbusRequestContext.class.getName());
     private final static CopyOnWriteHashMap<String, URI> uriCache = new CopyOnWriteHashMap<>();
+
     private final AtomicBoolean deserialized = new AtomicBoolean(false);
     private final AtomicBoolean responded = new AtomicBoolean(false);
     private final ProcessingFactory processingFactory;
@@ -56,11 +56,10 @@ public class MbusRequestContext implements RequestContext, ResponseHandler {
     private final static String internalNoThrottledSourcePath = "/" + internalNoThrottledSource;
 
     public MbusRequestContext(MbusRequest request, ResponseHandler responseHandler,
-                              ComponentRegistry<DocprocService> docprocServiceComponentRegistry,
                               ComponentRegistry<AbstractConcreteDocumentFactory> docFactoryRegistry,
                               ContainerDocumentConfig containerDocConfig) {
         this.request = request;
-        this.requestMsg = (DocumentMessage)request.getMessage();
+        this.requestMsg = (DocumentMessage) request.getMessage();
         this.responseHandler = responseHandler;
         this.processingFactory = new ProcessingFactory(docFactoryRegistry,
                                                        containerDocConfig, getServiceName());
@@ -124,7 +123,7 @@ public class MbusRequestContext implements RequestContext, ResponseHandler {
         if (exception instanceof HandledProcessingException) {
             errorMsg.append(" Error message: ").append(exception.getMessage());
         } else if (exception != null) {
-            errorMsg.append(" Error message: ").append(exception.toString());
+            errorMsg.append(" Error message: ").append(exception);
         }
         errorMsg.append(" -- See Vespa log for details.");
         processingFailed(errorCode, errorMsg.toString());

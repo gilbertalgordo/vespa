@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #pragma once
 
@@ -88,18 +88,6 @@ BTreeIteratorBase<KeyT, DataT, AggrT, INTERNAL_SLOTS, LEAF_SLOTS, PATH_SIZE>::
 setupEnd()
 {
     _leaf.invalidate();
-}
-
-
-template <typename KeyT, typename DataT, typename AggrT,
-          uint32_t INTERNAL_SLOTS, uint32_t LEAF_SLOTS, uint32_t PATH_SIZE>
-void
-BTreeIteratorBase<KeyT, DataT, AggrT, INTERNAL_SLOTS, LEAF_SLOTS, PATH_SIZE>::
-setupEmpty()
-{
-    clearPath(0u);
-    _leaf.invalidate();
-    _leafRoot = nullptr;
 }
 
 
@@ -461,25 +449,6 @@ BTreeIteratorBase() noexcept
 
 template <typename KeyT, typename DataT, typename AggrT,
           uint32_t INTERNAL_SLOTS, uint32_t LEAF_SLOTS, uint32_t PATH_SIZE>
-BTreeIteratorBase<KeyT, DataT, AggrT, INTERNAL_SLOTS, LEAF_SLOTS, PATH_SIZE> &
-BTreeIteratorBase<KeyT, DataT, AggrT, INTERNAL_SLOTS, LEAF_SLOTS, PATH_SIZE>::
-operator--()
-{
-    if (_leaf.getNode() == nullptr) {
-        rbegin();
-        return *this;
-    }
-    if (_leaf.getIdx() > 0u) {
-        _leaf.decIdx();
-        return *this;
-    }
-    findPrevLeafNode();
-    return *this;
-}
-
-
-template <typename KeyT, typename DataT, typename AggrT,
-          uint32_t INTERNAL_SLOTS, uint32_t LEAF_SLOTS, uint32_t PATH_SIZE>
 size_t
 BTreeIteratorBase<KeyT, DataT, AggrT, INTERNAL_SLOTS, LEAF_SLOTS, PATH_SIZE>::
 size() const noexcept
@@ -544,6 +513,143 @@ identical(const BTreeIteratorBase &rhs) const
     return true;
 }
 
+
+template <typename KeyT, typename DataT, typename AggrT,
+          uint32_t INTERNAL_SLOTS, uint32_t LEAF_SLOTS, uint32_t PATH_SIZE>
+void
+BTreeIteratorBase<KeyT, DataT, AggrT, INTERNAL_SLOTS, LEAF_SLOTS, PATH_SIZE>::
+set_subtree_position(const InternalNodeType* node, uint32_t level, uint32_t idx, size_t position)
+{
+    /*
+     * Walk down subtree adjusting iterator for new partial position.
+     */
+    _path[level].setIdx(idx);
+    size_t remaining_steps = position;
+    while (level > 0) {
+        --level;
+        node = _allocator->mapInternalRef(node->getChild(idx));
+        assert(remaining_steps < node->validLeaves());
+        idx = 0;
+        while (idx < node->validSlots()) {
+            auto valid_leaves = _allocator->validLeaves(node->getChild(idx));
+            if (remaining_steps < valid_leaves) {
+                break;
+            }
+            remaining_steps -= valid_leaves;
+            ++idx;
+        }
+        assert(idx < node->validSlots());
+        _path[level].setNodeAndIdx(node, idx);
+    }
+    auto lnode = _allocator->mapLeafRef(node->getChild(idx));
+    assert(remaining_steps < lnode->validSlots());
+    _leaf.setNodeAndIdx(lnode, remaining_steps);
+}
+
+template <typename KeyT, typename DataT, typename AggrT,
+          uint32_t INTERNAL_SLOTS, uint32_t LEAF_SLOTS, uint32_t PATH_SIZE>
+void
+BTreeIteratorBase<KeyT, DataT, AggrT, INTERNAL_SLOTS, LEAF_SLOTS, PATH_SIZE>::
+step_forward(size_t steps)
+{
+    auto lnode = _leaf.getNode();
+    if (lnode == nullptr) {
+        return;
+    }
+    auto idx = _leaf.getIdx();
+    if (idx + steps < lnode->validSlots()) {
+        _leaf.setIdx(idx + steps);
+        return;
+    }
+    if (_pathSize == 0) {
+        _leaf.invalidate();
+        return;
+    }
+    size_t remaining_steps = steps - (lnode->validSlots() - idx);
+    uint32_t level = 0;
+    uint32_t levels = _pathSize;
+    const InternalNodeType* node;
+    /*
+     * Find intermediate node representing subtree containing old and new
+     * position.
+     */
+    for (;;) {
+        node = _path[level].getNode();
+        idx = _path[level].getIdx() + 1;
+        while (idx < node->validSlots()) {
+            auto valid_leaves = _allocator->validLeaves(node->getChild(idx));
+            if (remaining_steps < valid_leaves) {
+                break;
+            }
+            remaining_steps -= valid_leaves;
+            ++idx;
+        }
+        if (idx < node->validSlots()) {
+            break;
+        } else {
+            ++level;
+            if (level == levels) {
+                end();
+                return;
+            }
+        }
+    }
+    set_subtree_position(node, level, idx, remaining_steps);
+}
+
+template <typename KeyT, typename DataT, typename AggrT,
+          uint32_t INTERNAL_SLOTS, uint32_t LEAF_SLOTS, uint32_t PATH_SIZE>
+void
+BTreeIteratorBase<KeyT, DataT, AggrT, INTERNAL_SLOTS, LEAF_SLOTS, PATH_SIZE>::
+step_backward(size_t steps)
+{
+    int64_t remaining_steps = steps;
+    if (remaining_steps == 0) {
+        return;
+    }
+    if (_leaf.getNode() == nullptr) {
+        rbegin();
+        if (_leaf.getNode() == nullptr) {
+            return;
+        }
+        --remaining_steps;
+    }
+    auto idx = _leaf.getIdx();
+    if (idx >= remaining_steps) {
+        _leaf.setIdx(idx - remaining_steps);
+        return;
+    }
+    if (_pathSize == 0) {
+        _leaf.setIdx(0);
+        return;
+    }
+    remaining_steps -= idx;
+    uint32_t level = 0;
+    uint32_t levels = _pathSize;
+    const InternalNodeType* node;
+    /*
+     * Find intermediate node representing subtree containing old and new
+     * position.
+     */
+    for (;;) {
+        node = _path[level].getNode();
+        idx = _path[level].getIdx();
+        while (idx > 0 && remaining_steps > 0) {
+            --idx;
+            remaining_steps -= _allocator->validLeaves(node->getChild(idx));
+        }
+        if (remaining_steps <= 0) {
+            break;
+        } else {
+            ++level;
+            if (level == levels) {
+                begin();
+                return;
+            }
+        }
+    }
+    set_subtree_position(node, level, idx, -remaining_steps);
+}
 
 template <typename KeyT, typename DataT, typename AggrT, typename CompareT,
           typename TraitsT>

@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #pragma once
 
@@ -115,7 +115,7 @@ namespace {
 template <typename> struct is_tree_iterator;
 
 template <typename P>
-struct is_tree_iterator<DocIdIterator<P>> {
+struct is_tree_iterator<ArrayIterator<P>> {
     static constexpr bool value = false;
 };
 

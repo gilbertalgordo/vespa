@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.search.grouping;
 
 import com.yahoo.component.annotation.Inject;
@@ -8,7 +8,6 @@ import com.yahoo.component.chain.dependencies.Provides;
 import com.yahoo.processing.IllegalInputException;
 import com.yahoo.search.grouping.request.AttributeMapLookupValue;
 import com.yahoo.vespa.config.search.AttributesConfig;
-import com.yahoo.container.QrSearchersConfig;
 import com.yahoo.processing.request.CompoundName;
 import com.yahoo.search.Query;
 import com.yahoo.search.Result;
@@ -45,16 +44,12 @@ public class GroupingValidator extends Searcher {
     /**
      * Constructs a new instance of this searcher with the given component id and config.
      *
-     * @param qrsConfig     The shared config for all searchers.
      * @param clusterConfig The config for the cluster that this searcher is deployed for.
      */
     @Inject
-    public GroupingValidator(QrSearchersConfig qrsConfig, ClusterConfig clusterConfig,
-                             AttributesConfig attributesConfig) {
-        int clusterId = clusterConfig.clusterId();
-        QrSearchersConfig.Searchcluster.Indexingmode.Enum indexingMode = qrsConfig.searchcluster(clusterId).indexingmode();
-        enabled = (indexingMode != QrSearchersConfig.Searchcluster.Indexingmode.STREAMING);
-        clusterName = enabled ? qrsConfig.searchcluster(clusterId).name() : null;
+    public GroupingValidator(ClusterConfig clusterConfig, AttributesConfig attributesConfig) {
+        enabled = (clusterConfig.indexMode() != ClusterConfig.IndexMode.Enum.STREAMING);
+        clusterName = clusterConfig.clusterName();
         for (AttributesConfig.Attribute attr : attributesConfig.attribute()) {
             attributes.put(attr.name(), attr);
         }
@@ -96,8 +91,7 @@ public class GroupingValidator extends Searcher {
 
         @Override
         public void visitExpression(GroupingExpression exp) {
-            if (exp instanceof AttributeMapLookupValue) {
-                AttributeMapLookupValue mapLookup = (AttributeMapLookupValue) exp;
+            if (exp instanceof AttributeMapLookupValue mapLookup) {
                 verifyHasAttribute(mapLookup.getKeyAttribute());
                 verifyHasAttribute(mapLookup.getValueAttribute());
                 if (mapLookup.hasKeySourceAttribute()) {

@@ -1,9 +1,10 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include "enum_store_loaders.h"
 #include "i_enum_store.h"
 #include "i_enum_store_dictionary.h"
 #include <vespa/vespalib/util/array.hpp>
+#include <algorithm>
 
 namespace search::enumstore {
 

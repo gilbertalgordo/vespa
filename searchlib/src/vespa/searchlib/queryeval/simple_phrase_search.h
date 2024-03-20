@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #pragma once
 
@@ -27,7 +27,9 @@ class SimplePhraseSearch : public AndSearch
     // Reuse this vector instead of allocating a new one when needed.
     std::vector<It> _iterators;
 
-    void phraseSeek(uint32_t doc_id);
+    VESPA_DLL_LOCAL void phraseSeek(uint32_t doc_id);
+    VESPA_DLL_LOCAL void matchPhrase(uint32_t doc_id) __attribute__((noinline));
+    VESPA_DLL_LOCAL void doStrictSeek(uint32_t doc_id) __attribute__((noinline));
 public:
     /**
      * Takes ownership of the contents of children.

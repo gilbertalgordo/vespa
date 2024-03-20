@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.documentapi.messagebus.protocol;
 
 import com.yahoo.document.Document;
@@ -11,9 +11,10 @@ import java.nio.ByteBuffer;
  */
 public class GetDocumentReply extends DocumentAcceptedReply {
 
-    private DocumentDeserializer buffer = null;
     private Document document = null;
     private long lastModified = 0;
+    // TODO Vespa 9: remove. Inherently tied to legacy protocol version.
+    private DocumentDeserializer buffer = null;
     private LazyDecoder decoder = null;
 
     /**

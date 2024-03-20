@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.searchlib.rankingexpression.evaluation;
 
 import com.yahoo.javacc.UnicodeUtilities;
@@ -177,8 +177,50 @@ public class EvaluationTestCase {
     }
 
     @Test
+    public void testUnpack() {
+        EvaluationTester tester = new EvaluationTester();
+        tester.assertEvaluates("tensor<float>(a{},x[16]):{foo:[" +
+                               "0,0,0,0, 0,0,0,0," +
+                               "1,1,1,1, 1,1,1,1" +
+                               "],bar:[" +
+                               "0,0,0,0, 0,0,0,1," +
+                               "1,1,1,1, 1,0,0,0]}",
+                               "unpack_bits(tensor0, float, big)",
+                               "tensor<int8>(a{},x[2]):{foo:[0,-1],bar:[1,-8]}");
+
+        tester.assertEvaluates("tensor<int8>(a{},x[16]):{foo:[" +
+                               "0,0,0,0, 0,0,0,0," +
+                               "1,1,1,1, 1,1,1,1" +
+                               "],bar:[" +
+                               "1,0,0,0, 0,0,0,0," +
+                               "0,0,0,1, 1,1,1,1]}",
+                               "unpack_bits(tensor0, int8, little)",
+                               "tensor<int8>(a{},x[2]):{foo:[0,-1],bar:[1,-8]}");
+    }
+
+    @Test
+    public void testMapSubspaces() {
+        EvaluationTester tester = new EvaluationTester();
+        tester.assertEvaluates("tensor<float>(a{},x[2]):{foo:[2,3],bar:[7,10]}",
+                               "map_subspaces(tensor0, f(t)(t))",
+                               "tensor<float>(a{},x[2]):{foo:[2,3],bar:[7,10]}");
+        tester.assertEvaluates("tensor<float>(a{},x[2]):{foo:[2,3],bar:[7,10]}",
+                               "map_subspaces(tensor0, f(t)(t+2))",
+                               "tensor<float>(a{},x[2]):{foo:[0,1],bar:[5,8]}");
+
+        tester.assertEvaluates("tensor<float>(a{},y[2]):{foo:[3,5],bar:[9,11]}",
+                               "map_subspaces(tensor0, f(t)(tensor<float>(y[2])(t{x:(y)}+t{x:(y+1)})))",
+                               "tensor(a{},x[3]):{foo:[1,2,3],bar:[4,5,6]}");
+
+        tester.assertEvaluates("tensor<double>(a{},x[2]):{foo:[3,5],bar:[9,11]}",
+                               "map_subspaces(tensor0, f(t)(tensor(x[2])(t{x:(x)}+t{x:(x+1)})))",
+                               "tensor<float>(a{},x[3]):{foo:[1,2,3],bar:[4,5,6]}");
+    }
+
+    @Test
     public void testTensorEvaluation() {
         EvaluationTester tester = new EvaluationTester();
+
         tester.assertEvaluates("{}", "tensor0", "{}");
 
         // tensor map
@@ -186,6 +228,9 @@ public class EvaluationTestCase {
                               "map(tensor0, f(x) (log10(x)))", "{ {d1:0}:10, {d1:1}:100, {d1:2}:1000 }");
         tester.assertEvaluates("{ {d1:0}:4, {d1:1}:9, {d1:2 }:16 }",
                               "map(tensor0, f(x) (x * x))", "{ {d1:0}:2, {d1:1}:3, {d1:2}:4 }");
+        // Unicode key
+        tester.assertEvaluates("tensor<int8>(drink{}):{Martini\uD83C\uDF78:30.0}",
+                               "tensor<int8>(drink{}): {\"Martini\uD83C\uDF78\": 30 }");
         // -- tensor map shorthands
         tester.assertEvaluates("{ {d1:0}:0, {d1:1}:1, {d1:2 }:0 }",
                                "tensor0 == 3", "{ {d1:0}:2, {d1:1}:3, {d1:2}:4 }");
@@ -296,7 +341,7 @@ public class EvaluationTestCase {
                                "{{x:0}:1}", "{}", "{{y:0,z:0}:1}");
         tester.assertEvaluates("tensor(x{}):{}",
                                "tensor0 * tensor1", "{ {x:0}:3 }", "tensor(x{}):{ {x:1}:5 }");
-        tester.assertEvaluates("tensor<float>(x{}):{}",
+        tester.assertEvaluates("tensor<double>(x{}):{}",
                                "tensor0 * tensor1", "{ {x:0}:3 }", "tensor<float>(x{}):{ {x:1}:5 }");
         tester.assertEvaluates("{ {x:0}:15 }",
                                "tensor0 * tensor1", "{ {x:0}:3 }", "{ {x:0}:5 }");
@@ -750,6 +795,10 @@ public class EvaluationTestCase {
     @Test
     public void testLambdaValidation() {
         EvaluationTester tester = new EvaluationTester();
+        // check that we are allowed to access dimension name "y" inside Generate
+        tester.assertEvaluates("{ {d1:0}:15, {d1:1}:150, {d1:2 }:1500 }",
+                               "map(tensor0, f(x) (sum(tensor(y[6])(x*y))))",
+                               "{ {d1:0}:1, {d1:1}:10, {d1:2}:100 }");
         try {
             tester.assertEvaluates("{ {d1:0}:1, {d1:1}:2, {d1:2 }:3 }",
                                    "map(tensor0, f(x) (log10(x+sum(tensor0)))", "{ {d1:0}:10, {d1:1}:100, {d1:2}:1000 }");
@@ -760,7 +809,6 @@ public class EvaluationTestCase {
             assertEquals("Lambda log10(x + reduce(tensor0, sum)) accesses features outside its scope: tensor0",
                          e.getMessage());
         }
-
     }
 
     @Test

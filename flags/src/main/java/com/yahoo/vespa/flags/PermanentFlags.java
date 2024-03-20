@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.flags;
 
 import com.yahoo.vespa.flags.custom.ClusterCapacity;
@@ -13,15 +13,18 @@ import java.util.Set;
 import java.util.function.Predicate;
 import java.util.regex.Pattern;
 
-import static com.yahoo.vespa.flags.FetchVector.Dimension.INSTANCE_ID;
-import static com.yahoo.vespa.flags.FetchVector.Dimension.CLUSTER_ID;
-import static com.yahoo.vespa.flags.FetchVector.Dimension.CLUSTER_TYPE;
-import static com.yahoo.vespa.flags.FetchVector.Dimension.CONSOLE_USER_EMAIL;
-import static com.yahoo.vespa.flags.FetchVector.Dimension.HOSTNAME;
-import static com.yahoo.vespa.flags.FetchVector.Dimension.NODE_TYPE;
-import static com.yahoo.vespa.flags.FetchVector.Dimension.TENANT_ID;
-import static com.yahoo.vespa.flags.FetchVector.Dimension.VESPA_VERSION;
-import static com.yahoo.vespa.flags.FetchVector.Dimension.ZONE_ID;
+import static com.yahoo.vespa.flags.Dimension.APPLICATION;
+import static com.yahoo.vespa.flags.Dimension.CERTIFICATE_PROVIDER;
+import static com.yahoo.vespa.flags.Dimension.CLOUD_ACCOUNT;
+import static com.yahoo.vespa.flags.Dimension.INSTANCE_ID;
+import static com.yahoo.vespa.flags.Dimension.CLUSTER_ID;
+import static com.yahoo.vespa.flags.Dimension.CLUSTER_TYPE;
+import static com.yahoo.vespa.flags.Dimension.CONSOLE_USER_EMAIL;
+import static com.yahoo.vespa.flags.Dimension.HOSTNAME;
+import static com.yahoo.vespa.flags.Dimension.NODE_TYPE;
+import static com.yahoo.vespa.flags.Dimension.TENANT_ID;
+import static com.yahoo.vespa.flags.Dimension.VESPA_VERSION;
+import static com.yahoo.vespa.flags.Dimension.ZONE_ID;
 
 /**
  * Definition for permanent feature flags
@@ -34,10 +37,15 @@ public class PermanentFlags {
     static final Instant CREATED_AT = Instant.EPOCH;
     static final Instant EXPIRES_AT = ZonedDateTime.of(2100, 1, 1, 0, 0, 0, 0, ZoneOffset.UTC).toInstant();
 
+    // TODO(mpolden): Remove this flag
     public static final UnboundBooleanFlag USE_ALTERNATIVE_ENDPOINT_CERTIFICATE_PROVIDER = defineFeatureFlag(
             "use-alternative-endpoint-certificate-provider", false,
             "Whether to use an alternative CA when provisioning new certificates",
             "Takes effect only on initial application deployment - not on later certificate refreshes!");
+
+    public static final UnboundStringFlag ENDPOINT_CERTIFICATE_PROVIDER = defineStringFlag(
+            "endpoint-certificate-provider", "digicert", "The CA to use for endpoint certificates. Must be 'digicert', 'globalsign' or 'zerossl'",
+            "Takes effect on initial deployment", TENANT_ID, APPLICATION, INSTANCE_ID);
 
     public static final UnboundStringFlag JVM_GC_OPTIONS = defineStringFlag(
             "jvm-gc-options", "",
@@ -167,7 +175,7 @@ public class PermanentFlags {
             HOSTNAME, NODE_TYPE, TENANT_ID, INSTANCE_ID, CLUSTER_TYPE, CLUSTER_ID, VESPA_VERSION);
 
     public static final UnboundStringFlag ZOOKEEPER_SERVER_VERSION = defineStringFlag(
-            "zookeeper-server-version", "3.8.0",
+            "zookeeper-server-version", "3.9.1",
             "ZooKeeper server version, a jar file zookeeper-server-<ZOOKEEPER_SERVER_VERSION>-jar-with-dependencies.jar must exist",
             "Takes effect on restart of Docker container",
             NODE_TYPE, INSTANCE_ID, HOSTNAME);
@@ -247,7 +255,7 @@ public class PermanentFlags {
             "logctl-override", List.of(), String.class,
             "A list of vespa-logctl statements that are run on container startup. " +
                     "Each item should be on the form <service>:<component> <level>=on",
-            "Takes effect on container restart",
+            "Takes effect on Podman container (re)start",
             INSTANCE_ID, HOSTNAME
     );
 
@@ -340,6 +348,11 @@ public class PermanentFlags {
             "Takes effect on next redeployment",
             INSTANCE_ID);
 
+    public static final UnboundIntFlag PRE_PROVISIONED_LB_COUNT = defineIntFlag(
+            "pre-provisioned-lb-count", 0,
+            "Number of application load balancers to have pre-provisioned at any time",
+            "Takes immediate effect");
+
     public static final UnboundLongFlag CONFIG_SERVER_SESSION_EXPIRY_TIME = defineLongFlag(
             "config-server-session-expiry-time", 3600,
             "Expiry time in seconds for remote sessions (session in ZooKeeper). Default should be equal to session lifetime, " +
@@ -406,48 +419,57 @@ public class PermanentFlags {
     public static final UnboundIntFlag CERT_POOL_SIZE = defineIntFlag(
             "cert-pool-size", 0,
             "Target number of preprovisioned endpoints certificates to maintain",
-            "Takes effect on next run of CertPoolMaintainer"
+            "Takes effect on next run of CertificatePoolMaintainer",
+            CERTIFICATE_PROVIDER
+    );
+
+    public static final UnboundBooleanFlag ENCLAVE_WITHOUT_WIREGUARD = defineFeatureFlag(
+            "enclave-without-wireguard", false,
+            "Do not use wireguard for inclave. This should only be set for a single legacy account, " +
+            "and removed once that account is no longer in use with us",
+            "Affects generated terraform code, and ip allocation on host provisioning",
+            CLOUD_ACCOUNT
     );
 
     private PermanentFlags() {}
 
     private static UnboundBooleanFlag defineFeatureFlag(
-            String flagId, boolean defaultValue, String description, String modificationEffect, FetchVector.Dimension... dimensions) {
+            String flagId, boolean defaultValue, String description, String modificationEffect, Dimension... dimensions) {
         return Flags.defineFeatureFlag(flagId, defaultValue, OWNERS, toString(CREATED_AT), toString(EXPIRES_AT), description, modificationEffect, dimensions);
     }
 
     private static UnboundStringFlag defineStringFlag(
-            String flagId, String defaultValue, String description, String modificationEffect, FetchVector.Dimension... dimensions) {
+            String flagId, String defaultValue, String description, String modificationEffect, Dimension... dimensions) {
         return Flags.defineStringFlag(flagId, defaultValue, OWNERS, toString(CREATED_AT), toString(EXPIRES_AT), description, modificationEffect, dimensions);
     }
 
     private static UnboundStringFlag defineStringFlag(
-            String flagId, String defaultValue, String description, String modificationEffect, Predicate<String> validator, FetchVector.Dimension... dimensions) {
+            String flagId, String defaultValue, String description, String modificationEffect, Predicate<String> validator, Dimension... dimensions) {
         return Flags.defineStringFlag(flagId, defaultValue, OWNERS, toString(CREATED_AT), toString(EXPIRES_AT), description, modificationEffect, validator, dimensions);
     }
 
     private static UnboundIntFlag defineIntFlag(
-            String flagId, int defaultValue, String description, String modificationEffect, FetchVector.Dimension... dimensions) {
+            String flagId, int defaultValue, String description, String modificationEffect, Dimension... dimensions) {
         return Flags.defineIntFlag(flagId, defaultValue, OWNERS, toString(CREATED_AT), toString(EXPIRES_AT), description, modificationEffect, dimensions);
     }
 
     private static UnboundLongFlag defineLongFlag(
-            String flagId, long defaultValue, String description, String modificationEffect, FetchVector.Dimension... dimensions) {
+            String flagId, long defaultValue, String description, String modificationEffect, Dimension... dimensions) {
         return Flags.defineLongFlag(flagId, defaultValue, OWNERS, toString(CREATED_AT), toString(EXPIRES_AT), description, modificationEffect, dimensions);
     }
 
     private static UnboundDoubleFlag defineDoubleFlag(
-            String flagId, double defaultValue, String description, String modificationEffect, FetchVector.Dimension... dimensions) {
+            String flagId, double defaultValue, String description, String modificationEffect, Dimension... dimensions) {
         return Flags.defineDoubleFlag(flagId, defaultValue, OWNERS, toString(CREATED_AT), toString(EXPIRES_AT), description, modificationEffect, dimensions);
     }
 
     private static <T> UnboundJacksonFlag<T> defineJacksonFlag(
-            String flagId, T defaultValue, Class<T> jacksonClass,  String description, String modificationEffect, FetchVector.Dimension... dimensions) {
+            String flagId, T defaultValue, Class<T> jacksonClass,  String description, String modificationEffect, Dimension... dimensions) {
         return Flags.defineJacksonFlag(flagId, defaultValue, jacksonClass, OWNERS, toString(CREATED_AT), toString(EXPIRES_AT), description, modificationEffect, dimensions);
     }
 
     private static <T> UnboundListFlag<T> defineListFlag(
-            String flagId, List<T> defaultValue, Class<T> elementClass, String description, String modificationEffect, FetchVector.Dimension... dimensions) {
+            String flagId, List<T> defaultValue, Class<T> elementClass, String description, String modificationEffect, Dimension... dimensions) {
         return Flags.defineListFlag(flagId, defaultValue, elementClass, OWNERS, toString(CREATED_AT), toString(EXPIRES_AT), description, modificationEffect, dimensions);
     }
 

@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.zookeeper;
 
 import com.yahoo.cloud.config.ZookeeperServerConfig;
@@ -24,7 +24,6 @@ import java.math.BigInteger;
 import java.nio.file.Files;
 import java.security.KeyPair;
 import java.security.cert.X509Certificate;
-import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -225,17 +224,21 @@ public class ConfiguratorTest {
     }
 
     private String tlsQuorumConfig() {
-        return "ssl.quorum.context.supplier.class=com.yahoo.vespa.zookeeper.VespaSslContextProvider\n" +
-                "ssl.quorum.ciphersuites=TLS_AES_128_GCM_SHA256,TLS_AES_256_GCM_SHA384,TLS_CHACHA20_POLY1305_SHA256,TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256\n" +
-                "ssl.quorum.enabledProtocols=TLSv1.2,TLSv1.3\n" +
-                "ssl.quorum.clientAuth=NEED\n";
+        return """
+               ssl.quorum.context.supplier.class=com.yahoo.vespa.zookeeper.VespaSslContextProvider
+               ssl.quorum.ciphersuites=TLS_AES_128_GCM_SHA256,TLS_AES_256_GCM_SHA384,TLS_CHACHA20_POLY1305_SHA256,TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
+               ssl.quorum.enabledProtocols=TLSv1.2,TLSv1.3
+               ssl.quorum.clientAuth=NEED
+               """;
     }
 
     private String tlsClientServerConfig() {
-        return "ssl.context.supplier.class=com.yahoo.vespa.zookeeper.VespaSslContextProvider\n" +
-                "ssl.ciphersuites=TLS_AES_128_GCM_SHA256,TLS_AES_256_GCM_SHA384,TLS_CHACHA20_POLY1305_SHA256,TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256\n" +
-                "ssl.enabledProtocols=TLSv1.2,TLSv1.3\n" +
-                "ssl.clientAuth=NEED\n";
+        return """
+               ssl.context.supplier.class=com.yahoo.vespa.zookeeper.VespaSslContextProvider
+               ssl.ciphersuites=TLS_AES_128_GCM_SHA256,TLS_AES_256_GCM_SHA384,TLS_CHACHA20_POLY1305_SHA256,TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
+               ssl.enabledProtocols=TLSv1.2,TLSv1.3
+               ssl.clientAuth=NEED
+               """;
     }
 
     private void validateConfigFileMultipleHosts(File cfgFile, boolean hosted) {
@@ -285,7 +288,7 @@ public class ConfiguratorTest {
         X509Certificate certificate = X509CertificateBuilder
                 .fromKeypair(keyPair, new X500Principal("CN=dummy"), EPOCH, EPOCH.plus(1, DAYS), SHA256_WITH_ECDSA, BigInteger.ONE)
                 .build();
-        return new DefaultTlsContext(
+        return DefaultTlsContext.of(
                 List.of(certificate), keyPair.getPrivate(), List.of(certificate), new AuthorizedPeers(Set.of()),
                 AuthorizationMode.ENFORCE, PeerAuthentication.NEED, HostnameVerification.DISABLED);
     }

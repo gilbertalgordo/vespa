@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.config.server.session;
 
 import com.google.common.collect.HashMultiset;
@@ -9,6 +9,7 @@ import com.yahoo.concurrent.StripedExecutor;
 import com.yahoo.config.application.api.ApplicationPackage;
 import com.yahoo.config.application.api.DeployLogger;
 import com.yahoo.config.model.api.ConfigDefinitionRepo;
+import com.yahoo.config.model.api.EndpointCertificateSecretStore;
 import com.yahoo.config.model.api.OnnxModelCost;
 import com.yahoo.config.model.application.provider.DeployData;
 import com.yahoo.config.model.application.provider.FilesApplicationPackage;
@@ -79,11 +80,12 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Predicate;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
 import static com.yahoo.vespa.curator.Curator.CompletionWaiter;
-import static com.yahoo.vespa.flags.FetchVector.Dimension.INSTANCE_ID;
+import static com.yahoo.vespa.flags.Dimension.INSTANCE_ID;
 import static java.nio.file.Files.readAttributes;
 
 /**
@@ -120,6 +122,7 @@ public class SessionRepository {
     private final Path sessionsPath;
     private final TenantName tenantName;
     private final OnnxModelCost onnxModelCost;
+    private final List<EndpointCertificateSecretStore> endpointCertificateSecretStores;
     private final SessionCounter sessionCounter;
     private final SecretStore secretStore;
     private final HostProvisionerProvider hostProvisionerProvider;
@@ -151,9 +154,11 @@ public class SessionRepository {
                              ModelFactoryRegistry modelFactoryRegistry,
                              ConfigDefinitionRepo configDefinitionRepo,
                              int maxNodeSize,
-                             OnnxModelCost onnxModelCost) {
+                             OnnxModelCost onnxModelCost,
+                             List<EndpointCertificateSecretStore> endpointCertificateSecretStores) {
         this.tenantName = tenantName;
         this.onnxModelCost = onnxModelCost;
+        this.endpointCertificateSecretStores = endpointCertificateSecretStores;
         sessionCounter = new SessionCounter(curator, tenantName);
         this.sessionsPath = TenantRepository.getSessionsPath(tenantName);
         this.clock = clock;
@@ -369,7 +374,7 @@ public class SessionRepository {
         return session;
     }
 
-    public int deleteExpiredRemoteSessions(Clock clock) {
+    public int deleteExpiredRemoteSessions(Clock clock, Predicate<Session> sessionIsActiveForApplication) {
         Duration expiryTime = Duration.ofSeconds(expiryTimeFlag.value());
         List<Long> remoteSessionsFromZooKeeper = getRemoteSessionsFromZooKeeper();
         log.log(Level.FINE, () -> "Remote sessions for tenant " + tenantName + ": " + remoteSessionsFromZooKeeper);
@@ -377,11 +382,11 @@ public class SessionRepository {
         int deleted = 0;
         // Avoid deleting too many in one run
         int deleteMax = (int) Math.min(1000, Math.max(50, remoteSessionsFromZooKeeper.size() * 0.05));
-        for (long sessionId : remoteSessionsFromZooKeeper) {
+        for (Long sessionId : remoteSessionsFromZooKeeper) {
             Session session = remoteSessionCache.get(sessionId);
             if (session == null)
                 session = new RemoteSession(tenantName, sessionId, createSessionZooKeeperClient(sessionId));
-            if (session.getStatus() == Session.Status.ACTIVATE) continue;
+            if (session.getStatus() == Session.Status.ACTIVATE && sessionIsActiveForApplication.test(session)) continue;
             if (sessionHasExpired(session.getCreateTime(), expiryTime, clock)) {
                 log.log(Level.FINE, () -> "Remote session " + sessionId + " for " + tenantName + " has expired, deleting it");
                 deleteRemoteSessionFromZooKeeper(session);
@@ -560,7 +565,8 @@ public class SessionRepository {
                                                                     zone,
                                                                     modelFactoryRegistry,
                                                                     configDefinitionRepo,
-                                                                    onnxModelCost);
+                                                                    onnxModelCost,
+                                                                    endpointCertificateSecretStores);
         return ApplicationVersions.fromList(builder.buildModels(session.getApplicationId(),
                                                                 session.getDockerImageRepository(),
                                                                 session.getVespaVersion(),
@@ -606,6 +612,7 @@ public class SessionRepository {
                                 existingSession.getOperatorCertificates(),
                                 existingSession.getCloudAccount(),
                                 existingSession.getDataplaneTokens(),
+                                ActivationTriggers.empty(),
                                 writeSessionData);
     }
 
@@ -615,7 +622,7 @@ public class SessionRepository {
 
     // ---------------- Common stuff ----------------------------------------------------------------
 
-    public void deleteExpiredSessions(Map<ApplicationId, Long> activeSessions) {
+    public void deleteExpiredSessions(Predicate<Session> sessionIsActiveForApplication) {
         log.log(Level.FINE, () -> "Deleting expired local sessions for tenant '" + tenantName + "'");
         Set<Long> sessionIdsToDelete = new HashSet<>();
         Set<Long> newSessions = findNewSessionsInFileSystem();
@@ -649,8 +656,7 @@ public class SessionRepository {
                     Optional<ApplicationId> applicationId = session.getOptionalApplicationId();
                     if (applicationId.isEmpty()) continue;
 
-                    Long activeSession = activeSessions.get(applicationId.get());
-                    if (activeSession == null || activeSession != sessionId) {
+                    if ( ! sessionIsActiveForApplication.test(session)) {
                         sessionIdsToDelete.add(sessionId);
                         log.log(Level.FINE, () -> "Will delete inactive session " + sessionId + " created " +
                                 createTime + " for '" + applicationId + "'");

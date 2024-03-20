@@ -1,9 +1,8 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.prelude.searcher;
 
 import com.yahoo.component.chain.dependencies.After;
 import com.yahoo.component.chain.dependencies.Before;
-import com.yahoo.container.QrSearchersConfig;
 import com.yahoo.search.Query;
 import com.yahoo.search.Result;
 import com.yahoo.search.Searcher;
@@ -32,13 +31,12 @@ public class ValidateSortingSearcher extends Searcher {
 
     private Map<String, AttributesConfig.Attribute> attributeNames = null;
     private String clusterName = "";
-    private final QrSearchersConfig.Searchcluster.Indexingmode.Enum indexingMode;
+    private final boolean enabled;
 
-    public ValidateSortingSearcher(QrSearchersConfig qrsConfig, ClusterConfig clusterConfig,
-                                   AttributesConfig attributesConfig) {
+    public ValidateSortingSearcher(ClusterConfig clusterConfig, AttributesConfig attributesConfig) {
         initAttributeNames(attributesConfig);
-        setClusterName(qrsConfig.searchcluster(clusterConfig.clusterId()).name());
-        indexingMode = qrsConfig.searchcluster(clusterConfig.clusterId()).indexingmode();
+        setClusterName(clusterConfig.clusterName());
+        enabled = clusterConfig.indexMode() != ClusterConfig.IndexMode.Enum.STREAMING;
     }
 
     public String getClusterName() {
@@ -68,13 +66,11 @@ public class ValidateSortingSearcher extends Searcher {
 
     @Override
     public Result search(Query query, Execution execution) {
-        if (indexingMode != QrSearchersConfig.Searchcluster.Indexingmode.STREAMING) {
-            ErrorMessage e = validate(query);
-            if (e != null) {
-                Result r = new Result(query);
-                r.hits().addError(e);
-                return r;
-            }
+        ErrorMessage e = validate(query);
+        if (enabled && e != null) {
+            Result r = new Result(query);
+            r.hits().addError(e);
+            return r;
         }
         return execution.search(query);
     }

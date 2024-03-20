@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 // --------------------------------------------------------------------------------
 //
 // JavaCC options.
@@ -37,7 +37,6 @@ import com.yahoo.language.Linguistics;
 
 /**
  * @author Simon Thoresen Hult
- * @version $Id$
  */
 public class IndexingParser {
 
@@ -173,6 +172,7 @@ TOKEN :
     <JOIN: "join"> |
     <LOWER_CASE: "lowercase"> |
     <MAX_LENGTH: "max-length"> |
+    <MAX_OCCURRENCES: "max-occurrences"> |
     <NGRAM: "ngram"> |
     <NORMALIZE: "normalize"> |
     <NOW: "now"> |
@@ -385,11 +385,16 @@ Expression echoExp() : { }
 
 Expression embedExp() :
 {
-    String val = "";
+    String embedderId = "";
+    String embedderArgument;
+    List<String> embedderArguments = new ArrayList<String>();
 }
 {
-    ( <EMBED> [ LOOKAHEAD(2) val = identifier() ] )
-    { return new EmbedExpression(embedders, val); }
+    (
+      <EMBED> [ LOOKAHEAD(2) embedderId = identifier() ]
+      ( LOOKAHEAD(2) embedderArgument = identifier() { embedderArguments.add(embedderArgument); } )*
+    )
+    { return new EmbedExpression(embedders, embedderId, embedderArguments); }
 }
 
 Expression exactExp() : { }
@@ -664,10 +669,12 @@ AnnotatorConfig tokenizeCfg() :
     AnnotatorConfig val = new AnnotatorConfig(annotatorCfg);
     String str = "SHORTEST";
     Integer maxLength;
+    Integer maxTermOccurrences;
 }
 {
     ( <STEM> ( <COLON> str = string() ) ? { val.setStemMode(str); } |
       <MAX_LENGTH> <COLON>  maxLength = integer() { val.setMaxTokenLength(maxLength); } |
+      <MAX_OCCURRENCES> <COLON>  maxTermOccurrences = integer() { val.setMaxTermOccurrences(maxTermOccurrences); } |
       <NORMALIZE> { val.setRemoveAccents(true); } )+
     { return val; }
 }

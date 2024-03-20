@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.model.container;
 
 import ai.vespa.metricsproxy.http.application.ApplicationMetricsHandler;
@@ -16,7 +16,9 @@ import com.yahoo.config.model.api.OnnxModelCost;
 import com.yahoo.config.model.deploy.DeployState;
 import com.yahoo.config.model.producer.TreeConfigProducer;
 import com.yahoo.config.provision.AllocatedHosts;
+import com.yahoo.config.provision.ClusterSpec;
 import com.yahoo.config.provision.HostSpec;
+import com.yahoo.config.provision.TenantName;
 import com.yahoo.container.bundle.BundleInstantiationSpecification;
 import com.yahoo.container.di.config.ApplicationBundlesConfig;
 import com.yahoo.container.handler.metrics.MetricsProxyApiConfig;
@@ -48,10 +50,10 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
-import java.util.logging.Level;
 import java.util.stream.Collectors;
 
 import static com.yahoo.vespa.model.container.docproc.DocprocChains.DOCUMENT_TYPE_MANAGER_CLASS;
+import static java.util.logging.Level.FINE;
 
 /**
  * A container cluster that is typically set up from the user application.
@@ -78,13 +80,16 @@ public final class ApplicationContainerCluster extends ContainerCluster<Applicat
     private static final BindingPattern PROMETHEUS_V1_HANDLER_BINDING_1 = SystemBindingPattern.fromHttpPath(PrometheusV1Handler.V1_PATH);
     private static final BindingPattern PROMETHEUS_V1_HANDLER_BINDING_2 = SystemBindingPattern.fromHttpPath(PrometheusV1Handler.V1_PATH + "/*");
 
+    private static final TenantName HOSTED_VESPA = TenantName.from("hosted-vespa");
+
     public static final int defaultHeapSizePercentageOfAvailableMemory = 85;
     public static final int heapSizePercentageOfTotalAvailableMemoryWhenCombinedCluster = 24;
 
     private final Set<FileReference> applicationBundles = new LinkedHashSet<>();
 
     private final Set<String> previousHosts;
-    private final OnnxModelCost.Calculator onnxModelCost;
+    private final OnnxModelCost onnxModelCost;
+    private final OnnxModelCost.Calculator onnxModelCostCalculator;
     private final DeployLogger logger;
 
     private ContainerModelEvaluation modelEvaluation;
@@ -96,7 +101,6 @@ public final class ApplicationContainerCluster extends ContainerCluster<Applicat
     private int zookeeperSessionTimeoutSeconds = 30;
     private final int transport_events_before_wakeup;
     private final int transport_connections_per_target;
-    private final boolean dynamicHeapSize;
 
     /** The heap size % of total memory available to the JVM process. */
     private final int heapSizePercentageOfAvailableMemory;
@@ -110,7 +114,6 @@ public final class ApplicationContainerCluster extends ContainerCluster<Applicat
     public ApplicationContainerCluster(TreeConfigProducer<?> parent, String configSubId, String clusterId, DeployState deployState) {
         super(parent, configSubId, clusterId, deployState, true, 10);
         this.tlsClientAuthority = deployState.tlsClientAuthority();
-        dynamicHeapSize = deployState.featureFlags().dynamicHeapSize();
         previousHosts = Collections.unmodifiableSet(deployState.getPreviousModel().stream()
                                                                .map(Model::allocatedHosts)
                                                                .map(AllocatedHosts::getHosts)
@@ -133,8 +136,9 @@ public final class ApplicationContainerCluster extends ContainerCluster<Applicat
         heapSizePercentageOfAvailableMemory = deployState.featureFlags().heapSizePercentage() > 0
                 ? Math.min(99, deployState.featureFlags().heapSizePercentage())
                 : defaultHeapSizePercentageOfAvailableMemory;
-        onnxModelCost = deployState.onnxModelCost().newCalculator(
-                deployState.getApplicationPackage(), deployState.getDeployLogger());
+        onnxModelCost = deployState.onnxModelCost();
+        onnxModelCostCalculator = deployState.onnxModelCost().newCalculator(
+                deployState.getApplicationPackage(), deployState.getProperties().applicationId(), ClusterSpec.Id.from(clusterId));
         logger = deployState.getDeployLogger();
     }
 
@@ -147,6 +151,8 @@ public final class ApplicationContainerCluster extends ContainerCluster<Applicat
         registerApplicationBundles(deployState);
         registerUserConfiguredFiles(deployState);
         createEndpoints(deployState);
+        if (onnxModelCostCalculator.restartOnDeploy())
+            setDeferChangesUntilRestart(true);
     }
 
     private void registerApplicationBundles(DeployState deployState) {
@@ -163,7 +169,8 @@ public final class ApplicationContainerCluster extends ContainerCluster<Applicat
         UserConfiguredFiles files = new UserConfiguredFiles(deployState.getFileRegistry(),
                                                             deployState.getDeployLogger(),
                                                             deployState.featureFlags(),
-                                                            userConfiguredUrls);
+                                                            userConfiguredUrls,
+                                                            deployState.getApplicationPackage());
         for (Component<?, ?> component : getAllComponents()) {
             files.register(component);
         }
@@ -202,29 +209,30 @@ public final class ApplicationContainerCluster extends ContainerCluster<Applicat
         if (memoryPercentage != null) return Optional.of(JvmMemoryPercentage.of(memoryPercentage));
 
         if (isHostedVespa()) {
-            int availableMemoryPercentage = getHostClusterId().isPresent() ?
-                                            heapSizePercentageOfTotalAvailableMemoryWhenCombinedCluster :
-                                            heapSizePercentageOfAvailableMemory;
+            int availableMemoryPercentage = availableMemoryPercentage();
             if (getContainers().isEmpty()) return Optional.of(JvmMemoryPercentage.of(availableMemoryPercentage)); // Node memory is not known
 
             // Node memory is known so convert available memory percentage to node memory percentage
-            double totalMemory = dynamicHeapSize
-                    ? getContainers().stream().mapToDouble(c -> c.getHostResource().realResources().memoryGb()).min().orElseThrow()
-                    : getContainers().get(0).getHostResource().realResources().memoryGb();
-            double jvmHeapDeductionGb = dynamicHeapSize ? onnxModelCost.aggregatedModelCostInBytes() / (1024D * 1024 * 1024) : 0;
+            double totalMemory = getContainers().stream().mapToDouble(c -> c.getHostResource().realResources().memoryGb()).min().orElseThrow();
+            double jvmHeapDeductionGb = onnxModelCostCalculator.aggregatedModelCostInBytes() / (1024D * 1024 * 1024);
             double availableMemory = Math.max(0, totalMemory - Host.memoryOverheadGb - jvmHeapDeductionGb);
             int memoryPercentage = (int) (availableMemory / totalMemory * availableMemoryPercentage);
-            logger.log(Level.FINE, () -> "memoryPercentage=%d, availableMemory=%f, totalMemory=%f, availableMemoryPercentage=%d, jvmHeapDeductionGb=%f"
-                           .formatted(memoryPercentage, availableMemory, totalMemory, availableMemoryPercentage, jvmHeapDeductionGb));
+            logger.log(FINE, () -> "cluster id '%s': memoryPercentage=%d, availableMemory=%f, totalMemory=%f, availableMemoryPercentage=%d, jvmHeapDeductionGb=%f"
+                    .formatted(id(), memoryPercentage, availableMemory, totalMemory, availableMemoryPercentage, jvmHeapDeductionGb));
             return Optional.of(JvmMemoryPercentage.of(memoryPercentage, availableMemory));
         }
         return Optional.empty();
     }
 
+    public int availableMemoryPercentage() {
+        return getHostClusterId().isPresent() ?
+                heapSizePercentageOfTotalAvailableMemoryWhenCombinedCluster :
+                heapSizePercentageOfAvailableMemory;
+    }
+
     /** Create list of endpoints, these will be consumed later by LbServicesProducer */
     private void createEndpoints(DeployState deployState) {
-        if (!deployState.isHosted()) return;
-        if (deployState.getProperties().applicationId().instance().isTester()) return;
+        if (!configureEndpoints(deployState)) return;
         // Add endpoints provided by the controller
         List<String> hosts = getContainers().stream().map(AbstractService::getHostName).sorted().toList();
         List<ApplicationClusterEndpoint> endpoints = new ArrayList<>();
@@ -241,6 +249,12 @@ public final class ApplicationContainerCluster extends ContainerCluster<Applicat
                                                                            .authMethod(ce.authMethod())
                                                                            .build())
                    ));
+        if (endpoints.stream().noneMatch(endpoint -> endpoint.scope() == ApplicationClusterEndpoint.Scope.zone)) {
+            throw new IllegalArgumentException("Expected at least one " + ApplicationClusterEndpoint.Scope.zone +
+                                               " endpoint for cluster '" + name() + "' in application '" +
+                                               deployState.getProperties().applicationId() +
+                                               "', got " + deployState.getEndpoints());
+        }
         this.endpoints = Collections.unmodifiableList(endpoints);
     }
 
@@ -372,7 +386,17 @@ public final class ApplicationContainerCluster extends ContainerCluster<Applicat
     @Override
     public String name() { return getName(); }
 
-    public OnnxModelCost.Calculator onnxModelCost() { return onnxModelCost; }
+    public OnnxModelCost onnxModelCost() { return onnxModelCost; }
+
+    public OnnxModelCost.Calculator onnxModelCostCalculator() { return onnxModelCostCalculator; }
+
+    /** Returns whether the deployment in given deploy state should have endpoints */
+    private static boolean configureEndpoints(DeployState deployState) {
+        if (!deployState.isHosted()) return false;
+        if (deployState.getProperties().applicationId().instance().isTester()) return false;
+        if (deployState.getProperties().applicationId().tenant().equals(HOSTED_VESPA)) return false;
+        return true;
+    }
 
     public static class MbusParams {
         // the amount of the maxpendingbytes to process concurrently, typically 0.2 (20%)

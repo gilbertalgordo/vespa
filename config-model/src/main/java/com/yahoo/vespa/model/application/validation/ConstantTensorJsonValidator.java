@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.model.application.validation;
 
 import com.fasterxml.jackson.core.JsonFactory;
@@ -6,6 +6,8 @@ import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.core.JsonToken;
 import com.google.common.base.Joiner;
 import com.yahoo.tensor.TensorType;
+
+import static com.yahoo.tensor.serialization.JsonFormat.decodeNumberString;
 
 import java.io.IOException;
 import java.io.Reader;
@@ -282,9 +284,19 @@ public class ConstantTensorJsonValidator {
     }
 
     private void validateNumeric(String where, JsonToken token) throws IOException {
-        if (token != JsonToken.VALUE_NUMBER_FLOAT && token != JsonToken.VALUE_NUMBER_INT) {
-            throw new InvalidConstantTensorException(parser, String.format("Inside '%s': cell value is not a number (%s)", where, token.toString()));
+        if (token == JsonToken.VALUE_NUMBER_FLOAT || token == JsonToken.VALUE_NUMBER_INT || token == JsonToken.VALUE_NULL) {
+            return; // ok
         }
+        if (token == JsonToken.VALUE_STRING) {
+            String input = parser.getValueAsString();
+            try {
+                double d = decodeNumberString(input);
+                return;
+            } catch (NumberFormatException e) {
+                throw new InvalidConstantTensorException(parser, String.format("Inside '%s': cell value '%s' is not a number", where, input));
+            }
+        }
+        throw new InvalidConstantTensorException(parser, String.format("Inside '%s': cell value is not a number (%s)", where, token.toString()));
     }
 
     private void assertCurrentTokenIs(JsonToken wantedToken) {

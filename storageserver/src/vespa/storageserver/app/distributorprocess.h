@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 /**
  * \class storage::DistributorProcess
  *
@@ -16,13 +16,11 @@ class IStorageChainBuilder;
 
 class DistributorProcess final : public Process {
     DistributorNodeContext _context;
-    uint32_t _num_distributor_stripes;
-    DistributorNode::UP _node;
-    config::ConfigHandle<vespa::config::content::core::StorDistributormanagerConfig>::UP
-            _distributorConfigHandler;
-    config::ConfigHandle<vespa::config::content::core::StorVisitordispatcherConfig>::UP
-            _visitDispatcherConfigHandler;
-    std::unique_ptr<IStorageChainBuilder> _storage_chain_builder;
+    uint32_t               _num_distributor_stripes;
+    DistributorNode::UP    _node;
+    config::ConfigHandle<DistributorManagerConfig>::UP _distributorConfigHandler;
+    config::ConfigHandle<VisitorDispatcherConfig>::UP  _visitDispatcherConfigHandler;
+    std::unique_ptr<IStorageChainBuilder>              _storage_chain_builder;
 
 public:
     explicit DistributorProcess(const config::ConfigUri & configUri);

@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.schema.derived;
 
 import com.yahoo.document.CollectionDataType;
@@ -14,8 +14,10 @@ import com.yahoo.document.datatypes.TensorFieldValue;
 import com.yahoo.schema.FieldSets;
 import com.yahoo.schema.Schema;
 import com.yahoo.schema.document.Attribute;
+import com.yahoo.schema.document.Case;
 import com.yahoo.schema.document.FieldSet;
 import com.yahoo.schema.document.GeoPos;
+import com.yahoo.schema.document.ImmutableSDField;
 import com.yahoo.schema.document.Matching;
 import com.yahoo.schema.document.MatchType;
 import com.yahoo.schema.document.SDDocumentType;
@@ -23,13 +25,14 @@ import com.yahoo.schema.document.SDField;
 import com.yahoo.schema.processing.TensorFieldProcessor;
 import com.yahoo.vespa.config.search.vsm.VsmfieldsConfig;
 
+import java.io.IOException;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
  * Vertical streaming matcher field specification
  */
-public class VsmFields extends Derived implements VsmfieldsConfig.Producer {
+public class VsmFields extends Derived {
 
     private final Map<String, StreamingField> fields=new LinkedHashMap<>();
     private final Map<String, StreamingDocumentType> doctypes=new LinkedHashMap<>();
@@ -45,40 +48,40 @@ public class VsmFields extends Derived implements VsmfieldsConfig.Producer {
     @Override
     protected void derive(SDDocumentType document, Schema schema) {
         super.derive(document, schema);
-        StreamingDocumentType docType=getDocumentType(document.getName());
+        StreamingDocumentType docType = getDocumentType(document.getName());
         if (docType == null) {
             docType = new StreamingDocumentType(document.getName(), schema.fieldSets());
             doctypes.put(document.getName(), docType);
         }
         for (Object o : document.fieldSet()) {
-            derive(docType, (SDField) o);
+            derive(docType, (SDField) o, false, false);
         }
     }
 
-    protected void derive(StreamingDocumentType document, SDField field) {
+    private void derive(StreamingDocumentType document, SDField field, boolean isStructField, boolean ignoreAttributeAspect) {
         if (field.usesStructOrMap()) {
             if (GeoPos.isAnyPos(field)) {
-                StreamingField streamingField = new StreamingField(field);
+                var streamingField = new StreamingField(field, isStructField, true);
                 addField(streamingField.getName(), streamingField);
                 addFieldToIndices(document, field.getName(), streamingField);
             }
             for (SDField structField : field.getStructFields()) {
-                derive(document, structField); // Recursion
+                derive(document, structField, true, ignoreAttributeAspect || GeoPos.isAnyPos(field)); // Recursion
             }
         } else {
-            if (! (field.doesIndexing() || field.doesSummarying() || field.doesAttributing()) )
+            if (! (field.doesIndexing() || field.doesSummarying() || isAttributeField(field, isStructField, ignoreAttributeAspect)) )
                 return;
 
-            StreamingField streamingField = new StreamingField(field);
+            var streamingField = new StreamingField(field, isStructField, ignoreAttributeAspect);
             addField(streamingField.getName(),streamingField);
-            deriveIndices(document, field, streamingField);
+            deriveIndices(document, field, streamingField, isStructField, ignoreAttributeAspect);
         }
     }
 
-    private void deriveIndices(StreamingDocumentType document, SDField field, StreamingField streamingField) {
+    private void deriveIndices(StreamingDocumentType document, SDField field, StreamingField streamingField, boolean isStructField, boolean ignoreAttributeAspect) {
         if (field.doesIndexing()) {
             addFieldToIndices(document, field.getName(), streamingField);
-        } else if (field.doesAttributing()) {
+        } else if (isAttributeField(field, isStructField, ignoreAttributeAspect)) {
             for (String indexName : field.getAttributes().keySet()) {
                 addFieldToIndices(document, indexName, streamingField);
             }
@@ -96,8 +99,7 @@ public class VsmFields extends Derived implements VsmfieldsConfig.Producer {
         fields.put(name, field);
     }
 
-    /** Returns a streaming index, or null if there is none with this name */
-    public StreamingDocumentType getDocumentType(String name) {
+    private StreamingDocumentType getDocumentType(String name) {
         return doctypes.get(name);
     }
 
@@ -105,14 +107,27 @@ public class VsmFields extends Derived implements VsmfieldsConfig.Producer {
         return "vsmfields";
     }
 
-    @Override
     public void getConfig(VsmfieldsConfig.Builder vsB) {
-        for (StreamingField streamingField : fields.values()) {
-            vsB.fieldspec(streamingField.getFieldSpecConfig());
+        // Replace
+        vsB.fieldspec(fields.values().stream().map(StreamingField::getFieldSpecConfig).toList());
+        vsB.documenttype(doctypes.values().stream().map(StreamingDocumentType::getDocTypeConfig).toList());
+    }
+
+    public void export(String toDirectory) throws IOException {
+        var builder = new VsmfieldsConfig.Builder();
+        getConfig(builder);
+        export(toDirectory, builder.build());
+    }
+
+    private static boolean isAttributeField(ImmutableSDField field, boolean isStructField, boolean ignoreAttributeAspect) {
+        if (field.doesAttributing()) {
+            return true;
         }
-        for (StreamingDocumentType streamingDocType : doctypes.values()) {
-            vsB.documenttype(streamingDocType.getDocTypeConfig());
+        if (!isStructField || ignoreAttributeAspect) {
+            return false;
         }
+        var attribute = field.getAttributes().get(field.getName());
+        return attribute != null;
     }
 
     private static class StreamingField {
@@ -144,7 +159,7 @@ public class VsmFields extends Derived implements VsmfieldsConfig.Producer {
             public static Type GEO_POSITION = new Type("GEOPOS");
             public static Type NEAREST_NEIGHBOR = new Type("NEAREST_NEIGHBOR");
 
-            private String searchMethod;
+            private final String searchMethod;
 
             private Type(String searchMethod) {
                 this.searchMethod = searchMethod;
@@ -170,8 +185,8 @@ public class VsmFields extends Derived implements VsmfieldsConfig.Producer {
 
         }
 
-        public StreamingField(SDField field) {
-            this(field.getName(), field.getDataType(), field.getMatching(), field.doesAttributing(), getDistanceMetric(field));
+        public StreamingField(SDField field, boolean isStructField, boolean ignoreAttributeAspect) {
+            this(field.getName(), field.getDataType(), field.getMatching(), isAttributeField(field, isStructField, ignoreAttributeAspect), getDistanceMetric(field));
         }
 
         private StreamingField(String name, DataType sourceType, Matching matching, boolean isAttribute, Attribute.DistanceMetric distanceMetric) {
@@ -261,10 +276,23 @@ public class VsmFields extends Derived implements VsmfieldsConfig.Producer {
             return getMatchingName();
         }
 
+        private static VsmfieldsConfig.Fieldspec.Normalize.Enum toNormalize(Matching matching) {
+            // The ordering/priority below is important.
+            // exact = > lowercase only
+            if (matching.getType() == MatchType.EXACT) return VsmfieldsConfig.Fieldspec.Normalize.Enum.LOWERCASE;
+            // cased takes priority
+            if (matching.getCase() == Case.CASED) return VsmfieldsConfig.Fieldspec.Normalize.Enum.NONE;
+            // word implies lowercase (used for attributes)
+            if (matching.getType() == MatchType.WORD) return VsmfieldsConfig.Fieldspec.Normalize.Enum.LOWERCASE;
+            // Everything else
+            return VsmfieldsConfig.Fieldspec.Normalize.LOWERCASE_AND_FOLD;
+        }
+
         public VsmfieldsConfig.Fieldspec.Builder getFieldSpecConfig() {
             var fB = new VsmfieldsConfig.Fieldspec.Builder();
             fB.name(getName())
               .searchmethod(VsmfieldsConfig.Fieldspec.Searchmethod.Enum.valueOf(type.getSearchMethod()))
+              .normalize(toNormalize(matching))
               .arg1(getArg1())
               .fieldtype(isAttribute
                              ? VsmfieldsConfig.Fieldspec.Fieldtype.ATTRIBUTE

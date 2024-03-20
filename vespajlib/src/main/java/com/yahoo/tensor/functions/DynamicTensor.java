@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.tensor.functions;
 
 import com.google.common.collect.ImmutableMap;
@@ -40,7 +40,7 @@ public abstract class DynamicTensor<NAMETYPE extends Name> extends PrimitiveTens
 
     @Override
     public TensorFunction<NAMETYPE> withArguments(List<TensorFunction<NAMETYPE>> arguments) {
-        if (arguments.size() != 0)
+        if (!arguments.isEmpty())
             throw new IllegalArgumentException("Dynamic tensors must have 0 arguments, got " + arguments.size());
         return this;
     }
@@ -79,7 +79,7 @@ public abstract class DynamicTensor<NAMETYPE extends Name> extends PrimitiveTens
         public List<TensorFunction<NAMETYPE>> cellGeneratorFunctions() {
             var result = new ArrayList<TensorFunction<NAMETYPE>>();
             for (var fun : cells.values()) {
-                fun.asTensorFunction().ifPresent(tf -> result.add(tf));
+                fun.asTensorFunction().ifPresent(result::add);
             }
             return result;
         }
@@ -107,7 +107,7 @@ public abstract class DynamicTensor<NAMETYPE extends Name> extends PrimitiveTens
         String contentToString(ToStringContext<NAMETYPE> context) {
             if (type().dimensions().isEmpty()) {
                 if (cells.isEmpty()) return "{}";
-                return "{" + cells.values().iterator().next().toString(context) + "}";
+                return "{{}:" + cells.values().iterator().next().toString(context) + "}";
             }
 
             StringBuilder b = new StringBuilder("{");
@@ -133,7 +133,7 @@ public abstract class DynamicTensor<NAMETYPE extends Name> extends PrimitiveTens
 
         IndexedDynamicTensor(TensorType type, List<ScalarFunction<NAMETYPE>> cells) {
             super(type);
-            if ( ! type.dimensions().stream().allMatch(d -> d.type() == TensorType.Dimension.Type.indexedBound))
+            if ( ! type.hasOnlyIndexedBoundDimensions())
                 throw new IllegalArgumentException("A dynamic tensor can only be created from a list if the type has " +
                                                    "only indexed, bound dimensions, but this has " + type);
             this.cells = List.copyOf(cells);
@@ -142,7 +142,7 @@ public abstract class DynamicTensor<NAMETYPE extends Name> extends PrimitiveTens
         public List<TensorFunction<NAMETYPE>> cellGeneratorFunctions() {
             var result = new ArrayList<TensorFunction<NAMETYPE>>();
             for (var fun : cells) {
-                fun.asTensorFunction().ifPresent(tf -> result.add(tf));
+                fun.asTensorFunction().ifPresent(result::add);
             }
             return result;
         }

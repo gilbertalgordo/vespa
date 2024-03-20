@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include <string>
 #include <vespa/vespalib/btree/btreeroot.h>
@@ -231,6 +231,8 @@ protected:
     template <typename TreeType>
     void requireThatUpperBoundWorksT();
     void requireThatIteratorDistanceWorks(int numEntries);
+    void test_step_forward(int num_entries);
+    void test_step_backward(int num_entries);
 };
 
 template <typename LeafNodeType>
@@ -1225,6 +1227,23 @@ TEST_F(BTreeTest, require_that_update_of_key_works)
     EXPECT_EQ(0u, cmp2._numErrors);
 }
 
+namespace {
+
+template <typename TreeStore>
+void
+insert(TreeStore& s, EntryRef& root, typename TreeStore::KeyDataType addition)
+{
+    s.apply(root, &addition, &addition + 1, nullptr, nullptr);
+}
+
+template <typename TreeStore>
+void
+remove(TreeStore& s, EntryRef& root, typename TreeStore::KeyType removal)
+{
+    s.apply(root, nullptr, nullptr, &removal, &removal + 1);
+}
+
+}
 
 TEST_F(BTreeTest, require_that_small_nodes_works)
 {
@@ -1236,56 +1255,37 @@ TEST_F(BTreeTest, require_that_small_nodes_works)
     EntryRef root;
     EXPECT_EQ(0u, s.size(root));
     EXPECT_TRUE(s.isSmallArray(root));
-    EXPECT_TRUE(s.insert(root, 40, "fourty"));
-    EXPECT_TRUE(!s.insert(root, 40, "fourty.not"));
+    insert(s, root, {40, "fourty"});
     EXPECT_EQ(1u, s.size(root));
     EXPECT_TRUE(s.isSmallArray(root));
-    EXPECT_TRUE(s.insert(root, 20, "twenty"));
-    EXPECT_TRUE(!s.insert(root, 20, "twenty.not"));
-    EXPECT_TRUE(!s.insert(root, 40, "fourty.not"));
+    insert(s, root, {20, "twenty"});
     EXPECT_EQ(2u, s.size(root));
     EXPECT_TRUE(s.isSmallArray(root));
-    EXPECT_TRUE(s.insert(root, 60, "sixty"));
-    EXPECT_TRUE(!s.insert(root, 60, "sixty.not"));
-    EXPECT_TRUE(!s.insert(root, 20, "twenty.not"));
-    EXPECT_TRUE(!s.insert(root, 40, "fourty.not"));
+    insert(s, root, {60, "sixty"});
     EXPECT_EQ(3u, s.size(root));
     EXPECT_TRUE(s.isSmallArray(root));
-    EXPECT_TRUE(s.insert(root, 50, "fifty"));
-    EXPECT_TRUE(!s.insert(root, 50, "fifty.not"));
-    EXPECT_TRUE(!s.insert(root, 60, "sixty.not"));
-    EXPECT_TRUE(!s.insert(root, 20, "twenty.not"));
-    EXPECT_TRUE(!s.insert(root, 40, "fourty.not"));
+    insert(s, root, {50, "fifty"});
     EXPECT_EQ(4u, s.size(root));
     EXPECT_TRUE(s.isSmallArray(root));
 
     for (uint32_t i = 0; i < 100; ++i) {
-        EXPECT_TRUE(s.insert(root, 1000 + i, "big"));
-        if (i > 0) {
-            EXPECT_TRUE(!s.insert(root, 1000 + i - 1, "big"));
-        }
+        insert(s, root, {int(1000 + i), "big"});
         EXPECT_EQ(5u + i, s.size(root));
-        EXPECT_EQ(5u + i <= 8u,  s.isSmallArray(root));
+        EXPECT_EQ(5u + i <= TreeStore::clusterLimit, s.isSmallArray(root));
     }
-    EXPECT_TRUE(s.remove(root, 40));
-    EXPECT_TRUE(!s.remove(root, 40));
+    remove(s, root, 40);
     EXPECT_EQ(103u, s.size(root));
     EXPECT_TRUE(!s.isSmallArray(root));
-    EXPECT_TRUE(s.remove(root, 20));
-    EXPECT_TRUE(!s.remove(root, 20));
+    remove(s, root, 20);
     EXPECT_EQ(102u, s.size(root));
     EXPECT_TRUE(!s.isSmallArray(root));
-    EXPECT_TRUE(s.remove(root, 50));
-    EXPECT_TRUE(!s.remove(root, 50));
+    remove(s, root, 50);
     EXPECT_EQ(101u, s.size(root));
     EXPECT_TRUE(!s.isSmallArray(root));
     for (uint32_t i = 0; i < 100; ++i) {
-        EXPECT_TRUE(s.remove(root, 1000 + i));
-        if (i > 0) {
-            EXPECT_TRUE(!s.remove(root, 1000 + i - 1));
-        }
+        remove(s, root,  1000 + i);
         EXPECT_EQ(100 - i, s.size(root));
-        EXPECT_EQ(100 - i <= 8u,  s.isSmallArray(root));
+        EXPECT_EQ(100 - i <= TreeStore::clusterLimit,  s.isSmallArray(root));
     }
     EXPECT_EQ(1u, s.size(root));
     EXPECT_TRUE(s.isSmallArray(root));
@@ -1365,7 +1365,7 @@ TEST_F(BTreeTest, require_that_apply_works)
         additions.push_back(KeyDataType(1000 + i, "big"));
         apply_tree_mutations(s, root, additions, removals);
         EXPECT_EQ(5u + i, s.size(root));
-        EXPECT_EQ(5u + i <= 8u,  s.isSmallArray(root));
+        EXPECT_EQ(5u + i <= TreeStore::clusterLimit,  s.isSmallArray(root));
     }
 
     additions.clear();
@@ -1394,7 +1394,7 @@ TEST_F(BTreeTest, require_that_apply_works)
         removals.push_back(1000 +i);
         apply_tree_mutations(s, root, additions, removals);
         EXPECT_EQ(100 - i, s.size(root));
-        EXPECT_EQ(100 - i <= 8u,  s.isSmallArray(root));
+        EXPECT_EQ(100 - i <= TreeStore::clusterLimit,  s.isSmallArray(root));
     }
     EXPECT_EQ(1u, s.size(root));
     EXPECT_TRUE(s.isSmallArray(root));
@@ -1475,8 +1475,12 @@ BTreeTest::requireThatIteratorDistanceWorks(int numEntries)
             iitbs.binarySeek(i);
             ++it;
         }
-        iitlsp.linearSeekPast(i);
-        iitbsp.binarySeekPast(i);
+        if (iitlsp.valid()) {
+            iitlsp.linearSeekPast(i);
+        }
+        if (iitbsp.valid()) {
+            iitbsp.binarySeekPast(i);
+        }
         Iterator iitlsp2 = iitls;
         Iterator iitbsp2 = iitbs;
         Iterator iitnr = i < numEntries ? iitn : tree.begin();
@@ -1519,15 +1523,91 @@ BTreeTest::requireThatIteratorDistanceWorks(int numEntries)
     }
 }
 
+void
+BTreeTest::test_step_forward(int num_entries)
+{
+    GenerationHandler g;
+    MyTree tree;
+    for (int i = 0; i < num_entries; ++i) {
+        tree.insert(i, toStr(i));
+    }
+    auto it = tree.begin();
+    auto ite = it;
+    ite.end();
+    for (int i = 0; i <= num_entries; ++i) {
+        auto iit = tree.lowerBound(i);
+        auto iit2 = iit;
+        iit2 += (num_entries - i);
+        EXPECT_TRUE(iit2.identical(ite));
+        iit2 = iit;
+        iit2 += (1000000 + num_entries);
+        EXPECT_TRUE(iit2.identical(ite));
+        for (int j = i; j <= num_entries; ++j) {
+            auto jit = tree.lowerBound(j);
+            auto iit3 = iit;
+            iit3 += (j - i);
+            EXPECT_TRUE(iit3.identical(jit));
+        }
+    }
+}
+
+void
+BTreeTest::test_step_backward(int num_entries)
+{
+    GenerationHandler g;
+    MyTree tree;
+    for (int i = 0; i < num_entries; ++i) {
+        tree.insert(i, toStr(i));
+    }
+    auto it = tree.begin();
+    for (int i = 0; i <= num_entries; ++i) {
+        auto iit = tree.lowerBound(i);
+        auto iit2 = iit;
+        iit2 -= i;
+        EXPECT_TRUE(iit2.identical(it));
+        iit2 = iit;
+        iit2 -= (1000000 + i);
+        EXPECT_TRUE(iit2.identical(it));
+        for (int j = 0; j <= i; ++j) {
+            auto jit = tree.lowerBound(j);
+            auto iit3 = iit;
+            iit3 -= (i - j);
+            EXPECT_TRUE(iit3.identical(jit));
+        }
+    }
+}
 
 TEST_F(BTreeTest, require_that_iterator_distance_works)
 {
+    requireThatIteratorDistanceWorks(0);
     requireThatIteratorDistanceWorks(1);
     requireThatIteratorDistanceWorks(3);
     requireThatIteratorDistanceWorks(8);
     requireThatIteratorDistanceWorks(20);
     requireThatIteratorDistanceWorks(100);
     requireThatIteratorDistanceWorks(400);
+}
+
+TEST_F(BTreeTest, require_that_step_forward_works)
+{
+    test_step_forward(0);
+    test_step_forward(1);
+    test_step_forward(3);
+    test_step_forward(8);
+    test_step_forward(20);
+    test_step_forward(100);
+    test_step_forward(400);
+}
+
+TEST_F(BTreeTest, require_that_step_backward_works)
+{
+    test_step_backward(0);
+    test_step_backward(1);
+    test_step_backward(3);
+    test_step_backward(8);
+    test_step_backward(20);
+    test_step_backward(100);
+    test_step_backward(400);
 }
 
 TEST_F(BTreeTest, require_that_foreach_key_works)

@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.search.yql;
 
 import com.yahoo.api.annotations.Beta;
@@ -75,14 +75,15 @@ public class MinimalQueryInserter extends Searcher {
 
     @Override
     public Result search(Query query, Execution execution) {
+        if (query.properties().get(YQL) == null) return execution.search(query);
+        Result errorResult;
         try {
-            if (query.properties().get(YQL) == null) return execution.search(query);
-            Result result = insertQuery(query, ParserEnvironment.fromExecutionContext(execution.context()));
-            return (result == null) ? execution.search(query) : result;
+            errorResult = insertQuery(query, ParserEnvironment.fromExecutionContext(execution.context()));
         }
         catch (IllegalArgumentException e) {
             throw new IllegalInputException("Illegal YQL query", e);
         }
+        return (errorResult == null) ? execution.search(query) : errorResult;
     }
 
     private static Result insertQuery(Query query, ParserEnvironment env) {
@@ -121,7 +122,7 @@ public class MinimalQueryInserter extends Searcher {
         for (VespaGroupingStep step : parser.getGroupingSteps())
             GroupingQueryParser.createGroupingRequestIn(query, step.getOperation(), step.continuations());
 
-        if (parser.getYqlSources().size() == 0) {
+        if (parser.getYqlSources().isEmpty()) {
             query.getModel().getSources().clear();
         } else {
             query.getModel().getSources().addAll(parser.getYqlSources());

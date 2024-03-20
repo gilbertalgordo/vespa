@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #pragma once
 
@@ -16,6 +16,8 @@
 
 namespace streaming {
 
+class QueryTermData;
+
 /**
  * This class is associated with a query and a rank profile and
  * is used to calculate rank and feature set for matched documents.
@@ -31,6 +33,7 @@ private:
     QueryWrapper                   _query;
 
     QueryEnvironment                     _queryEnv;
+    const search::fef::Properties       &_featureOverrides;
     search::fef::MatchDataLayout         _mdLayout;
     search::fef::MatchData::UP           _match_data;
     search::fef::RankProgram::UP         _rankProgram;
@@ -42,8 +45,10 @@ private:
     HitCollector::UP                     _hitCollector;
     std::unique_ptr<RankProgram>         _match_features_program;
 
+    void resolve_fields_from_children(QueryTermData& qtd, const search::streaming::MultiTerm& mt);
+    void resolve_fields_from_term(QueryTermData& qtd, const search::streaming::QueryTerm& term);
     void initQueryEnvironment();
-    void initHitCollector(size_t wantedHitCount);
+    void initHitCollector(size_t wantedHitCount, bool use_sort_blob);
     void setupRankProgram(search::fef::RankProgram &program);
     FeatureValues calculate_match_features();
 
@@ -53,7 +58,7 @@ private:
      * @param wantedHitCount the number of hits we want to return from the hit collector.
      * @return whether the rank processor was initialized or not.
      **/
-    void init(bool forRanking, size_t wantedHitCount);
+    void init(bool forRanking, size_t wantedHitCount, bool use_sort_blob);
 
 public:
     using UP = std::unique_ptr<RankProcessor>;
@@ -62,15 +67,17 @@ public:
                   const vespalib::string &rankProfile,
                   search::streaming::Query & query,
                   const vespalib::string & location,
-                  search::fef::Properties & queryProperties,
+                  const search::fef::Properties & queryProperties,
+                  const search::fef::Properties & featureOverrides,
                   const search::IAttributeManager * attrMgr);
 
-    void initForRanking(size_t wantedHitCount);
-    void initForDumping(size_t wantedHitCount);
+    void initForRanking(size_t wantedHitCount, bool use_sort_blob);
+    void initForDumping(size_t wantedHitCount, bool use_sort_blob);
     void unpackMatchData(uint32_t docId);
-    static void unpack_match_data(uint32_t docid, search::fef::MatchData& matchData, QueryWrapper& query);
+    static void unpack_match_data(uint32_t docid, search::fef::MatchData& matchData, QueryWrapper& query, const search::fef::IIndexEnvironment& index_env);
     void runRankProgram(uint32_t docId);
     vespalib::FeatureSet::SP calculateFeatureSet();
+    vespalib::FeatureSet::SP calculateFeatureSet(search::DocumentIdT docId);
     void fillSearchResult(vdslib::SearchResult & searchResult);
     const search::fef::MatchData &getMatchData() const { return *_match_data; }
     void setRankScore(double score) { _score = score; } 

@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package ai.vespa.metricsproxy.service;
 
 import ai.vespa.util.http.hc5.VespaHttpClientBuilder;
@@ -82,11 +82,11 @@ public abstract class HttpMetricFetcher {
     private static CloseableHttpClient createHttpClient() {
         return VespaHttpClientBuilder.custom()
                 .connectTimeout(Timeout.ofMilliseconds(CONNECTION_TIMEOUT))
-                .socketTimeout(Timeout.ofMilliseconds(CONNECTION_TIMEOUT))
+                .socketTimeout(Timeout.ofMilliseconds(SOCKET_TIMEOUT))
                 .apacheBuilder()
                 .setUserAgent("metrics-proxy-http-client")
                 .setDefaultRequestConfig(RequestConfig.custom()
-                        .setConnectionRequestTimeout(Timeout.ofMilliseconds(SOCKET_TIMEOUT))
+                        .setConnectionRequestTimeout(Timeout.ofMilliseconds(CONNECTION_TIMEOUT))
                         .setResponseTimeout(Timeout.ofMilliseconds(SOCKET_TIMEOUT))
                         .build())
                 .build();

@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.clustercontroller.utils.staterestapi.server;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -65,8 +65,8 @@ public class JsonWriter {
         ObjectNode stateJson = json.putObject("state");
         Map<String, UnitState> state = stateData.getStatePerType();
         state.forEach((stateType, unitState) -> stateJson.putObject(stateType)
-                                                         .put("state", unitState.getId())
-                                                         .put("reason", unitState.getReason()));
+                                                         .put("state", unitState.id())
+                                                         .put("reason", unitState.reason()));
     }
 
     public void fillInJson(Map<String, SubUnitList> subUnitMap, ObjectNode json) {

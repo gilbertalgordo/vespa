@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include <vespa/document/test/fieldvalue_helpers.h>
 #include <vespa/document/repo/configbuilder.h>
@@ -29,9 +29,9 @@
 #include <vespa/document/select/operator.h>
 #include <vespa/document/select/parse_utils.h>
 #include <vespa/document/select/parser_limits.h>
+#include <vespa/vespalib/gtest/gtest.h>
 #include <vespa/vespalib/util/exceptions.h>
 #include <limits>
-#include <gtest/gtest.h>
 
 using namespace document::config_builder;
 

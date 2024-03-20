@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include "geo_pos_field_searcher.h"
 #include <vespa/document/fieldvalue/arrayfieldvalue.h>
@@ -58,7 +58,7 @@ void GeoPosFieldSearcher::onStructValue(const document::StructFieldValue & fv) {
             addHit(*_qtl[j], 0);
         }
     }
-    ++_words;
+    set_element_length(1);
 }
 
 bool GeoPosFieldSearcher::GeoPosInfo::cmp(const document::StructFieldValue & sfv) const {

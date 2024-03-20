@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.hosted.provision.restapi;
 
 import com.yahoo.config.provision.ApplicationId;
@@ -50,6 +50,7 @@ public class LoadBalancersResponse extends SlimeJsonResponse {
         loadBalancers.forEach(lb -> {
             Cursor lbObject = loadBalancerArray.addObject();
             lbObject.setString("id", lb.id().serializedForm());
+            lbObject.setString("idSeed", lb.idSeed());
             lbObject.setString("state", lb.state().name());
             lbObject.setLong("changedAt", lb.changedAt().toEpochMilli());
             lbObject.setString("application", lb.id().application().application().value());

@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #pragma once
 
@@ -155,6 +155,9 @@ private:
     MoveOperationUP createMoveOperation(const MoveKey & key);
     size_t pending() const {
         return _started.load(std::memory_order_relaxed) - _completed.load(std::memory_order_relaxed);
+    }
+    void enableReschedule() {
+        _needReschedule.store(true, std::memory_order_relaxed);
     }
 };
 }

@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.hosted.provision.maintenance;
 
 import com.yahoo.config.provision.Environment;
@@ -99,7 +99,8 @@ public class FailedExpirer extends NodeRepositoryMaintainer {
                                                     .map(Node::hostname)
                                                     .toList();
             if (unparkedChildren.isEmpty()) {
-                return Optional.of(nodeRepository.nodes().park(node.hostname(), true, Agent.FailedExpirer,
+                // Only forcing de-provisioning of off premises nodes
+                return Optional.of(nodeRepository.nodes().park(node.hostname(), nodeRepository.zone().cloud().dynamicProvisioning(), Agent.FailedExpirer,
                                                                "Parked by FailedExpirer due to " + reason.get()));
             } else {
                 log.info(String.format("Expired failed node %s was not parked because of unparked children: %s",
@@ -107,7 +108,22 @@ public class FailedExpirer extends NodeRepositoryMaintainer {
                 return Optional.empty();
             }
         } else {
-            return Optional.of(nodeRepository.nodes().deallocate(node, Agent.FailedExpirer, "Expired by FailedExpirer"));
+            List<String> childrenBlockingDirtying = children
+                    .stream()
+                    // Examples: a failed child node may have an index we want to preserve. A dirty child node has
+                    // log we want to sync.  A parked child w/o wTD may have been parked by an operator for inspection.
+                    .filter(child -> child.state() != Node.State.parked || !child.status().wantToDeprovision())
+                    .map(Node::hostname)
+                    .toList();
+
+            if (childrenBlockingDirtying.isEmpty()) {
+                return Optional.of(nodeRepository.nodes().deallocate(node, Agent.FailedExpirer, "Expired by FailedExpirer"));
+            } else {
+                log.info(String.format("Expired failed host %s was not dirtied because it has children: %s",
+                                       node.hostname(), String.join(", ", childrenBlockingDirtying)));
+                return Optional.empty();
+            }
+
         }
     }
 

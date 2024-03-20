@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.hosted.provision.provisioning;
 
 import com.yahoo.component.annotation.Inject;
@@ -12,7 +12,7 @@ import com.yahoo.config.provision.HostFilter;
 import com.yahoo.config.provision.HostSpec;
 import com.yahoo.config.provision.NodeResources;
 import com.yahoo.config.provision.NodeType;
-import com.yahoo.config.provision.ProvisionLock;
+import com.yahoo.config.provision.ApplicationMutex;
 import com.yahoo.config.provision.ProvisionLogger;
 import com.yahoo.config.provision.Provisioner;
 import com.yahoo.config.provision.Zone;
@@ -113,8 +113,8 @@ public class NodeRepositoryProvisioner implements Provisioner {
     private void validate(ApplicationId application, ClusterSpec cluster, Capacity requested, ProvisionLogger logger) {
         if (cluster.group().isPresent()) throw new IllegalArgumentException("Node requests cannot specify a group");
 
-        nodeRepository.nodeResourceLimits().ensureWithinAdvertisedLimits("Min", requested.minResources().nodeResources(), application, cluster);
-        nodeRepository.nodeResourceLimits().ensureWithinAdvertisedLimits("Max", requested.maxResources().nodeResources(), application, cluster);
+        nodeRepository.nodeResourceLimits().ensureWithinAdvertisedLimits("Min", requested.minResources().nodeResources(), cluster);
+        nodeRepository.nodeResourceLimits().ensureWithinAdvertisedLimits("Max", requested.maxResources().nodeResources(), cluster);
 
         if (!requested.minResources().nodeResources().gpuResources().equals(requested.maxResources().nodeResources().gpuResources()))
             throw new IllegalArgumentException(requested + " is invalid: GPU capacity cannot have ranges");
@@ -157,8 +157,8 @@ public class NodeRepositoryProvisioner implements Provisioner {
     }
 
     @Override
-    public ProvisionLock lock(ApplicationId application) {
-        return new ProvisionLock(application, nodeRepository.applications().lock(application));
+    public ApplicationMutex lock(ApplicationId application) {
+        return new ApplicationMutex(application, nodeRepository.applications().lock(application));
     }
 
     /**

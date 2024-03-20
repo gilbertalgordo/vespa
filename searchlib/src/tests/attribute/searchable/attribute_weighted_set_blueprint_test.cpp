@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 #include <vespa/vespalib/testkit/testapp.h>
 #include <vespa/searchlib/attribute/attribute_blueprint_factory.h>
 #include <vespa/searchlib/attribute/attribute_weighted_set_blueprint.h>
@@ -15,6 +15,7 @@
 #include <vespa/searchlib/test/mock_attribute_manager.h>
 #include <vespa/searchlib/attribute/enumstore.hpp>
 #include <vespa/searchcommon/attribute/config.h>
+#include <vespa/vespalib/util/normalize_class_name.h>
 
 #include <vespa/log/log.h>
 LOG_SETUP("attribute_weighted_set_blueprint_test");
@@ -25,6 +26,7 @@ using namespace search::fef;
 using namespace search::queryeval;
 using namespace search::attribute;
 using namespace search::attribute::test;
+using vespalib::normalize_class_name;
 
 namespace {
 
@@ -109,7 +111,7 @@ struct WS {
         FieldSpecList fields;
         fields.add(FieldSpec(field, fieldId, handle, ac.getAttribute(field)->getIsFilter()));
         queryeval::Blueprint::UP bp = searchable.createBlueprint(requestContext, fields, *node);
-        bp->fetchPostings(queryeval::ExecuteInfo::create(strict));
+        bp->fetchPostings(queryeval::ExecuteInfo::createForTest(strict));
         SearchIterator::UP sb = bp->createSearch(*md, strict);
         return sb;
     }
@@ -125,7 +127,7 @@ struct WS {
         FieldSpecList fields;
         fields.add(FieldSpec(field, fieldId, handle));
         queryeval::Blueprint::UP bp = searchable.createBlueprint(requestContext, fields, *node);
-        bp->fetchPostings(queryeval::ExecuteInfo::create(strict));
+        bp->fetchPostings(queryeval::ExecuteInfo::createForTest(strict));
         SearchIterator::UP sb = bp->createSearch(*md, strict);
         FakeResult result;
         sb->initRange(1, 10);
@@ -180,29 +182,6 @@ TEST("attribute_weighted_set_test") {
     test_tokens(false, {3, 5, 7});
     test_tokens(true, {3, 5, 7});
     test_tokens(false, {3});
-}
-
-namespace {
-
-void
-normalize_class_name_helper(vespalib::string& class_name, const vespalib::string& old, const vespalib::string& replacement)
-{
-    for (;;) {
-        auto pos = class_name.find(old);
-        if (pos == vespalib::string::npos) {
-            break;
-        }
-        class_name.replace(pos, old.size(), replacement);
-    }
-}
-
-vespalib::string normalize_class_name(vespalib::string class_name)
-{
-    normalize_class_name_helper(class_name, "long long", "long");
-    normalize_class_name_helper(class_name, ">>", "> >");
-    return class_name;
-}
-
 }
 
 TEST("attribute_weighted_set_single_token_filter_lifted_out") {

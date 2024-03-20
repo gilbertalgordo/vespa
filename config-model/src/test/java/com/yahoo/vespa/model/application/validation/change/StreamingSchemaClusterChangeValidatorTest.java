@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.model.application.validation.change;
 
 import com.yahoo.config.application.api.ValidationId;
@@ -7,6 +7,7 @@ import com.yahoo.config.model.api.ServiceInfo;
 import com.yahoo.config.model.deploy.DeployState;
 import com.yahoo.config.provision.ClusterSpec;
 import com.yahoo.vespa.model.VespaModel;
+import com.yahoo.vespa.model.application.validation.ValidationTester;
 import com.yahoo.vespa.model.content.utils.ApplicationPackageBuilder;
 import com.yahoo.vespa.model.content.utils.ContentClusterBuilder;
 import com.yahoo.vespa.model.content.utils.DocType;
@@ -69,8 +70,8 @@ public class StreamingSchemaClusterChangeValidatorTest {
         }
 
         public List<ConfigChangeAction> validate() {
-            return normalizeServicesInActions(validator.validate(currentModel, nextModel,
-                                                                 new DeployState.Builder().build()));
+            return normalizeServicesInActions(ValidationTester.validateChanges(validator, nextModel,
+                                                                               new DeployState.Builder().previousModel(currentModel).build()));
         }
 
         public void assertValidation() {
@@ -91,9 +92,9 @@ public class StreamingSchemaClusterChangeValidatorTest {
     private static final String ATTRIBUTE_INT_FIELD = "field f1 type int { indexing: attribute | summary }";
     private static final String ATTRIBUTE_FAST_ACCESS_INT_FIELD = "field f1 type int { indexing: attribute | summary \n attribute: fast-access }";
     private static final List<ServiceInfo> FOO_SERVICE =
-            List.of(new ServiceInfo("searchnode", "null", null, null, "foo/search/0", "null"));
+            List.of(new ServiceInfo("searchnode", "null", null, null, "foo/search/cluster.foo/0", "null"));
     private static final List<ServiceInfo> BAR_SERVICE =
-            List.of(new ServiceInfo("searchnode2", "null", null, null, "bar/search/0", "null"));
+            List.of(new ServiceInfo("searchnode2", "null", null, null, "bar/search/cluster.bar/0", "null"));
 
     @Test
     void changing_field_type_requires_refeed() {

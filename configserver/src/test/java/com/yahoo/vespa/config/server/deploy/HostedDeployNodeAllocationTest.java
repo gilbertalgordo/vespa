@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.config.server.deploy;
 
 import com.yahoo.component.Version;
@@ -26,6 +26,7 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 import static com.yahoo.vespa.config.server.deploy.DeployTester.createHostedModelFactory;
+import static java.math.BigDecimal.valueOf;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.fail;
 
@@ -63,11 +64,23 @@ public class HostedDeployNodeAllocationTest {
                 .provisioner(new MockProvisioner().hostProvisioner(provisioner))
                 .hostedConfigserverConfig(Zone.defaultZone())
                 .build();
-
+        String endpoints = """
+                [
+                  {
+                    "clusterId": "container",
+                    "names": [
+                      "c.example.com"
+                    ],
+                    "scope": "zone",
+                    "routingMethod": "exclusive"
+                  }
+                ]
+                """;
         try {
             tester.deployApp("src/test/apps/hosted/", new PrepareParams.Builder()
                     .vespaVersion("7.3")
-                    .quota(new Quota(Optional.of(4), Optional.of(0))));
+                    .containerEndpoints(endpoints)
+                    .quota(new Quota(Optional.of(4), Optional.of(valueOf(0)))));
             fail("Expected to get a QuotaExceededException");
         } catch (QuotaExceededException e) {
             assertEquals("main: The resources used cost $1.02 but your quota is $0.00: Contact support to upgrade your plan.", e.getMessage());

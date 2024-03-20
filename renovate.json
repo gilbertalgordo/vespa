@@ -3,21 +3,36 @@
   "extends": [
     "config:base"
   ],
-  "dependencyDashboardApproval": true,
+  "dependencyDashboardApproval": false,
   "transitiveRemediation": true,
-  "prHourlyLimit": 10,
-  "prConcurrentLimit": 10,
+  "prHourlyLimit": 20,
+  "prConcurrentLimit": 20,
   "ignorePaths": [],
-  "ignoreDeps": [
-    "com.github.spotbugs:spotbugs-annotations",
-    "com.yahoo.vespa.bundle-plugin:test-bundles",
-    "com.yahoo.vespa.jdisc_core:test_bundles",
-    "com.yahoo.vespa:cloud-tenant-base",
-    "com.yahoo.vespa:container-dependency-versions",
-    "com.yahoo.vespa:hosted-tenant-base",
-    "com.yahoo.vespa:parent",
-    "com.yahoo.vespa:zookeeper-server-parent",
-    "github.com/go-json-experiment/json",
-    "javax.servlet:javax.servlet-api"
+  "ignoreDeps": [],
+  "schedule": ["before 6am on thursday"],
+  "minimumReleaseAge": "14 days",
+  "packageRules": [
+    {
+      "description": "Disable version updates for Vespa artifacts",
+      "matchPackagePatterns": ["^com\\.yahoo\\.vespa"],
+      "matchManagers": ["maven"],
+      "enabled": false
+    },
+    {
+      "description": "Disable automatic PRs for artifacts, e.g. fixed version required like ZK dependencies or released to frequently. PRs can still be created manually from dependency dashboard.",
+      "matchPackageNames": [
+        "com.github.spotbugs:spotbugs-annotations",
+        "github.com/go-json-experiment/json",
+        "javax.servlet:javax.servlet-api",
+        "io.dropwizard.metrics:metrics-core",
+        "org.apache.zookeeper:zookeeper"
+      ],
+      "dependencyDashboardApproval": true
+    },
+    {
+      "description": "Disable automatic PRs for new major versions. PRs can still be created manually from dependency dashboard.",
+      "matchUpdateTypes": ["major"],
+      "dependencyDashboardApproval": true
+    }
   ]
 }

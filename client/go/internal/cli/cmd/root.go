@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package cmd
 
 import (
@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/briandowns/spinner"
 	"github.com/fatih/color"
 	"github.com/mattn/go-colorable"
 	"github.com/mattn/go-isatty"
@@ -20,7 +21,7 @@ import (
 	"github.com/vespa-engine/vespa/client/go/internal/build"
 	"github.com/vespa-engine/vespa/client/go/internal/cli/auth/auth0"
 	"github.com/vespa-engine/vespa/client/go/internal/cli/auth/zts"
-	"github.com/vespa-engine/vespa/client/go/internal/util"
+	"github.com/vespa-engine/vespa/client/go/internal/httputil"
 	"github.com/vespa-engine/vespa/client/go/internal/version"
 	"github.com/vespa-engine/vespa/client/go/internal/vespa"
 )
@@ -33,6 +34,10 @@ const (
 	targetFlag      = "target"
 	colorFlag       = "color"
 	quietFlag       = "quiet"
+
+	anyTarget = iota
+	localTargetOnly
+	cloudTargetOnly
 )
 
 // CLI holds the Vespa CLI command tree, configuration and dependencies.
@@ -54,8 +59,8 @@ type CLI struct {
 	config  *Config
 	version version.Version
 
-	httpClient        util.HTTPClient
-	httpClientFactory func(timeout time.Duration) util.HTTPClient
+	httpClient        httputil.Client
+	httpClientFactory func(timeout time.Duration) httputil.Client
 	auth0Factory      auth0Factory
 	ztsFactory        ztsFactory
 }
@@ -64,6 +69,7 @@ type CLI struct {
 // the error.
 type ErrCLI struct {
 	Status int
+	warn   bool
 	quiet  bool
 	hints  []string
 	error
@@ -74,8 +80,8 @@ type targetOptions struct {
 	logLevel string
 	// noCertificate declares that no client certificate should be required when using this target.
 	noCertificate bool
-	// cloudExclusive specifies whether to only allow Vespa Cloud and Hosted Vespa targets
-	cloudExclusive bool
+	// supportedType specifies what type of target to allow.
+	supportedType int
 }
 
 type targetType struct {
@@ -98,9 +104,33 @@ func (c *execSubprocess) Run(name string, args ...string) ([]byte, error) {
 	return exec.Command(name, args...).Output()
 }
 
-type auth0Factory func(httpClient util.HTTPClient, options auth0.Options) (vespa.Authenticator, error)
+type auth0Factory func(httpClient httputil.Client, options auth0.Options) (vespa.Authenticator, error)
 
-type ztsFactory func(httpClient util.HTTPClient, domain, url string) (vespa.Authenticator, error)
+type ztsFactory func(httpClient httputil.Client, domain, url string) (vespa.Authenticator, error)
+
+// newSpinner writes message to writer w and executes function fn. While fn is running a spinning animation will be
+// displayed after message.
+func newSpinner(w io.Writer, message string, fn func() error) error {
+	s := spinner.New(spinner.CharSets[11], 100*time.Millisecond, spinner.WithWriter(w))
+	// Cursor is hidden by default. Hiding cursor requires Stop() to be called to restore cursor (i.e. if the process is
+	// interrupted), however we don't want to bother with a signal handler just for this
+	s.HideCursor = false
+	if err := s.Color("blue", "bold"); err != nil {
+		return err
+	}
+	if !strings.HasSuffix(message, " ") {
+		message += " "
+	}
+	s.Prefix = message
+	s.FinalMSG = "\r" + message + "done\n"
+	s.Start()
+	err := fn()
+	if err != nil {
+		s.FinalMSG = "\r" + message + "failed\n"
+	}
+	s.Stop()
+	return err
+}
 
 // New creates the Vespa CLI, writing output to stdout and stderr, and reading environment variables from environment.
 func New(stdout, stderr io.Writer, environment []string) (*CLI, error) {
@@ -132,7 +162,7 @@ For detailed description of flags and configuration, see 'vespa help config'.
 	if err != nil {
 		return nil, err
 	}
-	httpClientFactory := util.CreateClient
+	httpClientFactory := httputil.NewClient
 	cli := CLI{
 		Environment: env,
 		Stdin:       os.Stdin,
@@ -148,10 +178,10 @@ For detailed description of flags and configuration, see 'vespa help config'.
 
 		httpClient:        httpClientFactory(time.Second * 10),
 		httpClientFactory: httpClientFactory,
-		auth0Factory: func(httpClient util.HTTPClient, options auth0.Options) (vespa.Authenticator, error) {
+		auth0Factory: func(httpClient httputil.Client, options auth0.Options) (vespa.Authenticator, error) {
 			return auth0.NewClient(httpClient, options)
 		},
-		ztsFactory: func(httpClient util.HTTPClient, domain, url string) (vespa.Authenticator, error) {
+		ztsFactory: func(httpClient httputil.Client, domain, url string) (vespa.Authenticator, error) {
 			return zts.NewClient(httpClient, domain, url)
 		},
 	}
@@ -213,10 +243,10 @@ func (c *CLI) configureFlags() map[string]*pflag.Flag {
 		quiet       bool
 	)
 	c.cmd.PersistentFlags().StringVarP(&target, targetFlag, "t", "local", `The target platform to use. Must be "local", "cloud", "hosted" or an URL`)
-	c.cmd.PersistentFlags().StringVarP(&application, applicationFlag, "a", "", "The application to use")
-	c.cmd.PersistentFlags().StringVarP(&instance, instanceFlag, "i", "", "The instance of the application to use")
+	c.cmd.PersistentFlags().StringVarP(&application, applicationFlag, "a", "", "The application to use (cloud only)")
+	c.cmd.PersistentFlags().StringVarP(&instance, instanceFlag, "i", "", "The instance of the application to use (cloud only)")
 	c.cmd.PersistentFlags().StringVarP(&cluster, clusterFlag, "C", "", "The container cluster to use. This is only required for applications with multiple clusters")
-	c.cmd.PersistentFlags().StringVarP(&zone, zoneFlag, "z", "", "The zone to use. This defaults to a dev zone")
+	c.cmd.PersistentFlags().StringVarP(&zone, zoneFlag, "z", "", "The zone to use. This defaults to a dev zone (cloud only)")
 	c.cmd.PersistentFlags().StringVarP(&color, colorFlag, "c", "auto", `Whether to use colors in output. Must be "auto", "never", or "always"`)
 	c.cmd.PersistentFlags().BoolVarP(&quiet, quietFlag, "q", false, "Print only errors")
 	flags := make(map[string]*pflag.Flag)
@@ -235,7 +265,7 @@ func (c *CLI) configureSpinner() {
 			return fn()
 		}
 	} else {
-		c.spinner = util.Spinner
+		c.spinner = newSpinner
 	}
 }
 
@@ -282,6 +312,7 @@ func (c *CLI) configureCommands() {
 	rootCmd.AddCommand(newVersionCmd(c))            // version
 	rootCmd.AddCommand(newVisitCmd(c))              // visit
 	rootCmd.AddCommand(newFeedCmd(c))               // feed
+	rootCmd.AddCommand(newFetchCmd(c))              // fetch
 }
 
 func (c *CLI) bindWaitFlag(cmd *cobra.Command, defaultSecs int, value *int) {
@@ -345,13 +376,11 @@ func (c *CLI) confirm(question string, confirmByDefault bool) (bool, error) {
 	}
 }
 
-func (c *CLI) waiter(once bool, timeout time.Duration) *Waiter {
-	return &Waiter{Once: once, Timeout: timeout, cli: c}
-}
+func (c *CLI) waiter(timeout time.Duration) *Waiter { return &Waiter{Timeout: timeout, cli: c} }
 
 // target creates a target according the configuration of this CLI and given opts.
 func (c *CLI) target(opts targetOptions) (vespa.Target, error) {
-	targetType, err := c.targetType(opts.cloudExclusive)
+	targetType, err := c.targetType(opts.supportedType)
 	if err != nil {
 		return nil, err
 	}
@@ -376,7 +405,7 @@ func (c *CLI) target(opts targetOptions) (vespa.Target, error) {
 }
 
 // targetType resolves the real target type and its custom URL (if any)
-func (c *CLI) targetType(cloud bool) (targetType, error) {
+func (c *CLI) targetType(targetTypeRestriction int) (targetType, error) {
 	v, err := c.config.targetOrURL()
 	if err != nil {
 		return targetType{}, err
@@ -389,8 +418,10 @@ func (c *CLI) targetType(cloud bool) (targetType, error) {
 			return targetType{}, err
 		}
 	}
-	if cloud && tt.name != vespa.TargetCloud && tt.name != vespa.TargetHosted {
-		return targetType{}, fmt.Errorf("unsupported target %s: this command only supports targets %s and %s", tt.name, vespa.TargetCloud, vespa.TargetHosted)
+	unsupported := (targetTypeRestriction == cloudTargetOnly && tt.name != vespa.TargetCloud && tt.name != vespa.TargetHosted) ||
+		(targetTypeRestriction == localTargetOnly && tt.name != vespa.TargetLocal && tt.name != vespa.TargetCustom)
+	if unsupported {
+		return targetType{}, fmt.Errorf("command does not support %s target", tt.name)
 	}
 	return tt, nil
 }
@@ -428,6 +459,22 @@ func (c *CLI) createCustomTarget(targetType, customURL string) (vespa.Target, er
 	}
 }
 
+func (c *CLI) cloudApiAuthenticator(deployment vespa.Deployment, system vespa.System) (vespa.Authenticator, error) {
+	apiKey, err := c.config.readAPIKey(c, system, deployment.Application.Tenant)
+	if err != nil {
+		return nil, err
+	}
+	if apiKey == nil {
+		authConfigPath := c.config.authConfigPath()
+		auth0, err := c.auth0Factory(c.httpClient, auth0.Options{ConfigPath: authConfigPath, SystemName: system.Name, SystemURL: system.URL})
+		if err != nil {
+			return nil, err
+		}
+		return auth0, nil
+	}
+	return vespa.NewRequestSigner(deployment.Application.SerializedForm(), apiKey), nil
+}
+
 func (c *CLI) createCloudTarget(targetType string, opts targetOptions, customURL string) (vespa.Target, error) {
 	system, err := c.system(targetType)
 	if err != nil {
@@ -449,19 +496,12 @@ func (c *CLI) createCloudTarget(targetType string, opts targetOptions, customURL
 	)
 	switch targetType {
 	case vespa.TargetCloud:
-		apiKey, err := c.config.readAPIKey(c, system, deployment.Application.Tenant)
-		if err != nil {
-			return nil, err
-		}
-		if apiKey == nil {
-			authConfigPath := c.config.authConfigPath()
-			auth0, err := c.auth0Factory(c.httpClient, auth0.Options{ConfigPath: authConfigPath, SystemName: system.Name, SystemURL: system.URL})
+		// Only setup API authentication if we're using "cloud" target, and not a direct URL
+		if customURL == "" {
+			apiAuth, err = c.cloudApiAuthenticator(deployment, system)
 			if err != nil {
 				return nil, err
 			}
-			apiAuth = auth0
-		} else {
-			apiAuth = vespa.NewRequestSigner(deployment.Application.SerializedForm(), apiKey)
 		}
 		deploymentTLSOptions = vespa.TLSOptions{}
 		if !opts.noCertificate {
@@ -560,7 +600,11 @@ func (c *CLI) Run(args ...string) error {
 	if err != nil {
 		if cliErr, ok := err.(ErrCLI); ok {
 			if !cliErr.quiet {
-				c.printErr(cliErr, cliErr.hints...)
+				if cliErr.warn {
+					c.printWarning(cliErr, cliErr.hints...)
+				} else {
+					c.printErr(cliErr, cliErr.hints...)
+				}
 			}
 		} else {
 			c.printErr(err)
@@ -588,7 +632,7 @@ func isTerminal(w io.Writer) bool {
 // applicationPackageFrom returns an application loaded from args. If args is empty, the application package is loaded
 // from the working directory. If requirePackaging is true, the application package is required to be packaged with mvn
 // package.
-func (c *CLI) applicationPackageFrom(args []string, requirePackaging bool) (vespa.ApplicationPackage, error) {
+func (c *CLI) applicationPackageFrom(args []string, options vespa.PackageOptions) (vespa.ApplicationPackage, error) {
 	path := "."
 	if len(args) == 1 {
 		path = args[0]
@@ -605,5 +649,5 @@ func (c *CLI) applicationPackageFrom(args []string, requirePackaging bool) (vesp
 	} else if len(args) > 1 {
 		return vespa.ApplicationPackage{}, fmt.Errorf("expected 0 or 1 arguments, got %d", len(args))
 	}
-	return vespa.FindApplicationPackage(path, requirePackaging)
+	return vespa.FindApplicationPackage(path, options)
 }

@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #pragma once
 
@@ -64,7 +64,7 @@ struct ThreadBundle {
     /**
      * Empty virtual destructor to enable subclassing.
      **/
-    virtual ~ThreadBundle() {}
+    virtual ~ThreadBundle() = default;
 
     // a thread bundle that can only run things in the current thread.
     static ThreadBundle &trivial();

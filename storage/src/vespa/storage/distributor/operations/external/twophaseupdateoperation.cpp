@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include "getoperation.h"
 #include "intermediate_message_sender.h"
@@ -11,6 +11,7 @@
 #include <vespa/document/select/parser.h>
 #include <vespa/storage/distributor/distributor_bucket_space.h>
 #include <vespa/storage/distributor/distributor_bucket_space_repo.h>
+#include <vespa/storage/config/distributorconfiguration.h>
 #include <vespa/storageapi/message/persistence.h>
 #include <vespa/vdslib/state/cluster_state_bundle.h>
 #include <vespa/vespalib/stllike/hash_set.hpp>
@@ -92,9 +93,8 @@ TwoPhaseUpdateOperation::ensureUpdateReplyCreated()
 }
 
 void
-TwoPhaseUpdateOperation::sendReply(
-        DistributorStripeMessageSender& sender,
-        std::shared_ptr<api::UpdateReply> reply)
+TwoPhaseUpdateOperation::sendReply(DistributorStripeMessageSender& sender,
+                                   const std::shared_ptr<api::UpdateReply> & reply)
 {
     assert(!_replySent);
     reply->getTrace().addChild(std::move(_trace));

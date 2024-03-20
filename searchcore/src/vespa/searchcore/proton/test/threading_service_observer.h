@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 #pragma once
 
 #include "executor_observer.h"
@@ -48,7 +48,6 @@ public:
         return _shared;
     }
     FNET_Transport & transport() override { return _service.transport(); }
-    const vespalib::Clock & clock() const override { return _service.clock(); }
     vespalib::ISequencedTaskExecutor &field_writer() override {
         return _field_writer;
     }

@@ -1,8 +1,9 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package curl
 
 import (
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -13,10 +14,11 @@ func TestPost(t *testing.T) {
 	require.Nil(t, err)
 	c.PrivateKey = "key.pem"
 	c.Certificate = "cert.pem"
+	c.Timeout = time.Minute
 	c.WithBodyFile("file.json")
 	c.Header("Content-Type", "application/json")
 
-	assert.Equal(t, "curl --key key.pem --cert cert.pem -X POST -H 'Content-Type: application/json' --data-binary @file.json https://example.com", c.String())
+	assert.Equal(t, "curl --key key.pem --cert cert.pem -X POST -m 60 -H 'Content-Type: application/json' --data-binary @file.json https://example.com", c.String())
 }
 
 func TestGet(t *testing.T) {

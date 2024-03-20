@@ -1,9 +1,10 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include "iterator_pack.h"
 #include "termwise_helper.h"
 #include <vespa/searchlib/fef/matchdata.h>
 #include <cassert>
+#include <limits>
 
 namespace search::queryeval {
 
@@ -28,7 +29,7 @@ SearchIteratorPack::SearchIteratorPack(const std::vector<SearchIterator*> &child
         _children.emplace_back(child);
     }
     assert((_children.size() == _childMatch.size()) || _childMatch.empty());
-    assert(_children.size() < 0x10000);
+    assert(_children.size() <= std::numeric_limits<ref_t>::max());
 }
 
 SearchIteratorPack::SearchIteratorPack(const std::vector<SearchIterator*> &children, MatchDataUP md)

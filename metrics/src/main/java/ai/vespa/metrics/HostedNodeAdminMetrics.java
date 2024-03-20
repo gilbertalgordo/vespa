@@ -1,3 +1,4 @@
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package ai.vespa.metrics;
 
 /**
@@ -6,6 +7,7 @@ package ai.vespa.metrics;
 
 // TODO: Move to hosted repo.
 public enum HostedNodeAdminMetrics implements VespaMetrics {
+    COREDUMPS_PROCESSED("coredumps.processed", Unit.OPERATION, "Number of coredumps processed"),
 
     // System metrics
     CPU_UTIL("cpu.util", Unit.PERCENTAGE, "CPU utilisation"),

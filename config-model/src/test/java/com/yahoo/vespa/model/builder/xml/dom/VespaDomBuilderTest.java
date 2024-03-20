@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.model.builder.xml.dom;
 
 import com.yahoo.config.application.Xml;
@@ -17,6 +17,7 @@ import java.io.StringReader;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 /**
  * @author gjoranv
@@ -97,6 +98,20 @@ public class VespaDomBuilderTest {
         HostResource host = hostSystem.getHosts().get(0);
         assertNotNull(hostSystem.getHost("node1"));
         assertEquals("hosts [" + host.getHostname() + "]", hostSystem.toString());
+    }
+
+    @Test
+    void testMinimumRequiredVespaVersion() {
+        var exception = assertThrows(IllegalArgumentException.class,
+                     () -> createModel(hosts, """
+                             <services minimum-required-vespa-version='1.0.1' >
+                             </services>"""));
+        assertEquals("Cannot deploy application, minimum required Vespa version is specified as 1.0.1 in services.xml, this Vespa version is 1.0.0.",
+                     exception.getMessage());
+
+        createModel(hosts, """
+                <services minimum-required-vespa-version='1.0.0' >
+                </services>""");
     }
 
     private VespaModel createModel(String hosts, String services) {

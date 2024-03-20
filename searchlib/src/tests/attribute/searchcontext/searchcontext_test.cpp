@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include <vespa/searchcommon/attribute/config.h>
 #include <vespa/searchlib/attribute/attributefactory.h>
@@ -18,10 +18,12 @@
 #include <vespa/searchlib/queryeval/hitcollector.h>
 #include <vespa/searchlib/queryeval/simpleresult.h>
 #include <vespa/searchlib/test/attribute_builder.h>
+#define ENABLE_GTEST_MIGRATION
 #include <vespa/searchlib/test/searchiteratorverifier.h>
+#include <vespa/vespalib/gtest/gtest.h>
 #include <vespa/vespalib/stllike/asciistream.h>
-#include <vespa/vespalib/testkit/testapp.h>
 #include <vespa/vespalib/util/compress.h>
+#include <vespa/vespalib/util/simple_thread_bundle.h>
 #include <vespa/vespalib/util/stringfmt.h>
 #include <initializer_list>
 #include <set>
@@ -59,6 +61,7 @@ using largeint_t = AttributeVector::largeint_t;
 using attribute::BasicType;
 using attribute::CollectionType;
 using attribute::Config;
+using attribute::HitEstimate;
 using attribute::SearchContextParams;
 using attribute::test::AttributeBuilder;
 using fef::MatchData;
@@ -86,6 +89,12 @@ public:
 DocSet::DocSet() noexcept = default;
 DocSet::~DocSet() = default;
 
+bool is_flag_attribute(const Config& cfg) {
+    return cfg.fastSearch() &&
+        (cfg.basicType() == BasicType::INT8) &&
+        (cfg.collectionType() == CollectionType::ARRAY);
+}
+
 template <typename V, typename T>
 class PostingList
 {
@@ -103,6 +112,21 @@ public:
     DocSet & getHits() { return _hits; }
     const DocSet & getHits() const { return _hits; }
     uint32_t getHitCount() const { return _hits.size(); }
+    attribute::HitEstimate expected_hit_estimate() const {
+        if (getHitCount() == 0) {
+            return HitEstimate(0);
+        }
+        uint32_t docid_limit = _vec->getStatus().getNumDocs();
+        if (is_flag_attribute(_vec->getConfig())) {
+            return HitEstimate::unknown(docid_limit);
+        } else if (_vec->getConfig().fastSearch()) {
+            return HitEstimate(getHitCount());
+        } else if (_vec->getConfig().collectionType() == CollectionType::SINGLE) {
+            return HitEstimate::unknown(docid_limit);
+        } else {
+            return HitEstimate::unknown(std::max((uint64_t)docid_limit, _vec->getStatus().getNumValues()));
+        }
+    }
 };
 
 template <typename V, typename T>
@@ -119,7 +143,7 @@ public:
     DocRange(uint32_t start_, uint32_t end_) : start(start_), end(end_) {}
 };
 
-class SearchContextTest : public vespalib::TestApp
+class SearchContextTest : public ::testing::Test
 {
 public:
     // helper functions
@@ -127,7 +151,7 @@ public:
     static void addDocs(AttributeVector & ptr, uint32_t numDocs);
     template <typename V, typename T>
     static SearchContextPtr getSearch(const V & vec, const T & term, TermType termType=TermType::WORD);
-private:
+protected:
     using ConfigMap = std::map<vespalib::string, Config>;
     // Map of all config objects
     ConfigMap _integerCfg;
@@ -150,18 +174,21 @@ private:
 
     ResultSetPtr performSearch(SearchIterator & sb, uint32_t numDocs);
     template <typename V, typename T>
-    ResultSetPtr performSearch(const V & vec, const T & term, TermType termType=TermType::WORD);
+    ResultSetPtr performSearch(const V & vec, const T & term);
+    template <typename V, typename T>
+    ResultSetPtr performSearch(const queryeval::ExecuteInfo & executeInfo, const V & vec, const T & term, TermType termType);
     template <typename V>
-    void performSearch(const V & vec, const vespalib::string & term,
+    void performSearch(const V & vec, const vespalib::string & term, const DocSet & expected, TermType termType);
+    template <typename V>
+    void performSearch(const queryeval::ExecuteInfo & executeInfo, const V & vec, const vespalib::string & term,
                        const DocSet & expected, TermType termType);
     void checkResultSet(const ResultSet & rs, const DocSet & exp, bool bitVector);
 
     template<typename T, typename A>
     void testSearchIterator(const std::vector<T> & keys, const vespalib::string &keyAsString, const ConfigMap &cfgs);
-    void testSearchIteratorConformance();
     // test search functionality
     template <typename V, typename T>
-    void testFind(const PostingList<V, T> & first);
+    void testFind(const PostingList<V, T> & first, bool verify_hit_estimate);
 
     template <typename V, typename T>
     void testSearch(V & attribute, uint32_t numDocs, const std::vector<T> & values);
@@ -171,7 +198,6 @@ private:
     void testMultiValueSearchHelper(V & vec, const std::vector<T> & values);
     template <typename V, typename T>
     void testMultiValueSearch(V& attr, uint32_t num_docs, const std::vector<T> & values);
-    void testSearch();
 
     class IteratorTester {
     public:
@@ -210,20 +236,18 @@ private:
     void testNonStrictSearchIterator(SearchContext & threeHits, SearchContext & noHits, const IteratorTester & typeTester);
     AttributePtr fillForSearchIteratorTest(const vespalib::string& name, const Config& cfg);
     AttributePtr fillForSemiNibbleSearchIteratorTest(const vespalib::string& name, const Config& cfg);
-    void testSearchIterator();
 
 
     // test search iterator unpacking
     void fillForSearchIteratorUnpackingTest(IntegerAttribute * ia, bool extra);
     void testSearchIteratorUnpacking(const AttributePtr & ptr, SearchContext & sc, bool extra, bool strict) {
-        sc.fetchPostings(queryeval::ExecuteInfo::create(strict, 1.0));
+        sc.fetchPostings(queryeval::ExecuteInfo::createForTest(strict));
         for (bool withElementId : {false, true}) {
             testSearchIteratorUnpacking(ptr, sc, extra, strict, withElementId);
         }
     }
     void testSearchIteratorUnpacking(const AttributePtr & ptr, SearchContext & sc,
                                      bool extra, bool strict, bool withElementId);
-    void testSearchIteratorUnpacking();
 
 
     // test range search
@@ -231,57 +255,41 @@ private:
     void performRangeSearch(const VectorType & vec, const vespalib::string & term, const DocSet & expected);
     template <typename VectorType, typename ValueType>
     void testRangeSearch(const AttributePtr & ptr, uint32_t numDocs, std::vector<ValueType> values);
-    void testRangeSearch();
-    void testRangeSearchLimited();
 
 
     // test case insensitive search
     void performCaseInsensitiveSearch(const StringAttribute & vec, const vespalib::string & term, const DocSet & expected);
     void testCaseInsensitiveSearch(const AttributePtr & ptr);
-    void testCaseInsensitiveSearch();
     void testRegexSearch(const vespalib::string& name, const Config& cfg);
-    void testRegexSearch();
 
 
     // test prefix search
     void testPrefixSearch(const vespalib::string& name, const Config& cfg);
-    void testPrefixSearch();
 
     // test fuzzy search
     void testFuzzySearch(const vespalib::string& name, const Config& cfg);
-    void testFuzzySearch();
 
     // test that search is working after clear doc
     template <typename VectorType, typename ValueType>
     void requireThatSearchIsWorkingAfterClearDoc(const vespalib::string & name, const Config & cfg,
                                                  ValueType startValue, const vespalib::string & term);
-    void requireThatSearchIsWorkingAfterClearDoc();
 
     // test that search is working after load and clear doc
     template <typename VectorType, typename ValueType>
     void requireThatSearchIsWorkingAfterLoadAndClearDoc(const vespalib::string & name, const Config & cfg,
                                                         ValueType startValue, ValueType defaultValue,
                                                         const vespalib::string & term);
-    void requireThatSearchIsWorkingAfterLoadAndClearDoc();
 
     template <typename VectorType, typename ValueType>
     void requireThatSearchIsWorkingAfterUpdates(const vespalib::string & name, const Config & cfg,
                                                 ValueType value1, ValueType value2);
-    void requireThatSearchIsWorkingAfterUpdates();
 
-    void requireThatFlagAttributeIsWorkingWhenNewDocsAreAdded();
 
     template <typename VectorType, typename ValueType>
     void requireThatInvalidSearchTermGivesZeroHits(const vespalib::string & name, const Config & cfg, ValueType value);
-    void requireThatInvalidSearchTermGivesZeroHits();
 
-    void requireThatFlagAttributeHandlesTheByteRange();
 
     void requireThatOutOfBoundsSearchTermGivesZeroHits(const vespalib::string &name, const Config &cfg, int32_t maxValue);
-    void requireThatOutOfBoundsSearchTermGivesZeroHits();
-
-    void single_bool_attribute_search_context_handles_true_and_false_queries();
-    void single_bool_attribute_search_iterator_handles_true_and_false_queries();
 
     // init maps with config objects
     void initIntegerConfig();
@@ -291,7 +299,6 @@ private:
 public:
     SearchContextTest();
     ~SearchContextTest() override;
-    int Main() override;
 };
 
 
@@ -309,7 +316,7 @@ SearchContextTest::addDocs(AttributeVector & ptr, uint32_t numDocs)
     addReservedDoc(ptr);
     for (uint32_t i = 1; i <= numDocs; ++i) {
         ptr.addDoc(docId);
-        EXPECT_EQUAL(docId, i);
+        EXPECT_EQ(docId, i);
     }
     ASSERT_TRUE(ptr.getNumDocs() == numDocs + 1);
 }
@@ -460,11 +467,18 @@ SearchContextTest::performSearch(SearchIterator & sb, uint32_t numDocs)
 
 template <typename V, typename T>
 ResultSetPtr
-SearchContextTest::performSearch(const V & vec, const T & term, TermType termType)
+SearchContextTest::performSearch(const V & vec, const T & term)
+{
+    return performSearch(queryeval::ExecuteInfo::TRUE, vec, term, TermType::WORD);
+}
+
+template <typename V, typename T>
+ResultSetPtr
+SearchContextTest::performSearch(const queryeval::ExecuteInfo & executeInfo, const V & vec, const T & term, TermType termType)
 {
     TermFieldMatchData dummy;
     SearchContextPtr sc = getSearch(vec, term, termType);
-    sc->fetchPostings(queryeval::ExecuteInfo::TRUE);
+    sc->fetchPostings(executeInfo);
     SearchBasePtr sb = sc->createIterator(&dummy, true);
     ResultSetPtr rs = performSearch(*sb, vec.getNumDocs());
     return rs;
@@ -472,7 +486,7 @@ SearchContextTest::performSearch(const V & vec, const T & term, TermType termTyp
 
 template <typename V>
 void
-SearchContextTest::performSearch(const V & vec, const vespalib::string & term,
+SearchContextTest::performSearch(const queryeval::ExecuteInfo & executeInfo, const V & vec, const vespalib::string & term,
                                  const DocSet & expected, TermType termType)
 {
 #if 0
@@ -481,15 +495,22 @@ SearchContextTest::performSearch(const V & vec, const vespalib::string & term,
     std::cout << "}, prefix(" << (prefix ? "true" : "false") << ")" << std::endl;
 #endif
     { // strict search iterator
-        ResultSetPtr rs = performSearch(vec, term, termType);
+        ResultSetPtr rs = performSearch(executeInfo, vec, term, termType);
         checkResultSet(*rs, expected, false);
     }
+}
+template <typename V>
+void
+SearchContextTest::performSearch(const V & vec, const vespalib::string & term,
+                                 const DocSet & expected, TermType termType)
+{
+    performSearch(queryeval::ExecuteInfo::TRUE, vec, term, expected, termType);
 }
 
 void
 SearchContextTest::checkResultSet(const ResultSet & rs, const DocSet & expected, bool bitVector)
 {
-    EXPECT_EQUAL(rs.getNumHits(), expected.size());
+    EXPECT_EQ(rs.getNumHits(), expected.size());
     if (bitVector) {
         const BitVector * vec = rs.getBitOverflow();
         if ( ! expected.empty()) {
@@ -504,7 +525,7 @@ SearchContextTest::checkResultSet(const ResultSet & rs, const DocSet & expected,
             ASSERT_TRUE(array != nullptr);
             uint32_t i = 0;
             for (auto iter = expected.begin(); iter != expected.end(); ++iter, ++i) {
-                EXPECT_TRUE(array[i].getDocId() == *iter);
+                EXPECT_EQ(array[i].getDocId(), *iter);
             }
         }
     }
@@ -516,10 +537,16 @@ SearchContextTest::checkResultSet(const ResultSet & rs, const DocSet & expected,
 //-----------------------------------------------------------------------------
 template <typename V, typename T>
 void
-SearchContextTest::testFind(const PostingList<V, T> & pl)
+SearchContextTest::testFind(const PostingList<V, T> & pl, bool verify_hit_estimate)
 {
     { // strict search iterator
         SearchContextPtr sc = getSearch(pl.getAttribute(), pl.getValue());
+        if (verify_hit_estimate) {
+            auto act_est = sc->calc_hit_estimate();
+            auto exp_est = pl.expected_hit_estimate();
+            EXPECT_EQ(exp_est.est_hits(), act_est.est_hits());
+            EXPECT_EQ(exp_est.is_unknown(), act_est.is_unknown());
+        }
         sc->fetchPostings(queryeval::ExecuteInfo::TRUE);
         TermFieldMatchData dummy;
         SearchBasePtr sb = sc->createIterator(&dummy, true);
@@ -551,7 +578,7 @@ SearchContextTest::testSearch(V & attribute, uint32_t numDocs, const std::vector
 
     // test find()
     for (const auto & list : lists) {
-        testFind(list);
+        testFind(list, true);
     }
 }
 
@@ -571,7 +598,7 @@ SearchContextTest::testMultiValueSearchHelper(V & vec, const std::vector<T> & va
     for (const auto & list : lists) {
         //std::cout << "testFind(lists[" << i << "]): value = " << lists[i].getValue()
         //                                            << ", hit count = " << lists[i].getHitCount() << std::endl;
-        testFind(list);
+        testFind(list, false);
     }
 }
 
@@ -649,7 +676,7 @@ public:
     ~Verifier() override;
     SearchIterator::UP
     create(bool strict) const override {
-        _sc->fetchPostings(queryeval::ExecuteInfo::create(strict, 1.0));
+        _sc->fetchPostings(queryeval::ExecuteInfo::createForTest(strict));
         return _sc->createIterator(&_dummy, strict);
     }
 private:
@@ -673,7 +700,7 @@ Verifier<T, A>::Verifier(const std::vector<T> & keys, const vespalib::string & k
     }
     _attribute->commit(true);
     _sc = SearchContextTest::getSearch(*_attribute, keyAsString);
-    ASSERT_TRUE(_sc->valid());
+    EXPECT_TRUE(_sc->valid());
 }
 
 template<typename T, typename A>
@@ -695,15 +722,15 @@ void SearchContextTest::testSearchIterator(const std::vector<T> & keys, const ve
     }
 }
 
-void SearchContextTest::testSearchIteratorConformance() {
+TEST_F(SearchContextTest, test_search_iterator_conformance)
+{
     testSearchIterator<AttributeVector::largeint_t, IntegerAttribute>({42,45,46}, "[0;100]", _integerCfg);
     testSearchIterator<AttributeVector::largeint_t, IntegerAttribute>({42}, "42", _integerCfg);
     testSearchIterator<double, FloatingPointAttribute>({42.42}, "42.42", _floatCfg);
     testSearchIterator<vespalib::string, StringAttribute>({"any-key"}, "any-key", _stringCfg);
 }
 
-void
-SearchContextTest::testSearch()
+TEST_F(SearchContextTest, test_search)
 {
     const uint32_t numDocs = 100;
     const uint32_t numUniques = 20;
@@ -764,15 +791,15 @@ SearchContextTest::testStrictSearchIterator(SearchContext & threeHits,
         EXPECT_TRUE(sb->getDocId() == sb->beginId() ||
                     sb->getDocId() == 1u);
         EXPECT_TRUE(sb->seek(1));
-        EXPECT_EQUAL(sb->getDocId(), 1u);
+        EXPECT_EQ(sb->getDocId(), 1u);
         EXPECT_TRUE(!sb->seek(2));
-        EXPECT_EQUAL(sb->getDocId(), 3u);
+        EXPECT_EQ(sb->getDocId(), 3u);
         EXPECT_TRUE(sb->seek(3));
-        EXPECT_EQUAL(sb->getDocId(), 3u);
+        EXPECT_EQ(sb->getDocId(), 3u);
         EXPECT_TRUE(!sb->seek(4));
-        EXPECT_EQUAL(sb->getDocId(), 5u);
+        EXPECT_EQ(sb->getDocId(), 5u);
         EXPECT_TRUE(sb->seek(5));
-        EXPECT_EQUAL(sb->getDocId(), 5u);
+        EXPECT_EQ(sb->getDocId(), 5u);
         EXPECT_TRUE(!sb->seek(6));
         EXPECT_TRUE(sb->isAtEnd());
     }
@@ -801,15 +828,15 @@ SearchContextTest::testNonStrictSearchIterator(SearchContext & threeHits,
         sb->initRange(1, threeHits.attribute().getCommittedDocIdLimit());
         EXPECT_TRUE(typeTester.matches(*sb));
         EXPECT_TRUE(sb->seek(1));
-        EXPECT_EQUAL(sb->getDocId(), 1u);
+        EXPECT_EQ(sb->getDocId(), 1u);
         EXPECT_TRUE(!sb->seek(2));
-        EXPECT_EQUAL(sb->getDocId(), 1u);
+        EXPECT_EQ(sb->getDocId(), 1u);
         EXPECT_TRUE(sb->seek(3));
-        EXPECT_EQUAL(sb->getDocId(), 3u);
+        EXPECT_EQ(sb->getDocId(), 3u);
         EXPECT_TRUE(!sb->seek(4));
-        EXPECT_EQUAL(sb->getDocId(), 3u);
+        EXPECT_EQ(sb->getDocId(), 3u);
         EXPECT_TRUE(sb->seek(5));
-        EXPECT_EQUAL(sb->getDocId(), 5u);
+        EXPECT_EQ(sb->getDocId(), 5u);
         EXPECT_TRUE(!sb->seek(6));
         EXPECT_TRUE(sb->getDocId() == 5u || sb->isAtEnd());
     }
@@ -822,9 +849,9 @@ SearchContextTest::testNonStrictSearchIterator(SearchContext & threeHits,
         EXPECT_TRUE(sb->getDocId() == sb->beginId() ||
                     sb->isAtEnd());
         EXPECT_TRUE(!sb->seek(1));
-        EXPECT_NOT_EQUAL(sb->getDocId(), 1u);
+        EXPECT_NE(sb->getDocId(), 1u);
         EXPECT_TRUE(!sb->seek(6));
-        EXPECT_NOT_EQUAL(sb->getDocId(), 6u);
+        EXPECT_NE(sb->getDocId(), 6u);
     }
 }
 
@@ -840,8 +867,7 @@ SearchContextTest::fillForSemiNibbleSearchIteratorTest(const vespalib::string& n
     return AttributeBuilder(name, cfg).fill({1, 2, 1, 2, 1}).get();
 }
 
-void
-SearchContextTest::testSearchIterator()
+TEST_F(SearchContextTest, test_search_iterator)
 {
     {
         Config cfg(BasicType::INT32, CollectionType::SINGLE);
@@ -983,46 +1009,45 @@ SearchContextTest::testSearchIteratorUnpacking(const AttributePtr & attr, Search
 
     // unpack and check weights
     search.unpack(1);
-    EXPECT_EQUAL(search.getDocId(), 1u);
-    EXPECT_EQUAL(md.getDocId(), 1u);
-    EXPECT_EQUAL(md.getWeight(), weights[0]);
+    EXPECT_EQ(search.getDocId(), 1u);
+    EXPECT_EQ(md.getDocId(), 1u);
+    EXPECT_EQ(md.getWeight(), weights[0]);
 
     search.unpack(2);
-    EXPECT_EQUAL(search.getDocId(), 2u);
-    EXPECT_EQUAL(md.getDocId(), 2u);
+    EXPECT_EQ(search.getDocId(), 2u);
+    EXPECT_EQ(md.getDocId(), 2u);
     if (withElementId && attr->hasMultiValue() && !attr->hasWeightedSetType()) {
         std::vector<uint32_t> elems;
         elemIt->getElementIds(2, elems);
-        ASSERT_EQUAL(2u, elems.size());
-        EXPECT_EQUAL(0u,elems[0]);
-        EXPECT_EQUAL(1u,elems[1]);
+        ASSERT_EQ(2u, elems.size());
+        EXPECT_EQ(0u,elems[0]);
+        EXPECT_EQ(1u,elems[1]);
     } else {
-        EXPECT_EQUAL(md.getWeight(), weights[1]);
+        EXPECT_EQ(md.getWeight(), weights[1]);
     }
 
     search.unpack(3);
-    EXPECT_EQUAL(search.getDocId(), 3u);
-    EXPECT_EQUAL(md.getDocId(), 3u);
+    EXPECT_EQ(search.getDocId(), 3u);
+    EXPECT_EQ(md.getDocId(), 3u);
     if (withElementId && attr->hasMultiValue() && !attr->hasWeightedSetType()) {
         std::vector<uint32_t> elems;
         elemIt->getElementIds(3, elems);
-        ASSERT_EQUAL(3u, elems.size());
-        EXPECT_EQUAL(0u,elems[0]);
-        EXPECT_EQUAL(1u,elems[1]);
-        EXPECT_EQUAL(2u,elems[2]);
+        ASSERT_EQ(3u, elems.size());
+        EXPECT_EQ(0u,elems[0]);
+        EXPECT_EQ(1u,elems[1]);
+        EXPECT_EQ(2u,elems[2]);
     } else {
-        EXPECT_EQUAL(md.getWeight(), weights[2]);
+        EXPECT_EQ(md.getWeight(), weights[2]);
     }
     if (extra) {
         search.unpack(4);
-        EXPECT_EQUAL(search.getDocId(), 4u);
-        EXPECT_EQUAL(md.getDocId(), 4u);
-        EXPECT_EQUAL(md.getWeight(), 1);
+        EXPECT_EQ(search.getDocId(), 4u);
+        EXPECT_EQ(md.getDocId(), 4u);
+        EXPECT_EQ(md.getWeight(), 1);
     }
 }
 
-void
-SearchContextTest::testSearchIteratorUnpacking()
+TEST_F(SearchContextTest, test_search_iterator_unpacking)
 {
     std::vector<std::pair<vespalib::string, Config> > config;
 
@@ -1089,10 +1114,13 @@ SearchContextTest::testSearchIteratorUnpacking()
 
 template <typename VectorType>
 void
-SearchContextTest::performRangeSearch(const VectorType & vec, const vespalib::string & term,
-                                      const DocSet & expected)
+SearchContextTest::performRangeSearch(const VectorType & vec, const vespalib::string & term, const DocSet & expected)
 {
-    performSearch(vec, term, expected, TermType::WORD);
+    for (size_t num_threads : {1,3}) {
+        vespalib::SimpleThreadBundle thread_bundle(num_threads);
+        auto executeInfo = queryeval::ExecuteInfo::create(true, 1.0, vespalib::Doom::never(), thread_bundle);
+        performSearch(executeInfo, vec, term, expected, TermType::WORD);
+    }
 }
 
 template <typename VectorType, typename ValueType>
@@ -1176,8 +1204,43 @@ SearchContextTest::testRangeSearch(const AttributePtr & ptr, uint32_t numDocs, s
     }
 }
 
-void
-SearchContextTest::testRangeSearchLimited()
+DocSet
+createDocs(uint32_t from, int32_t count) {
+    DocSet docs;
+    if (count >= 0) {
+        for (int32_t i(0); i < count; i++) {
+            docs.put(from + i);
+        }
+    } else {
+        for (int32_t i(0); i > count; i--) {
+            docs.put(from + i);
+        }
+    }
+    return docs;
+}
+
+TEST_F(SearchContextTest, test_range_search_limited_huge_dictionary)
+{
+    Config cfg(BasicType::INT32, CollectionType::SINGLE);
+    cfg.setFastSearch(true);
+    std::vector<int32_t> v;
+    v.reserve(2000);
+    for (size_t i(0); i < v.capacity(); i++) {
+        v.push_back(i);
+    }
+    auto ptr = AttributeBuilder("limited-int32", cfg).fill(v).get();
+    auto& vec = dynamic_cast<IntegerAttribute &>(*ptr);
+
+    performRangeSearch(vec, "[1;9;1200]", createDocs(2, 9));
+    performRangeSearch(vec, "[1;1109;1200]", createDocs(2, 1109));
+    performRangeSearch(vec, "[1;3009;1200]", createDocs(2, 1200));
+
+    performRangeSearch(vec, "[1;9;-1200]", createDocs(2, 9));
+    performRangeSearch(vec, "[1;1109;-1200]", createDocs(2, 1109));
+    performRangeSearch(vec, "[1;3009;-1200]", createDocs(2000, -1200));
+}
+
+TEST_F(SearchContextTest, test_range_search_limited)
 {
     Config cfg(BasicType::INT32, CollectionType::SINGLE);
     cfg.setFastSearch(true);
@@ -1230,8 +1293,7 @@ SearchContextTest::testRangeSearchLimited()
     performRangeSearch(vec, "[;;-1]", expected);
 }
 
-void
-SearchContextTest::testRangeSearch()
+TEST_F(SearchContextTest, test_range_search)
 {
     const uint32_t numDocs = 100;
     const uint32_t numValues = 20;
@@ -1325,8 +1387,8 @@ SearchContextTest::testCaseInsensitiveSearch(const AttributePtr & ptr)
     doc = 1;
     for (uint32_t j = 0; j < 5; ++j) {
         for (uint32_t i = 0; i < 5; ++i) {
-            EXPECT_EQUAL(ptr->get(doc++, buffer, 1), uint32_t(1));
-            EXPECT_EQUAL(vespalib::string(buffer[0]), vespalib::string(terms[i][j]));
+            EXPECT_EQ(ptr->get(doc++, buffer, 1), uint32_t(1));
+            EXPECT_EQ(vespalib::string(buffer[0]), vespalib::string(terms[i][j]));
         }
     }
 
@@ -1375,16 +1437,14 @@ SearchContextTest::testRegexSearch(const vespalib::string& name, const Config& c
 }
 
 
-void
-SearchContextTest::testCaseInsensitiveSearch()
+TEST_F(SearchContextTest, test_case_insensitive_search)
 {
     for (const auto & cfg : _stringCfg) {
         testCaseInsensitiveSearch(AttributeFactory::createAttribute(cfg.first, cfg.second));
     }
 }
 
-void
-SearchContextTest::testRegexSearch()
+TEST_F(SearchContextTest, test_regex_search)
 {
     for (const auto & cfg : _stringCfg) {
         testRegexSearch(cfg.first, cfg.second);
@@ -1447,8 +1507,7 @@ SearchContextTest::testPrefixSearch(const vespalib::string& name, const Config& 
 }
 
 
-void
-SearchContextTest::testPrefixSearch()
+TEST_F(SearchContextTest, test_prefix_search)
 {
     for (const auto & cfg : _stringCfg) {
         testPrefixSearch(cfg.first, cfg.second);
@@ -1483,8 +1542,7 @@ SearchContextTest::testFuzzySearch(const vespalib::string& name, const Config& c
     }
 }
 
-void
-SearchContextTest::testFuzzySearch()
+TEST_F(SearchContextTest, test_fuzzy_search)
 {
     for (const auto & cfg : _stringCfg) {
         testFuzzySearch(cfg.first, cfg.second);
@@ -1508,28 +1566,27 @@ SearchContextTest::requireThatSearchIsWorkingAfterClearDoc(const vespalib::strin
     resetAttribute(v, startValue);
     {
         ResultSetPtr rs = performSearch(v, term);
-        EXPECT_EQUAL(4u, rs->getNumHits());
+        EXPECT_EQ(4u, rs->getNumHits());
         ASSERT_TRUE(4u == rs->getNumHits());
         const RankedHit * array = rs->getArray();
-        EXPECT_EQUAL(1u, array[0].getDocId());
-        EXPECT_EQUAL(2u, array[1].getDocId());
-        EXPECT_EQUAL(3u, array[2].getDocId());
-        EXPECT_EQUAL(4u, array[3].getDocId());
+        EXPECT_EQ(1u, array[0].getDocId());
+        EXPECT_EQ(2u, array[1].getDocId());
+        EXPECT_EQ(3u, array[2].getDocId());
+        EXPECT_EQ(4u, array[3].getDocId());
     }
     a->clearDoc(1);
     a->clearDoc(3);
     a->commit(true);
     {
         ResultSetPtr rs = performSearch(v, term);
-        EXPECT_EQUAL(2u, rs->getNumHits());
+        EXPECT_EQ(2u, rs->getNumHits());
         const RankedHit * array = rs->getArray();
-        EXPECT_EQUAL(2u, array[0].getDocId());
-        EXPECT_EQUAL(4u, array[1].getDocId());
+        EXPECT_EQ(2u, array[0].getDocId());
+        EXPECT_EQ(4u, array[1].getDocId());
     }
 }
 
-void
-SearchContextTest::requireThatSearchIsWorkingAfterClearDoc()
+TEST_F(SearchContextTest, require_that_search_is_working_after_clear_doc)
 {
     for (const auto & cfg : _integerCfg) {
         requireThatSearchIsWorkingAfterClearDoc<IntegerAttribute>(cfg.first, cfg.second, 10, "10");
@@ -1568,26 +1625,25 @@ SearchContextTest::requireThatSearchIsWorkingAfterLoadAndClearDoc(const vespalib
     b->commit(true);
     {
         ResultSetPtr rs = performSearch(dynamic_cast<VectorType &>(*b), term);
-        EXPECT_EQUAL(14u, rs->getNumHits());
+        EXPECT_EQ(14u, rs->getNumHits());
         const RankedHit * array = rs->getArray();
         for (uint32_t i = 0; i < 14; ++i) {
             if (i < 5) {
-                EXPECT_EQUAL(i + 1, array[i].getDocId());
+                EXPECT_EQ(i + 1, array[i].getDocId());
             } else
-                EXPECT_EQUAL(i + 2, array[i].getDocId());
+                EXPECT_EQ(i + 2, array[i].getDocId());
         }
     }
     ValueType buf;
     if (cfg.collectionType().isMultiValue()) {
-        EXPECT_EQUAL(0u, b->get(6, &buf, 1));
+        EXPECT_EQ(0u, b->get(6, &buf, 1));
     } else {
-        EXPECT_EQUAL(1u, b->get(6, &buf, 1));
-        EXPECT_EQUAL(defaultValue, buf);
+        EXPECT_EQ(1u, b->get(6, &buf, 1));
+        EXPECT_EQ(defaultValue, buf);
     }
 }
 
-void
-SearchContextTest::requireThatSearchIsWorkingAfterLoadAndClearDoc()
+TEST_F(SearchContextTest, require_that_search_is_working_after_load_and_clear_doc)
 {
     {
         int64_t value = 10;
@@ -1626,16 +1682,15 @@ SearchContextTest::requireThatSearchIsWorkingAfterUpdates(const vespalib::string
     va.commit(true);
     {
         ResultSetPtr rs = performSearch(va, value1);
-        EXPECT_EQUAL(1u, rs->getNumHits()); // doc 1 should not have this value
+        EXPECT_EQ(1u, rs->getNumHits()); // doc 1 should not have this value
     }
     {
         ResultSetPtr rs = performSearch(va, value2);
-        EXPECT_EQUAL(1u, rs->getNumHits());
+        EXPECT_EQ(1u, rs->getNumHits());
     }
 }
 
-void
-SearchContextTest::requireThatSearchIsWorkingAfterUpdates()
+TEST_F(SearchContextTest, require_that_search_is_working_after_updates)
 {
     for (const auto & cfg : _integerCfg) {
         requireThatSearchIsWorkingAfterUpdates<IntegerAttribute>(cfg.first, cfg.second, 10, 20);
@@ -1646,8 +1701,7 @@ SearchContextTest::requireThatSearchIsWorkingAfterUpdates()
     }
 }
 
-void
-SearchContextTest::requireThatFlagAttributeIsWorkingWhenNewDocsAreAdded()
+TEST_F(SearchContextTest, require_that_flag_attribute_is_working_when_new_docs_are_added)
 {
     LOG(info, "requireThatFlagAttributeIsWorkingWhenNewDocsAreAdded()");
     Config cfg(BasicType::INT8, CollectionType::ARRAY);
@@ -1659,16 +1713,16 @@ SearchContextTest::requireThatFlagAttributeIsWorkingWhenNewDocsAreAdded()
                 fill_array({IL{10, 24}, {20, 24}, {30, 26}, {40, 24}}).get();
         {
             ResultSetPtr rs = performSearch(*a, "<24");
-            EXPECT_EQUAL(2u, rs->getNumHits());
-            EXPECT_EQUAL(1u, rs->getArray()[0].getDocId());
-            EXPECT_EQUAL(2u, rs->getArray()[1].getDocId());
+            EXPECT_EQ(2u, rs->getNumHits());
+            EXPECT_EQ(1u, rs->getArray()[0].getDocId());
+            EXPECT_EQ(2u, rs->getArray()[1].getDocId());
         }
         {
             ResultSetPtr rs = performSearch(*a, "24");
-            EXPECT_EQUAL(3u, rs->getNumHits());
-            EXPECT_EQUAL(1u, rs->getArray()[0].getDocId());
-            EXPECT_EQUAL(2u, rs->getArray()[1].getDocId());
-            EXPECT_EQUAL(4u, rs->getArray()[2].getDocId());
+            EXPECT_EQ(3u, rs->getNumHits());
+            EXPECT_EQ(1u, rs->getArray()[0].getDocId());
+            EXPECT_EQ(2u, rs->getArray()[1].getDocId());
+            EXPECT_EQ(4u, rs->getArray()[2].getDocId());
         }
     }
     {
@@ -1692,18 +1746,18 @@ SearchContextTest::requireThatFlagAttributeIsWorkingWhenNewDocsAreAdded()
             {
                 ResultSetPtr rs1 = performSearch(fa, "50");
                 ResultSetPtr rs2 = performSearch(fa, "<51");
-                EXPECT_EQUAL(exp50.size(), rs1->getNumHits());
-                EXPECT_EQUAL(exp50.size(), rs2->getNumHits());
+                EXPECT_EQ(exp50.size(), rs1->getNumHits());
+                EXPECT_EQ(exp50.size(), rs2->getNumHits());
                 for (size_t j = 0; j < exp50.size(); ++j) {
-                    EXPECT_EQUAL(exp50[j], rs1->getArray()[j].getDocId());
-                    EXPECT_EQUAL(exp50[j], rs2->getArray()[j].getDocId());
+                    EXPECT_EQ(exp50[j], rs1->getArray()[j].getDocId());
+                    EXPECT_EQ(exp50[j], rs2->getArray()[j].getDocId());
                 }
             }
             {
                 ResultSetPtr rs = performSearch(fa, "60");
-                EXPECT_EQUAL(exp60.size(), rs->getNumHits());
+                EXPECT_EQ(exp60.size(), rs->getNumHits());
                 for (size_t j = 0; j < exp60.size(); ++j) {
-                    EXPECT_EQUAL(exp60[j], rs->getArray()[j].getDocId());
+                    EXPECT_EQ(exp60[j], rs->getArray()[j].getDocId());
                 }
             }
         }
@@ -1719,11 +1773,10 @@ SearchContextTest::requireThatInvalidSearchTermGivesZeroHits(const vespalib::str
     auto a = AttributeBuilder(name, cfg).fill({value}).get();
     LOG(info, "requireThatInvalidSearchTermGivesZeroHits: vector '%s'", a->getName().c_str());
     ResultSetPtr rs = performSearch(*a, "foo");
-    EXPECT_EQUAL(0u, rs->getNumHits());
+    EXPECT_EQ(0u, rs->getNumHits());
 }
 
-void
-SearchContextTest::requireThatInvalidSearchTermGivesZeroHits()
+TEST_F(SearchContextTest, require_that_invalid_search_term_gives_zero_hits)
 {
     for (const auto & cfg : _integerCfg) {
         requireThatInvalidSearchTermGivesZeroHits<IntegerAttribute, int32_t>(cfg.first, cfg.second, 10);
@@ -1733,8 +1786,7 @@ SearchContextTest::requireThatInvalidSearchTermGivesZeroHits()
     }
 }
 
-void
-SearchContextTest::requireThatFlagAttributeHandlesTheByteRange()
+TEST_F(SearchContextTest, require_that_flag_attribute_handles_the_byte_range)
 {
     LOG(info, "requireThatFlagAttributeHandlesTheByteRange()");
     Config cfg(BasicType::INT8, CollectionType::ARRAY);
@@ -1763,11 +1815,10 @@ SearchContextTest::requireThatOutOfBoundsSearchTermGivesZeroHits(const vespalib:
     vespalib::string term = vespalib::make_string("%" PRIu64 "", (int64_t) maxValue + 1);
     LOG(info, "requireThatOutOfBoundsSearchTermGivesZeroHits: vector '%s', term '%s'", a->getName().c_str(), term.c_str());
     ResultSetPtr rs = performSearch(*a, term);
-    EXPECT_EQUAL(0u, rs->getNumHits());
+    EXPECT_EQ(0u, rs->getNumHits());
 }
 
-void
-SearchContextTest::requireThatOutOfBoundsSearchTermGivesZeroHits()
+TEST_F(SearchContextTest, require_that_out_of_bounds_search_term_gives_zero_hits)
 {
     for (const auto & cfg : _integerCfg) {
         int32_t maxValue = std::numeric_limits<int32_t>::max();
@@ -1807,8 +1858,8 @@ public:
         for (uint32_t docid = 1; docid < _attr.getNumDocs(); ++docid) {
             bool match_1 = search_ctx->matches(docid);
             bool match_2 = search_ctx->matches(docid, weight);
-            EXPECT_EQUAL(match_1, match_2);
-            EXPECT_EQUAL(match_2 ? 1 : 0, weight);
+            EXPECT_EQ(match_1, match_2);
+            EXPECT_EQ(match_2 ? 1 : 0, weight);
             if (match_1) {
                 result.addHit(docid);
             }
@@ -1830,36 +1881,34 @@ public:
     }
 };
 
-void
-SearchContextTest::single_bool_attribute_search_context_handles_true_and_false_queries()
+TEST_F(SearchContextTest, single_bool_attribute_search_context_handles_true_and_false_queries)
 {
     BoolAttributeFixture f(SimpleResult().addHit(3).addHit(5).addHit(7), 9);
 
     auto true_exp = SimpleResult().addHit(3).addHit(5).addHit(7);
-    EXPECT_EQUAL(true_exp, f.search_context("true"));
-    EXPECT_EQUAL(true_exp, f.search_context("1"));
+    EXPECT_EQ(true_exp, f.search_context("true"));
+    EXPECT_EQ(true_exp, f.search_context("1"));
 
     auto false_exp = SimpleResult().addHit(1).addHit(2).addHit(4).addHit(6).addHit(8);
-    EXPECT_EQUAL(false_exp, f.search_context("false"));
-    EXPECT_EQUAL(false_exp, f.search_context("0"));
+    EXPECT_EQ(false_exp, f.search_context("false"));
+    EXPECT_EQ(false_exp, f.search_context("0"));
 }
 
-void
-SearchContextTest::single_bool_attribute_search_iterator_handles_true_and_false_queries()
+TEST_F(SearchContextTest, single_bool_attribute_search_iterator_handles_true_and_false_queries)
 {
     BoolAttributeFixture f(SimpleResult().addHit(3).addHit(5).addHit(7), 9);
 
     auto true_exp = SimpleResult().addHit(3).addHit(5).addHit(7);
-    EXPECT_EQUAL(true_exp, f.search_iterator("true", false));
-    EXPECT_EQUAL(true_exp, f.search_iterator("1", false));
-    EXPECT_EQUAL(true_exp, f.search_iterator("true", true));
-    EXPECT_EQUAL(true_exp, f.search_iterator("1", true));
+    EXPECT_EQ(true_exp, f.search_iterator("true", false));
+    EXPECT_EQ(true_exp, f.search_iterator("1", false));
+    EXPECT_EQ(true_exp, f.search_iterator("true", true));
+    EXPECT_EQ(true_exp, f.search_iterator("1", true));
 
     auto false_exp = SimpleResult().addHit(1).addHit(2).addHit(4).addHit(6).addHit(8);
-    EXPECT_EQUAL(false_exp, f.search_iterator("false", false));
-    EXPECT_EQUAL(false_exp, f.search_iterator("0", false));
-    EXPECT_EQUAL(false_exp, f.search_iterator("false", true));
-    EXPECT_EQUAL(false_exp, f.search_iterator("0", true));
+    EXPECT_EQ(false_exp, f.search_iterator("false", false));
+    EXPECT_EQ(false_exp, f.search_iterator("0", false));
+    EXPECT_EQ(false_exp, f.search_iterator("false", true));
+    EXPECT_EQ(false_exp, f.search_iterator("0", true));
 }
 
 void
@@ -1970,35 +2019,6 @@ SearchContextTest::SearchContextTest() :
 
 SearchContextTest::~SearchContextTest() = default;
 
-int
-SearchContextTest::Main()
-{
-    TEST_INIT("searchcontext_test");
-    EXPECT_TRUE(true);
-
-    testSearch();
-    testSearchIterator();
-    testRangeSearch();
-    testRangeSearchLimited();
-    testCaseInsensitiveSearch();
-    testRegexSearch();
-    testPrefixSearch();
-    testSearchIteratorConformance();
-    testSearchIteratorUnpacking();
-    testFuzzySearch();
-    TEST_DO(requireThatSearchIsWorkingAfterClearDoc());
-    TEST_DO(requireThatSearchIsWorkingAfterLoadAndClearDoc());
-    TEST_DO(requireThatSearchIsWorkingAfterUpdates());
-    TEST_DO(requireThatFlagAttributeIsWorkingWhenNewDocsAreAdded());
-    TEST_DO(requireThatInvalidSearchTermGivesZeroHits());
-    TEST_DO(requireThatFlagAttributeHandlesTheByteRange());
-    TEST_DO(requireThatOutOfBoundsSearchTermGivesZeroHits());
-    TEST_DO(single_bool_attribute_search_context_handles_true_and_false_queries());
-    TEST_DO(single_bool_attribute_search_iterator_handles_true_and_false_queries());
-
-    TEST_DONE();
 }
 
-}
-
-TEST_APPHOOK(search::SearchContextTest);
+GTEST_MAIN_RUN_ALL_TESTS()

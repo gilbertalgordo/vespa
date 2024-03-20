@@ -1,9 +1,10 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include "rankmanager.h"
 #include <vespa/searchlib/features/setup.h>
 #include <vespa/searchlib/fef/fieldinfo.h>
 #include <vespa/searchlib/fef/functiontablefactory.h>
+#include <vespa/searchlib/fef/test/plugin/setup.h>
 #include <vespa/vespalib/util/stringfmt.h>
 #include <vespa/vespalib/util/exception.h>
 #include <vespa/vsm/common/document.h>
@@ -45,23 +46,35 @@ RankManager::Snapshot::addProperties(const vespa::config::search::RankProfilesCo
 FieldInfo::DataType
 to_data_type(VsmfieldsConfig::Fieldspec::Searchmethod search_method)
 {
-    if (search_method == VsmfieldsConfig::Fieldspec::Searchmethod::NEAREST_NEIGHBOR) {
+    // detecting DataType from Searchmethod will not give correct results,
+    // we should probably use the document type
+    if (search_method == VsmfieldsConfig::Fieldspec::Searchmethod::NEAREST_NEIGHBOR ||
+        search_method == VsmfieldsConfig::Fieldspec::Searchmethod::NONE)
+    {
         return FieldInfo::DataType::TENSOR;
     }
     // This is the default FieldInfo data type if not specified.
+    // Wrong in most cases.
     return FieldInfo::DataType::DOUBLE;
 }
 
-void
-RankManager::Snapshot::detectFields(const VsmfieldsHandle & fields)
+IndexEnvPrototype::IndexEnvPrototype()
+  : _tableManager(),
+    _prototype(_tableManager)
 {
-    for (uint32_t i = 0; i < fields->fieldspec.size(); ++i) {
-        const VsmfieldsConfig::Fieldspec & fs = fields->fieldspec[i];
+    auto tableFactory = std::make_shared<search::fef::FunctionTableFactory>(256);
+    _tableManager.addFactory(tableFactory);
+}
+
+void
+IndexEnvPrototype::detectFields(const vespa::config::search::vsm::VsmfieldsConfig &fields) {
+    for (uint32_t i = 0; i < fields.fieldspec.size(); ++i) {
+        const VsmfieldsConfig::Fieldspec & fs = fields.fieldspec[i];
         bool isAttribute = (fs.fieldtype == VsmfieldsConfig::Fieldspec::Fieldtype::ATTRIBUTE);
         LOG(debug, "Adding field of type '%s' and name '%s' with id '%u' the index environment.",
                    isAttribute ? "ATTRIBUTE" : "INDEX", fs.name.c_str(), i);
         // This id must match the vsm specific field id
-        _protoEnv.addField(fs.name, isAttribute, to_data_type(fs.searchmethod));
+        _prototype.addField(fs.name, isAttribute, to_data_type(fs.searchmethod));
     }
 }
 
@@ -96,14 +109,14 @@ buildFieldSet(const VsmfieldsConfig::Documenttype::Index & ci, const search::fef
 }
 
 }
-    
+
 void
 RankManager::Snapshot::buildFieldMappings(const VsmfieldsHandle & fields)
 {
     for(const VsmfieldsConfig::Documenttype & di : fields->documenttype) {
         LOG(debug, "Looking through indexes for documenttype '%s'", di.name.c_str());
         for(const VsmfieldsConfig::Documenttype::Index & ci : di.index) {
-            FieldIdTList view = buildFieldSet(ci, _protoEnv, di.index);
+            FieldIdTList view = buildFieldSet(ci, _protoEnv.current(), di.index);
             if (_views.find(ci.name) == _views.end()) {
                 std::sort(view.begin(), view.end()); // lowest field id first
                 _views[ci.name] = view;
@@ -119,9 +132,10 @@ RankManager::Snapshot::initRankSetup(const BlueprintFactory & factory)
 {
     // set up individual index environments per rank profile
     for (uint32_t i = 0; i < _properties.size(); ++i) {
-        _indexEnv.push_back(_protoEnv);
+        _indexEnv.push_back(_protoEnv.current());
         IndexEnvironment & ie = _indexEnv.back();
         ie.getProperties().import(_properties[i].second);
+        ie.fixup_fields();
     }
 
     // set up individual rank setups per rank profile
@@ -151,15 +165,13 @@ RankManager::Snapshot::initRankSetup(const BlueprintFactory & factory)
 }
 
 RankManager::Snapshot::Snapshot() :
-    _tableManager(),
-    _protoEnv(_tableManager),
+    _protoEnv(),
     _properties(),
     _indexEnv(),
     _rankSetup(),
     _rpmap(),
     _views()
 {
-    _tableManager.addFactory(search::fef::ITableFactory::SP(new search::fef::FunctionTableFactory(256)));
 }
 
 RankManager::Snapshot::~Snapshot() = default;
@@ -168,7 +180,7 @@ bool
 RankManager::Snapshot::setup(const RankManager & rm)
 {
     VsmfieldsHandle fields = rm._vsmAdapter->getFieldsConfig();
-    detectFields(fields);
+    _protoEnv.detectFields(*fields);
     buildFieldMappings(fields);
     if (!initRankSetup(rm._blueprintFactory)) {
         return false;
@@ -214,6 +226,7 @@ RankManager::RankManager(VSMAdapter * const vsmAdapter) :
 {
     // init blueprint factory
     search::features::setup_search_features(_blueprintFactory);
+    search::fef::test::setup_fef_test_plugin(_blueprintFactory);
 }
 
 RankManager::~RankManager() = default;
@@ -223,5 +236,5 @@ RankManager::configure(const vsm::VSMConfigSnapshot & snap, std::shared_ptr<cons
 {
     notify(snap, std::move(ranking_assets_repo));
 }
-    
+
 }

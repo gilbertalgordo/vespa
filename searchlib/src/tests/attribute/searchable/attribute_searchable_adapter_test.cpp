@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include <vespa/vespalib/testkit/test_kit.h>
 #include <vespa/searchcommon/attribute/config.h>
@@ -20,6 +20,7 @@
 #include <vespa/searchlib/query/tree/predicate_query_term.h>
 #include <vespa/searchlib/query/tree/rectangle.h>
 #include <vespa/searchlib/query/tree/simplequery.h>
+#include <vespa/searchlib/query/tree/string_term_vector.h>
 #include <vespa/searchlib/query/weight.h>
 #include <vespa/searchlib/queryeval/blueprint.h>
 #include <vespa/searchlib/queryeval/fake_requestcontext.h>
@@ -56,6 +57,8 @@ using search::query::SimpleSubstringTerm;
 using search::query::SimpleStringTerm;
 using search::query::SimpleWandTerm;
 using search::query::SimpleWeightedSetTerm;
+using search::query::SimpleInTerm;
+using search::query::StringTermVector;
 using search::query::Weight;
 using search::queryeval::Blueprint;
 using search::queryeval::FieldSpec;
@@ -220,7 +223,7 @@ Result do_search(IAttributeManager &attribute_manager, const Node &node, bool st
     Blueprint::UP bp = source.createBlueprint(requestContext, FieldSpec(field, fieldId, handle), node);
     ASSERT_TRUE(bp);
     Result result(bp->getState().estimate().estHits, bp->getState().estimate().empty);
-    bp->fetchPostings(queryeval::ExecuteInfo::create(strict, 1.0));
+    bp->fetchPostings(queryeval::ExecuteInfo::createForTest(strict));
     SearchIterator::UP iterator = bp->createSearch(*match_data, strict);
     ASSERT_TRUE(iterator);
     iterator->initRange(1, num_docs);
@@ -470,35 +473,6 @@ TEST("require that attribute dot product can produce no hits") {
     }
 }
 
-TEST("require that direct attribute iterators work") {
-    for (int i = 0; i <= 0x3; ++i) {
-        bool fast_search = ((i & 0x1) != 0);
-        bool strict = ((i & 0x2) != 0);
-        MyAttributeManager attribute_manager = make_weighted_string_attribute_manager(fast_search);
-        SimpleStringTerm empty_node("notfoo", "", 0, Weight(1));
-        Result empty_result = do_search(attribute_manager, empty_node, strict);
-        EXPECT_EQUAL(0u, empty_result.hits.size());
-        SimpleStringTerm node("foo", "", 0, Weight(1));
-        Result result = do_search(attribute_manager, node, strict);
-        if (fast_search) {
-            EXPECT_EQUAL(3u, result.est_hits);
-            EXPECT_TRUE(result.has_minmax);
-            EXPECT_EQUAL(100, result.min_weight);
-            EXPECT_EQUAL(1000, result.max_weight);
-            EXPECT_TRUE(result.iterator_dump.find("DocumentWeightSearchIterator") != vespalib::string::npos);
-        } else {
-            EXPECT_EQUAL(num_docs, result.est_hits);
-            EXPECT_FALSE(result.has_minmax);
-            EXPECT_TRUE(result.iterator_dump.find("DocumentWeightSearchIterator") == vespalib::string::npos);
-        }
-        ASSERT_EQUAL(3u, result.hits.size());
-        EXPECT_FALSE(result.est_empty);
-        EXPECT_EQUAL(20u, result.hits[0].docid);
-        EXPECT_EQUAL(40u, result.hits[1].docid);
-        EXPECT_EQUAL(50u, result.hits[2].docid);
-    }
-}
-
 TEST("require that single weighted set turns filter on filter fields") {
         bool fast_search = true;
         bool strict = true;
@@ -510,7 +484,7 @@ TEST("require that single weighted set turns filter on filter fields") {
         SimpleStringTerm node("foo", "", 0, Weight(1));
         Result result = do_search(attribute_manager, node, strict);
         EXPECT_EQUAL(3u, result.est_hits);
-        EXPECT_TRUE(result.iterator_dump.find("DocumentWeightSearchIterator") == vespalib::string::npos);
+        EXPECT_TRUE(result.iterator_dump.find("DocidWithWeightSearchIterator") == vespalib::string::npos);
         EXPECT_TRUE(result.iterator_dump.find("FilterAttributePostingListIteratorT") != vespalib::string::npos);
         ASSERT_EQUAL(3u, result.hits.size());
         EXPECT_FALSE(result.est_empty);
@@ -572,7 +546,7 @@ TEST("require that attribute weighted set term works") {
         ASSERT_EQUAL(5u, result.hits.size());
         if (fast_search && result.iterator_dump.find("MonitoringDumpIterator") == vespalib::string::npos) {
             fprintf(stderr, "DUMP: %s\n", result.iterator_dump.c_str());
-            EXPECT_TRUE(result.iterator_dump.find("AttributeIteratorPack") != vespalib::string::npos);
+            EXPECT_TRUE(result.iterator_dump.find("PostingIteratorPack") != vespalib::string::npos);
         }
         EXPECT_EQUAL(10u, result.hits[0].docid);
         EXPECT_EQUAL(20, result.hits[0].match_weight);
@@ -584,6 +558,37 @@ TEST("require that attribute weighted set term works") {
         EXPECT_EQUAL(10, result.hits[3].match_weight);
         EXPECT_EQUAL(50u, result.hits[4].docid);
         EXPECT_EQUAL(30, result.hits[4].match_weight);
+    }
+}
+
+TEST("require that attribute in term works") {
+    for (int i = 0; i <= 0x3; ++i) {
+        bool fast_search = ((i & 0x1) != 0);
+        bool strict = ((i & 0x2) != 0);
+        MyAttributeManager attribute_manager = make_weighted_string_attribute_manager(fast_search);
+        auto stv = std::make_unique<StringTermVector>(4);
+        stv->addTerm("foo");
+        stv->addTerm("bar");
+        stv->addTerm("baz");
+        stv->addTerm("fox");
+        SimpleInTerm node(std::move(stv), SimpleInTerm::Type::STRING, field, 0, Weight(1));
+        Result result = do_search(attribute_manager, node, strict);
+        EXPECT_FALSE(result.est_empty);
+        ASSERT_EQUAL(5u, result.hits.size());
+        if (fast_search && result.iterator_dump.find("MonitoringDumpIterator") == vespalib::string::npos) {
+            fprintf(stderr, "DUMP: %s\n", result.iterator_dump.c_str());
+            EXPECT_TRUE(result.iterator_dump.find("PostingIteratorPack") != vespalib::string::npos);
+        }
+        EXPECT_EQUAL(10u, result.hits[0].docid);
+        EXPECT_EQUAL(1, result.hits[0].match_weight);
+        EXPECT_EQUAL(20u, result.hits[1].docid);
+        EXPECT_EQUAL(1, result.hits[1].match_weight);
+        EXPECT_EQUAL(30u, result.hits[2].docid);
+        EXPECT_EQUAL(1, result.hits[2].match_weight);
+        EXPECT_EQUAL(40u, result.hits[3].docid);
+        EXPECT_EQUAL(1, result.hits[3].match_weight);
+        EXPECT_EQUAL(50u, result.hits[4].docid);
+        EXPECT_EQUAL(1, result.hits[4].match_weight);
     }
 }
 

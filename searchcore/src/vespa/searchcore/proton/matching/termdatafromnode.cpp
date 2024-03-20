@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include "termdatafromnode.h"
 #include "querynodes.h"
@@ -46,6 +46,7 @@ struct TermDataFromTermVisitor
     void visit(ProtonRegExpTerm &n) override { visitTerm(n); }
     void visit(ProtonNearestNeighborTerm &n) override { visitTerm(n); }
     void visit(ProtonFuzzyTerm &n) override { visitTerm(n); }
+    void visit(ProtonInTerm& n) override { visitTerm(n); }
 };
 }  // namespace
 

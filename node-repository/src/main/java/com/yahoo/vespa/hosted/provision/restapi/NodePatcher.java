@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.hosted.provision.restapi;
 
 import com.google.common.collect.Maps;
@@ -95,7 +95,7 @@ public class NodePatcher {
     }
 
     private void unifiedPatch(String hostname, InputStream json, boolean untrustedTenantHost) {
-        Inspector root = Exceptions.uncheck(() -> SlimeUtils.jsonToSlime(json.readAllBytes())).get();
+        Inspector root = Exceptions.uncheck(() -> SlimeUtils.jsonToSlimeOrThrow(json.readAllBytes())).get();
         Map<String, Inspector> fields = new HashMap<>();
         root.traverse(fields::put);
 
@@ -109,7 +109,6 @@ public class NodePatcher {
                                               "reports",
                                               "trustStore",
                                               "vespaVersion",
-                                              "wireguardPubkey", // TODO wg: remove when all nodes use new key+timestamp format
                                               "wireguard"));
             if (!disallowedFields.isEmpty()) {
                 throw new IllegalArgumentException("Patching fields not supported: " + disallowedFields);
@@ -263,6 +262,8 @@ public class NodePatcher {
             case "exclusiveTo":
             case "exclusiveToApplicationId":
                 return node.withExclusiveToApplicationId(SlimeUtils.optionalString(value).map(ApplicationId::fromSerializedForm).orElse(null));
+            case "provisionedFor":
+                return node.withProvisionedForApplicationId(SlimeUtils.optionalString(value).map(ApplicationId::fromSerializedForm).orElse(null));
             case "hostTTL":
                 return node.withHostTTL(SlimeUtils.optionalDuration(value).orElse(null));
             case "hostEmptyAt":
@@ -277,9 +278,6 @@ public class NodePatcher {
                 // This is where we set the key timestamp.
                 var key = SlimeUtils.optionalString(value.field("key")).map(WireguardKey::new).orElse(null);
                 return node.withWireguardPubkey(new WireguardKeyWithTimestamp(key, clock.instant()));
-            case "wireguardPubkey":  // TODO wg: remove when all nodes use new key+timestamp format
-                var oldKey = SlimeUtils.optionalString(value).map(WireguardKey::new).orElse(null);
-                return node.withWireguardPubkey(new WireguardKeyWithTimestamp(oldKey, clock.instant()));
             default:
                 throw new IllegalArgumentException("Could not apply field '" + name + "' on a node: No such modifiable field");
         }

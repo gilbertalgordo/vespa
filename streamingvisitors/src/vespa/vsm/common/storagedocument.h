@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 #pragma once
 
 #include "document.h"
@@ -13,7 +13,7 @@ using SharedFieldPathMap = std::shared_ptr<FieldPathMapT>;
 
 class StorageDocument : public Document {
 public:
-    using UP = std::unique_ptr<StorageDocument>;
+    using SP = std::shared_ptr<StorageDocument>;
 
     class SubDocument {
     public:
@@ -40,7 +40,7 @@ public:
     StorageDocument(document::Document::UP doc, const SharedFieldPathMap &fim, size_t fieldNoLimit);
     StorageDocument(const StorageDocument &) = delete;
     StorageDocument & operator = (const StorageDocument &) = delete;
-    ~StorageDocument();
+    ~StorageDocument() override;
 
     const document::Document &docDoc() const { return *_doc; }
     bool valid() const { return _doc.get() != nullptr; }

@@ -1,9 +1,8 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include <vespa/searchcommon/common/dictionary_config.h>
 #include <vespa/searchlib/attribute/dfa_fuzzy_matcher.h>
 #include <vespa/searchlib/attribute/enumstore.h>
-#include <vespa/searchlib/attribute/i_enum_store_dictionary.h>
 #include <vespa/vespalib/fuzzy/fuzzy_matcher.h>
 #include <vespa/vespalib/fuzzy/levenshtein_dfa.h>
 #include <vespa/vespalib/gtest/gtest.h>
@@ -198,7 +197,7 @@ dfa_fuzzy_match_in_dictionary_no_skip(std::string_view target, const StringEnumS
     size_t seeks = 0;
     for (;itr.valid(); ++itr) {
         auto word = store.get_value(itr.getKey().load_relaxed());
-        if (matcher.is_match(word)) {
+        if (matcher.is_match(std::string_view(word))) {
             ++matches;
             if (collect_matches) {
                 matched_words.push_back(word);

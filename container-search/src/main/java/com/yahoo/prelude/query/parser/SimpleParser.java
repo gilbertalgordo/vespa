@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.prelude.query.parser;
 
 import com.yahoo.prelude.query.AndItem;
@@ -130,14 +130,13 @@ abstract class SimpleParser extends StructuredParser {
             }
         }
         if (not != null && not.getPositiveItem() instanceof TrueItem) {
-            // Incomplete not, only negatives -
-
+            // Incomplete not, only negatives - simplify when possible
             if (topLevelItem != null && topLevelItem != not) {
                 // => neutral rank items becomes implicit positives
                 not.addPositiveItem(getItemAsPositiveItem(topLevelItem, not));
                 return not;
-            } else { // Only negatives - ignore them
-                return null;
+            } else {
+                return not;
             }
         }
         if (topLevelItem != null) {

@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.indexinglanguage.expressions;
 
 import com.yahoo.document.ArrayDataType;
@@ -36,6 +36,7 @@ public final class CatExpression extends ExpressionList<Expression> {
         FieldValue input = context.getValue();
         DataType inputType = input != null ? input.getDataType() : null;
         VerificationContext ver = new VerificationContext(context);
+        context.fillVariableTypes(ver);
         List<FieldValue> values = new LinkedList<>();
         List<DataType> types = new LinkedList<>();
         for (Expression exp : this) {

@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 #pragma once
 
 #include "i_thread_service.h"
@@ -7,7 +7,6 @@ class FNET_Transport;
 
 namespace vespalib {
     class ISequencedTaskExecutor;
-    class Clock;
 }
 namespace searchcorespi::index {
 
@@ -66,7 +65,6 @@ struct IThreadingService
     virtual vespalib::ThreadExecutor &summary() = 0;
     virtual vespalib::Executor &shared() = 0;
     virtual FNET_Transport &transport() = 0;
-    virtual const vespalib::Clock &clock() const = 0;
     virtual vespalib::ISequencedTaskExecutor &field_writer() = 0;
 };
 

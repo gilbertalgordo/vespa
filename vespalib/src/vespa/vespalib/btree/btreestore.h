@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #pragma once
 
@@ -24,6 +24,7 @@ public:
     using KeyType = KeyT;
     using DataType = DataT;
     using AggregatedType = AggrT;
+    using AggrCalcType = AggrCalcT;
     using DataStoreType = datastore::DataStoreT<datastore::EntryRefT<22> >;
     using RefType = DataStoreType::RefType;
     using KeyDataType = BTreeKeyData<KeyT, DataT>;
@@ -135,10 +136,6 @@ public:
 
     void makeTree(EntryRef &ref, const KeyDataType *array, uint32_t clusterSize);
     void makeArray(EntryRef &ref, EntryRef leafRef, LeafNodeType *leafNode);
-    bool insert(EntryRef &ref, const KeyType &key, const DataType &data, CompareT comp = CompareT());
-
-    bool remove(EntryRef &ref, const KeyType &key,CompareT comp = CompareT());
-
     uint32_t getNewClusterSize(const KeyDataType *o, const KeyDataType *oe, AddIter a, AddIter ae,
                                RemoveIter r, RemoveIter re, CompareT comp);
 

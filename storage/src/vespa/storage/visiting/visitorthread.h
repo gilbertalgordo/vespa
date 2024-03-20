@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 /**
  * @class VisitorThread
  * @ingroup visiting
@@ -75,15 +75,9 @@ class VisitorThread : public framework::Runnable,
     VisitorMessageHandler& _messageSender;
     VisitorThreadMetrics& _metrics;
     uint32_t _threadIndex;
-    uint32_t _disconnectedVisitorTimeout;
-    uint32_t _ignoreNonExistingVisitorTimeLimit;
     uint32_t _defaultParallelIterators;
     uint32_t _iteratorsPerBucket;
-    uint32_t _defaultPendingMessages;
-    uint32_t _defaultDocBlockSize;
     uint32_t _visitorMemoryUsageLimit;
-    vespalib::duration _defaultDocBlockTimeout;
-    vespalib::duration _defaultVisitorInfoTimeout;
     std::atomic<uint32_t> _timeBetweenTicks;
     StorageComponent _component;
     std::unique_ptr<framework::Thread> _thread;

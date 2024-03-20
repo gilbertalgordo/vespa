@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.hosted.provision.autoscale;
 
 import com.yahoo.collections.Pair;
@@ -49,7 +49,7 @@ public class Loader {
         var idealLoad = fixture.clusterModel().idealLoad();
         NodeList nodes = fixture.nodes();
         float oneExtraNodeFactor = (float)(nodes.size() - 1.0) / (nodes.size());
-        Load load = new Load(value, idealLoad.memory(), idealLoad.disk()).multiply(oneExtraNodeFactor);
+        Load load = new Load(value, idealLoad.memory(), idealLoad.disk(), 0, 0).multiply(oneExtraNodeFactor);
         Instant initialTime = fixture.tester().clock().instant();
         for (int i = 0; i < count; i++) {
             fixture.tester().clock().advance(samplingInterval);
@@ -101,7 +101,7 @@ public class Loader {
         var idealLoad = fixture.clusterModel().idealLoad();
         NodeList nodes = fixture.nodes();
         float oneExtraNodeFactor = (float)(nodes.size() - 1.0) / (nodes.size());
-        Load load = new Load(idealLoad.cpu(), value, idealLoad.disk()).multiply(oneExtraNodeFactor);
+        Load load = new Load(idealLoad.cpu(), value, idealLoad.disk(), 0, 0).multiply(oneExtraNodeFactor);
         for (int i = 0; i < count; i++) {
             fixture.tester().clock().advance(samplingInterval);
             for (Node node : nodes) {

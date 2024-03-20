@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 // Author: arnej
 
 package configserver
@@ -8,7 +8,7 @@ import (
 	"os"
 
 	"github.com/vespa-engine/vespa/client/go/internal/admin/envvars"
-	"github.com/vespa-engine/vespa/client/go/internal/util"
+	"github.com/vespa-engine/vespa/client/go/internal/osutil"
 )
 
 func exportSettings(vespaHome string) {
@@ -27,5 +27,5 @@ func exportSettings(vespaHome string) {
 	os.Setenv(envvars.STANDALONE_JDISC_APP_LOCATION, app)
 	os.Setenv(envvars.STANDALONE_JDISC_DEPLOYMENT_PROFILE, "configserver")
 	os.Setenv(envvars.MALLOC_ARENA_MAX, "1")
-	util.OptionallyReduceTimerFrequency()
+	osutil.OptionallyReduceTimerFrequency()
 }

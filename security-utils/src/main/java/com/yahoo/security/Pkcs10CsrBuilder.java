@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.security;
 
 import org.bouncycastle.asn1.pkcs.PKCSObjectIdentifiers;
@@ -90,7 +90,8 @@ public class Pkcs10CsrBuilder {
                                 .toArray(GeneralName[]::new));
                 extGen.addExtension(Extension.subjectAlternativeName, false, generalNames);
             }
-            requestBuilder.addAttribute(PKCSObjectIdentifiers.pkcs_9_at_extensionRequest, extGen.generate());
+            if (!extGen.isEmpty())
+                requestBuilder.addAttribute(PKCSObjectIdentifiers.pkcs_9_at_extensionRequest, extGen.generate());
             ContentSigner contentSigner = new JcaContentSignerBuilder(signatureAlgorithm.getAlgorithmName())
                     .setProvider(BouncyCastleProviderHolder.getInstance())
                     .build(keyPair.getPrivate());

@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.tensor.serialization;
 
 import com.yahoo.io.GrowableByteBuffer;
@@ -48,7 +48,7 @@ class SparseBinaryFormat implements BinaryFormat {
     }
 
     private void encodeCells(GrowableByteBuffer buffer, Tensor tensor) {
-        buffer.putInt1_4Bytes((int)tensor.size()); // XXX: Size truncation
+        buffer.putInt1_4Bytes(tensor.sizeAsInt()); // XXX: Size truncation
         switch (serializationValueType) {
             case DOUBLE: encodeCells(buffer, tensor, buffer::putDouble); break;
             case FLOAT: encodeCells(buffer, tensor, (val) -> buffer.putFloat(val.floatValue())); break;

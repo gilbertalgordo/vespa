@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.athenz.identityprovider.client;
 
 import ai.vespa.metrics.ContainerMetrics;
@@ -20,6 +20,7 @@ import com.yahoo.security.SslContextBuilder;
 import com.yahoo.security.X509CertificateWithKey;
 import com.yahoo.vespa.athenz.api.AthenzAccessToken;
 import com.yahoo.vespa.athenz.api.AthenzDomain;
+import com.yahoo.vespa.athenz.api.AthenzIdentity;
 import com.yahoo.vespa.athenz.api.AthenzRole;
 import com.yahoo.vespa.athenz.api.AthenzService;
 import com.yahoo.vespa.athenz.api.ZToken;
@@ -28,6 +29,7 @@ import com.yahoo.vespa.athenz.client.zts.ZtsClient;
 import com.yahoo.vespa.athenz.identity.ServiceIdentityProvider;
 import com.yahoo.vespa.athenz.identityprovider.api.VespaUniqueInstanceId;
 import com.yahoo.vespa.athenz.tls.AthenzX509CertificateUtils;
+import com.yahoo.vespa.athenz.utils.AthenzIdentities;
 import com.yahoo.vespa.athenz.utils.SiaUtils;
 
 import javax.net.ssl.SSLContext;
@@ -43,6 +45,7 @@ import java.time.Instant;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
@@ -89,8 +92,7 @@ public final class AthenzIdentityProviderImpl extends AbstractComponent implemen
     private final Map<AthenzRole, MutableX509KeyManager> roleKeyManagerCache;
     private final LoadingCache<AthenzRole, ZToken> roleSpecificRoleTokenCache;
     private final LoadingCache<AthenzDomain, ZToken> domainSpecificRoleTokenCache;
-    private final LoadingCache<AthenzDomain, AthenzAccessToken> domainSpecificAccessTokenCache;
-    private final LoadingCache<List<AthenzRole>, AthenzAccessToken> roleSpecificAccessTokenCache;
+    private final LoadingCache<AccessTokenCacheKey, AthenzAccessToken> accessTokenCache;
     private final CsrGenerator csrGenerator;
 
     @Inject
@@ -115,8 +117,7 @@ public final class AthenzIdentityProviderImpl extends AbstractComponent implemen
         this.roleKeyManagerCache = new HashMap<>();
         this.roleSpecificRoleTokenCache = createCache(ROLE_TOKEN_EXPIRY, this::createRoleToken);
         this.domainSpecificRoleTokenCache = createCache(ROLE_TOKEN_EXPIRY, this::createRoleToken);
-        this.domainSpecificAccessTokenCache = createCache(ROLE_TOKEN_EXPIRY, this::createAccessToken);
-        this.roleSpecificAccessTokenCache = createCache(ROLE_TOKEN_EXPIRY, this::createAccessToken);
+        this.accessTokenCache = createCache(ROLE_TOKEN_EXPIRY, this::createAccessToken);
         this.csrGenerator = new CsrGenerator(config.athenzDnsSuffix(), config.configserverIdentityName());
         this.autoReloadingX509KeyManager = autoReloadingX509KeyManager;
         this.identitySslContext = createIdentitySslContext(autoReloadingX509KeyManager, trustStore);
@@ -221,7 +222,7 @@ public final class AthenzIdentityProviderImpl extends AbstractComponent implemen
     @Override
     public String getAccessToken(String domain) {
         try {
-            return domainSpecificAccessTokenCache.get(new AthenzDomain(domain)).value();
+            return accessTokenCache.get(AccessTokenCacheKey.from(domain, List.of(), List.of())).value();
         } catch (Exception e) {
             throw new AthenzIdentityProviderException("Could not retrieve access token: " + e.getMessage(), e);
         }
@@ -230,10 +231,16 @@ public final class AthenzIdentityProviderImpl extends AbstractComponent implemen
     @Override
     public String getAccessToken(String domain, List<String> roles) {
         try {
-            List<AthenzRole> roleList = roles.stream()
-                    .map(roleName -> new AthenzRole(domain, roleName))
-                    .toList();
-            return roleSpecificAccessTokenCache.get(roleList).value();
+            return accessTokenCache.get(AccessTokenCacheKey.from(domain, roles, List.of())).value();
+        } catch (Exception e) {
+            throw new AthenzIdentityProviderException("Could not retrieve access token: " + e.getMessage(), e);
+        }
+    }
+
+    @Override
+    public String getAccessToken(String domain, List<String> roles, List<String> proxyPrincipals) {
+        try {
+            return accessTokenCache.get(AccessTokenCacheKey.from(domain, roles, proxyPrincipals)).value();
         } catch (Exception e) {
             throw new AthenzIdentityProviderException("Could not retrieve access token: " + e.getMessage(), e);
         }
@@ -278,17 +285,17 @@ public final class AthenzIdentityProviderImpl extends AbstractComponent implemen
                 identity, role, athenzUniqueInstanceId, null, keyPair);
         try (ZtsClient client = createZtsClient()) {
             X509Certificate roleCertificate = client.getRoleCertificate(role, csr);
-            updateRoleKeyManager(role, roleCertificate);
+            updateRoleKeyManager(role, keyPair.getPrivate(), roleCertificate);
             log.info(String.format("Requester role certificate for role %s, expires: %s", role.toResourceNameString(), roleCertificate.getNotAfter().toInstant().toString()));
             return roleCertificate;
         }
     }
 
-    private void updateRoleKeyManager(AthenzRole role, X509Certificate certificate) {
+    private void updateRoleKeyManager(AthenzRole role, PrivateKey privateKey, X509Certificate certificate) {
         MutableX509KeyManager keyManager = roleKeyManagerCache.computeIfAbsent(role, r -> new MutableX509KeyManager());
         keyManager.updateKeystore(
                 KeyStoreBuilder.withType(PKCS12)
-                        .withKeyEntry("default", autoReloadingX509KeyManager.getCurrentCertificateWithKey().privateKey(), certificate)
+                        .withKeyEntry("default", privateKey, certificate)
                         .build(),
                 new char[0]);
     }
@@ -305,15 +312,15 @@ public final class AthenzIdentityProviderImpl extends AbstractComponent implemen
         }
     }
 
-    private AthenzAccessToken createAccessToken(AthenzDomain domain) {
+    private AthenzAccessToken createAccessToken(AccessTokenCacheKey cacheKey) {
+        List<AthenzRole> roles = Optional.ofNullable(cacheKey.roles()).orElse(List.of());
+        List<AthenzIdentity> proxyPrincipals = Optional.ofNullable(cacheKey.proxyPrincipals()).orElse(List.of());
         try (ZtsClient client = createZtsClient()) {
-            return client.getAccessToken(domain);
-        }
-    }
-
-    private AthenzAccessToken createAccessToken(List<AthenzRole> roles) {
-        try (ZtsClient client = createZtsClient()) {
-            return client.getAccessToken(roles);
+            if (roles.isEmpty()) {
+                return client.getAccessToken(cacheKey.domain(), proxyPrincipals);
+            } else {
+                return client.getAccessToken(roles, proxyPrincipals);
+            }
         }
     }
 
@@ -349,5 +356,15 @@ public final class AthenzIdentityProviderImpl extends AbstractComponent implemen
             log.log(Level.WARNING, "Failed to update metrics: " + t.getMessage(), t);
         }
     }
+    private record AccessTokenCacheKey(AthenzDomain domain, List<AthenzRole> roles, List<AthenzIdentity> proxyPrincipals) {
+        static AccessTokenCacheKey from(String domain, List<String> roles, List<String> proxyPrincipals) {
+            List<AthenzRole> roleList = Optional.ofNullable(roles).orElse(List.of()).stream()
+                    .map(roleName -> new AthenzRole(domain, roleName))
+                    .toList();
+            List<AthenzIdentity> proxyPrincipalList = Optional.ofNullable(proxyPrincipals).orElse(List.of()).stream()
+                    .map(AthenzIdentities::from)
+                    .toList();
+            return new AccessTokenCacheKey(new AthenzDomain(domain), roleList, proxyPrincipalList);
+        }
+    }
 }
-

@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 options {
     UNICODE_INPUT = true;
@@ -34,6 +34,7 @@ import com.yahoo.schema.document.Stemming;
 import com.yahoo.schema.document.SDField;
 import com.yahoo.schema.FeatureNames;
 import com.yahoo.schema.fieldoperation.IndexingOperation;
+import com.yahoo.search.schema.RankProfile.InputType;
 import com.yahoo.searchlib.rankingexpression.FeatureList;
 import com.yahoo.searchlib.rankingexpression.Reference;
 import com.yahoo.searchlib.rankingexpression.evaluation.TensorValue;
@@ -181,6 +182,7 @@ TOKEN :
 | < GRAM: "gram" >
 | < GRAM_SIZE: "gram-size" >
 | < MAX_LENGTH: "max-length" >
+| < MAX_OCCURRENCES: "max-occurrences" >
 | < PREFIX: "prefix" >
 | < SUBSTRING: "substring" >
 | < SUFFIX: "suffix" >
@@ -201,6 +203,7 @@ TOKEN :
 | < FULL: "full" >
 | < STATIC: "static" >
 | < DYNAMIC: "dynamic" >
+| < TOKENS: "tokens" >
 | < MATCHED_ELEMENTS_ONLY: "matched-elements-only" >
 | < SSCONTEXTUAL: "contextual" >
 | < SSOVERRIDE: "override" >
@@ -296,6 +299,9 @@ TOKEN :
 | < HNSW: "hnsw" >
 | < MAX_LINKS_PER_NODE: "max-links-per-node" >
 | < DOUBLE_KEYWORD: "double" >
+| < FLOAT_KEYWORD: "float" >
+| < LONG_KEYWORD: "long" >
+| < STRING_KEYWORD: "string" >
 | < DISTANCE_METRIC: "distance-metric" >
 | < NEIGHBORS_TO_EXPLORE_AT_INSERT: "neighbors-to-explore-at-insert" >
 | < MULTI_THREADED_INDEXING: "multi-threaded-indexing" >
@@ -1089,6 +1095,9 @@ void summaryInDocument(ParsedDocumentSummary docsum) :
     (<TYPE>   type = dataType())?
     lbrace() {
         psf = new ParsedSummaryField(name, type);
+	if (type != null) {
+	    psf.setHasExplicitType();
+	}
     }
     (summaryItem(psf) (<NL>)*)* <RBRACE>
     {
@@ -1128,6 +1137,7 @@ void summaryInFieldShort(ParsedField field) :
     <COLON> ( <DYNAMIC> { psf.setDynamic(); }
               | <MATCHED_ELEMENTS_ONLY> { psf.setMatchedElementsOnly(); }
               | (<FULL> | <STATIC>) { psf.setFull(); }
+              | <TOKENS> { psf.setTokens(); }
             )
 }
 
@@ -1138,13 +1148,17 @@ void summaryInFieldLong(ParsedField field) :
 {
     String name = field.name();
     ParsedType type = field.getType();
+    boolean explicitType = false;
     ParsedSummaryField psf;
 }
 {
-    ( [ name = identifier() [ <TYPE> type = dataType() ] ]
+    ( [ name = identifier() [ <TYPE> { type = dataType(); explicitType = true; } ] ]
       lbrace()
       {
           psf = field.summaryFieldFor(name, type);
+	  if (explicitType) {
+              psf.setHasExplicitType();
+          }
       }
       (summaryItem(psf) (<NL>)*)* <RBRACE> )
 }
@@ -1173,6 +1187,7 @@ void summaryTransform(ParsedSummaryField field) : { }
     ( <DYNAMIC>              { field.setDynamic(); }
      | <MATCHED_ELEMENTS_ONLY> { field.setMatchedElementsOnly(); }
      | (<FULL> | <STATIC>)   { field.setFull(); }
+     | <TOKENS> { field.setTokens(); }
     )
 }
 
@@ -1351,7 +1366,7 @@ void matchType(ParsedMatchSettings matchInfo) : { }
  */
 void matchItem(ParsedMatchSettings matchInfo) : { }
 {
-    ( matchType(matchInfo) | exactTerminator(matchInfo) | gramSize(matchInfo) | matchSize(matchInfo) )
+    ( matchType(matchInfo) | exactTerminator(matchInfo) | gramSize(matchInfo) | matchSize(matchInfo) | maxTermOccurrences(matchInfo))
 }
 
 void exactTerminator(ParsedMatchSettings matchInfo) :
@@ -1383,6 +1398,16 @@ void matchSize(ParsedMatchSettings matchInfo) :
 {
     <MAX_LENGTH> <COLON> matchSize = integer() {
         matchInfo.setMaxLength(matchSize);
+    }
+}
+
+void maxTermOccurrences(ParsedMatchSettings matchInfo) :
+{
+    int maxTermOccurrences;
+}
+{
+    <MAX_OCCURRENCES> <COLON> maxTermOccurrences = integer() {
+        matchInfo.setMaxTermOccurrences(maxTermOccurrences);
     }
 }
 
@@ -1461,10 +1486,8 @@ void inheritsDocumentSummary(ParsedDocumentSummary documentSummary) :
     String name;
 }
 {
-    <INHERITS> name = identifierWithDash()
-    {
-        documentSummary.inherit(name);
-    }
+    <INHERITS> name = identifierWithDash() { documentSummary.inherit(name); }
+    ( <COMMA>  name = identifierWithDash() { documentSummary.inherit(name); } )*
 }
 
 /**
@@ -1983,22 +2006,38 @@ void inputs(ParsedRankProfile profile) :
 {
     Reference reference;
     TensorType type;
+    List<Reference> seenInputs = new ArrayList<>();
 }
 {
     <INPUTS> <LBRACE> (<NL>)*
-      ( input(profile) (<NL>)*) *
+    (
+        reference = input(profile) { seenInputs.add(reference); }
+        (<NL> { seenInputs.add(null); })*
+    )*
     <RBRACE>
+    {
+        Reference last = null;
+        for (Reference current : seenInputs) {
+            if (last != null && current != null) {
+	       deployLogger.logApplicationPackage(Level.WARNING, "Expected newline between inputs " + last + " and " + current);
+	   }
+	   last = current;
+        }
+    }
 }
 
-void input(ParsedRankProfile profile) :
+Reference input(ParsedRankProfile profile) :
 {
     Reference reference;
-    TensorType type = TensorType.empty;
+    InputType type = new InputType(TensorType.empty, false);
     Tensor defaultValue = null;
 }
 {
-    reference = inputName() ( type = valueType(reference))? ( <COLON> (<NL>)* defaultValue = tensorValue(type) )?
-    { profile.addInput(reference, new RankProfile.Input(reference, type, Optional.ofNullable(defaultValue))); }
+    reference = inputName() ( type = valueType(reference))? ( <COLON> (<NL>)* defaultValue = tensorValue(type.tensorType()) )?
+    {
+        profile.addInput(reference, new RankProfile.Input(reference, type, Optional.ofNullable(defaultValue)));
+        return reference;
+    }
 }
 
 /** Returns the reference "query(name)" for both "query(name)" and "name". */
@@ -2015,18 +2054,30 @@ Reference inputName() :
     { return FeatureNames.asQueryFeature(name); }
 }
 
-TensorType valueType(Reference reference) :
+InputType valueType(Reference reference) :
 {
     TensorType type;
-
+    InputType result;
 }
 {
     (
-      ( type = tensorType("Type of " + reference) )
+      ( type = tensorType("Type of " + reference) { result = new InputType(type, false); } )
       |
-      ( <DOUBLE_KEYWORD> { type = TensorType.empty; } )
+      ( <DOUBLE_KEYWORD> { result = new InputType(TensorType.empty, false); } )
+      |
+      ( <LONG_KEYWORD> {
+        result = new InputType(TensorType.empty, false);
+        deployLogger.logApplicationPackage(Level.WARNING, "Input " + reference + ": 'long' is not possible, treated as 'double'");
+      } )
+      |
+      ( <FLOAT_KEYWORD> {
+        result = new InputType(TensorType.empty, false);
+        deployLogger.logApplicationPackage(Level.WARNING, "Input " + reference + ": 'float' is not possible, treated as 'double'");
+      } )
+      |
+      ( <STRING_KEYWORD> { result = new InputType(TensorType.empty, true); } )
     )
-    { return type; }
+    { return result; }
 }
 
 /**
@@ -2310,7 +2361,7 @@ void constants(ParsedSchema schema, ParsedRankProfile profile) :
 void constant(ParsedSchema schema, ParsedRankProfile profile) :
 {
     Reference name = null;
-    TensorType type = TensorType.empty;
+    InputType type = new InputType(TensorType.empty, false);
     Tensor value = null;
     String valuePath = null;
 }
@@ -2318,12 +2369,12 @@ void constant(ParsedSchema schema, ParsedRankProfile profile) :
     (
       name = constantName()
       (
-        LOOKAHEAD(4) ( ( type = valueType(name) )? <COLON> (<NL>)* ( value = tensorValue(type) | valuePath = fileItem())
+        LOOKAHEAD(4) ( ( type = valueType(name) )? <COLON> (<NL>)* ( value = tensorValue(type.tensorType()) | valuePath = fileItem())
         {
             if (value != null)
                 profile.add(new RankProfile.Constant(name, value));
             else
-                profile.add(new RankProfile.Constant(name, type, valuePath));
+                profile.add(new RankProfile.Constant(name, type.tensorType(), valuePath));
         }
         )
         | // Deprecated forms (TODO: Vespa > 8: Add warning):
@@ -2691,6 +2742,9 @@ String identifier() : { }
       | <DIVERSITY>
       | <DOCUMENT>
       | <DOUBLE_KEYWORD>
+      | <FLOAT_KEYWORD>
+      | <LONG_KEYWORD>
+      | <STRING_KEYWORD>
       | <DYNAMIC>
       | <EXACT>
       | <FALSE>
@@ -2767,6 +2821,7 @@ String identifier() : { }
       | <TERTIARY>
       | <TEXT>
       | <TO>
+      | <TOKENS>
       | <TRUE>
       | <TYPE>
       | <UCA>

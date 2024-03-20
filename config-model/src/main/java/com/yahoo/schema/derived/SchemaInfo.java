@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.schema.derived;
 
 import com.yahoo.document.ArrayDataType;
@@ -21,6 +21,7 @@ import com.yahoo.schema.RankProfileRegistry;
 import com.yahoo.schema.Schema;
 import com.yahoo.searchlib.rankingexpression.Reference;
 
+import java.io.IOException;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Iterator;
@@ -32,7 +33,7 @@ import java.util.Map;
  *
  * @author bratseth
  */
-public final class SchemaInfo extends Derived implements SchemaInfoConfig.Producer {
+public final class SchemaInfo extends Derived {
 
     private final Schema schema;
 
@@ -41,12 +42,31 @@ public final class SchemaInfo extends Derived implements SchemaInfoConfig.Produc
     private final Map<String, RankProfileInfo> rankProfiles;
 
     private final Summaries summaries;
+    private final IndexMode indexMode;
 
-    public SchemaInfo(Schema schema, RankProfileRegistry rankProfileRegistry, Summaries summaries) {
+    public enum IndexMode {INDEX, STREAMING, STORE_ONLY}
+
+    public SchemaInfo(Schema schema, String indexMode, RankProfileRegistry rankProfileRegistry, Summaries summaries) {
+        this(schema, indexMode(indexMode), rankProfileRegistry, summaries);
+    }
+    public SchemaInfo(Schema schema, IndexMode indexMode, RankProfileRegistry rankProfileRegistry, Summaries summaries) {
         this.schema = schema;
         this.rankProfiles = Collections.unmodifiableMap(toRankProfiles(rankProfileRegistry.rankProfilesOf(schema)));
         this.summaries = summaries;
+        this.indexMode = indexMode;
     }
+
+    private static IndexMode indexMode(String mode) {
+        if (mode == null) return IndexMode.INDEX;
+        return switch (mode) {
+            case "index" -> IndexMode.INDEX;
+            case "streaming" -> IndexMode.STREAMING;
+            case "store-only" -> IndexMode.STORE_ONLY;
+            default -> IndexMode.STORE_ONLY;
+        };
+    }
+
+    public IndexMode getIndexMode() { return indexMode; }
 
     public String name() { return schema.getName(); }
 
@@ -63,8 +83,8 @@ public final class SchemaInfo extends Derived implements SchemaInfoConfig.Produc
         return rankProfileInfos;
     }
 
-    @Override
     public void getConfig(SchemaInfoConfig.Builder builder) {
+        // Append
         var schemaBuilder = new SchemaInfoConfig.Schema.Builder();
         schemaBuilder.name(schema.getName());
         addFieldsConfig(schemaBuilder);
@@ -72,6 +92,12 @@ public final class SchemaInfo extends Derived implements SchemaInfoConfig.Produc
         addSummaryConfig(schemaBuilder);
         addRankProfilesConfig(schemaBuilder);
         builder.schema(schemaBuilder);
+    }
+
+    public void export(String toDirectory) throws IOException {
+        var builder = new SchemaInfoConfig.Builder();
+        getConfig(builder);
+        export(toDirectory, builder.build());
     }
 
     private void addFieldsConfig(SchemaInfoConfig.Schema.Builder schemaBuilder) {

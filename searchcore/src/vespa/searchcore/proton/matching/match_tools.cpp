@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include "match_tools.h"
 #include "querynodes.h"
@@ -17,6 +17,7 @@ using search::queryeval::IDiversifier;
 using search::attribute::diversity::DiversityFilter;
 using search::attribute::BasicType;
 using search::attribute::AttributeBlueprintParams;
+using search::queryeval::ExecuteInfo;
 using vespalib::Issue;
 
 using namespace search::fef::indexproperties::matchphase;
@@ -174,13 +175,15 @@ MatchToolsFactory(QueryLimiter               & queryLimiter,
                   const Properties           & featureOverrides,
                   vespalib::ThreadBundle     & thread_bundle,
                   const search::IDocumentMetaStoreContext::IReadGuard::SP * metaStoreReadGuard,
+                  uint32_t                     maxNumHits,
                   bool                         is_search)
     : _queryLimiter(queryLimiter),
       _attribute_blueprint_params(extract_attribute_blueprint_params(rankSetup, rankProperties, metaStore.getNumActiveLids(), searchContext.getDocIdLimit())),
       _query(),
       _match_limiter(),
       _queryEnv(indexEnv, attributeContext, rankProperties, searchContext.getIndexes()),
-      _requestContext(doom, attributeContext, _queryEnv, _queryEnv.getObjectStore(), _attribute_blueprint_params, metaStoreReadGuard),
+      _requestContext(doom, thread_bundle, attributeContext, _queryEnv, _queryEnv.getObjectStore(),
+                      _attribute_blueprint_params, metaStoreReadGuard),
       _mdl(),
       _rankSetup(rankSetup),
       _featureOverrides(featureOverrides),
@@ -192,21 +195,23 @@ MatchToolsFactory(QueryLimiter               & queryLimiter,
     trace.addEvent(4, "Start query setup");
     _query.setWhiteListBlueprint(metaStore.createWhiteListBlueprint());
     trace.addEvent(5, "Deserialize and build query tree");
-    _valid = _query.buildTree(queryStack, location, viewResolver, indexEnv, true);
+    _valid = _query.buildTree(queryStack, location, viewResolver, indexEnv,
+                              AlwaysMarkPhraseExpensive::check(_queryEnv.getProperties(), rankSetup.always_mark_phrase_expensive()));
     if (_valid) {
         _query.extractTerms(_queryEnv.terms());
         _query.extractLocations(_queryEnv.locations());
         trace.addEvent(5, "Build query execution plan");
         _query.reserveHandles(_requestContext, searchContext, _mdl);
         trace.addEvent(5, "Optimize query execution plan");
-        _query.optimize();
+        bool sort_by_cost = SortBlueprintsByCost::check(_queryEnv.getProperties(), rankSetup.sort_blueprints_by_cost());
+        _query.optimize(sort_by_cost);
         trace.addEvent(4, "Perform dictionary lookups and posting lists initialization");
-        _query.fetchPostings(_requestContext.getDoom());
+        double hitRate = std::min(1.0, double(maxNumHits)/double(searchContext.getDocIdLimit()));
+        _query.fetchPostings(ExecuteInfo::create(is_search, hitRate, _requestContext.getDoom(), thread_bundle));
         if (is_search) {
-            _query.handle_global_filter(_requestContext.getDoom(), searchContext.getDocIdLimit(),
+            _query.handle_global_filter(_requestContext, searchContext.getDocIdLimit(),
                                         _attribute_blueprint_params.global_filter_lower_limit,
-                                        _attribute_blueprint_params.global_filter_upper_limit,
-                                        thread_bundle, trace);
+                                        _attribute_blueprint_params.global_filter_upper_limit, trace, sort_by_cost);
         }
         _query.freeze();
         trace.addEvent(5, "Prepare shared state for multi-threaded rank executors");

@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.model.container.xml;
 
 import com.yahoo.component.ComponentSpecification;
@@ -44,7 +44,7 @@ class CloudTokenDataPlaneFilter extends Filter implements CloudTokenDataPlaneFil
                 .map(x -> new CloudTokenDataPlaneFilterConfig.Clients.Builder()
                         .id(x.id())
                         .tokens(tokensConfig(x.tokens()))
-                        .permissions(x.permissions()))
+                        .permissions(x.permissions().stream().map(Client.Permission::asString).sorted().toList()))
                 .toList();
         builder.clients(clientsCfg).tokenContext(tokenContext);
     }

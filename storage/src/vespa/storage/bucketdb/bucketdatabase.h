@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 /**
  * Interface for bucket database implementations in the distributor.
  */
@@ -8,7 +8,6 @@
 #include "read_guard.h"
 #include <vespa/vespalib/util/printable.h>
 #include <vespa/storage/bucketdb/bucketinfo.h>
-#include <vespa/document/bucket/bucketid.h>
 #include <vespa/vespalib/util/memoryusage.h>
 
 namespace storage {

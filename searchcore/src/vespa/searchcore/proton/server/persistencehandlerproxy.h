@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #pragma once
 
@@ -35,6 +35,9 @@ public:
     void handleRemove(FeedToken token, const storage::spi::Bucket &bucket,
                       storage::spi::Timestamp timestamp,
                       const document::DocumentId &id) override;
+    void handleRemoveByGid(FeedToken token, const storage::spi::Bucket &bucket,
+                           storage::spi::Timestamp timestamp,
+                           vespalib::stringref doc_type, const document::GlobalId& gid) override;
 
     void handleListBuckets(IBucketIdListResultHandler &resultHandler) override;
     void handleSetClusterState(const storage::spi::ClusterState &calc, IGenericResultHandler &resultHandler) override;
@@ -58,6 +61,8 @@ public:
     void handleListActiveBuckets(IBucketIdListResultHandler &resultHandler) override;
 
     void handlePopulateActiveBuckets(document::BucketId::List buckets, IGenericResultHandler &resultHandler) override;
+
+    const DocTypeName &doc_type_name() const noexcept override;
 };
 
 } // namespace proton

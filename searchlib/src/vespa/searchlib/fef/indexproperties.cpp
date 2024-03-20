@@ -1,9 +1,10 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include "indexproperties.h"
 #include "properties.h"
 #include <vespa/vespalib/locale/c.h>
 #include <limits>
+#include <charconv>
 
 namespace search::fef::indexproperties {
 
@@ -49,10 +50,15 @@ uint32_t
 lookupUint32(const Properties &props, const vespalib::string &name, uint32_t defaultValue)
 {
     Property p = props.lookup(name);
+    uint32_t value(defaultValue);
     if (p.found()) {
-        return atoi(p.get().c_str());
+        const auto & valS = p.get();
+        const char * start = valS.c_str();
+        const char * end = start + valS.size();
+        while ((start != end) && isspace(start[0])) { start++; }
+        std::from_chars(start, end, value);
     }
-    return defaultValue;
+    return value;
 }
 
 bool
@@ -172,11 +178,6 @@ namespace onsummary {
 }
 
 namespace temporary {
-
-const vespalib::string EnableNestedMultivalueGrouping::NAME("vespa.temporary.enable_nested_multivalue_grouping");
-bool EnableNestedMultivalueGrouping::check(const Properties &props) {
-    return lookupBool(props, NAME, false);
-}
 
 }
 
@@ -452,6 +453,18 @@ FuzzyAlgorithm::lookup(const Properties& props, vespalib::FuzzyMatchingAlgorithm
 {
     auto value = lookupString(props, NAME, vespalib::to_string(default_value));
     return vespalib::fuzzy_matching_algorithm_from_string(value, default_value);
+}
+
+const vespalib::string SortBlueprintsByCost::NAME("vespa.matching.sort_blueprints_by_cost");
+const bool SortBlueprintsByCost::DEFAULT_VALUE(false);
+bool SortBlueprintsByCost::check(const Properties &props, bool fallback) {
+    return lookupBool(props, NAME, fallback);
+}
+
+const vespalib::string AlwaysMarkPhraseExpensive::NAME("vespa.matching.always_mark_phrase_expensive");
+const bool AlwaysMarkPhraseExpensive::DEFAULT_VALUE(false);
+bool AlwaysMarkPhraseExpensive::check(const Properties &props, bool fallback) {
+    return lookupBool(props, NAME, fallback);
 }
 
 } // namespace matching

@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #pragma once
 
@@ -31,6 +31,7 @@ class RangeQueryLocator;
 class AttributeLimiter
 {
 public:
+    using SearchIterator = search::queryeval::SearchIterator;
     enum DiversityCutoffStrategy { LOOSE, STRICT};
     AttributeLimiter(const RangeQueryLocator & _rangeQueryLocator,
                      search::queryeval::Searchable &searchable_attributes,
@@ -40,11 +41,13 @@ public:
                      double diversityCutoffFactor,
                      DiversityCutoffStrategy diversityCutoffStrategy);
     ~AttributeLimiter();
-    std::unique_ptr<search::queryeval::SearchIterator> create_search(size_t want_hits, size_t max_group_size, bool strictSearch);
+    std::unique_ptr<SearchIterator> create_search(size_t want_hits, size_t max_group_size, double hit_rate, bool strictSearch);
     bool was_used() const;
     ssize_t getEstimatedHits() const;
     static DiversityCutoffStrategy toDiversityCutoffStrategy(vespalib::stringref strategy);
 private:
+    using BlueprintAndMatchData = std::pair<search::queryeval::Blueprint &, search::fef::MatchData &>;
+    BlueprintAndMatchData create_match_data(size_t want_hits, size_t max_group_size, double hit_rate, bool strictSearch);
     search::queryeval::Searchable                      & _searchable_attributes;
     const search::queryeval::IRequestContext           & _requestContext;
     const RangeQueryLocator                            & _rangeQueryLocator;

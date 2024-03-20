@@ -1,7 +1,9 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.hosted.provision.lb;
 
 import com.yahoo.config.provision.ClusterSpec;
+import com.yahoo.config.provision.EndpointsChecker.Availability;
+import com.yahoo.config.provision.EndpointsChecker.Endpoint;
 import com.yahoo.config.provision.EndpointsChecker.HealthChecker;
 import com.yahoo.config.provision.NodeType;
 
@@ -10,7 +12,7 @@ import com.yahoo.config.provision.NodeType;
  *
  * @author mpolden
  */
-public interface LoadBalancerService extends HealthChecker {
+public interface LoadBalancerService {
 
     /**
      * Provisions load balancers from the given specification. Implementations are expected to be idempotent
@@ -31,6 +33,8 @@ public interface LoadBalancerService extends HealthChecker {
      */
     LoadBalancerInstance configure(LoadBalancerInstance instance, LoadBalancerSpec spec, boolean force);
 
+    void reallocate(LoadBalancerSpec spec);
+
     /** Permanently remove given load balancer */
     void remove(LoadBalancer loadBalancer);
 
@@ -39,6 +43,9 @@ public interface LoadBalancerService extends HealthChecker {
 
     /** Returns whether load balancers created by this service can forward traffic to given node and cluster type */
     boolean supports(NodeType nodeType, ClusterSpec.Type clusterType);
+
+    /** See {@link HealthChecker#healthy(Endpoint)}. */
+    Availability healthy(Endpoint endpoint, String idSeed);
 
     /** Load balancer protocols */
     enum Protocol {

@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.jdisc.test;
 
 import com.google.inject.AbstractModule;
@@ -73,9 +73,10 @@ public class TestDriver implements ContainerActivator, CurrentContainer {
         return loader.newContainerBuilder();
     }
 
+    /** Returns the deactivated container, with its container reference already released. */
     @Override
     public DeactivatedContainer activateContainer(ContainerBuilder builder) {
-        return loader.activateContainer(builder);
+        try (DeactivatedContainer deactivated = loader.activateContainer(builder)) { return deactivated; }
     }
 
     @Override

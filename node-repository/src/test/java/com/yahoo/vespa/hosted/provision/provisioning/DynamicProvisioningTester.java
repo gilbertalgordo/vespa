@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.hosted.provision.provisioning;
 
 import com.yahoo.config.provision.ApplicationId;
@@ -31,6 +31,7 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 /**
@@ -142,7 +143,7 @@ public class DynamicProvisioningTester {
                               cluster.maxResources(),
                               cluster.groupSize(),
                               cluster.required(),
-                              cluster.suggested(),
+                              cluster.suggestions(),
                               cluster.target(),
                               cluster.clusterInfo(),
                               cluster.bcpGroupInfo(),
@@ -165,7 +166,7 @@ public class DynamicProvisioningTester {
                                     nodeRepository().nodes().list(Node.State.active).owner(applicationId));
     }
 
-    public Autoscaling suggest(ApplicationId applicationId, ClusterSpec.Id clusterId,
+    public List<Autoscaling> suggest(ApplicationId applicationId, ClusterSpec.Id clusterId,
                                      ClusterResources min, ClusterResources max) {
         Application application = nodeRepository().applications().get(applicationId).orElse(Application.empty(applicationId))
                                                   .withCluster(clusterId, false, Capacity.from(min, max));
@@ -199,8 +200,16 @@ public class DynamicProvisioningTester {
     public ClusterResources assertResources(String message,
                                             int nodeCount, int groupCount,
                                             double approxCpu, double approxMemory, double approxDisk,
+                                            List<Autoscaling> autoscaling) {
+        assertFalse(autoscaling.isEmpty());
+        return assertResources(message, nodeCount, groupCount, approxCpu, approxMemory, approxDisk, autoscaling.get(0));
+    }
+
+    public ClusterResources assertResources(String message,
+                                            int nodeCount, int groupCount,
+                                            double approxCpu, double approxMemory, double approxDisk,
                                             Autoscaling autoscaling) {
-        assertTrue("Resources are present: " + message + " (" + autoscaling + ": " + autoscaling.status() + ")",
+        assertTrue("Resources should be present: " + message + " (" + autoscaling + ": " + autoscaling.status() + ")",
                    autoscaling.resources().isPresent());
         var resources = autoscaling.resources().get();
         assertResources(message, nodeCount, groupCount, approxCpu, approxMemory, approxDisk, resources);

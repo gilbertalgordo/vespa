@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.search.query.profile;
 
 import ai.vespa.cloud.ZoneInfo;
@@ -192,7 +192,7 @@ public class QueryProfileProperties extends Properties {
 
             if (fieldDescription != null) {
                 if (i == name.size() - 1) { // at the end of the path, check the assignment type
-                    var conversionContext = new ConversionContext(localName, profile.getRegistry(), embedders, context);
+                    var conversionContext = new ConversionContext(localName, profile.getRegistry(), embedders, context, this);
                     var convertedValue = fieldDescription.getType().convertFrom(value, conversionContext);
                     if (convertedValue == null
                         && fieldDescription.getType() instanceof QueryProfileFieldType

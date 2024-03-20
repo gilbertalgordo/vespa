@@ -1,4 +1,4 @@
-# Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+# Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 vespa_add_library(storage_storageconfig OBJECT
     SOURCES
     distributorconfiguration.cpp
@@ -12,8 +12,6 @@ vespa_generate_config(storage_storageconfig stor-server.def)
 install_config_definition(stor-server.def vespa.config.content.core.stor-server.def)
 vespa_generate_config(storage_storageconfig stor-status.def)
 install_config_definition(stor-status.def vespa.config.content.core.stor-status.def)
-vespa_generate_config(storage_storageconfig stor-opslogger.def)
-install_config_definition(stor-opslogger.def vespa.config.content.core.stor-opslogger.def)
 vespa_generate_config(storage_storageconfig stor-visitordispatcher.def)
 install_config_definition(stor-visitordispatcher.def vespa.config.content.core.stor-visitordispatcher.def)
 vespa_generate_config(storage_storageconfig stor-bouncer.def)

@@ -1,16 +1,16 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 import org.jetbrains.grammarkit.tasks.GenerateLexerTask
 import org.jetbrains.grammarkit.tasks.GenerateParserTask
 
 plugins {
   id("java-library")
-  id("org.jetbrains.intellij") version "1.16.0"
-  id("org.jetbrains.grammarkit") version "2022.3.2"
+  id("org.jetbrains.intellij") version "1.17.2"
+  id("org.jetbrains.grammarkit") version "2022.3.2.2"
   id("maven-publish") // to deploy the plugin into a Maven repo
 }
 
 group="ai.vespa"
-version="1.4.0" // Also update pom.xml version AND the version below if this is changed
+version="1.6.0" // Also update pom.xml version AND the version below if this is changed
 
 defaultTasks("buildPlugin")
 
@@ -43,7 +43,7 @@ sourceSets {
 
 // See https://github.com/JetBrains/gradle-intellij-plugin/
 intellij {
-  version.set("2023.1")
+  version.set("2023.3")
 }
 
 tasks {
@@ -55,11 +55,12 @@ tasks {
   }
 
   patchPluginXml {
-    version.set("1.4.0") // TODO: Use one version property
-    sinceBuild.set("231")
+    version.set("1.6.0") // Keep in sync with pom.xml TODO: Use one version property
     // Appears on the plugin page in preferences/plugins
     changeNotes.set("""
-       Support for IntelliJ 2023
+      Updated Vespa icon
+      Support for IntelliJ 2023.3
+      Compatibility with all JetBrains IDEs
     """)
   }
 

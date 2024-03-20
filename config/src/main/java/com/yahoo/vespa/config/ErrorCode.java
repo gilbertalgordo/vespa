@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.config;
 
 /**
@@ -65,7 +65,7 @@ public final class ErrorCode {
             case INCONSISTENT_CONFIG_MD5:    return "INCONSISTENT_CONFIG_MD5";
             case UNKNOWN_VESPA_VERSION:      return "UNKNOWN_VESPA_VERSION";
             case INCOMPATIBLE_VESPA_VERSION: return "INCOMPATIBLE_VESPA_VERSION";
-            default:                         return "Unknown error";
+            default:                         return "Unknown error (error code " + error + ")";
         }
     }
 

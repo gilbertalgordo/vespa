@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.prelude.cluster;
 
 import com.yahoo.component.ComponentId;
@@ -7,17 +7,16 @@ import com.yahoo.concurrent.InThreadExecutorService;
 import com.yahoo.container.QrSearchersConfig;
 import com.yahoo.container.handler.ClustersStatus;
 import com.yahoo.container.handler.VipStatus;
-import com.yahoo.prelude.IndexFacts;
-import com.yahoo.prelude.IndexModel;
-import com.yahoo.prelude.SearchDefinition;
+import com.yahoo.prelude.fastsearch.ClusterParams;
 import com.yahoo.prelude.fastsearch.DocumentdbInfoConfig;
 import com.yahoo.prelude.fastsearch.FastHit;
-import com.yahoo.prelude.fastsearch.VespaBackEndSearcher;
+import com.yahoo.prelude.fastsearch.VespaBackend;
 import com.yahoo.search.Query;
 import com.yahoo.search.Result;
 import com.yahoo.search.config.ClusterConfig;
 import com.yahoo.search.dispatch.Dispatcher;
 import com.yahoo.search.result.Hit;
+import com.yahoo.search.schema.Cluster;
 import com.yahoo.search.schema.RankProfile;
 import com.yahoo.search.schema.Schema;
 import com.yahoo.search.schema.SchemaInfo;
@@ -30,16 +29,17 @@ import org.junit.jupiter.api.Test;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -52,70 +52,59 @@ public class ClusterSearcherTestCase {
 
     private static final double DELTA = 0.0000000000000001;
 
-    @Test
-    void testNoBackends() {
-        ClusterSearcher cluster = new ClusterSearcher(new LinkedHashSet<>(List.of("dummy")));
-        try {
-            Execution execution = new Execution(cluster, Execution.Context.createContextStub());
-            Query query = new Query("query=hello");
-            query.setHits(10);
-            com.yahoo.search.Result result = execution.search(query);
-            assertNotNull(result.hits().getError());
-            assertEquals("No backends in service. Try later", result.hits().getError().getMessage());
-        } finally {
-            cluster.deconstruct();
-        }
-    }
-
-    private IndexFacts createIndexFacts() {
-        Map<String, List<String>> clusters = new LinkedHashMap<>();
-        clusters.put("cluster1", List.of("type1", "type2", "type3"));
-        clusters.put("cluster2", List.of("type4", "type5"));
-        clusters.put("type1", List.of("type6"));
-        Collection<SearchDefinition> searchDefs = List.of(
-                new SearchDefinition("type1"),
-                new SearchDefinition("type2"),
-                new SearchDefinition("type3"),
-                new SearchDefinition("type4"),
-                new SearchDefinition("type5"),
-                new SearchDefinition("type6"));
-        return new IndexFacts(new IndexModel(clusters, searchDefs));
+    private static SchemaInfo createSchemaInfo() {
+        var schemas = Stream.of("type1", "type2", "type3", "type4", "type5", "type6")
+                .map(name -> new Schema.Builder(name).build()).toList();
+        var clusters = List.of(new Cluster.Builder("cluster1").addSchema("type1").addSchema("type2").addSchema("type3").build(),
+                new Cluster.Builder("cluster2").addSchema("type4").addSchema("type5").build(),
+                new Cluster.Builder("type1").addSchema("type6").build());
+        return new SchemaInfo(schemas, clusters);
     }
 
     private Set<String> resolve(ClusterSearcher searcher, String query) {
-        return searcher.resolveSchemas(new Query("?query=hello" + query), createIndexFacts());
+        return searcher.resolveSchemas(new Query("?query=hello" + query));
+    }
+
+    private static SchemaInfo toSchemaInfo(Collection<String> schemaNames, String clusterName) {
+        Cluster.Builder clusterBuilder = new Cluster.Builder(clusterName);
+
+        schemaNames.forEach(clusterBuilder::addSchema);
+        return new SchemaInfo(schemaNames.stream().map(name -> new Schema.Builder(name).build()).toList(),
+                              List.of(clusterBuilder.build()));
     }
 
     @Test
     void testThatDocumentTypesAreResolved() {
-        ClusterSearcher cluster1 = new ClusterSearcher(new LinkedHashSet<>(List.of("type1", "type2", "type3")));
+        var backend = new MyMockBackend(false);
+        SchemaInfo schemaInfo = createSchemaInfo();
+        ClusterSearcher cluster1 = new ClusterSearcher(schemaInfo, Map.of("type1", backend, "type2", backend, "type3", backend));
         try {
-            ClusterSearcher type1 = new ClusterSearcher(new LinkedHashSet<>(List.of("type6")));
+            ClusterSearcher type1 = new ClusterSearcher(schemaInfo, Map.of("type6", backend));
             try {
-                assertEquals(new LinkedHashSet<>(List.of("type1", "type2", "type3")), resolve(cluster1, ""));
-                assertEquals(new LinkedHashSet<>(List.of("type6")), resolve(type1, ""));
+                assertEquals(Set.of("type1", "type2", "type3"), resolve(cluster1, ""));
+                assertEquals(Set.of("type6"), resolve(type1, ""));
                 { // specify restrict
-                    assertEquals(new LinkedHashSet<>(List.of("type1")), resolve(cluster1, "&restrict=type1"));
-                    assertEquals(new LinkedHashSet<>(List.of("type2")), resolve(cluster1, "&restrict=type2"));
-                    assertEquals(new LinkedHashSet<>(List.of("type2", "type3")), resolve(cluster1, "&restrict=type2,type3"));
-                    assertEquals(new LinkedHashSet<>(List.of("type2")), resolve(cluster1, "&restrict=type2,type4"));
-                    assertEquals(new LinkedHashSet<>(List.of()), resolve(cluster1, "&restrict=type4"));
+                    assertEquals(Set.of("type1"), resolve(cluster1, "&restrict=type1"));
+                    assertEquals(Set.of("type2"), resolve(cluster1, "&restrict=type2"));
+                    assertEquals(Set.of("type2", "type3"), resolve(cluster1, "&restrict=type2,type3"));
+                    assertEquals(Set.of("type2"), resolve(cluster1, "&restrict=type2,type4"));
+                    assertEquals(Set.of(), resolve(cluster1, "&restrict=type4"));
                 }
                 { // specify sources
-                    assertEquals(new LinkedHashSet<>(List.of("type1", "type2", "type3")), resolve(cluster1, "&sources=cluster1"));
-                    assertEquals(new LinkedHashSet<>(List.of()), resolve(cluster1, "&sources=cluster2"));
-                    assertEquals(new LinkedHashSet<>(List.of()), resolve(cluster1, "&sources=type1"));
-                    assertEquals(new LinkedHashSet<>(List.of("type6")), resolve(type1, "&sources=type1"));
-                    assertEquals(new LinkedHashSet<>(List.of("type2")), resolve(cluster1, "&sources=type2"));
-                    assertEquals(new LinkedHashSet<>(List.of("type2", "type3")), resolve(cluster1, "&sources=type2,type3"));
-                    assertEquals(new LinkedHashSet<>(List.of("type2")), resolve(cluster1, "&sources=type2,type4"));
-                    assertEquals(new LinkedHashSet<>(List.of()), resolve(cluster1, "&sources=type4"));
+                    assertEquals(Set.of("type1", "type2", "type3"), resolve(cluster1, "&sources=cluster1"));
+                    assertEquals(Set.of(), resolve(cluster1, "&sources=cluster2"));
+                    assertEquals(Set.of(), resolve(cluster1, "&sources=type1"));
+                    assertEquals(Set.of("type6"), resolve(type1, "&sources=type1"));
+                    assertEquals(Set.of("type2"), resolve(cluster1, "&sources=type2"));
+                    assertEquals(Set.of("type2", "type3"), resolve(cluster1, "&sources=type2,type3"));
+                    assertEquals(Set.of("type2"), resolve(cluster1, "&sources=type2,type4"));
+                    assertEquals(Set.of(), resolve(cluster1, "&sources=type4"));
                 }
                 { // specify both
-                    assertEquals(new LinkedHashSet<>(List.of("type1")), resolve(cluster1, "&sources=cluster1&restrict=type1"));
-                    assertEquals(new LinkedHashSet<>(List.of("type2")), resolve(cluster1, "&sources=cluster1&restrict=type2"));
-                    assertEquals(new LinkedHashSet<>(List.of("type2", "type3")), resolve(cluster1, "&sources=cluster1&restrict=type2,type3"));
-                    assertEquals(new LinkedHashSet<>(List.of("type2")), resolve(cluster1, "&sources=cluster2&restrict=type2"));
+                    assertEquals(Set.of("type1"), resolve(cluster1, "&sources=cluster1&restrict=type1"));
+                    assertEquals(Set.of("type2"), resolve(cluster1, "&sources=cluster1&restrict=type2"));
+                    assertEquals(Set.of("type2", "type3"), resolve(cluster1, "&sources=cluster1&restrict=type2,type3"));
+                    assertEquals(Set.of("type2"), resolve(cluster1, "&sources=cluster2&restrict=type2"));
                 }
             } finally {
                 type1.deconstruct();
@@ -127,11 +116,13 @@ public class ClusterSearcherTestCase {
 
     @Test
     void testThatDocumentTypesAreResolvedTODO_REMOVE() {
-        ClusterSearcher cluster1 = new ClusterSearcher(new LinkedHashSet<>(List.of("type1", "type2", "type3")));
+        var backend = new MyMockBackend(false);
+        SchemaInfo schemaInfo = createSchemaInfo();
+        ClusterSearcher cluster1 = new ClusterSearcher(schemaInfo, Map.of("type1", backend, "type2", backend, "type3", backend));
         try {
-            ClusterSearcher type1 = new ClusterSearcher(new LinkedHashSet<>(List.of("type6")));
+            ClusterSearcher type1 = new ClusterSearcher(schemaInfo, Map.of("type6", backend));
             try {
-                assertEquals(new LinkedHashSet<>(List.of()), resolve(cluster1, "&sources=cluster2"));
+                assertEquals(Set.of(), resolve(cluster1, "&sources=cluster2"));
             } finally {
                 type1.deconstruct();
             }
@@ -140,13 +131,38 @@ public class ClusterSearcherTestCase {
         }
     }
 
-    private static class MyMockSearcher extends VespaBackEndSearcher {
+    @Test
+    void testThatMultipleBackendsAreUsed() {
+        var backendA = new MyMockBackend(false);
+        var backendB = new MyMockBackend(false);
+        SchemaInfo schemaInfo = createSchemaInfo();
+        var cluster1 = new ClusterSearcher(schemaInfo, Map.of("type1", backendA, "type2", backendB, "type3", backendA),
+                new InThreadExecutorService());
+        try {
+            Execution execution = new Execution(cluster1, Execution.Context.createContextStub());
+            execution.search(new Query("?query=hello"));
+            assertEquals(2, backendA.queries().size());
+            assertEquals(1, backendB.queries().size());
+            execution.search(new Query("?query=hello&restrict=type1"));
+            assertEquals(3, backendA.queries().size());
+            assertEquals(1, backendB.queries().size());
+            execution.search(new Query("?query=hello&restrict=type2,type3"));
+            assertEquals(4, backendA.queries().size());
+            assertEquals(2, backendB.queries().size());
+        } finally {
+            cluster1.deconstruct();
+        }
+    }
+
+    private static class MyMockBackend extends VespaBackend {
 
         private final String type1 = "type1";
         private final String type2 = "type2";
         private final String type3 = "type3";
         private final Map<String, List<Hit>> results = new LinkedHashMap<>();
         private final boolean expectAttributePrefetch;
+
+        private final List<Query> queries = new ArrayList<>();
         static final String ATTRIBUTE_PREFETCH = "attributeprefetch";
 
         private String getId(String type, int i) {
@@ -197,18 +213,22 @@ public class ClusterSearcherTestCase {
                                              createHit(getId(type3, 2), 5)));
         }
 
-        MyMockSearcher(boolean expectAttributePrefetch) {
+        MyMockBackend(boolean expectAttributePrefetch) {
+            super(new ClusterParams("container.0"));
             this.expectAttributePrefetch = expectAttributePrefetch;
             init();
         }
 
         @Override
-        protected com.yahoo.search.Result doSearch2(Query query, Execution execution) {
+        protected com.yahoo.search.Result doSearch2(String schema, Query query) {
             return null; // search() is overriden, this should never be called
         }
 
+        List<Query> queries() { return queries; }
+
         @Override
-        public com.yahoo.search.Result search(Query query, Execution execution) {
+        public com.yahoo.search.Result search(String schema, Query query) {
+            queries.add(query);
             com.yahoo.search.Result result = new com.yahoo.search.Result(query);
             List<Hit> hits = getHits(query);
             if (hits != null) {
@@ -264,9 +284,14 @@ public class ClusterSearcherTestCase {
     }
 
     private Execution createExecution(List<String> docTypesList, boolean expectAttributePrefetch) {
+        var backend = new MyMockBackend(expectAttributePrefetch);
+        Map<String, VespaBackend> searchers = new HashMap<>();
+        for(String schema : docTypesList) {
+            searchers.put(schema, backend);
+        }
         Set<String> documentTypes = new LinkedHashSet<>(docTypesList);
-        ClusterSearcher cluster = new ClusterSearcher(documentTypes,
-                                                      new MyMockSearcher(expectAttributePrefetch),
+        ClusterSearcher cluster = new ClusterSearcher(toSchemaInfo(documentTypes, "mycluster"),
+                                                      searchers,
                                                       new InThreadExecutorService());
         try {
             List<Schema> schemas = new ArrayList<>();
@@ -424,7 +449,7 @@ public class ClusterSearcherTestCase {
         assertResult(6, List.of(7.0, 9.0),  getResult(3, 2, extra, ex));
         assertResult(6, List.of(9.0, 10.0), getResult(4, 2, extra, ex));
         assertResult(6, List.of(10.0),      getResult(5, 2, extra, ex));
-        assertResult(6, List.of(),  getResult(6, 2, extra, ex));
+        assertResult(6, List.of(),          getResult(6, 2, extra, ex));
     }
 
     private static ClusterSearcher createSearcher(String clusterName, Double maxQueryTimeout, Double maxQueryCacheTimeout,
@@ -445,7 +470,11 @@ public class ClusterSearcherTestCase {
             clusterConfig.maxQueryCacheTimeout(maxQueryCacheTimeout);
 
         DocumentdbInfoConfig.Builder documentDbConfig = new DocumentdbInfoConfig.Builder();
-        documentDbConfig.documentdb(new DocumentdbInfoConfig.Documentdb.Builder().name("type1"));
+        documentDbConfig.documentdb(new DocumentdbInfoConfig.Documentdb.Builder()
+                .name("type1")
+                .mode(streamingMode
+                        ? DocumentdbInfoConfig.Documentdb.Mode.Enum.STREAMING
+                        : DocumentdbInfoConfig.Documentdb.Mode.Enum.INDEX));
         var schema = new Schema.Builder("type1");
 
         DispatchConfig dispatchConfig = new DispatchConfig.Builder().build();
@@ -459,7 +488,6 @@ public class ClusterSearcherTestCase {
 
         return new ClusterSearcher(new ComponentId("test-id"),
                                    new InThreadExecutorService(),
-                                   qrSearchersConfig.build(),
                                    clusterConfig.build(),
                                    documentDbConfig.build(),
                                    new SchemaInfo(List.of(schema.build()), List.of()),

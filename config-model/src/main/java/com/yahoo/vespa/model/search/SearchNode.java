@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.model.search;
 
 import com.yahoo.cloud.config.filedistribution.FiledistributorrpcConfig;
@@ -15,15 +15,13 @@ import com.yahoo.vespa.config.content.core.StorServerConfig;
 import com.yahoo.vespa.config.content.core.StorStatusConfig;
 import com.yahoo.vespa.config.search.core.ProtonConfig;
 import com.yahoo.vespa.model.AbstractService;
+import com.yahoo.vespa.model.ConfigProxy;
 import com.yahoo.vespa.model.PortAllocBridge;
 import com.yahoo.vespa.model.admin.monitoring.Monitoring;
 import com.yahoo.vespa.model.application.validation.RestartConfigs;
 import com.yahoo.vespa.model.builder.xml.dom.VespaDomBuilder;
 import com.yahoo.vespa.model.content.ContentNode;
-import com.yahoo.vespa.model.content.Redundancy;
 import com.yahoo.vespa.model.content.ResourceLimits;
-import com.yahoo.vespa.model.filedistribution.FileDistributionConfigProducer;
-import com.yahoo.vespa.model.filedistribution.FileDistributionConfigProvider;
 import org.w3c.dom.Element;
 
 import java.util.HashMap;
@@ -65,10 +63,9 @@ public class SearchNode extends AbstractService implements
     private final String clusterName;
     private TransactionLogServer tls;
     private final AbstractService serviceLayerService;
-    private final Optional<Tuning> tuning;
-    private final Optional<ResourceLimits> resourceLimits;
+    private final Tuning tuning;
+    private final ResourceLimits resourceLimits;
     private final double fractionOfMemoryReserved;
-    private final Redundancy.Provider redundancyProvider;
 
     public static class Builder extends VespaDomBuilder.DomConfigProducerBuilderBase<SearchNode> {
 
@@ -77,14 +74,13 @@ public class SearchNode extends AbstractService implements
         private final String clusterName;
         private final ContentNode contentNode;
         private final boolean flushOnShutdown;
-        private final Optional<Tuning> tuning;
-        private final Optional<ResourceLimits> resourceLimits;
+        private final Tuning tuning;
+        private final ResourceLimits resourceLimits;
         private final double fractionOfMemoryReserved;
-        private final Redundancy.Provider redundancyProvider;
 
         public Builder(String name, NodeSpec nodeSpec, String clusterName, ContentNode node,
-                       boolean flushOnShutdown, Optional<Tuning> tuning, Optional<ResourceLimits> resourceLimits,
-                       double fractionOfMemoryReserved, Redundancy.Provider redundancyprovider) {
+                       boolean flushOnShutdown, Tuning tuning, ResourceLimits resourceLimits,
+                       double fractionOfMemoryReserved) {
             this.name = name;
             this.nodeSpec = nodeSpec;
             this.clusterName = clusterName;
@@ -93,7 +89,6 @@ public class SearchNode extends AbstractService implements
             this.tuning = tuning;
             this.resourceLimits = resourceLimits;
             this.fractionOfMemoryReserved = fractionOfMemoryReserved;
-            this.redundancyProvider = redundancyprovider;
         }
 
         @Override
@@ -101,18 +96,18 @@ public class SearchNode extends AbstractService implements
                                      Element producerSpec) {
             return SearchNode.create(ancestor, name, contentNode.getDistributionKey(), nodeSpec, clusterName, contentNode,
                                      flushOnShutdown, tuning, resourceLimits, deployState.isHosted(),
-                                     fractionOfMemoryReserved, redundancyProvider, deployState.featureFlags());
+                                     fractionOfMemoryReserved, deployState.featureFlags());
         }
 
     }
 
     public static SearchNode create(TreeConfigProducer<?> parent, String name, int distributionKey, NodeSpec nodeSpec,
                                     String clusterName, AbstractService serviceLayerService, boolean flushOnShutdown,
-                                    Optional<Tuning> tuning, Optional<ResourceLimits> resourceLimits,
-                                    boolean isHostedVespa, double fractionOfMemoryReserved, Redundancy.Provider redundancyProvider,
+                                    Tuning tuning, ResourceLimits resourceLimits,
+                                    boolean isHostedVespa, double fractionOfMemoryReserved,
                                     ModelContext.FeatureFlags featureFlags) {
         SearchNode node = new SearchNode(parent, name, distributionKey, nodeSpec, clusterName, serviceLayerService, flushOnShutdown,
-                              tuning, resourceLimits, isHostedVespa, fractionOfMemoryReserved, redundancyProvider);
+                              tuning, resourceLimits, isHostedVespa, fractionOfMemoryReserved);
         if (featureFlags.loadCodeAsHugePages()) {
             node.addEnvironmentVariable("VESPA_LOAD_CODE_AS_HUGEPAGES", true);
         }
@@ -124,8 +119,8 @@ public class SearchNode extends AbstractService implements
 
     private SearchNode(TreeConfigProducer<?> parent, String name, int distributionKey, NodeSpec nodeSpec,
                        String clusterName, AbstractService serviceLayerService, boolean flushOnShutdown,
-                       Optional<Tuning> tuning, Optional<ResourceLimits> resourceLimits, boolean isHostedVespa,
-                       double fractionOfMemoryReserved, Redundancy.Provider redundancyProvider) {
+                       Tuning tuning, ResourceLimits resourceLimits, boolean isHostedVespa,
+                       double fractionOfMemoryReserved) {
         super(parent, name);
         this.distributionKey = distributionKey;
         this.serviceLayerService = serviceLayerService;
@@ -142,7 +137,6 @@ public class SearchNode extends AbstractService implements
         // Properties are set in DomSearchBuilder
         this.tuning = tuning;
         this.resourceLimits = resourceLimits;
-        this.redundancyProvider = redundancyProvider;
         setPropertiesElastic(clusterName, distributionKey);
         addEnvironmentVariable("OMP_NUM_THREADS", 1);
     }
@@ -256,11 +250,7 @@ public class SearchNode extends AbstractService implements
 
     @Override
     public void getConfig(FiledistributorrpcConfig.Builder builder) {
-        FileDistributionConfigProducer fileDistribution = getRoot().getFileDistributionConfigProducer();
-        if (fileDistribution != null) {
-            FileDistributionConfigProvider configProducer = fileDistribution.getConfigProducer(getHost().getHost());
-            configProducer.getConfig(builder);
-        }
+        builder.connectionspec("tcp/" + getHostName() + ":" + ConfigProxy.BASEPORT);
     }
 
     @Override
@@ -282,13 +272,12 @@ public class SearchNode extends AbstractService implements
         }
         Optional<NodeResources> nodeResources = getSpecifiedNodeResources();
         if (nodeResources.isPresent()) {
-            var nodeResourcesTuning = new NodeResourcesTuning(nodeResources.get(),
-                                                              tuning.map(Tuning::threadsPerSearch).orElse(1),
-                                                              fractionOfMemoryReserved, redundancyProvider.redundancy());
+            int threadsPerSearch = tuning != null ? tuning.threadsPerSearch() : 1;
+            var nodeResourcesTuning = new NodeResourcesTuning(nodeResources.get(), threadsPerSearch, fractionOfMemoryReserved);
             nodeResourcesTuning.getConfig(builder);
 
-            tuning.ifPresent(t -> t.getConfig(builder));
-            resourceLimits.ifPresent(l -> l.getConfig(builder));
+            if (tuning != null) tuning.getConfig(builder);
+            if (resourceLimits != null) resourceLimits.getConfig(builder);
         }
     }
 

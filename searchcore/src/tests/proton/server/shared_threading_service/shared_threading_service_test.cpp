@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include <vespa/config-proton.h>
 #include <vespa/persistence/dummyimpl/dummy_bucket_executor.h>
@@ -13,6 +13,7 @@ using ProtonConfig = vespa::config::search::core::ProtonConfig;
 using ProtonConfigBuilder = vespa::config::search::core::ProtonConfigBuilder;
 using namespace proton;
 using storage::spi::dummy::DummyBucketExecutor;
+using vespalib::HwInfo;
 using vespalib::ISequencedTaskExecutor;
 using vespalib::SequencedTaskExecutor;
 

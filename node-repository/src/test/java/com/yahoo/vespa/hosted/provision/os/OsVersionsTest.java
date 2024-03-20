@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.hosted.provision.os;
 
 import com.yahoo.component.Version;
@@ -18,6 +18,7 @@ import com.yahoo.vespa.hosted.provision.node.Allocation;
 import com.yahoo.vespa.hosted.provision.node.OsVersion;
 import com.yahoo.vespa.hosted.provision.node.Status;
 import com.yahoo.vespa.hosted.provision.provisioning.ProvisioningTester;
+import com.yahoo.vespa.hosted.provision.testutils.MockHostProvisioner;
 import org.junit.Test;
 
 import java.time.Duration;
@@ -41,7 +42,7 @@ public class OsVersionsTest {
 
     @Test
     public void upgrade() {
-        var versions = new OsVersions(tester.nodeRepository());
+        var versions = new OsVersions(tester.nodeRepository(), Optional.ofNullable(tester.hostProvisioner()));
         provisionInfraApplication(10);
         Supplier<NodeList> hostNodes = () -> tester.nodeRepository().nodes().list().nodeType(NodeType.host);
 
@@ -94,7 +95,7 @@ public class OsVersionsTest {
     public void max_active_upgrades() {
         int totalNodes = 20;
         int maxActiveUpgrades = 5;
-        var versions = new OsVersions(tester.nodeRepository(), Cloud.defaultCloud());
+        var versions = new OsVersions(tester.nodeRepository(), Cloud.defaultCloud(), Optional.ofNullable(tester.hostProvisioner()));
         setMaxActiveUpgrades(maxActiveUpgrades);
         provisionInfraApplication(totalNodes);
         Supplier<NodeList> hostNodes = () -> tester.nodeRepository().nodes().list().state(Node.State.active).hosts();
@@ -140,7 +141,7 @@ public class OsVersionsTest {
 
     @Test
     public void newer_upgrade_aborts_upgrade_to_stale_version() {
-        var versions = new OsVersions(tester.nodeRepository());
+        var versions = new OsVersions(tester.nodeRepository(), Optional.ofNullable(tester.hostProvisioner()));
         provisionInfraApplication(10);
         Supplier<NodeList> hostNodes = () -> tester.nodeRepository().nodes().list().hosts();
 
@@ -160,7 +161,7 @@ public class OsVersionsTest {
     @Test
     public void upgrade_and_downgrade_by_retiring() {
         int maxActiveUpgrades = 2;
-        var versions = new OsVersions(tester.nodeRepository(), Cloud.builder().dynamicProvisioning(true).build());
+        var versions = new OsVersions(tester.nodeRepository(), Cloud.builder().dynamicProvisioning(true).build(), Optional.ofNullable(tester.hostProvisioner()));
         setMaxActiveUpgrades(maxActiveUpgrades);
         int hostCount = 10;
         // Provision hosts and children
@@ -229,7 +230,7 @@ public class OsVersionsTest {
 
     @Test
     public void upgrade_by_retiring_everything_at_once() {
-        var versions = new OsVersions(tester.nodeRepository(), Cloud.builder().dynamicProvisioning(true).build());
+        var versions = new OsVersions(tester.nodeRepository(), Cloud.builder().dynamicProvisioning(true).build(), Optional.ofNullable(tester.hostProvisioner()));
         setMaxActiveUpgrades(Integer.MAX_VALUE);
         int hostCount = 3;
         provisionInfraApplication(hostCount, NodeType.host);
@@ -252,8 +253,65 @@ public class OsVersionsTest {
     }
 
     @Test
+    public void upgrade_by_retiring_is_limited_by_group_membership() {
+        var versions = new OsVersions(tester.nodeRepository(), Cloud.builder().dynamicProvisioning(true).build(),
+                                      Optional.ofNullable(tester.hostProvisioner()));
+        int hostCount = 7;
+        int app1GroupCount = 2;
+        setMaxActiveUpgrades(hostCount);
+        ApplicationId app1 = ApplicationId.from("t1", "a1", "i1");
+        ApplicationId app2 = ApplicationId.from("t2", "a2", "i2");
+        provisionInfraApplication(hostCount, NodeType.host);
+        deployApplication(app1, app1GroupCount);
+        deployApplication(app2);
+        Supplier<NodeList> hosts = () -> tester.nodeRepository().nodes().list()
+                                               .nodeType(NodeType.host)
+                                               .not().state(Node.State.deprovisioned);
+
+        // All hosts are on initial version
+        var version0 = Version.fromString("8.0");
+        versions.setTarget(NodeType.host, version0, false);
+        setCurrentVersion(hosts.get().asList(), version0);
+
+        // New version is triggered
+        var version1 = Version.fromString("8.5");
+        versions.setTarget(NodeType.host, version1, false);
+        versions.resumeUpgradeOf(NodeType.host, true);
+        {
+            // At most one node per group is retired
+            NodeList allNodes = tester.nodeRepository().nodes().list().not().state(Node.State.deprovisioned);
+            assertEquals(hostCount - 1, allNodes.nodeType(NodeType.host).deprovisioning().size());
+            assertEquals(1, allNodes.owner(app1).retiring().group(0).size());
+            assertEquals(0, allNodes.owner(app1).retiring().group(1).size());
+            assertEquals(2, allNodes.owner(app2).retiring().size());
+
+            // Hosts complete reprovisioning
+            NodeList emptyHosts = allNodes.deprovisioning().nodeType(NodeType.host)
+                                          .matching(h -> allNodes.childrenOf(h).isEmpty());
+            completeReprovisionOf(emptyHosts.asList(), NodeType.host);
+            replaceNodes(app1, app1GroupCount);
+            replaceNodes(app2);
+            completeReprovisionOf(hosts.get().deprovisioning().asList(), NodeType.host);
+        }
+        {
+            // Last host/group is retired
+            versions.resumeUpgradeOf(NodeType.host, true);
+            NodeList allNodes = tester.nodeRepository().nodes().list().not().state(Node.State.deprovisioned);
+            assertEquals(1, allNodes.nodeType(NodeType.host).deprovisioning().size());
+            assertEquals(0, allNodes.owner(app1).retiring().group(0).size());
+            assertEquals(1, allNodes.owner(app1).retiring().group(1).size());
+            assertEquals(0, allNodes.owner(app2).retiring().size());
+            replaceNodes(app1, app1GroupCount);
+            completeReprovisionOf(hosts.get().deprovisioning().asList(), NodeType.host);
+        }
+        NodeList allHosts = hosts.get();
+        assertEquals(0, allHosts.deprovisioning().size());
+        assertEquals(allHosts.size(), allHosts.onOsVersion(version1).size());
+    }
+
+    @Test
     public void upgrade_by_rebuilding() {
-        var versions = new OsVersions(tester.nodeRepository(), Cloud.defaultCloud());
+        var versions = new OsVersions(tester.nodeRepository(), Cloud.defaultCloud(), Optional.ofNullable(tester.hostProvisioner()));
         setMaxActiveUpgrades(1);
         int hostCount = 10;
         provisionInfraApplication(hostCount + 1);
@@ -337,7 +395,8 @@ public class OsVersionsTest {
                                                                     .dynamicProvisioning(true)
                                                                     .name(CloudName.AWS)
                                                                     .account(CloudAccount.from("000000000000"))
-                                                                    .build());
+                                                                    .build(),
+                                      Optional.ofNullable(tester.hostProvisioner()));
 
         provisionInfraApplication(hostCount, NodeType.host, NodeResources.StorageType.remote, NodeResources.Architecture.x86_64);
         Supplier<NodeList> hostNodes = () -> tester.nodeRepository().nodes().list().nodeType(NodeType.host);
@@ -382,7 +441,7 @@ public class OsVersionsTest {
     @Test
     public void upgrade_by_rebuilding_multiple_host_types() {
         setMaxActiveUpgrades(1);
-        var versions = new OsVersions(tester.nodeRepository(), Cloud.defaultCloud());
+        var versions = new OsVersions(tester.nodeRepository(), Cloud.defaultCloud(), Optional.ofNullable(tester.hostProvisioner()));
         int hostCount = 3;
         provisionInfraApplication(hostCount, NodeType.host);
         provisionInfraApplication(hostCount, NodeType.confighost);
@@ -415,7 +474,7 @@ public class OsVersionsTest {
     @Test
     public void upgrade_by_rebuilding_is_limited_by_stateful_clusters() {
         setMaxActiveUpgrades(3);
-        var versions = new OsVersions(tester.nodeRepository(), Cloud.defaultCloud());
+        var versions = new OsVersions(tester.nodeRepository(), Cloud.defaultCloud(), Optional.ofNullable(tester.hostProvisioner()));
         int hostCount = 5;
         ApplicationId app1 = ApplicationId.from("t1", "a1", "i1");
         ApplicationId app2 = ApplicationId.from("t2", "a2", "i2");
@@ -493,7 +552,7 @@ public class OsVersionsTest {
     public void upgrade_by_rebuilding_limits_infrastructure_host() {
         int hostCount = 3;
         setMaxActiveUpgrades(hostCount);
-        var versions = new OsVersions(tester.nodeRepository(), Cloud.defaultCloud());
+        var versions = new OsVersions(tester.nodeRepository(), Cloud.defaultCloud(), Optional.ofNullable(tester.hostProvisioner()));
         provisionInfraApplication(hostCount, NodeType.proxyhost);
         Supplier<NodeList> hosts = () -> tester.nodeRepository().nodes().list().nodeType(NodeType.proxyhost);
 
@@ -515,27 +574,60 @@ public class OsVersionsTest {
         }
     }
 
+    @Test
+    public void skips_unavailable_version() {
+        MockHostProvisioner hostProvisioner = new MockHostProvisioner(List.of());
+        ProvisioningTester tester = new ProvisioningTester.Builder().dynamicProvisioning(true, false).hostProvisioner(hostProvisioner).build();
+        OsVersions versions = tester.nodeRepository().osVersions();
+        tester.makeReadyHosts(1, new NodeResources(2,4,8,100));
+        tester.activateTenantHosts();
+        Supplier<Node> host = () -> tester.nodeRepository().nodes().list().nodeType(NodeType.host).first().get();
+        tester.clock().advance(Duration.ofDays(1));
+
+        hostProvisioner.addOsVersion(Version.fromString("7.0"));
+        Version version0 = Version.fromString("8.0");
+        versions.setTarget(NodeType.host, version0, false);
+        versions.resumeUpgradeOf(NodeType.host, true);
+        assertTrue("Upgrade is not triggered to unavailable version", host.get().status().osVersion().wanted().isEmpty());
+
+        // Version becomes available, but is not used until cache expires
+        hostProvisioner.addOsVersion(version0);
+        versions.resumeUpgradeOf(NodeType.host, true);
+        assertTrue(host.get().status().osVersion().wanted().isEmpty());
+        versions.invalidate();
+        versions.resumeUpgradeOf(NodeType.host, true);
+        assertEquals("Host upgrade is triggered", version0, host.get().status().osVersion().wanted().get());
+    }
+
     private void setMaxActiveUpgrades(int max) {
         tester.flagSource().withIntFlag(PermanentFlags.MAX_OS_UPGRADES.id(), max);
     }
 
     private void deployApplication(ApplicationId application) {
+        deployApplication(application, 1);
+    }
+
+    private void deployApplication(ApplicationId application, int groups) {
         ClusterSpec contentSpec = ClusterSpec.request(ClusterSpec.Type.content, ClusterSpec.Id.from("content1")).vespaVersion("7").build();
-        List<HostSpec> hostSpecs = tester.prepare(application, contentSpec, 2, 1, new NodeResources(4, 8, 100, 0.3));
+        List<HostSpec> hostSpecs = tester.prepare(application, contentSpec, 2, groups, new NodeResources(4, 8, 100, 0.3));
         tester.activate(application, hostSpecs);
     }
 
-    private void replaceNodes(ApplicationId application) {
+    private void replaceNodes(ApplicationId application, int groups) {
         // Deploy to retire nodes
-        deployApplication(application);
+        deployApplication(application, groups);
         NodeList retired = tester.nodeRepository().nodes().list().owner(application).retired();
         assertFalse("At least one node is retired", retired.isEmpty());
         tester.nodeRepository().nodes().setRemovable(retired, false);
 
         // Redeploy to deactivate removable nodes and allocate new ones
-        deployApplication(application);
+        deployApplication(application, groups);
         tester.nodeRepository().nodes().list(Node.State.inactive).owner(application)
               .forEach(node -> tester.nodeRepository().nodes().removeRecursively(node, true));
+    }
+
+    private void replaceNodes(ApplicationId application) {
+        replaceNodes(application, 1);
     }
 
     private NodeList deprovisioningChildrenOf(Node parent) {

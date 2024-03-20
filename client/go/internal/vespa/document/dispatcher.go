@@ -1,3 +1,4 @@
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package document
 
 import (
@@ -115,7 +116,7 @@ func (d *Dispatcher) shouldRetry(op documentOp, result Result) bool {
 	} else if result.HTTPStatus == 429 {
 		d.throttler.Throttled(d.inflightCount.Load())
 		return true
-	} else if result.Err != nil || result.HTTPStatus == 500 || result.HTTPStatus == 502 || result.HTTPStatus == 503 || result.HTTPStatus == 504 {
+	} else if result.Err != nil || result.HTTPStatus == 503 {
 		d.circuitBreaker.Failure()
 		if op.attempts < maxAttempts {
 			return true
@@ -155,7 +156,7 @@ func (d *Dispatcher) processResults() {
 	defer d.wg.Done()
 	for op := range d.results {
 		d.statsMu.Lock()
-		d.stats.Add(op.result)
+		d.stats.Add(op.result, op.attempts > 1)
 		d.statsMu.Unlock()
 		retry := d.shouldRetry(op, op.result)
 		d.logResult(op, retry)

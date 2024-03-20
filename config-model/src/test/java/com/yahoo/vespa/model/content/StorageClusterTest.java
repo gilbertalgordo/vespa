@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.model.content;
 
 import com.yahoo.config.model.api.ModelContext;
@@ -112,7 +112,6 @@ public class StorageClusterTest {
         StorServerConfig config = new StorServerConfig(builder);
         assertEquals(16, config.max_merges_per_node());
         assertEquals(100, config.max_merge_queue_size());
-        assertTrue(config.disable_queue_limits_for_chained_merges());
     }
 
     @Test
@@ -185,6 +184,21 @@ public class StorageClusterTest {
     }
 
     @Test
+    void merge_throttler_memory_limit_config_has_expected_defaults() {
+        var config = configFromProperties(new TestProperties());
+        var limit = config.merge_throttling_memory_limit();
+
+        assertEquals(0L, limit.max_usage_bytes());
+        assertMergeAutoScaleConfigHasExpectedValues(limit);
+    }
+
+    void assertMergeAutoScaleConfigHasExpectedValues(StorServerConfig.Merge_throttling_memory_limit limit) {
+        assertEquals(128L*1024*1024,    limit.auto_lower_bound_bytes());
+        assertEquals(2L*1024*1024*1024, limit.auto_upper_bound_bytes());
+        assertEquals(0.03,              limit.auto_phys_mem_scale_factor(), 0.000001);
+    }
+
+    @Test
     void testVisitors() {
         StorVisitorConfig.Builder builder = new StorVisitorConfig.Builder();
         parse(cluster("bees",
@@ -217,7 +231,6 @@ public class StorageClusterTest {
             var config = filestorConfigFromProducer(stc);
 
             assertEquals(7, config.num_threads());
-            assertFalse(config.enable_multibit_split_optimalization());
             assertEquals(2, config.num_response_threads());
         }
         {
@@ -261,7 +274,6 @@ public class StorageClusterTest {
             var config = filestorConfigFromProducer(stc);
 
             assertEquals(4, config.num_threads());
-            assertFalse(config.enable_multibit_split_optimalization());
         }
         {
             assertEquals(1, stc.getChildren().size());
@@ -322,7 +334,6 @@ public class StorageClusterTest {
         assertEquals(20, config.async_operation_throttler().min_window_size());
         assertEquals(-1, config.async_operation_throttler().max_window_size()); // <=0 implies +inf
         assertEquals(3.0, config.async_operation_throttler().resize_rate(), 0.0001);
-        assertTrue(config.async_operation_throttler().throttle_individual_merge_feed_ops());
     }
 
     @Test

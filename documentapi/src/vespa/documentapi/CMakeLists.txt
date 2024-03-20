@@ -1,4 +1,4 @@
-# Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+# Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 vespa_add_library(documentapi
     SOURCES
     $<TARGET_OBJECTS:documentapi_documentapimessagebus>
@@ -7,3 +7,5 @@ vespa_add_library(documentapi
     INSTALL lib64
     DEPENDS
 )
+
+vespa_add_target_package_dependency(documentapi Protobuf)

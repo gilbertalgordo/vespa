@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 /*
  * The QueryBuilder builds a query tree. The exact type of the nodes
  * in the tree is defined by a traits class, which defines the actual
@@ -21,6 +21,7 @@
 
 #include "predicate_query_term.h"
 #include "node.h"
+#include "termnodes.h"
 #include "const_bool_nodes.h"
 #include <vespa/searchlib/query/weight.h>
 #include <stack>
@@ -30,6 +31,7 @@ namespace search::query {
 class Intermediate;
 class Location;
 class Range;
+class TermVector;
 
 class QueryBuilderBase
 {
@@ -37,15 +39,15 @@ class QueryBuilderBase
         bool _active;
         Weight _weight;
     public:
-        WeightOverride() : _active(false), _weight(0) {}
-        WeightOverride(Weight weight) : _active(true), _weight(weight) {}
+        WeightOverride() noexcept : _active(false), _weight(0) {}
+        explicit WeightOverride(Weight weight) noexcept : _active(true), _weight(weight) {}
         void adjustWeight(Weight &weight) const { if (_active) weight = _weight; }
     };
     struct NodeInfo {
         Intermediate *node;
         int remaining_child_count;
         WeightOverride weight_override;
-        NodeInfo(Intermediate *n, int c) : node(n), remaining_child_count(c) {}
+        NodeInfo(Intermediate *n, int c) noexcept : node(n), remaining_child_count(c) {}
     };
     Node::UP _root;
     std::stack<NodeInfo> _nodes;
@@ -117,8 +119,8 @@ template <class NodeTypes>
 typename NodeTypes::Or *createOr() { return new typename NodeTypes::Or; }
 
 template <class NodeTypes>
-typename NodeTypes::WeakAnd *createWeakAnd(uint32_t minHits, vespalib::stringref view) {
-    return new typename NodeTypes::WeakAnd(minHits, view);
+typename NodeTypes::WeakAnd *createWeakAnd(uint32_t targetNumHits, vespalib::stringref view) {
+    return new typename NodeTypes::WeakAnd(targetNumHits, view);
 }
 template <class NodeTypes>
 typename NodeTypes::Equiv *createEquiv(int32_t id, Weight weight) {
@@ -220,6 +222,7 @@ create_nearest_neighbor_term(vespalib::stringref query_tensor_name, vespalib::st
                                                        target_num_hits, allow_approximate, explore_additional_hits,
                                                        distance_threshold);
 }
+
 template <class NodeTypes>
 typename NodeTypes::FuzzyTerm *
 createFuzzyTerm(vespalib::stringref term, vespalib::stringref view, int32_t id, Weight weight,
@@ -227,6 +230,11 @@ createFuzzyTerm(vespalib::stringref term, vespalib::stringref view, int32_t id, 
     return new typename NodeTypes::FuzzyTerm(term, view, id, weight, maxEditDistance, prefixLength);
 }
 
+template <class NodeTypes>
+typename NodeTypes::InTerm *
+create_in_term(std::unique_ptr<TermVector> terms, MultiTerm::Type type, vespalib::stringref view, int32_t id, Weight weight) {
+    return new typename NodeTypes::InTerm(std::move(terms), type, view, id, weight);
+}
 
 template <class NodeTypes>
 class QueryBuilder : public QueryBuilderBase {
@@ -259,8 +267,8 @@ public:
     typename NodeTypes::Or &addOr(int child_count) {
         return addIntermediate(createOr<NodeTypes>(), child_count);
     }
-    typename NodeTypes::WeakAnd &addWeakAnd(int child_count, uint32_t minHits, stringref view) {
-        return addIntermediate(createWeakAnd<NodeTypes>(minHits, view), child_count);
+    typename NodeTypes::WeakAnd &addWeakAnd(int child_count, uint32_t targetNumHits, stringref view) {
+        return addIntermediate(createWeakAnd<NodeTypes>(targetNumHits, view), child_count);
     }
     typename NodeTypes::Equiv &addEquiv(int child_count, int32_t id, Weight weight) {
         return addIntermediate(createEquiv<NodeTypes>(id, weight), child_count);
@@ -352,6 +360,10 @@ public:
     }
     typename NodeTypes::FalseQueryNode &add_false_node() {
         return addTerm(create_false<NodeTypes>());
+    }
+    typename NodeTypes::InTerm& add_in_term(std::unique_ptr<TermVector> terms, MultiTerm::Type type, stringref view, int32_t id, Weight weight) {
+        adjustWeight(weight);
+        return addTerm(create_in_term<NodeTypes>(std::move(terms), type, view, id, weight));
     }
 };
 

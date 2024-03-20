@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.hosted.provision.lb;
 
 import com.yahoo.config.provision.ApplicationId;
@@ -29,7 +29,7 @@ public class SharedLoadBalancerServiceTest {
     @Test
     public void test_create_lb() {
         LoadBalancerSpec spec = new LoadBalancerSpec(applicationId, clusterId, reals,
-                                                     ZoneEndpoint.defaultEndpoint, CloudAccount.empty);
+                                                     ZoneEndpoint.defaultEndpoint, CloudAccount.empty, "seed");
 
         var lb = loadBalancerService.configure(loadBalancerService.provision(spec), spec, false);
 

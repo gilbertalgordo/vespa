@@ -1,8 +1,9 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include "equiv_blueprint.h"
 #include "equivsearch.h"
 #include "field_spec.hpp"
+#include "flow_tuning.h"
 #include <vespa/vespalib/objects/visit.hpp>
 #include <vespa/vespalib/stllike/hash_map.hpp>
 
@@ -51,6 +52,17 @@ EquivBlueprint::EquivBlueprint(FieldSpecBaseList fields,
 }
 
 EquivBlueprint::~EquivBlueprint() = default;
+
+FlowStats
+EquivBlueprint::calculate_flow_stats(uint32_t docid_limit) const
+{
+    for (auto &term: _terms) {
+        term->update_flow_stats(docid_limit);
+    }
+    double est = OrFlow::estimate_of(_terms);
+    return {est, OrFlow::cost_of(_terms, false),
+            OrFlow::cost_of(_terms, true) + flow::array_cost(est, _terms.size())};
+}
 
 SearchIterator::UP
 EquivBlueprint::createLeafSearch(const fef::TermFieldMatchDataArray &outputs, bool strict) const

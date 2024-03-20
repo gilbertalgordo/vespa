@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 #pragma once
 
 #include "messages.h"
@@ -24,22 +24,26 @@ class MessageTracker;
 class AsyncHandler {
     using MessageTrackerUP = std::unique_ptr<MessageTracker>;
 public:
-    AsyncHandler(const PersistenceUtil&, spi::PersistenceProvider&, BucketOwnershipNotifier  &,
-                 vespalib::ISequencedTaskExecutor & executor, const document::BucketIdFactory & bucketIdFactory);
+    AsyncHandler(const PersistenceUtil&, spi::PersistenceProvider&, BucketOwnershipNotifier&,
+                 vespalib::ISequencedTaskExecutor& executor, const document::BucketIdFactory& bucketIdFactory);
     MessageTrackerUP handlePut(api::PutCommand& cmd, MessageTrackerUP tracker) const;
     MessageTrackerUP handleRemove(api::RemoveCommand& cmd, MessageTrackerUP tracker) const;
     MessageTrackerUP handleUpdate(api::UpdateCommand& cmd, MessageTrackerUP tracker) const;
     MessageTrackerUP handleRunTask(RunTaskCommand & cmd, MessageTrackerUP tracker) const;
     MessageTrackerUP handleSetBucketState(api::SetBucketStateCommand& cmd, MessageTrackerUP tracker) const;
-    MessageTrackerUP handleDeleteBucket(api::DeleteBucketCommand& cmd, MessageTrackerUP tracker) const;
+    MessageTrackerUP handle_delete_bucket_throttling(api::DeleteBucketCommand& cmd, MessageTrackerUP tracker) const;
     MessageTrackerUP handleCreateBucket(api::CreateBucketCommand& cmd, MessageTrackerUP tracker) const;
     MessageTrackerUP handleRemoveLocation(api::RemoveLocationCommand& cmd, MessageTrackerUP tracker) const;
-    static bool is_async_unconditional_message(const api::StorageMessage & cmd) noexcept;
+    static bool is_async_unconditional_message(const api::StorageMessage& cmd) noexcept;
 private:
-    bool checkProviderBucketInfoMatches(const spi::Bucket&, const api::BucketInfo&) const;
-    static bool tasConditionExists(const api::TestAndSetCommand & cmd);
-    bool tasConditionMatches(const api::TestAndSetCommand & cmd, MessageTracker & tracker,
-                             spi::Context & context, bool missingDocumentImpliesMatch = false) const;
+    [[nodiscard]] bool checkProviderBucketInfoMatches(const spi::Bucket&, const api::BucketInfo&) const;
+    [[nodiscard]] static bool tasConditionExists(const api::TestAndSetCommand& cmd);
+    [[nodiscard]] bool tasConditionMatches(const api::TestAndSetCommand& cmd, MessageTracker& tracker,
+                                           spi::Context& context, bool missingDocumentImpliesMatch = false) const;
+    [[nodiscard]] api::Timestamp fetch_existing_document_timestamp(const document::DocumentId& id,
+                                                                   const spi::Bucket& bucket,
+                                                                   spi::Context& ctx) const;
+    void on_delete_bucket_complete(const document::Bucket& bucket) const;
     const PersistenceUtil            & _env;
     spi::PersistenceProvider         & _spi;
     BucketOwnershipNotifier          & _bucketOwnershipNotifier;

@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 /**
  * \class storage::spi::dummy::DummyPersistence
  * \ingroup dummy
@@ -74,8 +74,10 @@ struct BucketContent {
     bool hasTimestamp(Timestamp) const;
     void insert(DocEntry::SP);
     DocEntry::SP getEntry(const DocumentId&) const;
+    std::shared_ptr<DocEntry> getEntry(const GlobalId& gid) const;
     DocEntry::SP getEntry(Timestamp) const;
     void eraseEntry(Timestamp t);
+    void eraseEntries(const GlobalId& git);
     void setActive(bool active = true) {
         _active = active;
         _info = BucketInfo(_info.getChecksum(),
@@ -161,6 +163,7 @@ public:
     GetResult get(const Bucket&, const document::FieldSet&, const DocumentId&, Context&) const override;
     void putAsync(const Bucket&, Timestamp, DocumentSP, OperationComplete::UP) override;
     void removeAsync(const Bucket& b, std::vector<spi::IdAndTimestamp> ids, OperationComplete::UP) override;
+    void removeByGidAsync(const Bucket& b, std::vector<spi::DocTypeGidAndTimestamp> ids, std::unique_ptr<OperationComplete>) override;
     void updateAsync(const Bucket&, Timestamp, DocumentUpdateSP, OperationComplete::UP) override;
 
     CreateIteratorResult

@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 package ai.vespa.feed.client.impl;
 
@@ -159,7 +159,10 @@ class JettyCluster implements Cluster {
                     dest, Pool.StrategyType.RANDOM, connectionsPerEndpoint, false, dest, Integer.MAX_VALUE);
             pool.preCreateConnections(connectionsPerEndpoint);
             if (secureProxy) pool.setMaxDuration(Duration.ofMinutes(1).toMillis());
-            else pool.setMaximizeConnections(true);
+            else {
+                pool.setMaximizeConnections(true);
+                pool.setMaxDuration(b.connectionTtl.toMillis());
+            }
             return pool;
         });
         HttpClient httpClient = new HttpClient(transport);

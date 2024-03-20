@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #pragma once
 
@@ -10,7 +10,6 @@
 #include "simplemessagehandler.h"
 #include <vespa/storage/common/storagecomponent.h>
 #include <vespa/vespalib/util/isequencedtaskexecutor.h>
-#include <vespa/config-stor-filestor.h>
 
 namespace storage {
 
@@ -25,7 +24,7 @@ class PersistenceHandler : public Types
 {
 public:
     PersistenceHandler(vespalib::ISequencedTaskExecutor &, const ServiceLayerComponent & component,
-                      const vespa::config::content::StorFilestorConfig &, spi::PersistenceProvider &,
+                      uint32_t mergeChunkSize, bool multibitSplit, spi::PersistenceProvider &,
                       FileStorHandler &, BucketOwnershipNotifier &, FileStorThreadMetrics&);
     ~PersistenceHandler();
 
@@ -35,8 +34,6 @@ public:
     const AsyncHandler & asyncHandler() const { return _asyncHandler; }
     const SplitJoinHandler & splitjoinHandler() const { return _splitJoinHandler; }
     const SimpleMessageHandler & simpleMessageHandler() const { return _simpleHandler; }
-
-    void set_throttle_merge_feed_ops(bool throttle) noexcept;
 private:
     // Message handling functions
     MessageTracker::UP handleCommandSplitByType(api::StorageCommand&, MessageTracker::UP tracker) const;

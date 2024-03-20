@@ -1,3 +1,4 @@
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package ai.vespa.metrics;
 
 /**
@@ -182,6 +183,8 @@ public enum ContainerMetrics implements VespaMetrics {
     // Metrics defined in com/yahoo/jdisc/http/filter/security/athenz/AthenzAuthorizationFilter.java
     JDISC_HTTP_FILTER_ATHENZ_ACCEPTED_REQUESTS("jdisc.http.filter.athenz.accepted_requests", Unit.REQUEST, "Number of requests accepted by the AthenzAuthorization filter"),
     JDISC_HTTP_FILTER_ATHENZ_REJECTED_REQUESTS("jdisc.http.filter.athenz.rejected_requests", Unit.REQUEST, "Number of requests rejected by the AthenzAuthorization filter"),
+    // Temporary metric to track grid usage
+    JDISC_HTTP_FILTER_ATHENZ_GRID_REQUESTS("jdisc.http.filter.athenz.grid_requests", Unit.REQUEST, "Number of grid requests"),
 
 
     // Metrics defined in com/yahoo/jdisc/http/server/jetty/MetricDefinitions.java

@@ -1,4 +1,5 @@
 #!/bin/bash
+# Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 # This test will test the quick start guide that use the vespaengine/vespa:latest image. To test a locally
 # generated image, make sure that the image is tagged as vespaengine/vespa:latest.
@@ -12,7 +13,7 @@ cd $TESTDIR
 # Clone and setup doc tests
 git clone -q --depth 1 https://github.com/vespa-engine/documentation
 cd documentation
-python3.9 -m pip install -qqq -r test/requirements.txt --user
+python3 -m pip install -qqq -r test/requirements.txt --user
 echo -e "urls:\n    - en/vespa-quick-start.html" > test/_quick-start.yaml
 
 # Get the required vespa CLI
@@ -21,5 +22,5 @@ curl -fsSL https://github.com/vespa-engine/vespa/releases/download/v${VESPA_CLI_
 ln -sf /opt/vespa-cli_${VESPA_CLI_VERSION}_linux_amd64/bin/vespa /usr/local/bin/
 
 # Run test
-python3.9 test/test.py -v -c test/_quick-start.yaml
+python3 test/test.py -v -c test/_quick-start.yaml
 

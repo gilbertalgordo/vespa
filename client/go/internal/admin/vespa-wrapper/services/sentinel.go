@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 // Author: arnej
 
 package services
@@ -13,7 +13,7 @@ import (
 
 	"github.com/vespa-engine/vespa/client/go/internal/admin/envvars"
 	"github.com/vespa-engine/vespa/client/go/internal/admin/trace"
-	"github.com/vespa-engine/vespa/client/go/internal/util"
+	"github.com/vespa-engine/vespa/client/go/internal/osutil"
 	"github.com/vespa-engine/vespa/client/go/internal/vespa"
 )
 
@@ -26,6 +26,7 @@ func startSentinelWithRunserver() {
 	_, veHost := commonPreChecks()
 	vespa.CheckCorrectUser()
 	os.Setenv(envvars.VESPA_SERVICE_NAME, SENTINEL_SERVICE_NAME)
+	fmt.Printf("Starting services for VESPA_HOSTNAME='%s'\n", veHost)
 	configId := fmt.Sprintf("hosts/%s", veHost)
 	args := []string{
 		"-r", "10",
@@ -48,7 +49,7 @@ func startSentinelWithRunserver() {
 }
 
 func waitForSentinelPid() bool {
-	backtick := util.BackTicksWithStderr
+	backtick := osutil.BackTicksWithStderr
 	start := time.Now()
 	for sleepcount := 0; sleepcount < 1000; sleepcount++ {
 		time.Sleep(10 * time.Millisecond)
@@ -84,7 +85,7 @@ func StartConfigSentinel() int {
 }
 
 func stopSentinelWithRunserver() {
-	_, err := util.SystemCommand.Run("vespa-runserver",
+	_, err := osutil.SystemCommand.Run("vespa-runserver",
 		"-s", SENTINEL_SERVICE_NAME,
 		"-p", SENTINEL_PIDFILE, "-S")
 	if err != nil {

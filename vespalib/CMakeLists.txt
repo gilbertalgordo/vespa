@@ -1,4 +1,4 @@
-# Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+# Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 if(NOT CMAKE_HOST_SYSTEM_NAME STREQUAL "Darwin")
 set(VESPALIB_DIRECTIO_TESTDIR src/tests/directio)
 set(VESPALIB_PROCESS_MEMORY_STATS_TESTDIR src/tests/util/process_memory_stats)
@@ -42,7 +42,6 @@ vespa_define_module(
     src/tests/btree/btree-scan-speed
     src/tests/btree/btree-stress
     src/tests/btree/btree_store
-    src/tests/clock
     src/tests/component
     src/tests/compress
     src/tests/compression
@@ -162,6 +161,7 @@ vespa_define_module(
     src/tests/simple_thread_bundle
     src/tests/singleexecutor
     src/tests/slime
+    src/tests/slime/are_equal
     src/tests/slime/external_data_value
     src/tests/slime/summary-feature-benchmark
     src/tests/small_vector

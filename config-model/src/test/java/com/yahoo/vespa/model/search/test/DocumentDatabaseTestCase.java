@@ -1,7 +1,6 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.model.search.test;
 
-import com.google.common.collect.ImmutableMap;
 import com.yahoo.config.model.deploy.DeployState;
 import com.yahoo.config.model.deploy.TestProperties;
 import com.yahoo.path.Path;
@@ -16,10 +15,8 @@ import com.yahoo.vespa.configdefinition.IlscriptsConfig;
 import com.yahoo.vespa.model.VespaModel;
 import com.yahoo.vespa.model.content.ContentSearchCluster;
 import com.yahoo.vespa.model.content.utils.DocType;
-import com.yahoo.vespa.model.search.IndexedSearchCluster;
 import org.junit.jupiter.api.Test;
 
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -173,16 +170,6 @@ public class DocumentDatabaseTestCase {
                 "", List.of(DEFAULT, DEFAULT));
     }
 
-    @Test
-    void requireThatMixedModeInitialDocumentCountIsReflected() {
-        final long INITIAL = 1000000000L;
-        String feedTuning = "<resizing>" +
-                "  <initialdocumentcount>1000000000</initialdocumentcount>" +
-                "</resizing>\n";
-        verifyInitialDocumentCount(List.of(DocType.create("a", "index"), DocType.create("b", "streaming")),
-                feedTuning, List.of(INITIAL, INITIAL));
-    }
-
     private void assertDocTypeConfig(VespaModel model, String configId, String indexField, String attributeField) {
         IndexschemaConfig icfg = model.getConfig(IndexschemaConfig.class, configId);
         assertEquals(1, icfg.indexfield().size());
@@ -200,13 +187,13 @@ public class DocumentDatabaseTestCase {
         List<String> sds = List.of("type1", "type2", "type3");
         var tester = new SchemaTester();
         var model = tester.createModel(sds);
-        IndexedSearchCluster indexedSearchCluster = (IndexedSearchCluster) model.getSearchClusters().get(0);
+        var searchCluster = model.getSearchClusters().get(0);
         ContentSearchCluster contentSearchCluster = model.getContentClusters().get("test").getSearch();
         String type1Id = "test/search/cluster.test/type1";
         String type2Id = "test/search/cluster.test/type2";
         String type3Id = "test/search/cluster.test/type3";
         {
-            assertEquals(3, indexedSearchCluster.getDocumentDbs().size());
+            assertEquals(3, searchCluster.getDocumentDbs().size());
             ProtonConfig proton = tester.getProtonConfig(contentSearchCluster);
             assertEquals(3, proton.documentdb().size());
             assertEquals("type1", proton.documentdb(0).inputdoctypename());
@@ -265,9 +252,9 @@ public class DocumentDatabaseTestCase {
         constants.put(Path.fromString("constants/my_constant_1.json.lz4"), "");
         constants.put(Path.fromString("constants/my_constant_2.json.lz4"), "");
         var model = tester.createModel(schemaConstants, "", schemas, constants);
-        IndexedSearchCluster indexedSearchCluster = (IndexedSearchCluster) model.getSearchClusters().get(0);
+        var searchCluster = model.getSearchClusters().get(0);
         RankingConstantsConfig.Builder b = new RankingConstantsConfig.Builder();
-        indexedSearchCluster.getDocumentDbs().get(0).getConfig(b);
+        searchCluster.getDocumentDbs().get(0).getConfig(b);
         RankingConstantsConfig config = b.build();
         assertEquals(2, config.constant().size());
 
@@ -299,8 +286,12 @@ public class DocumentDatabaseTestCase {
         { // documentdb-info config
             DocumentdbInfoConfig dcfg = model.getConfig(DocumentdbInfoConfig.class, searcherId);
             assertEquals(2, dcfg.documentdb().size());
-            assertEquals("type1", dcfg.documentdb(0).name());
-            assertEquals("type2", dcfg.documentdb(1).name());
+            var db = dcfg.documentdb(0);
+            assertEquals("type1", db.name());
+            assertEquals(DocumentdbInfoConfig.Documentdb.Mode.INDEX, db.mode());
+            db = dcfg.documentdb(1);
+            assertEquals("type2", db.name());
+            assertEquals(DocumentdbInfoConfig.Documentdb.Mode.INDEX, db.mode());
         }
         { // attributes config
             AttributesConfig acfg = model.getConfig(AttributesConfig.class, searcherId);
@@ -318,15 +309,32 @@ public class DocumentDatabaseTestCase {
         var tester = new SchemaTester();
         var model = tester.createModelWithMode(mode, sds);
 
-        DocumentdbInfoConfig dcfg = model.getConfig(DocumentdbInfoConfig.class, "test/search/cluster.test.type");
+        DocumentdbInfoConfig dcfg = model.getConfig(DocumentdbInfoConfig.class, "test/search/cluster.test");
         assertEquals(1, dcfg.documentdb().size());
         DocumentdbInfoConfig.Documentdb db = dcfg.documentdb(0);
         assertEquals("type", db.name());
+        assertEquals(DocumentdbInfoConfig.Documentdb.Mode.STREAMING, db.mode());
     }
 
     @Test
     void requireThatDocumentDBConfigIsAvailableForStreaming() {
         assertDocumentDBConfigAvailableForStreaming("streaming");
+    }
+
+    @Test
+    void testMixedModeCluster() {
+        // Will soon change
+        List<DocType> sds = List.of(DocType.create("a", "index"), DocType.create("b", "streaming"));
+        var tester = new SchemaTester();
+        var model = tester.createModel(sds, "");
+        DocumentdbInfoConfig indexed_cfg = model.getConfig(DocumentdbInfoConfig.class, "test/search/cluster.test");
+        assertEquals(2, indexed_cfg.documentdb().size());
+        var db = indexed_cfg.documentdb(0);
+        assertEquals("a", db.name());
+        assertEquals(DocumentdbInfoConfig.Documentdb.Mode.INDEX, db.mode());
+        db = indexed_cfg.documentdb(1);
+        assertEquals("b", db.name());
+        assertEquals(DocumentdbInfoConfig.Documentdb.Mode.STREAMING, db.mode());
     }
 
     private void assertAttributesConfigIndependentOfMode(String mode, List<String> sds,
@@ -366,7 +374,7 @@ public class DocumentDatabaseTestCase {
     void testThatAttributesMaxUnCommittedMemoryIsControlledByFeatureFlag() {
         assertAttributesConfigIndependentOfMode("index", List.of("type1"),
                 List.of("test/search/cluster.test/type1"),
-                ImmutableMap.of("type1", List.of("f2", "f2_nfa")),
+                Map.of("type1", List.of("f2", "f2_nfa")),
                 new DeployState.Builder().properties(new TestProperties().maxUnCommittedMemory(193452)), 193452);
     }
 
@@ -374,20 +382,20 @@ public class DocumentDatabaseTestCase {
     void testThatAttributesConfigIsProducedForIndexed() {
         assertAttributesConfigIndependentOfMode("index", List.of("type1"),
                 List.of("test/search/cluster.test/type1"),
-                ImmutableMap.of("type1", List.of("f2", "f2_nfa")));
+                Map.of("type1", List.of("f2", "f2_nfa")));
     }
 
     @Test
     void testThatAttributesConfigIsProducedForStreamingForFastAccessFields() {
         assertAttributesConfigIndependentOfMode("streaming", List.of("type1"),
                 List.of("test/search/type1"),
-                ImmutableMap.of("type1", List.of("f2")));
+                Map.of("type1", List.of("f2")));
     }
 
     @Test
     void testThatAttributesConfigIsNotProducedForStoreOnlyEvenForFastAccessFields() {
         assertAttributesConfigIndependentOfMode("store-only", List.of("type1"),
-                List.of("test/search"), Collections.emptyMap());
+                List.of("test/search"), Map.of());
     }
 
 }

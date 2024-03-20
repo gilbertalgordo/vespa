@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.schema.derived;
 
 import com.yahoo.config.model.application.provider.MockFileRegistry;
@@ -41,12 +41,13 @@ public class SchemaToDerivedConfigExporter {
         var props = new TestProperties();
         var logger = new TestableDeployLogger();
         var builder = ApplicationBuilder.createFromDirectory(dirPath, new MockFileRegistry(), logger, props);
-        var derived = new DerivedConfiguration(builder.getSchema(null),
+        var derived = new DerivedConfiguration(
                 new DeployState.Builder().properties(props)
                         .deployLogger(logger)
                         .rankProfileRegistry(builder.getRankProfileRegistry())
                         .queryProfiles(builder.getQueryProfileRegistry())
-                        .build());
+                        .build(),
+                builder.getSchema(null), SchemaInfo.IndexMode.INDEX);
         exportConfig(dirPath, derived, builder);
     }
 }

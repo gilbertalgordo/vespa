@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include <vespa/document/base/documentid.h>
 #include <vespa/searchlib/attribute/attributeguard.h>
@@ -14,6 +14,7 @@
 #include <vespa/searchcommon/attribute/config.h>
 #include <vespa/vespalib/gtest/gtest.h>
 #include <vespa/vespalib/test/insertion_operators.h>
+#include <vespa/vespalib/btree/btreenode.hpp>
 #include <cinttypes>
 #include <filesystem>
 

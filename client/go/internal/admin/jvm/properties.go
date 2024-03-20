@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 // Author: arnej
 
 package jvm
@@ -11,7 +11,7 @@ import (
 	"strings"
 
 	"github.com/vespa-engine/vespa/client/go/internal/admin/trace"
-	"github.com/vespa-engine/vespa/client/go/internal/util"
+	"github.com/vespa-engine/vespa/client/go/internal/osutil"
 )
 
 // quote as specified in JDK source file java.base/share/classes/java/util/Properties.java
@@ -101,6 +101,6 @@ func writeEnvAsProperties(envv []string, propsFile string) {
 	trace.Trace("write props file:", propsFile)
 	err := os.WriteFile(propsFile, envAsProperties(envv), 0600)
 	if err != nil {
-		util.JustExitWith(err)
+		osutil.ExitErr(err)
 	}
 }

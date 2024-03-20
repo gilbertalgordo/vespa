@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include "floatfieldsearcher.h"
 
@@ -37,12 +37,10 @@ void FloatFieldSearcherT<T>::prepare(search::streaming::QueryTermList& qtl,
     _floatTerm.clear();
     FieldSearcher::prepare(qtl, buf, field_paths, query_env);
     for (auto qt : qtl) {
-    size_t sz(qt->termLen());
+        size_t sz(qt->termLen());
         if (sz) {
-            double low;
-            double high;
-            bool valid = qt->getAsDoubleTerm(low, high);
-            _floatTerm.push_back(FloatInfo(low, high, valid));
+            auto range = qt->getRange<T>();
+            _floatTerm.emplace_back(range.low, range.high, range.valid);
         }
     }
 }
@@ -57,7 +55,7 @@ void FloatFieldSearcherT<T>::onValue(const document::FieldValue & fv)
             addHit(*_qtl[j], 0);
         }
     }
-    ++_words;
+    set_element_length(1);
 }
 
 template<typename T>

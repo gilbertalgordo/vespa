@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 #pragma once
 
 #include "newest_replica.h"
@@ -92,7 +92,7 @@ private:
     static const char* stateToString(SendState) noexcept;
 
     void sendReply(DistributorStripeMessageSender&,
-                   std::shared_ptr<api::UpdateReply>);
+                   const std::shared_ptr<api::UpdateReply> &);
     void sendReplyWithResult(DistributorStripeMessageSender&, const api::ReturnCode&);
     void ensureUpdateReplyCreated();
 

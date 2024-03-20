@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.model.application.validation.change.search;
 
 import com.yahoo.config.application.api.ValidationId;
@@ -116,12 +116,10 @@ public class IndexingScriptChangeValidatorTest {
     }
 
     @Test
-    void requireThatSettingDynamicSummaryRequireReindexing() throws Exception {
+    void requireThatSettingDynamicSummaryIsOk() throws Exception {
         new Fixture(FIELD + " { indexing: summary }",
                 FIELD + " { indexing: summary \n summary: dynamic }").
-                assertValidation(expectedReindexingAction("summary field 'f1' transform: 'none' -> 'dynamicteaser'",
-                "{ input f1 | summary f1; }",
-                "{ input f1 | tokenize normalize stem:\"BEST\" | summary f1; }"));
+                assertValidation();
     }
 
     @Test

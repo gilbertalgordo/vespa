@@ -1,4 +1,4 @@
-# Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+# Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 import onnx
 from onnx import helper, TensorProto
@@ -20,5 +20,5 @@ graph_def = helper.make_graph(
     [INPUT_1],
     [OUTPUT],
 )
-model_def = helper.make_model(graph_def, producer_name='cast_bfloat16_float.py', opset_imports=[onnx.OperatorSetIdProto(version=12)])
+model_def = helper.make_model(graph_def, producer_name='cast_bfloat16_float.py', opset_imports=[onnx.OperatorSetIdProto(version=19)])
 onnx.save(model_def, 'cast_bfloat16_float.onnx')

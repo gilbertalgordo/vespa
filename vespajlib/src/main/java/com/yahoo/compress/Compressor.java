@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.compress;
 
 import net.jpountz.lz4.LZ4Compressor;
@@ -19,7 +19,6 @@ import java.util.Random;
  */
 public class Compressor {
 
-    private final ZstdCompressor zstdCompressor = new ZstdCompressor();
     private final CompressionType type;
     private final int level;
     private final double compressionThresholdFactor;
@@ -101,6 +100,7 @@ public class Compressor {
                 if (len < compressMinSizeBytes) {
                     return compact(CompressionType.INCOMPRESSIBLE, data, offset, len);
                 }
+                ZstdCompressor zstdCompressor = new ZstdCompressor();
                 byte[] compressed = zstdCompressor.compress(data, offset, len);
                 return new Compression(CompressionType.ZSTD, len, compressed);
             default:
@@ -151,6 +151,7 @@ public class Compressor {
                 return uncompressedLZ4Data;
             case ZSTD:
                 int compressedLength = expectedCompressedSize.orElseThrow(() -> new IllegalArgumentException("Zstd decompressor requires input size"));
+                ZstdCompressor zstdCompressor = new ZstdCompressor();
                 byte[] decompressedData = zstdCompressor.decompress(compressedData, compressedDataOffset, compressedLength);
                 expectedCompressedSize.ifPresent(expectedSize -> {
                     if (compressedData.length != expectedSize) {

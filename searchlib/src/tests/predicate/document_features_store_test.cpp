@@ -1,15 +1,17 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 // Unit tests for document_features_store.
 
-#include <vespa/log/log.h>
-LOG_SETUP("document_features_store_test");
-
 #include <vespa/searchlib/predicate/document_features_store.h>
+#include <vespa/searchlib/util/data_buffer_writer.h>
+#include <vespa/searchlib/predicate/document_features_store_saver.h>
 #include <vespa/searchlib/predicate/predicate_index.h>
 #include <vespa/searchlib/predicate/predicate_tree_annotator.h>
 #include <vespa/searchlib/predicate/predicate_hash.h>
 #include <vespa/vespalib/testkit/testapp.h>
 #include <string>
+
+#include <vespa/log/log.h>
+LOG_SETUP("document_features_store_test");
 
 using namespace search;
 using namespace search::predicate;
@@ -20,6 +22,15 @@ namespace {
 const uint64_t hash1 = 0x12345678;
 const uint64_t hash2 = 0x123456789a;
 const uint32_t doc_id = 42;
+
+void
+save_document_features_store(DocumentFeaturesStore& store, vespalib::DataBuffer& buffer)
+{
+    store.commit();
+    DataBufferWriter writer(buffer);
+    store.make_saver()->save(writer);
+    writer.flush();
+}
 
 TEST("require that DocumentFeaturesStore can store features.") {
     DocumentFeaturesStore features_store(10);
@@ -165,17 +176,17 @@ TEST("require that both features and ranges are removed by 'remove'") {
 
 TEST("require that both features and ranges counts towards memory usage") {
     DocumentFeaturesStore features_store(10);
-    EXPECT_EQUAL(50064u, features_store.getMemoryUsage().usedBytes());
+    EXPECT_EQUAL(562024u, features_store.getMemoryUsage().usedBytes());
 
     PredicateTreeAnnotations annotations;
     annotations.features.push_back(PredicateHash::hash64("foo=100-199"));
     features_store.insert(annotations, doc_id);
-    EXPECT_EQUAL(50072u, features_store.getMemoryUsage().usedBytes());
+    EXPECT_EQUAL(562376u, features_store.getMemoryUsage().usedBytes());
 
     annotations.features.clear();
     annotations.range_features.push_back({"foo", 100, 199});
     features_store.insert(annotations, doc_id + 1);
-    EXPECT_EQUAL(50168u, features_store.getMemoryUsage().usedBytes());
+    EXPECT_EQUAL(562480u, features_store.getMemoryUsage().usedBytes());
 }
 
 TEST("require that DocumentFeaturesStore can be serialized") {
@@ -191,7 +202,7 @@ TEST("require that DocumentFeaturesStore can be serialized") {
     expectHash("foo=100-199", features);
 
     vespalib::DataBuffer buffer;
-    features_store.serialize(buffer);
+    save_document_features_store(features_store, buffer);
 
     DocumentFeaturesStore features_store2(buffer);
     features = features_store2.get(doc_id);
@@ -205,17 +216,17 @@ TEST("require that serialization cleans up wordstore") {
     PredicateTreeAnnotations annotations;
     annotations.range_features.push_back({"foo", 100, 199});
     features_store.insert(annotations, doc_id);
-    EXPECT_EQUAL(50160u, features_store.getMemoryUsage().usedBytes());
+    EXPECT_EQUAL(562464u, features_store.getMemoryUsage().usedBytes());
     annotations.range_features.push_back({"bar", 100, 199});
     features_store.insert(annotations, doc_id + 1);
-    EXPECT_EQUAL(50548u, features_store.getMemoryUsage().usedBytes());
+    EXPECT_EQUAL(562524u, features_store.getMemoryUsage().usedBytes());
     features_store.remove(doc_id + 1);
-    EXPECT_EQUAL(50500u, features_store.getMemoryUsage().usedBytes());
+    EXPECT_EQUAL(562524u, features_store.getMemoryUsage().usedBytes());
 
     vespalib::DataBuffer buffer;
-    features_store.serialize(buffer);
+    save_document_features_store(features_store, buffer);
     DocumentFeaturesStore features_store2(buffer);
-    EXPECT_EQUAL(50160u, features_store2.getMemoryUsage().usedBytes());
+    EXPECT_EQUAL(562464u, features_store2.getMemoryUsage().usedBytes());
 }
 
 

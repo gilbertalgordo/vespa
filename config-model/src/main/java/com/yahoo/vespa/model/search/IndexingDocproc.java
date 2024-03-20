@@ -1,6 +1,9 @@
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.model.search;
 
 import com.yahoo.vespa.model.container.docproc.DocprocChain;
+
+import java.util.Objects;
 
 /**
  * Utility class to track configuration for which indexing docproc to use by a search cluster.
@@ -50,7 +53,7 @@ public class IndexingDocproc {
     }
 
     public String getServiceName() {
-        return chain.getServiceName();
+        return Objects.requireNonNull(chain).getServiceName();
     }
 
     /**

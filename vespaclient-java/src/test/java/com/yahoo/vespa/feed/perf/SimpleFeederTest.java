@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.feed.perf;
 
 import com.yahoo.document.serialization.DeserializationException;
@@ -87,8 +87,14 @@ public class SimpleFeederTest {
                 "",
                 "(.+\n)+" +
                         "\\s*\\d+,\\s*3,.+\n");
-        assertEquals(58, dump.size());
-        assertEquals("[\n{\"id\":\"id:simple:simple::0\",\"fields\":{\"my_str\":\"foo\"}}\n]", dump.toString());
+        assertEquals(169, dump.size());
+        assertEquals("""
+                             [
+                               {"id":"id:simple:simple::0","fields":{"my_str":"foo"}},
+                               {"update":"id:simple:simple::1","fields":{"my_str":{"assign":"bar"}}},
+                               {"remove":"id:simple:simple::2"}
+                             ]""",
+                     dump.toString());
     }
 
     @Test
@@ -116,8 +122,14 @@ public class SimpleFeederTest {
                 "",
                 "(.+\n)+" +
                         "\\s*\\d+,\\s*3,.+\n");
-        assertEquals(115, dump.size());
-        assertEquals("[\n{\"id\":\"id:simple:simple::0\",\"fields\":{\"my_str\":\"foo\"}},\n {\"id\":\"id:simple:simple::1\",\"fields\":{\"my_str\":\"bar\"}}\n]", dump.toString());
+        assertEquals(154, dump.size());
+        assertEquals("""
+                         [
+                           {"id":"id:simple:simple::0","fields":{"my_str":"foo"}},
+                           {"id":"id:simple:simple::1","fields":{"my_str":"bar"}},
+                           {"remove":"id:simple:simple::2"}
+                         ]""",
+                     dump.toString());
         assertFeed(dump.toString(),
                 new MessageHandler() {
                     @Override
@@ -129,7 +141,7 @@ public class SimpleFeederTest {
                 },
                 "",
                 "(.+\n)+" +
-                        "\\s*\\d+,\\s*2,.+\n");
+                        "\\s*\\d+,\\s*3,.+\n");
     }
 
     @Test

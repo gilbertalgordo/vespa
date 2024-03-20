@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 // TODO: Keep the set of metrics in this set stable until Vespa 9.
 // TODO: Vespa 9: Let this class be replaced by Vespa9VespaMetricSet.
@@ -194,7 +194,7 @@ public class VespaMetricSet {
         addMetric(metrics, ContainerMetrics.JDISC_DEACTIVATED_CONTAINERS_TOTAL, EnumSet.of(sum, last)); // TODO: Vespa 9: Remove last
         addMetric(metrics, ContainerMetrics.JDISC_DEACTIVATED_CONTAINERS_WITH_RETAINED_REFS.last());
 
-        addMetric(metrics, ContainerMetrics.JDISC_SINGLETON_IS_ACTIVE, EnumSet.of(max, last)); // TODO: Vespa 9: Remove last
+        addMetric(metrics, ContainerMetrics.JDISC_SINGLETON_IS_ACTIVE, EnumSet.of(min, max, last)); // TODO: Vespa 9: Remove last
         addMetric(metrics, ContainerMetrics.JDISC_SINGLETON_ACTIVATION_COUNT.last());
         addMetric(metrics, ContainerMetrics.JDISC_SINGLETON_ACTIVATION_FAILURE_COUNT.last());
         addMetric(metrics, ContainerMetrics.JDISC_SINGLETON_ACTIVATION_MILLIS.last());
@@ -599,11 +599,15 @@ public class VespaMetricSet {
         addMetric(metrics, StorageMetrics.VDS_FILESTOR_ALLTHREADS_DELETEBUCKETS_COUNT.rate());
         addMetric(metrics, StorageMetrics.VDS_FILESTOR_ALLTHREADS_DELETEBUCKETS_FAILED.rate());
         addMetric(metrics, StorageMetrics.VDS_FILESTOR_ALLTHREADS_DELETEBUCKETS_LATENCY, EnumSet.of(max, sum, count));
+        addMetric(metrics, StorageMetrics.VDS_FILESTOR_ALLTHREADS_REMOVE_BY_GID_COUNT.rate());
+        addMetric(metrics, StorageMetrics.VDS_FILESTOR_ALLTHREADS_REMOVE_BY_GID_FAILED.rate());
+        addMetric(metrics, StorageMetrics.VDS_FILESTOR_ALLTHREADS_REMOVE_BY_GID_LATENCY, EnumSet.of(max, sum, count));
         addMetric(metrics, StorageMetrics.VDS_FILESTOR_ALLTHREADS_SETBUCKETSTATES_COUNT.rate());
 
         addMetric(metrics, StorageMetrics.VDS_MERGETHROTTLER_AVERAGEQUEUEWAITINGTIME, EnumSet.of(max, sum, count));
         addMetric(metrics, StorageMetrics.VDS_MERGETHROTTLER_QUEUESIZE, EnumSet.of(max, sum, count));
         addMetric(metrics, StorageMetrics.VDS_MERGETHROTTLER_ACTIVE_WINDOW_SIZE, EnumSet.of(max, sum, count));
+        addMetric(metrics, StorageMetrics.VDS_MERGETHROTTLER_ESTIMATED_MERGE_MEMORY_USAGE, EnumSet.of(max, sum, count));
         addMetric(metrics, StorageMetrics.VDS_MERGETHROTTLER_BOUNCED_DUE_TO_BACK_PRESSURE.rate());
         addMetric(metrics, StorageMetrics.VDS_MERGETHROTTLER_LOCALLYEXECUTEDMERGES_OK.rate());
         addMetric(metrics, StorageMetrics.VDS_MERGETHROTTLER_MERGECHAINS_OK.rate());

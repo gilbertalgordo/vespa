@@ -1,8 +1,9 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #pragma once
 
 #include <vespa/searchlib/parsequery/item_creator.h>
+#include <vespa/vespalib/stllike/string.h>
 #include <cstddef>
 #include <cstdint>
 
@@ -43,7 +44,7 @@ class QueryItem;
 class IQuery
 {
 public:
-    virtual ~IQuery() { }
+    virtual ~IQuery() = default;
 
     /** Traverse the query.
      *  This will lead to a prefix depth first traversal of the complete query
@@ -153,11 +154,9 @@ public:
      *   otherwise caller should proceed as normal
      * @param specialToken true if this term is treated as a special token
      */
-    virtual void VisitKeyword(const QueryItem* item,
-                              const char* keyword, const size_t length = 0,
-                              bool prefix = false, bool specialToken = false) = 0;
+    virtual void visitKeyword(const QueryItem* item, vespalib::stringref keyword, bool prefix, bool specialToken) = 0;
 
-    virtual ~IQueryVisitor() { }
+    virtual ~IQueryVisitor() = default;
 };
 
 }

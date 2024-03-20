@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include "initialize_threads_calculator.h"
 #include <vespa/vespalib/util/cpu_usage.h>
@@ -39,7 +39,7 @@ const vespalib::string file_name = "initialize-threads.txt";
 
 namespace proton {
 
-InitializeThreadsCalculator::InitializeThreadsCalculator(const HwInfo::Cpu & cpu_info,
+InitializeThreadsCalculator::InitializeThreadsCalculator(const vespalib::HwInfo::Cpu & cpu_info,
                                                          const vespalib::string& base_dir,
                                                          uint32_t configured_num_threads)
     : _path(base_dir + "/" + file_name),

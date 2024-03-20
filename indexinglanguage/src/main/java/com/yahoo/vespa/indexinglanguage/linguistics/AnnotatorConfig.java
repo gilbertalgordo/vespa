@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.indexinglanguage.linguistics;
 
 import com.yahoo.language.Language;
@@ -13,7 +13,7 @@ public class AnnotatorConfig implements Cloneable {
     private Language language;
     private StemMode stemMode;
     private boolean removeAccents;
-    private int maxTermOccurences;
+    private int maxTermOccurrences;
     private int maxTokenizeLength;
 
     public static final int DEFAULT_MAX_TERM_OCCURRENCES;
@@ -29,7 +29,7 @@ public class AnnotatorConfig implements Cloneable {
         language = Language.ENGLISH;
         stemMode = StemMode.NONE;
         removeAccents = false;
-        maxTermOccurences = DEFAULT_MAX_TERM_OCCURRENCES;
+        maxTermOccurrences = DEFAULT_MAX_TERM_OCCURRENCES;
         maxTokenizeLength = DEFAULT_MAX_TOKENIZE_LENGTH;
     }
 
@@ -37,7 +37,7 @@ public class AnnotatorConfig implements Cloneable {
         language = rhs.language;
         stemMode = rhs.stemMode;
         removeAccents = rhs.removeAccents;
-        maxTermOccurences = rhs.maxTermOccurences;
+        maxTermOccurrences = rhs.maxTermOccurrences;
         maxTokenizeLength = rhs.maxTokenizeLength;
     }
 
@@ -74,11 +74,11 @@ public class AnnotatorConfig implements Cloneable {
     }
 
     public int getMaxTermOccurrences() {
-        return maxTermOccurences;
+        return maxTermOccurrences;
     }
 
     public AnnotatorConfig setMaxTermOccurrences(int maxTermCount) {
-        this.maxTermOccurences = maxTermCount;
+        this.maxTermOccurrences = maxTermCount;
         return this;
     }
 
@@ -95,6 +95,10 @@ public class AnnotatorConfig implements Cloneable {
         return maxTokenizeLength != DEFAULT_MAX_TOKENIZE_LENGTH;
     }
 
+    public boolean hasNonDefaultMaxTermOccurrences() {
+        return maxTermOccurrences != DEFAULT_MAX_TERM_OCCURRENCES;
+    }
+
     @Override
     public boolean equals(Object obj) {
         if (!(obj instanceof AnnotatorConfig rhs)) {
@@ -109,7 +113,7 @@ public class AnnotatorConfig implements Cloneable {
         if (removeAccents != rhs.removeAccents) {
             return false;
         }
-        if (maxTermOccurences != rhs.maxTermOccurences) {
+        if (maxTermOccurrences != rhs.maxTermOccurrences) {
             return false;
         }
         if (maxTokenizeLength != rhs.maxTokenizeLength) {
@@ -121,6 +125,7 @@ public class AnnotatorConfig implements Cloneable {
     @Override
     public int hashCode() {
         return getClass().hashCode() + language.hashCode() + stemMode.hashCode() +
-               Boolean.valueOf(removeAccents).hashCode() + maxTermOccurences + maxTokenizeLength;
+               Boolean.valueOf(removeAccents).hashCode() + maxTermOccurrences + maxTokenizeLength;
     }
+
 }

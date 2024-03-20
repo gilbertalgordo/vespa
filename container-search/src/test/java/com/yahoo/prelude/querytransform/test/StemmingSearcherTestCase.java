@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.prelude.querytransform.test;
 
 import com.yahoo.component.chain.Chain;
@@ -29,7 +29,7 @@ public class StemmingSearcherTestCase {
 
     private static final Linguistics linguistics = new SimpleLinguistics();
     private final IndexFacts indexFacts = IndexFactsFactory.newInstance("dir:src/test/java/com/yahoo/prelude/" +
-                                                                        "querytransform/test/", null);
+                                                                        "querytransform/test/");
 
     @Test
     void testStemOnlySomeTerms() {

@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.schema;
 
 import com.yahoo.document.StructDataType;
@@ -280,7 +280,7 @@ public class AttributeSettingsTestCase extends AbstractSchemaTestCase {
 
     @Test
     void requireThatMutableIsAllowedThroughIndexing() throws ParseException {
-        IndexingScript script = new IndexingScript(getSearchWithMutables());
+        IndexingScript script = new IndexingScript(getSearchWithMutables(), false);
         IlscriptsConfig.Builder builder = new IlscriptsConfig.Builder();
         script.getConfig(builder);
         IlscriptsConfig cfg = builder.build();

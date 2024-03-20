@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include "warmupindexcollection.h"
 #include "idiskindex.h"
@@ -35,16 +35,16 @@ class WarmupRequestContext : public IRequestContext {
     using IAttributeVector = search::attribute::IAttributeVector;
     using AttributeBlueprintParams = search::attribute::AttributeBlueprintParams;
 public:
-    WarmupRequestContext(const vespalib::Clock & clock);
+    explicit WarmupRequestContext();
     ~WarmupRequestContext() override;
-    const vespalib::Doom & getDoom() const override { return _doom; }
+    const vespalib::Doom & getDoom() const override { return vespalib::Doom::never(); }
+    vespalib::ThreadBundle & thread_bundle() const override { return vespalib::ThreadBundle::trivial(); }
     const IAttributeVector *getAttribute(const vespalib::string &) const override { return nullptr; }
     const IAttributeVector *getAttributeStableEnum(const vespalib::string &) const override { return nullptr; }
     const vespalib::eval::Value* get_query_tensor(const vespalib::string&) const override;
     const AttributeBlueprintParams& get_attribute_blueprint_params() const override { return _params; }
     const MetaStoreReadGuardSP * getMetaStoreReadGuard() const override { return nullptr; }
 private:
-    const vespalib::Doom _doom;
     const AttributeBlueprintParams _params;
 };
 class WarmupTask : public vespalib::Executor::Task {
@@ -79,14 +79,12 @@ WarmupIndexCollection::WarmupIndexCollection(const WarmupConfig & warmupConfig,
                                              ISearchableIndexCollection::SP next,
                                              IndexSearchable & warmup,
                                              vespalib::Executor & executor,
-                                             const vespalib::Clock & clock,
                                              IWarmupDone & warmupDone) :
     _warmupConfig(warmupConfig),
     _prev(std::move(prev)),
     _next(std::move(next)),
     _warmup(warmup),
     _executor(executor),
-    _clock(clock),
     _warmupDone(warmupDone),
     _warmupEndTime(vespalib::steady_clock::now() + warmupConfig.getDuration()),
     _handledTerms(std::make_unique<FieldTermMap>()),
@@ -163,7 +161,11 @@ WarmupIndexCollection::fireWarmup(Task::UP task)
 {
     vespalib::steady_time now(vespalib::steady_clock::now());
     if (now < _warmupEndTime) {
-        _executor.execute(std::move(task));
+        auto bounced = _executor.execute(std::move(task));
+        if (bounced) {
+            //TODO Reduce to debug
+            LOG(warning, "Warmup prohibited due to overload.");
+        }
     } else {
         std::unique_lock<std::mutex> guard(_lock);
         if (_warmupEndTime != vespalib::steady_time()) {
@@ -178,7 +180,7 @@ WarmupIndexCollection::fireWarmup(Task::UP task)
 bool
 WarmupIndexCollection::handledBefore(uint32_t fieldId, const Node &term)
 {
-    const StringBase * sb(dynamic_cast<const StringBase *>(&term));
+    const auto * sb(dynamic_cast<const StringBase *>(&term));
     if (sb != nullptr) {
         const vespalib::string & s = sb->getTerm();
         std::lock_guard<std::mutex> guard(_lock);
@@ -273,9 +275,7 @@ WarmupIndexCollection::drainPending() {
     _pendingTasks.waitForZeroRefCount();
 }
 
-WarmupRequestContext::WarmupRequestContext(const vespalib::Clock & clock)
-    : _doom(clock, vespalib::steady_time::max(), vespalib::steady_time::max(), false)
-{}
+WarmupRequestContext::WarmupRequestContext() = default;
 WarmupRequestContext::~WarmupRequestContext() = default;
 
 const vespalib::eval::Value*
@@ -287,7 +287,7 @@ WarmupTask::WarmupTask(std::unique_ptr<MatchData> md, std::shared_ptr<WarmupInde
       _retainGuard(_warmup->pendingTasks()),
       _matchData(std::move(md)),
       _bluePrint(),
-      _requestContext(_warmup->clock())
+      _requestContext()
 {
 }
 

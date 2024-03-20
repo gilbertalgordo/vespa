@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.document.restapi.resource;
 
 import com.yahoo.cloud.config.ClusterListConfig;
@@ -411,6 +411,7 @@ public class DocumentV1ApiTest {
             DocumentUpdate expectedUpdate = new DocumentUpdate(doc3.getDataType(), doc3.getId());
             expectedUpdate.addFieldUpdate(FieldUpdate.createAssign(doc3.getField("artist"), new StringFieldValue("Lisa Ekdahl")));
             expectedUpdate.setCondition(new TestAndSetCondition("true"));
+            expectedUpdate.setCreateIfNonExistent(true);
             assertEquals(expectedUpdate, update);
             parameters.responseHandler().get().handleResponse(new UpdateResponse(0, false));
             assertEquals(parameters().withRoute("content"), parameters);
@@ -419,10 +420,16 @@ public class DocumentV1ApiTest {
         response = driver.sendRequest("http://localhost/document/v1/space/music/docid?selection=true&cluster=content&timeChunk=10", PUT,
                                       """
                                       {
+                                        "extra-ignored-field": { "foo": [{ }], "bar": null },
+                                        "another-ignored-field": [{ "foo": [{ }] }],
+                                        "remove": "id:ns:type::ignored",
+                                        "put": "id:ns:type::ignored",
                                         "fields": {
                                           "artist": { "assign": "Lisa Ekdahl" },
                                           "nonexisting": { "assign": "Ignored" }
-                                        }
+                                        },
+                                        "post": "id:ns:type::ignored",
+                                        "create": true
                                       }""");
         assertSameJson("""
                        {
@@ -460,7 +467,7 @@ public class DocumentV1ApiTest {
         assertEquals(400, response.getStatus());
 
         // DELETE with namespace and document type is a restricted visit which deletes visited documents.
-        // When visiting fails fatally, a 502 BAD GATEWAY is returned.
+        // When visiting fails fatally, a 500 INTERAL SERVER ERROR is returned.
         access.expect(tokens.subList(0, 1));
         access.expect(parameters -> {
             assertEquals("(false) and (music) and (id.namespace=='space')", parameters.getDocumentSelection());
@@ -485,7 +492,7 @@ public class DocumentV1ApiTest {
                          "message": "boom"
                        }""",
                        response.readAll());
-        assertEquals(502, response.getStatus());
+        assertEquals(500, response.getStatus());
 
         // DELETE at the root is also a deletion visit. These also require a selection.
         access.expect(parameters -> {
@@ -527,7 +534,7 @@ public class DocumentV1ApiTest {
                          "message": "error"
                        }""",
                        response.readAll());
-        assertEquals(502, response.getStatus());
+        assertEquals(500, response.getStatus());
 
         // GET with namespace, document type and number is a restricted visit.
         access.expect(parameters -> {
@@ -778,7 +785,7 @@ public class DocumentV1ApiTest {
         response = driver.sendRequest("http://localhost/document/v1/space/music/number/1/two?condition=test%20it", POST, "");
         assertSameJson("{" +
                        "  \"pathId\": \"/document/v1/space/music/number/1/two\"," +
-                       "  \"message\": \"Could not read document, no document?\"" +
+                       "  \"message\": \"expected start of root object, got null\"" +
                        "}",
                        response.readAll());
         assertEquals(400, response.getStatus());
@@ -791,7 +798,8 @@ public class DocumentV1ApiTest {
                                       "}");
         Inspector responseRoot = SlimeUtils.jsonToSlime(response.readAll()).get();
         assertEquals("/document/v1/space/music/number/1/two", responseRoot.field("pathId").asString());
-        assertTrue(responseRoot.field("message").asString().startsWith("Unexpected character ('┻' (code 9531 / 0x253b)): was expecting double-quote to start field name"));
+        assertTrue(responseRoot.field("message").asString(),
+                   responseRoot.field("message").asString().startsWith("failed parsing document: Unexpected character ('┻' (code 9531 / 0x253b)): was expecting double-quote to start field name"));
         assertEquals(400, response.getStatus());
 
         // PUT on a unknown document type is a 400
@@ -931,12 +939,12 @@ public class DocumentV1ApiTest {
                        "  \"pathId\": \"/document/v1/space/music/number/1/two\"," +
                        "  \"message\": \"[FATAL_ERROR @ localhost]: FATAL_ERROR\"" +
                        "}", response1.readAll());
-        assertEquals(502, response1.getStatus());
+        assertEquals(500, response1.getStatus());
         assertSameJson("{" +
                        "  \"pathId\": \"/document/v1/space/music/number/1/two\"," +
                        "  \"message\": \"[FATAL_ERROR @ localhost]: FATAL_ERROR\"" +
                        "}", response2.readAll());
-        assertEquals(502, response2.getStatus());
+        assertEquals(500, response2.getStatus());
 
         // Request response does not arrive before timeout has passed.
         AtomicReference<ResponseHandler> handler = new AtomicReference<>();

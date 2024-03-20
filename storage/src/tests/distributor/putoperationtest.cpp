@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include <tests/distributor/distributor_stripe_test_util.h>
 #include <vespa/document/repo/documenttyperepo.h>
@@ -8,6 +8,7 @@
 #include <vespa/storage/distributor/distributor_stripe.h>
 #include <vespa/storage/distributor/operations/cancel_scope.h>
 #include <vespa/storage/distributor/operations/external/putoperation.h>
+#include <vespa/storage/config/distributorconfiguration.h>
 #include <vespa/storageapi/message/bucket.h>
 #include <vespa/storageapi/message/persistence.h>
 #include <vespa/storageapi/message/state.h>
@@ -723,7 +724,6 @@ TEST_F(PutOperationTest, minority_failure_override_not_in_effect_for_non_tas_err
 
 void PutOperationTest::set_up_tas_put_with_2_inconsistent_replica_nodes(bool create) {
     setup_stripe(Redundancy(2), NodeCount(2), "version:1 storage:2 distributor:1");
-    config_enable_condition_probing(true);
     tag_content_node_supports_condition_probing(0, true);
     tag_content_node_supports_condition_probing(1, true);
 
@@ -874,7 +874,6 @@ TEST_F(PutOperationTest, not_found_condition_probe_with_create_set_acts_as_if_ma
 
 TEST_F(PutOperationTest, conditional_put_no_replicas_case_with_create_set_acts_as_if_matched) {
     setup_stripe(Redundancy(2), NodeCount(2), "version:1 storage:2 distributor:1");
-    config_enable_condition_probing(true);
     tag_content_node_supports_condition_probing(0, true);
     tag_content_node_supports_condition_probing(1, true);
 

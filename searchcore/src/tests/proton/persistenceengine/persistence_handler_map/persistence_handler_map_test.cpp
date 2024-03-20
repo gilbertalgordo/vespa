@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include <vespa/searchcore/proton/persistenceengine/ipersistencehandler.h>
 #include <vespa/searchcore/proton/persistenceengine/persistence_handler_map.h>
@@ -18,6 +18,7 @@ struct DummyPersistenceHandler : public IPersistenceHandler {
     void handlePut(FeedToken, const storage::spi::Bucket &, storage::spi::Timestamp, DocumentSP) override {}
     void handleUpdate(FeedToken, const storage::spi::Bucket &, storage::spi::Timestamp, DocumentUpdateSP) override {}
     void handleRemove(FeedToken, const storage::spi::Bucket &, storage::spi::Timestamp, const document::DocumentId &) override {}
+    void handleRemoveByGid(FeedToken, const storage::spi::Bucket&, storage::spi::Timestamp, vespalib::stringref, const GlobalId&) override { }
     void handleListBuckets(IBucketIdListResultHandler &) override {}
     void handleSetClusterState(const storage::spi::ClusterState &, IGenericResultHandler &) override {}
     void handleSetActiveState(const storage::spi::Bucket &, storage::spi::BucketInfo::ActiveState, std::shared_ptr<IGenericResultHandler>) override {}
@@ -31,6 +32,7 @@ struct DummyPersistenceHandler : public IPersistenceHandler {
     RetrieversSP getDocumentRetrievers(storage::spi::ReadConsistency) override { return RetrieversSP(); }
     void handleListActiveBuckets(IBucketIdListResultHandler &) override {}
     void handlePopulateActiveBuckets(document::BucketId::List, IGenericResultHandler &) override {}
+    const DocTypeName & doc_type_name() const noexcept override { abort(); }
 };
 
 BucketSpace space_1(1);

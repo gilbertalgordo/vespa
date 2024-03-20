@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.schema.document;
 
 import com.yahoo.document.CollectionDataType;
@@ -599,9 +599,9 @@ public class SDField extends Field implements TypedKey, ImmutableSDField {
      * per field, not per index)
      */
     public void setRankType(RankType rankType) {
-        this.rankType=rankType;
+        this.rankType = rankType;
         for (Index index : getIndices().values()) {
-            if (index.getRankType()==null)
+            if (index.getRankType() == null)
                 index.setRankType(rankType);
         }
 

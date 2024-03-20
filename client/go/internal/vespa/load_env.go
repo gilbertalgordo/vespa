@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 // load default environment variables (from $VESPA_HOME/conf/vespa/default-env.txt)
 // Author: arnej
 
@@ -14,11 +14,12 @@ import (
 
 	"github.com/vespa-engine/vespa/client/go/internal/admin/envvars"
 	"github.com/vespa-engine/vespa/client/go/internal/admin/trace"
-	"github.com/vespa-engine/vespa/client/go/internal/util"
+	"github.com/vespa-engine/vespa/client/go/internal/ioutil"
+	"github.com/vespa-engine/vespa/client/go/internal/osutil"
 )
 
 const (
-	CURRENT_GCC_TOOLSET = "/opt/rh/gcc-toolset-12/root/usr/bin"
+	CURRENT_GCC_TOOLSET = "/opt/rh/gcc-toolset/root/usr/bin"
 )
 
 // backwards-compatible parsing of default-env.txt
@@ -92,7 +93,7 @@ func loadDefaultEnvTo(r loadEnvReceiver) error {
 		varName := fields[1]
 		varVal := fields[2]
 		if !isValidShellVariableName(varName) {
-			err = fmt.Errorf("Not a valid environment variable name: '%s'", varName)
+			err = fmt.Errorf("not a valid environment variable name: '%s'", varName)
 			continue
 		}
 		if strings.HasPrefix(varVal, `"`) && strings.HasSuffix(varVal, `"`) {
@@ -248,7 +249,7 @@ func shellQuote(s string) string {
 	}
 	if i != l {
 		err := fmt.Errorf("expected length %d but was %d", l, i)
-		util.JustExitWith(err)
+		osutil.ExitErr(err)
 	}
 	return string(res)
 }
@@ -258,7 +259,7 @@ func (p *shellEnvExporter) dump(w io.Writer) {
 		fmt.Fprintf(w, "%s=%s\n", vn, vv)
 		fmt.Fprintf(w, "export %s\n", vn)
 	}
-	for vn, _ := range p.unsetVars {
+	for vn := range p.unsetVars {
 		fmt.Fprintf(w, "unset %s\n", vn)
 	}
 }
@@ -276,7 +277,7 @@ func (builder *pathBuilder) applyTo(receiver loadEnvReceiver) {
 }
 
 func (builder *pathBuilder) appendPath(p string) {
-	if !util.IsDirectory(p) {
+	if !ioutil.IsDir(p) {
 		return
 	}
 	for _, elem := range builder.curPath {
@@ -293,7 +294,7 @@ func ensureGoodPath(receiver loadEnvReceiver) {
 	builder.appendPath(FindHome() + "/bin")
 	builder.appendPath(FindHome() + "/bin64")
 	// Prefer newer gdb and pstack:
-	builder.appendPath("/opt/rh/gcc-toolset-12/root/usr/bin")
+	builder.appendPath("/opt/rh/gcc-toolset/root/usr/bin")
 	// how to find the "java" program?
 	if javaHome := os.Getenv(envvars.JAVA_HOME); javaHome != "" {
 		builder.appendPath(javaHome + "/bin")

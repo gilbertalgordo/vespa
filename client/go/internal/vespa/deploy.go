@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 // vespa deploy API
 // Author: bratseth
 
@@ -12,12 +12,13 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/url"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/vespa-engine/vespa/client/go/internal/util"
+	"github.com/vespa-engine/vespa/client/go/internal/ioutil"
 	"github.com/vespa-engine/vespa/client/go/internal/version"
 )
 
@@ -47,7 +48,6 @@ type Deployment struct {
 type DeploymentOptions struct {
 	Target             Target
 	ApplicationPackage ApplicationPackage
-	Timeout            time.Duration
 	Version            version.Version
 }
 
@@ -119,11 +119,129 @@ func ZoneFromString(s string) (ZoneID, error) {
 	return ZoneID{Environment: parts[0], Region: parts[1]}, nil
 }
 
+func Fetch(deployment DeploymentOptions, path string) (string, error) {
+	if ioutil.IsDir(path) {
+		path = filepath.Join(path, "application.zip")
+	}
+	if ioutil.Exists(path) {
+		return "", fmt.Errorf("%s already exists", path)
+	}
+	if deployment.Target.IsCloud() {
+		return path, fetchFromController(deployment, path)
+	}
+	return path, fetchFromConfigServer(deployment, path)
+}
+
+func deployServiceGet(url string, deployment DeploymentOptions, w io.Writer) error {
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return err
+	}
+	response, err := deployServiceDo(req, 0, deployment)
+	if err != nil {
+		return err
+	}
+	defer response.Body.Close()
+	_, err = io.Copy(w, response.Body)
+	return err
+}
+
+func fetchFromController(deployment DeploymentOptions, path string) error {
+	var (
+		pkgURL *url.URL
+		err    error
+	)
+	switch deployment.Target.Deployment().Zone.Environment {
+	case "dev", "perf":
+		pkgURL, err = deployment.url(fmt.Sprintf("/application/v4/tenant/%s/application/%s/instance/%s/job/%s/package",
+			deployment.Target.Deployment().Application.Tenant,
+			deployment.Target.Deployment().Application.Application,
+			deployment.Target.Deployment().Application.Instance,
+			deployment.Target.Deployment().Zone.Environment+"-"+deployment.Target.Deployment().Zone.Region,
+		))
+	default:
+		pkgURL, err = deployment.url(fmt.Sprintf("/application/v4/tenant/%s/application/%s/package",
+			deployment.Target.Deployment().Application.Tenant,
+			deployment.Target.Deployment().Application.Application),
+		)
+	}
+	if err != nil {
+		return err
+	}
+	tmpFile, err := os.CreateTemp("", "vespa")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tmpFile.Name())
+	if err := deployServiceGet(pkgURL.String(), deployment, tmpFile); err != nil {
+		return err
+	}
+	if err := tmpFile.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmpFile.Name(), path)
+}
+
+func fetchFromConfigServer(deployment DeploymentOptions, path string) error {
+	tmpDir, err := os.MkdirTemp("", "vespa")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(tmpDir)
+	u, err := deployment.url("/application/v2/tenant/default/application/default/environment/prod/region/default/instance/default/content")
+	if err != nil {
+		return err
+	}
+	dir := filepath.Join(tmpDir, "application")
+	if err := fetchFilesFromConfigServer(deployment, u, dir); err != nil {
+		return err
+	}
+	zipFile := filepath.Join(tmpDir, "application.zip")
+	if err := zipDir(dir, zipFile); err != nil {
+		return err
+	}
+	return os.Rename(zipFile, path)
+}
+
+func fetchFilesFromConfigServer(deployment DeploymentOptions, contentURL *url.URL, path string) error {
+	var data bytes.Buffer
+	if err := deployServiceGet(contentURL.String(), deployment, &data); err != nil {
+		return err
+	}
+	var fileURLs []string
+	if err := json.Unmarshal(data.Bytes(), &fileURLs); err != nil {
+		return err
+	}
+	for _, fu := range fileURLs {
+		u, err := url.Parse(fu)
+		if err != nil {
+			return err
+		}
+		entryName := filepath.Join(path, filepath.Base(u.Path))
+		if strings.HasSuffix(u.Path, "/") {
+			if err := fetchFilesFromConfigServer(deployment, u, entryName); err != nil {
+				return err
+			}
+		} else {
+			if err := os.MkdirAll(filepath.Dir(entryName), 0755); err != nil {
+				return err
+			}
+			f, err := os.Create(entryName)
+			if err != nil {
+				return err
+			}
+			if err := deployServiceGet(fu, deployment, f); err != nil {
+				f.Close()
+				return err
+			}
+			f.Close()
+		}
+	}
+	return nil
+}
+
 // Prepare deployment and return the session ID
 func Prepare(deployment DeploymentOptions) (PrepareResult, error) {
-	if deployment.Target.IsCloud() {
-		return PrepareResult{}, fmt.Errorf("prepare is not supported with %s target", deployment.Target.Type())
-	}
 	sessionURL, err := deployment.url("/application/v2/tenant/default/session")
 	if err != nil {
 		return PrepareResult{}, err
@@ -169,9 +287,6 @@ func Prepare(deployment DeploymentOptions) (PrepareResult, error) {
 
 // Activate deployment with sessionID from a past prepare
 func Activate(sessionID int64, deployment DeploymentOptions) error {
-	if deployment.Target.IsCloud() {
-		return fmt.Errorf("activate is not supported with %s target", deployment.Target.Type())
-	}
 	u, err := deployment.url(fmt.Sprintf("/application/v2/tenant/default/session/%d/active", sessionID))
 	if err != nil {
 		return err
@@ -255,45 +370,45 @@ func copyToPart(dst *multipart.Writer, src io.Reader, fieldname, filename string
 	return nil
 }
 
-func Submit(opts DeploymentOptions, submission Submission) error {
+func Submit(opts DeploymentOptions, submission Submission) (int64, error) {
 	if !opts.Target.IsCloud() {
-		return fmt.Errorf("%s: deploy is unsupported by %s target", opts, opts.Target.Type())
+		return 0, fmt.Errorf("%s: deploy is unsupported by %s target", opts, opts.Target.Type())
 	}
 	if err := checkDeploymentOpts(opts); err != nil {
-		return err
+		return 0, err
 	}
 	submitURL := opts.Target.Deployment().System.SubmitURL(opts.Target.Deployment())
 	u, err := url.Parse(submitURL)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
 	submitOptions, err := json.Marshal(submission)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	if err := copyToPart(writer, bytes.NewReader(submitOptions), "submitOptions", ""); err != nil {
-		return err
+		return 0, err
 	}
 	applicationZip, err := opts.ApplicationPackage.zipReader(false)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	if err := copyToPart(writer, applicationZip, "applicationZip", "application.zip"); err != nil {
-		return err
+		return 0, err
 	}
 	if opts.ApplicationPackage.HasTests() {
 		testApplicationZip, err := opts.ApplicationPackage.zipReader(true)
 		if err != nil {
-			return err
+			return 0, err
 		}
 		if err := copyToPart(writer, testApplicationZip, "applicationTestZip", "application-test.zip"); err != nil {
-			return err
+			return 0, err
 		}
 	}
 	if err := writer.Close(); err != nil {
-		return err
+		return 0, err
 	}
 	request := &http.Request{
 		URL:    u,
@@ -304,10 +419,23 @@ func Submit(opts DeploymentOptions, submission Submission) error {
 	request.Header.Set("Content-Type", writer.FormDataContentType())
 	response, err := deployServiceDo(request, time.Minute*10, opts)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	defer response.Body.Close()
-	return checkResponse(request, response)
+	if err := checkResponse(request, response); err != nil {
+		return 0, err
+	}
+	responseBody, err := io.ReadAll(response.Body)
+	if err != nil {
+		return 0, err
+	}
+	var submitResponse struct {
+		Build int64 `json:"build"`
+	}
+	if err := json.Unmarshal(responseBody, &submitResponse); err != nil {
+		return 0, err
+	}
+	return submitResponse.Build, nil
 }
 
 func deployServiceDo(request *http.Request, timeout time.Duration, opts DeploymentOptions) (*http.Response, error) {
@@ -412,7 +540,7 @@ func checkResponse(req *http.Request, response *http.Response) error {
 	if response.StatusCode/100 == 4 {
 		return fmt.Errorf("invalid application package (%s)\n%s", response.Status, extractError(response.Body))
 	} else if response.StatusCode != 200 {
-		return fmt.Errorf("error from deploy api at %s (%s):\n%s", req.URL.Host, response.Status, util.ReaderToJSON(response.Body))
+		return fmt.Errorf("error from deploy API at %s (%s):\n%s", req.URL.Host, response.Status, ioutil.ReaderToJSON(response.Body))
 	}
 	return nil
 }

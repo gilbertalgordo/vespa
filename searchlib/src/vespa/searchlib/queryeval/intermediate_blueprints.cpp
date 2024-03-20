@@ -1,6 +1,7 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include "intermediate_blueprints.h"
+#include "flow_tuning.h"
 #include "andnotsearch.h"
 #include "andsearch.h"
 #include "orsearch.h"
@@ -34,13 +35,13 @@ size_t lookup_create_source(std::vector<std::unique_ptr<CombineType> > &sources,
 template <typename CombineType>
 void optimize_source_blenders(IntermediateBlueprint &self, size_t begin_idx) {
     std::vector<size_t> source_blenders;
-    SourceBlenderBlueprint *reference = nullptr;
+    const SourceBlenderBlueprint * reference = nullptr;
     for (size_t i = begin_idx; i < self.childCnt(); ++i) {
-        if (self.getChild(i).isSourceBlender()) {
-            auto *child = static_cast<SourceBlenderBlueprint *>(&self.getChild(i));
-            if (reference == nullptr || reference->isCompatibleWith(*child)) {
+        const SourceBlenderBlueprint * sbChild = self.getChild(i).asSourceBlender();
+        if (sbChild) {
+            if (reference == nullptr || reference->isCompatibleWith(*sbChild)) {
                 source_blenders.push_back(i);
-                reference = child;
+                reference = sbChild;
             }
         }
     }
@@ -50,16 +51,14 @@ void optimize_source_blenders(IntermediateBlueprint &self, size_t begin_idx) {
         while (!source_blenders.empty()) {
             blender_up = self.removeChild(source_blenders.back());
             source_blenders.pop_back();
-            assert(blender_up->isSourceBlender());
-            auto *blender = static_cast<SourceBlenderBlueprint *>(blender_up.get());
+            SourceBlenderBlueprint * blender = blender_up->asSourceBlender();
             while (blender->childCnt() > 0) {
-                Blueprint::UP child_up = blender->removeChild(blender->childCnt() - 1);
+                Blueprint::UP child_up = blender->removeLastChild();
                 size_t source_idx = lookup_create_source(sources, child_up->getSourceId(), self.get_docid_limit());
                 sources[source_idx]->addChild(std::move(child_up));
             }
         }
-        assert(blender_up->isSourceBlender());
-        auto *top = static_cast<SourceBlenderBlueprint *>(blender_up.get());
+        SourceBlenderBlueprint * top = blender_up->asSourceBlender();
         while (!sources.empty()) {
             top->addChild(std::move(sources.back()));
             sources.pop_back();
@@ -87,6 +86,14 @@ need_normal_features_for_children(const IntermediateBlueprint &blueprint, fef::M
 
 //-----------------------------------------------------------------------------
 
+FlowStats
+AndNotBlueprint::calculate_flow_stats(uint32_t) const
+{
+    return {AndNotFlow::estimate_of(get_children()),
+            AndNotFlow::cost_of(get_children(), false),
+            AndNotFlow::cost_of(get_children(), true)};
+}
+
 Blueprint::HitEstimate
 AndNotBlueprint::combine(const std::vector<HitEstimate> &data) const
 {
@@ -103,25 +110,44 @@ AndNotBlueprint::exposeFields() const
 }
 
 void
-AndNotBlueprint::optimize_self()
+AndNotBlueprint::optimize_self(OptimizePass pass)
 {
     if (childCnt() == 0) {
         return;
     }
-    if (getChild(0).isAndNot()) {
-        auto *child = static_cast<AndNotBlueprint *>(&getChild(0));
-        while (child->childCnt() > 1) {
-            addChild(child->removeChild(1));
+    if (pass == OptimizePass::FIRST) {
+        if (auto *child = getChild(0).asAndNot()) {
+            while (child->childCnt() > 1) {
+                addChild(child->removeLastChild());
+            }
+            insertChild(1, child->removeChild(0));
+            removeChild(0);
         }
-        insertChild(1, child->removeChild(0));
-        removeChild(0);
-    }
-    for (size_t i = 1; i < childCnt(); ++i) {
-        if (getChild(i).getState().estimate().empty) {
-            removeChild(i--);
+        if (auto *child = getChild(0).asAnd()) {
+            for (size_t i = 0; i < child->childCnt(); ++i) {
+                if (auto *grand_child = child->getChild(i).asAndNot()) {
+                    while (grand_child->childCnt() > 1) {
+                        addChild(grand_child->removeLastChild());
+                    }
+                    auto orphan = grand_child->removeChild(0);
+                    if (auto *orphan_and = orphan->asAnd()) {
+                        while (orphan_and->childCnt() > 0) {
+                            child->addChild(orphan_and->removeLastChild());
+                        }
+                    } else {
+                        child->addChild(std::move(orphan));
+                    }
+                    child->removeChild(i--);
+                }
+            }
+        }
+        for (size_t i = 1; i < childCnt(); ++i) {
+            if (getChild(i).getState().estimate().empty) {
+                removeChild(i--);
+            }
         }
     }
-    if ( !(getParent() && getParent()->isAndNot()) ) {
+    if (pass == OptimizePass::LAST) {
         optimize_source_blenders<OrBlueprint>(*this, 1);
     }
 }
@@ -136,10 +162,14 @@ AndNotBlueprint::get_replacement()
 }
 
 void
-AndNotBlueprint::sort(Children &children) const
+AndNotBlueprint::sort(Children &children, bool strict, bool sort_by_cost) const
 {
-    if (children.size() > 2) {
-        std::sort(children.begin() + 1, children.end(), TieredGreaterEstimate());
+    if (sort_by_cost) {
+        AndNotFlow::sort(children, strict);
+    } else {
+        if (children.size() > 2) {
+            std::sort(children.begin() + 1, children.end(), TieredGreaterEstimate());
+        }
     }
 }
 
@@ -176,7 +206,21 @@ AndNotBlueprint::createFilterSearch(bool strict, FilterConstraint constraint) co
     return create_andnot_filter(get_children(), strict, constraint);
 }
 
+
+AnyFlow
+AndNotBlueprint::my_flow(InFlow in_flow) const
+{
+    return AnyFlow::create<AndNotFlow>(in_flow);
+}
+
 //-----------------------------------------------------------------------------
+
+FlowStats
+AndBlueprint::calculate_flow_stats(uint32_t) const {
+    return {AndFlow::estimate_of(get_children()),
+            AndFlow::cost_of(get_children(), false),
+            AndFlow::cost_of(get_children(), true)};
+}
 
 Blueprint::HitEstimate
 AndBlueprint::combine(const std::vector<HitEstimate> &data) const
@@ -191,18 +235,19 @@ AndBlueprint::exposeFields() const
 }
 
 void
-AndBlueprint::optimize_self()
+AndBlueprint::optimize_self(OptimizePass pass)
 {
-    for (size_t i = 0; i < childCnt(); ++i) {
-        if (getChild(i).isAnd()) {
-            auto *child = static_cast<AndBlueprint *>(&getChild(i));
-            while (child->childCnt() > 0) {
-                addChild(child->removeChild(0));
+    if (pass == OptimizePass::FIRST) {
+        for (size_t i = 0; i < childCnt(); ++i) {
+            if (auto *child = getChild(i).asAnd()) {
+                while (child->childCnt() > 0) {
+                    addChild(child->removeLastChild());
+                }
+                removeChild(i--);
             }
-            removeChild(i--);
         }
     }
-    if ( !(getParent() && getParent()->isAnd()) ) {
+    if (pass == OptimizePass::LAST) {
         optimize_source_blenders<AndBlueprint>(*this, 0);
     }
 }
@@ -217,9 +262,13 @@ AndBlueprint::get_replacement()
 }
 
 void
-AndBlueprint::sort(Children &children) const
+AndBlueprint::sort(Children &children, bool strict, bool sort_by_cost) const
 {
-    std::sort(children.begin(), children.end(), TieredLessEstimate());
+    if (sort_by_cost) {
+        AndFlow::sort(children, strict);
+    } else {
+        std::sort(children.begin(), children.end(), TieredLessEstimate());
+    }
 }
 
 bool
@@ -258,14 +307,23 @@ AndBlueprint::createFilterSearch(bool strict, FilterConstraint constraint) const
     return create_and_filter(get_children(), strict, constraint);
 }
 
-double
-AndBlueprint::computeNextHitRate(const Blueprint & child, double hitRate) const {
-    return hitRate * child.hit_ratio();
+AnyFlow
+AndBlueprint::my_flow(InFlow in_flow) const
+{
+    return AnyFlow::create<AndFlow>(in_flow);
 }
 
 //-----------------------------------------------------------------------------
 
 OrBlueprint::~OrBlueprint() = default;
+
+FlowStats
+OrBlueprint::calculate_flow_stats(uint32_t) const {
+    double est = OrFlow::estimate_of(get_children());
+    return {est,
+            OrFlow::cost_of(get_children(), false),
+            OrFlow::cost_of(get_children(), true) + flow::heap_cost(est, get_children().size())};
+}
 
 Blueprint::HitEstimate
 OrBlueprint::combine(const std::vector<HitEstimate> &data) const
@@ -280,20 +338,21 @@ OrBlueprint::exposeFields() const
 }
 
 void
-OrBlueprint::optimize_self()
+OrBlueprint::optimize_self(OptimizePass pass)
 {
-    for (size_t i = 0; (childCnt() > 1) && (i < childCnt()); ++i) {
-        if (getChild(i).isOr()) {
-            auto *child = static_cast<OrBlueprint *>(&getChild(i));
-            while (child->childCnt() > 0) {
-                addChild(child->removeChild(0));
+    if (pass == OptimizePass::FIRST) {
+        for (size_t i = 0; (childCnt() > 1) && (i < childCnt()); ++i) {
+            if (auto *child = getChild(i).asOr()) {
+                while (child->childCnt() > 0) {
+                    addChild(child->removeLastChild());
+                }
+                removeChild(i--);
+            } else if (getChild(i).getState().estimate().empty) {
+                removeChild(i--);
             }
-            removeChild(i--);
-        } else if (getChild(i).getState().estimate().empty) {
-            removeChild(i--);
         }
     }
-    if ( !(getParent() && getParent()->isOr()) ) {
+    if (pass == OptimizePass::LAST) {
         optimize_source_blenders<OrBlueprint>(*this, 0);
     }
 }
@@ -308,9 +367,13 @@ OrBlueprint::get_replacement()
 }
 
 void
-OrBlueprint::sort(Children &children) const
+OrBlueprint::sort(Children &children, bool strict, bool sort_by_cost) const
 {
-    std::sort(children.begin(), children.end(), TieredGreaterEstimate());
+    if (sort_by_cost) {
+        OrFlow::sort(children, strict);
+    } else {
+        std::sort(children.begin(), children.end(), TieredGreaterEstimate());
+    }
 }
 
 bool
@@ -344,8 +407,41 @@ OrBlueprint::createFilterSearch(bool strict, FilterConstraint constraint) const
     return create_or_filter(get_children(), strict, constraint);
 }
 
+AnyFlow
+OrBlueprint::my_flow(InFlow in_flow) const
+{
+    return AnyFlow::create<OrFlow>(in_flow);
+}
+
+uint8_t
+OrBlueprint::calculate_cost_tier() const
+{
+    uint8_t cost_tier = State::COST_TIER_NORMAL;
+    for (const Blueprint::UP &child : get_children()) {
+        cost_tier = std::max(cost_tier, child->getState().cost_tier());
+    }
+    return cost_tier;
+}
+
 //-----------------------------------------------------------------------------
+
+AnyFlow
+WeakAndBlueprint::my_flow(InFlow in_flow) const
+{
+    return AnyFlow::create<OrFlow>(in_flow);
+}
+
 WeakAndBlueprint::~WeakAndBlueprint() = default;
+
+FlowStats
+WeakAndBlueprint::calculate_flow_stats(uint32_t docid_limit) const {
+    double child_est = OrFlow::estimate_of(get_children());
+    double my_est = abs_to_rel_est(_n, docid_limit);
+    double est = (child_est + my_est) / 2.0;
+    return {est,
+            OrFlow::cost_of(get_children(), false),
+            OrFlow::cost_of(get_children(), true) + flow::heap_cost(est, get_children().size())};
+}
 
 Blueprint::HitEstimate
 WeakAndBlueprint::combine(const std::vector<HitEstimate> &data) const
@@ -365,7 +461,7 @@ WeakAndBlueprint::exposeFields() const
 }
 
 void
-WeakAndBlueprint::sort(Children &) const
+WeakAndBlueprint::sort(Children &, bool, bool) const
 {
     // order needs to stay the same as _weights
 }
@@ -406,6 +502,20 @@ WeakAndBlueprint::createFilterSearch(bool strict, FilterConstraint constraint) c
 
 //-----------------------------------------------------------------------------
 
+AnyFlow
+NearBlueprint::my_flow(InFlow in_flow) const
+{
+    return AnyFlow::create<AndFlow>(in_flow);
+}
+
+FlowStats
+NearBlueprint::calculate_flow_stats(uint32_t) const {
+    double est = AndFlow::estimate_of(get_children()); 
+    return {est,
+            AndFlow::cost_of(get_children(), false) + childCnt() * est,
+            AndFlow::cost_of(get_children(), true) + childCnt() * est};
+}
+
 Blueprint::HitEstimate
 NearBlueprint::combine(const std::vector<HitEstimate> &data) const
 {
@@ -419,9 +529,13 @@ NearBlueprint::exposeFields() const
 }
 
 void
-NearBlueprint::sort(Children &children) const
+NearBlueprint::sort(Children &children, bool strict, bool sort_by_cost) const
 {
-    std::sort(children.begin(), children.end(), TieredLessEstimate());
+    if (sort_by_cost) {
+        AndFlow::sort(children, strict);
+    } else {
+        std::sort(children.begin(), children.end(), TieredLessEstimate());
+    }
 }
 
 bool
@@ -459,6 +573,20 @@ NearBlueprint::createFilterSearch(bool strict, FilterConstraint constraint) cons
 
 //-----------------------------------------------------------------------------
 
+AnyFlow
+ONearBlueprint::my_flow(InFlow in_flow) const
+{
+    return AnyFlow::create<AndFlow>(in_flow);
+}
+
+FlowStats
+ONearBlueprint::calculate_flow_stats(uint32_t) const {
+    double est = AndFlow::estimate_of(get_children());
+    return {est,
+            AndFlow::cost_of(get_children(), false) + childCnt() * est,
+            AndFlow::cost_of(get_children(), true) + childCnt() * est};
+}
+
 Blueprint::HitEstimate
 ONearBlueprint::combine(const std::vector<HitEstimate> &data) const
 {
@@ -472,10 +600,9 @@ ONearBlueprint::exposeFields() const
 }
 
 void
-ONearBlueprint::sort(Children &children) const
+ONearBlueprint::sort(Children &, bool, bool) const
 {
     // ordered near cannot sort children here
-    (void)children;
 }
 
 bool
@@ -515,6 +642,16 @@ ONearBlueprint::createFilterSearch(bool strict, FilterConstraint constraint) con
 
 //-----------------------------------------------------------------------------
 
+FlowStats
+RankBlueprint::calculate_flow_stats(uint32_t) const {
+    if (childCnt() == 0) {
+        return {0.0, 0.0, 0.0};
+    }
+    return {getChild(0).estimate(),
+            getChild(0).cost(),
+            getChild(0).strict_cost()};
+}
+
 Blueprint::HitEstimate
 RankBlueprint::combine(const std::vector<HitEstimate> &data) const
 {
@@ -531,14 +668,18 @@ RankBlueprint::exposeFields() const
 }
 
 void
-RankBlueprint::optimize_self()
+RankBlueprint::optimize_self(OptimizePass pass)
 {
-    for (size_t i = 1; i < childCnt(); ++i) {
-        if (getChild(i).getState().estimate().empty) {
-            removeChild(i--);
+    if (pass == OptimizePass::FIRST) {
+        for (size_t i = 1; i < childCnt(); ++i) {
+            if (getChild(i).getState().estimate().empty) {
+                removeChild(i--);
+            }
         }
     }
-    optimize_source_blenders<OrBlueprint>(*this, 1);
+    if (pass == OptimizePass::LAST) {
+        optimize_source_blenders<OrBlueprint>(*this, 1);
+    }
 }
 
 Blueprint::UP
@@ -551,9 +692,8 @@ RankBlueprint::get_replacement()
 }
 
 void
-RankBlueprint::sort(Children &children) const
+RankBlueprint::sort(Children &, bool, bool) const
 {
-    (void)children;
 }
 
 bool
@@ -594,14 +734,37 @@ RankBlueprint::createFilterSearch(bool strict, FilterConstraint constraint) cons
     return create_first_child_filter(get_children(), strict, constraint);
 }
 
+AnyFlow
+RankBlueprint::my_flow(InFlow in_flow) const
+{
+    return AnyFlow::create<RankFlow>(in_flow);
+}
+
 //-----------------------------------------------------------------------------
 
-SourceBlenderBlueprint::SourceBlenderBlueprint(const ISourceSelector &selector)
+AnyFlow
+SourceBlenderBlueprint::my_flow(InFlow in_flow) const
+{
+    return AnyFlow::create<BlenderFlow>(in_flow);
+}
+
+SourceBlenderBlueprint::SourceBlenderBlueprint(const ISourceSelector &selector) noexcept
     : _selector(selector)
 {
 }
 
 SourceBlenderBlueprint::~SourceBlenderBlueprint() = default;
+
+FlowStats
+SourceBlenderBlueprint::calculate_flow_stats(uint32_t) const {
+    double my_cost = 0.0;
+    double my_strict_cost = 0.0;
+    for (const auto &child: get_children()) {
+        my_cost = std::max(my_cost, child->cost());
+        my_strict_cost = std::max(my_strict_cost, child->strict_cost());
+    }
+    return {OrFlow::estimate_of(get_children()), my_cost, my_strict_cost};
+}
 
 Blueprint::HitEstimate
 SourceBlenderBlueprint::combine(const std::vector<HitEstimate> &data) const
@@ -616,7 +779,7 @@ SourceBlenderBlueprint::exposeFields() const
 }
 
 void
-SourceBlenderBlueprint::sort(Children &) const
+SourceBlenderBlueprint::sort(Children &, bool, bool) const
 {
 }
 
@@ -624,27 +787,6 @@ bool
 SourceBlenderBlueprint::inheritStrict(size_t) const
 {
     return true;
-}
-
-class FindSource : public Blueprint::IPredicate
-{
-public:
-    explicit FindSource(uint32_t sourceId) noexcept : _sourceId(sourceId) { }
-    bool check(const Blueprint & bp) const override { return bp.getSourceId() == _sourceId; }
-private:
-    uint32_t _sourceId;
-};
-
-ssize_t
-SourceBlenderBlueprint::findSource(uint32_t sourceId) const
-{
-    ssize_t index(-1);
-    FindSource fs(sourceId);
-    IndexList list = find(fs);
-    if ( ! list.empty()) {
-        index = list.front();
-    }
-    return index;
 }
 
 SearchIterator::UP
@@ -671,6 +813,16 @@ bool
 SourceBlenderBlueprint::isCompatibleWith(const SourceBlenderBlueprint &other) const
 {
     return (&_selector == &other._selector);
+}
+
+uint8_t
+SourceBlenderBlueprint::calculate_cost_tier() const
+{
+    uint8_t cost_tier = State::COST_TIER_NORMAL;
+    for (const Blueprint::UP &child : get_children()) {
+        cost_tier = std::max(cost_tier, child->getState().cost_tier());
+    }
+    return cost_tier;
 }
 
 //-----------------------------------------------------------------------------

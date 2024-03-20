@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include <vespa/searchcore/proton/server/executorthreadingservice.h>
 #include <vespa/searchcore/proton/server/threading_service_config.h>
@@ -28,7 +28,6 @@ public:
           field_writer_executor(SequencedTaskExecutor::create(my_field_writer_executor, 3, 200)),
           service(std::make_unique<ExecutorThreadingService>(_transport.shared(),
                                                              _transport.transport(),
-                                                             _transport.clock(),
                                                              *field_writer_executor,
                                                              nullptr,
                                                              ThreadingServiceConfig::make()))

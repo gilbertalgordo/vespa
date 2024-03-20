@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include <vespa/document/test/fieldvalue_helpers.h>
 #include <vespa/document/fieldvalue/weightedsetfieldvalue.h>
@@ -10,7 +10,7 @@
 #include <vespa/document/serialization/vespadocumentdeserializer.h>
 #include <vespa/vespalib/objects/nbostream.h>
 #include <vespa/document/repo/documenttyperepo.h>
-#include <gtest/gtest.h>
+#include <vespa/vespalib/gtest/gtest.h>
 #include <gmock/gmock.h>
 
 using vespalib::nbostream;

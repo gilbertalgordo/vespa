@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.jdisc.handler;
 
 import com.yahoo.jdisc.Response;
@@ -30,17 +30,9 @@ public final class FutureResponse extends CompletableFuture<Response> implements
      *
      * @param content The content channel for the Response.
      */
-    public FutureResponse(final ContentChannel content) {
-        this(new ResponseHandler() {
-
-            @Override
-            public ContentChannel handleResponse(Response response) {
-                return content;
-            }
-        });
+    public FutureResponse(ContentChannel content) {
+        this(response -> content);
     }
-
-    public void addListener(Runnable r, Executor e) { whenCompleteAsync((__, ___) -> r.run(), e); }
 
     /**
      * <p>Constructs a new FutureResponse that calls the given {@link ResponseHandler} when {@link
@@ -51,6 +43,8 @@ public final class FutureResponse extends CompletableFuture<Response> implements
     public FutureResponse(ResponseHandler handler) {
         this.handler = handler;
     }
+
+    public void addListener(Runnable r, Executor e) { whenCompleteAsync((__, ___) -> r.run(), e); }
 
     @Override
     public ContentChannel handleResponse(Response response) {

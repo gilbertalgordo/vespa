@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package ai.vespa.metrics.set;
 
 import ai.vespa.metrics.ConfigServerMetrics;
@@ -67,6 +67,12 @@ public class InfrastructureMetricSet {
         addMetric(metrics, ConfigServerMetrics.CLUSTER_LOAD_IDEAL_CPU.max());
         addMetric(metrics, ConfigServerMetrics.CLUSTER_LOAD_IDEAL_MEMORY.max());
         addMetric(metrics, ConfigServerMetrics.CLUSTER_LOAD_IDEAL_DISK.max());
+        addMetric(metrics, ConfigServerMetrics.NODES_EMPTY_EXCLUSIVE.max());
+        addMetric(metrics, ConfigServerMetrics.NODES_EXPIRED_DEPROVISIONED.count());
+        addMetric(metrics, ConfigServerMetrics.NODES_EXPIRED_DIRTY.count());
+        addMetric(metrics, ConfigServerMetrics.NODES_EXPIRED_INACTIVE.count());
+        addMetric(metrics, ConfigServerMetrics.NODES_EXPIRED_PROVISIONED.count());
+        addMetric(metrics, ConfigServerMetrics.NODES_EXPIRED_RESERVED.count());
         addMetric(metrics, ConfigServerMetrics.WANT_TO_REBOOT.max());
         addMetric(metrics, ConfigServerMetrics.WANT_TO_RESTART.max());
         addMetric(metrics, ConfigServerMetrics.WANT_TO_RETIRE.max());
@@ -115,6 +121,7 @@ public class InfrastructureMetricSet {
         addMetric(metrics, ConfigServerMetrics.THROTTLED_HOST_FAILURES.max());
         addMetric(metrics, ConfigServerMetrics.THROTTLED_NODE_FAILURES.max());
         addMetric(metrics, ConfigServerMetrics.NODE_FAIL_THROTTLING.max());
+        addMetric(metrics, ConfigServerMetrics.CLUSTER_AUTOSCALED.count());
 
         addMetric(metrics, ConfigServerMetrics.ORCHESTRATOR_LOCK_ACQUIRE_SUCCESS.count());
         addMetric(metrics, ConfigServerMetrics.ORCHESTRATOR_LOCK_ACQUIRE_TIMEOUT.count());
@@ -143,7 +150,11 @@ public class InfrastructureMetricSet {
         addMetric(metrics, ControllerMetrics.ARCHIVE_BUCKET_COUNT.max());
         addMetric(metrics, ControllerMetrics.BILLING_TENANTS.max());
 
+        addMetric(metrics, ControllerMetrics.DEPLOYMENT_JOBS_QUEUED, EnumSet.of(count, sum));
+        addMetric(metrics, ControllerMetrics.DEPLOYMENT_JOBS_ACTIVE, EnumSet.of(count, sum));
+        addMetric(metrics, ControllerMetrics.DEPLOYMENT_EXECUTOR_SIZE, EnumSet.of(max));
         addMetric(metrics, ControllerMetrics.DEPLOYMENT_ABORT.count());
+        addMetric(metrics, ControllerMetrics.DEPLOYMENT_DURATION.max());
         addMetric(metrics, ControllerMetrics.DEPLOYMENT_AVERAGE_DURATION.max());
         addMetric(metrics, ControllerMetrics.DEPLOYMENT_CONVERGENCE_FAILURE.count());
         addMetric(metrics, ControllerMetrics.DEPLOYMENT_DEPLOYMENT_FAILURE.count());
@@ -178,6 +189,10 @@ public class InfrastructureMetricSet {
 
         addMetric(metrics, ControllerMetrics.METERING_AGE_SECONDS.min());
         addMetric(metrics, ControllerMetrics.METERING_LAST_REPORTED.max());
+
+        addMetric(metrics, ControllerMetrics.MAIL_SENT.count());
+        addMetric(metrics, ControllerMetrics.MAIL_FAILED.count());
+        addMetric(metrics, ControllerMetrics.MAIL_THROTTLED.count());
 
         return metrics;
     }

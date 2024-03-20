@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.schema;
 
 import ai.vespa.rankingexpression.importer.configmodelview.ImportedMlModels;
@@ -17,11 +17,13 @@ import com.yahoo.schema.expressiontransforms.ExpressionTransforms;
 import com.yahoo.schema.expressiontransforms.RankProfileTransformContext;
 import com.yahoo.schema.expressiontransforms.InputRecorder;
 import com.yahoo.schema.parser.ParseException;
+import com.yahoo.search.schema.RankProfile.InputType;
 import com.yahoo.searchlib.rankingexpression.ExpressionFunction;
 import com.yahoo.searchlib.rankingexpression.FeatureList;
 import com.yahoo.searchlib.rankingexpression.RankingExpression;
 import com.yahoo.searchlib.rankingexpression.Reference;
 import com.yahoo.searchlib.rankingexpression.rule.Arguments;
+import com.yahoo.searchlib.rankingexpression.rule.ExpressionNode;
 import com.yahoo.searchlib.rankingexpression.rule.ReferenceNode;
 import com.yahoo.tensor.Tensor;
 import com.yahoo.tensor.TensorType;
@@ -30,6 +32,7 @@ import java.io.IOException;
 import java.io.Reader;
 import java.io.StringReader;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -109,7 +112,7 @@ public class RankProfile implements Cloneable {
     private String inheritedSummaryFeaturesProfileName;
 
     private Set<ReferenceNode> matchFeatures;
-    private Set<String> hiddenMatchFeatures;
+    private Set<ReferenceNode> hiddenMatchFeatures;
     private String inheritedMatchFeaturesProfileName;
 
     private Set<ReferenceNode> rankFeatures;
@@ -607,34 +610,20 @@ public class RankProfile implements Cloneable {
                 .orElse(Set.of());
     }
 
-    public Set<String> getHiddenMatchFeatures() {
+    public Set<ReferenceNode> getHiddenMatchFeatures() {
         if (hiddenMatchFeatures != null) return Collections.unmodifiableSet(hiddenMatchFeatures);
         return uniquelyInherited(p -> p.getHiddenMatchFeatures(), f -> ! f.isEmpty(), "hidden match features")
                 .orElse(Set.of());
     }
 
-    private void addSummaryFeature(ReferenceNode feature) {
-        if (summaryFeatures == null)
-            summaryFeatures = new LinkedHashSet<>();
-        summaryFeatures.add(feature);
-    }
-
-    private void addMatchFeature(ReferenceNode feature) {
-        if (matchFeatures == null)
-            matchFeatures = new LinkedHashSet<>();
-        matchFeatures.add(feature);
-    }
-
     private void addImplicitMatchFeatures(List<FeatureList> list) {
-        if (matchFeatures == null)
-            matchFeatures = new LinkedHashSet<>();
         if (hiddenMatchFeatures == null)
             hiddenMatchFeatures = new LinkedHashSet<>();
+        var current = getMatchFeatures();
         for (var features : list) {
             for (ReferenceNode feature : features) {
-                if (! matchFeatures.contains(feature)) {
-                    matchFeatures.add(feature);
-                    hiddenMatchFeatures.add(feature.toString());
+                if (! current.contains(feature)) {
+                    hiddenMatchFeatures.add(feature);
                 }
             }
         }
@@ -642,15 +631,19 @@ public class RankProfile implements Cloneable {
 
     /** Adds the content of the given feature list to the internal list of summary features. */
     public void addSummaryFeatures(FeatureList features) {
+        if (summaryFeatures == null)
+            summaryFeatures = new LinkedHashSet<>();
         for (ReferenceNode feature : features) {
-            addSummaryFeature(feature);
+            summaryFeatures.add(feature);
         }
     }
 
     /** Adds the content of the given feature list to the internal list of match features. */
     public void addMatchFeatures(FeatureList features) {
+        if (matchFeatures == null)
+            matchFeatures = new LinkedHashSet<>();
         for (ReferenceNode feature : features) {
-            addMatchFeature(feature);
+            matchFeatures.add(feature);
         }
     }
 
@@ -661,20 +654,16 @@ public class RankProfile implements Cloneable {
                 .orElse(Set.of());
     }
 
-    private void addRankFeature(ReferenceNode feature) {
-        if (rankFeatures == null)
-            rankFeatures = new LinkedHashSet<>();
-        rankFeatures.add(feature);
-    }
-
     /**
      * Adds the content of the given feature list to the internal list of rank features.
      *
      * @param features The features to add.
      */
     public void addRankFeatures(FeatureList features) {
+        if (rankFeatures == null)
+            rankFeatures = new LinkedHashSet<>();
         for (ReferenceNode feature : features) {
-            addRankFeature(feature);
+            rankFeatures.add(feature);
         }
     }
 
@@ -853,7 +842,7 @@ public class RankProfile implements Cloneable {
         if (inputs.containsKey(reference)) {
             Input existing = inputs().get(reference);
             if (! input.equals(existing))
-                throw new IllegalArgumentException("Duplicate input: Has both " + input + " and existing");
+                throw new IllegalArgumentException("Duplicate input: Has both " + input + " and existing " + existing);
         }
         inputs.put(reference, input);
     }
@@ -1058,21 +1047,45 @@ public class RankProfile implements Cloneable {
         functions = compileFunctions(this::getFunctions, queryProfiles, featureTypes, importedModels, inlineFunctions, expressionTransforms);
         allFunctionsCached = null;
 
+        var context = new RankProfileTransformContext(this,
+                                                      queryProfiles,
+                                                      featureTypes,
+                                                      importedModels,
+                                                      constants(),
+                                                      inlineFunctions);
+        var allNormalizers = getFeatureNormalizers();
+        verifyNoNormalizers("first-phase expression", firstPhaseRanking, allNormalizers, context);
+        verifyNoNormalizers("second-phase expression", secondPhaseRanking, allNormalizers, context);
+        for (ReferenceNode mf : getMatchFeatures()) {
+            verifyNoNormalizers("match-feature " + mf, mf, allNormalizers, context);
+        }
+        for (ReferenceNode sf : getSummaryFeatures()) {
+            verifyNoNormalizers("summary-feature " + sf, sf, allNormalizers, context);
+        }
         if (globalPhaseRanking != null) {
-            var context = new RankProfileTransformContext(this,
-                                                          queryProfiles,
-                                                          featureTypes,
-                                                          importedModels,
-                                                          constants(),
-                                                          inlineFunctions);
             var needInputs = new HashSet<String>();
+            Set<String> userDeclaredMatchFeatures = new HashSet<>();
+            for (ReferenceNode mf : getMatchFeatures()) {
+                userDeclaredMatchFeatures.add(mf.toString());
+            }
             var recorder = new InputRecorder(needInputs);
-            if (matchFeatures != null) {
-                for (ReferenceNode mf : matchFeatures) {
-                    recorder.alreadyHandled(mf.toString());
+            recorder.alreadyMatchFeatures(userDeclaredMatchFeatures);
+            recorder.addKnownNormalizers(allNormalizers.keySet());
+            recorder.process(globalPhaseRanking.function().getBody(), context);
+            for (var normalizerName : recorder.normalizersUsed()) {
+                var normalizer = allNormalizers.get(normalizerName);
+                var func = functions.get(normalizer.input());
+                if (func != null) {
+                    verifyNoNormalizers("normalizer input " + normalizer.input(), func, allNormalizers, context);
+                    if (! userDeclaredMatchFeatures.contains(normalizer.input())) {
+                        var subRecorder = new InputRecorder(needInputs);
+                        subRecorder.alreadyMatchFeatures(userDeclaredMatchFeatures);
+                        subRecorder.process(func.function().getBody(), context);
+                    }
+                } else {
+                    needInputs.add(normalizer.input());
                 }
             }
-            recorder.process(globalPhaseRanking.function().getBody(), context);
             List<FeatureList> addIfMissing = new ArrayList<>();
             for (String input : needInputs) {
                 if (input.startsWith("constant(") || input.startsWith("query(")) {
@@ -1165,7 +1178,8 @@ public class RankProfile implements Cloneable {
 
     private Map<Reference, TensorType> featureTypes() {
         Map<Reference, TensorType> featureTypes = inputs().values().stream()
-                                                          .collect(Collectors.toMap(input -> input.name(), input -> input.type()));
+                .collect(Collectors.toMap(input -> input.name(),
+                                          input -> input.type().tensorType()));
         allFields().forEach(field -> addAttributeFeatureTypes(field, featureTypes));
         allImportedFields().forEach(field -> addAttributeFeatureTypes(field, featureTypes));
         return featureTypes;
@@ -1241,14 +1255,45 @@ public class RankProfile implements Cloneable {
         return Optional.empty();  // if this context does not contain this input
     }
 
+    private static class AttributeErrorType extends TensorType {
+        private final DeployLogger deployLogger;
+        private final String attr;
+        private final Attribute.CollectionType collType;
+        private boolean shouldWarn = true;
+        AttributeErrorType(DeployLogger deployLogger, String attr, Attribute.CollectionType collType) {
+            super(TensorType.Value.DOUBLE, List.of());
+            this.deployLogger = deployLogger;
+            this.attr = attr;
+            this.collType = collType;
+        }
+        private void warnOnce() {
+            if (shouldWarn) {
+                deployLogger.log(Level.WARNING, "Using attribute(" + attr +") " + collType + " in ranking expression will always evaluate to 0.0");
+                shouldWarn = false;
+            }
+        }
+        @Override public TensorType.Value valueType() { warnOnce(); return super.valueType(); }
+        @Override public int rank() { warnOnce(); return super.rank(); }
+        @Override public List<TensorType.Dimension> dimensions() { warnOnce(); return super.dimensions(); }
+        @Override public boolean equals(Object o) {
+            if (o instanceof TensorType other) {
+                return (other.rank() == 0);
+            }
+            return false;
+        }
+    }
+
     private void addAttributeFeatureTypes(ImmutableSDField field, Map<Reference, TensorType> featureTypes) {
         Attribute attribute = field.getAttribute();
         field.getAttributes().forEach((k, a) -> {
             String name = k;
             if (attribute == a)                              // this attribute should take the fields name
                 name = field.getName();                      // switch to that - it is separate for imported fields
-            featureTypes.put(FeatureNames.asAttributeFeature(name),
-                            a.tensorType().orElse(TensorType.empty));
+            if (a.getCollectionType().equals(Attribute.CollectionType.SINGLE)) {
+                featureTypes.put(FeatureNames.asAttributeFeature(name), a.tensorType().orElse(TensorType.empty));
+            } else {
+                featureTypes.put(FeatureNames.asAttributeFeature(name), new AttributeErrorType(deployLogger, name, a.getCollectionType()));
+            }
         });
     }
 
@@ -1502,17 +1547,21 @@ public class RankProfile implements Cloneable {
     public static final class Input {
 
         private final Reference name;
-        private final TensorType type;
+        private final InputType type;
         private final Optional<Tensor> defaultValue;
 
-        public Input(Reference name, TensorType type, Optional<Tensor> defaultValue) {
+        public Input(Reference name, InputType type, Optional<Tensor> defaultValue) {
             this.name = name;
             this.type = type;
             this.defaultValue = defaultValue;
         }
 
+        public Input(Reference name, TensorType tType, Optional<Tensor> defaultValue) {
+            this(name, new InputType(tType, false), defaultValue);
+        }
+
         public Reference name() { return name; }
-        public TensorType type() { return type; }
+        public InputType type() { return type; }
         public Optional<Tensor> defaultValue() { return defaultValue; }
 
         @Override
@@ -1629,5 +1678,71 @@ public class RankProfile implements Cloneable {
         }
 
     }
+
+    public static record RankFeatureNormalizer(Reference original, String name, String input, String algo, double kparam) {
+        @Override
+        public String toString() {
+            return "normalizer{name=" + name + ",input=" + input + ",algo=" + algo + ",k=" + kparam + "}";
+        }
+        private static long hash(String s) {
+            int bob = com.yahoo.collections.BobHash.hash(s);
+            return bob + 0x100000000L;
+        }
+        public static RankFeatureNormalizer linear(Reference original, Reference inputRef) {
+            long h = hash(original.toString());
+            String name = "normalize@" + h + "@linear";
+            return new RankFeatureNormalizer(original, name, inputRef.toString(), "LINEAR", 0.0);
+        }
+        public static RankFeatureNormalizer rrank(Reference original, Reference inputRef, double k) {
+            long h = hash(original.toString());
+            String name = "normalize@" + h + "@rrank";
+            return new RankFeatureNormalizer(original, name, inputRef.toString(), "RRANK", k);
+        }
+    }
+
+    private List<RankFeatureNormalizer> featureNormalizers = new ArrayList<>();
+
+    public Map<String, RankFeatureNormalizer> getFeatureNormalizers() {
+        Map<String, RankFeatureNormalizer> all = new LinkedHashMap<>();
+        for (var inheritedProfile : inherited()) {
+            all.putAll(inheritedProfile.getFeatureNormalizers());
+        }
+        for (var n : featureNormalizers) {
+            all.put(n.name(), n);
+        }
+        return all;
+    }
+
+    public void addFeatureNormalizer(RankFeatureNormalizer n) {
+        if (functions.get(n.name()) != null) {
+            throw new IllegalArgumentException("cannot use name '" + name + "' for both function and normalizer");
+        }
+        featureNormalizers.add(n);
+    }
+
+    private void verifyNoNormalizers(String where, RankingExpressionFunction f, Map<String, RankFeatureNormalizer> allNormalizers, RankProfileTransformContext context) {
+        if (f == null) return;
+        verifyNoNormalizers(where, f.function(), allNormalizers, context);
+    }
+
+    private void verifyNoNormalizers(String where, ExpressionFunction func, Map<String, RankFeatureNormalizer> allNormalizers, RankProfileTransformContext context) {
+        if (func == null) return;
+        var body = func.getBody();
+        if (body == null) return;
+        verifyNoNormalizers(where, body.getRoot(), allNormalizers, context);
+    }
+
+    private void verifyNoNormalizers(String where, ExpressionNode node, Map<String, RankFeatureNormalizer> allNormalizers, RankProfileTransformContext context) {
+        var needInputs = new HashSet<String>();
+        var recorder = new InputRecorder(needInputs);
+        recorder.process(node, context);
+        for (var input : needInputs) {
+            var normalizer = allNormalizers.get(input);
+            if (normalizer != null) {
+                throw new IllegalArgumentException("Cannot use " + normalizer.original() + " from " + where + ", only valid in global-phase expression");
+            }
+        }
+    }
+
 
 }

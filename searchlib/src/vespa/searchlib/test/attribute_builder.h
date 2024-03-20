@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #pragma once
 
@@ -8,6 +8,7 @@
 #include <memory>
 #include <utility>
 #include <vector>
+#include <span>
 
 namespace search { class AttributeVector; }
 namespace search::attribute { class Config; }
@@ -38,6 +39,7 @@ public:
     AttributeBuilder& docs(size_t num_docs);
 
     // Fill functions for integer attributes
+    AttributeBuilder& fill(std::span<int32_t> values);
     AttributeBuilder& fill(std::initializer_list<int32_t> values);
     AttributeBuilder& fill(std::initializer_list<int64_t> values);
     AttributeBuilder& fill_array(std::initializer_list<IntList> values);

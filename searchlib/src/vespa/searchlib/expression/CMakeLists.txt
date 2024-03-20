@@ -1,4 +1,4 @@
-# Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+# Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 vespa_add_library(searchlib_expression OBJECT
     SOURCES
     attribute_map_lookup_node.cpp
@@ -25,12 +25,14 @@ vespa_add_library(searchlib_expression OBJECT
     mathfunctionnode.cpp
     numericfunctionnode.cpp
     resultnode.cpp
+    interpolated_document_field_lookup_node.cpp
     interpolatedlookupfunctionnode.cpp
     functionnodes.cpp
     resultnodes.cpp
     arrayatlookupfunctionnode.cpp
     arrayoperationnode.cpp
     aggregationrefnode.cpp
+    simple_interpolate.cpp
     stringresultnode.cpp
     rawresultnode.cpp
     floatresultnode.cpp

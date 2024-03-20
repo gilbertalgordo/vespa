@@ -1,8 +1,9 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.hosted.provision.lb;
 
 import ai.vespa.http.DomainName;
 import com.google.common.collect.ImmutableSet;
+import com.yahoo.config.provision.ApplicationId;
 import com.yahoo.config.provision.ClusterSpec;
 import com.yahoo.config.provision.EndpointsChecker.Availability;
 import com.yahoo.config.provision.EndpointsChecker.Endpoint;
@@ -15,17 +16,29 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 
+import static java.util.Objects.requireNonNull;
+import static java.util.stream.Collectors.toMap;
+
 /**
  * @author mpolden
  */
 public class LoadBalancerServiceMock implements LoadBalancerService {
 
-    private final Map<LoadBalancerId, LoadBalancerInstance> instances = new HashMap<>();
+    private record Key(ApplicationId application, ClusterSpec.Id cluster, String idSeed) {
+        @Override public int hashCode() { return idSeed.hashCode(); }
+        @Override public boolean equals(Object o) {
+            if (o == this) return true;
+            if ( ! (o instanceof Key key)) return false;
+            return Objects.equals(idSeed, key.idSeed);
+        }
+    }
+    private final Map<Key, LoadBalancerInstance> instances = new HashMap<>();
     private boolean throwOnCreate = false;
     private boolean supportsProvisioning = true;
 
     public Map<LoadBalancerId, LoadBalancerInstance> instances() {
-        return Collections.unmodifiableMap(instances);
+        return instances.entrySet().stream().collect(toMap(e -> new LoadBalancerId(e.getKey().application, e.getKey().cluster),
+                                                           Map.Entry::getValue));
     }
 
     public LoadBalancerServiceMock throwOnCreate(boolean throwOnCreate) {
@@ -53,9 +66,8 @@ public class LoadBalancerServiceMock implements LoadBalancerService {
     @Override
     public LoadBalancerInstance provision(LoadBalancerSpec spec) {
         if (throwOnCreate) throw new IllegalStateException("Did not expect a new load balancer to be created");
-        var id = new LoadBalancerId(spec.application(), spec.cluster());
         var instance = new LoadBalancerInstance(
-                Optional.of(DomainName.of("lb-" + spec.application().toShortString() + "-" + spec.cluster().value())),
+                Optional.of(DomainName.of("lb-" + spec.application().toShortString().replaceAll("_", "--") + "-" + spec.cluster().value())),
                 Optional.empty(),
                 Optional.empty(),
                 Optional.of(new DnsZone("zone-id-1")),
@@ -65,14 +77,14 @@ public class LoadBalancerServiceMock implements LoadBalancerService {
                 spec.settings(),
                 spec.settings().isPrivateEndpoint() ? List.of(PrivateServiceId.of("service")) : List.of(),
                 spec.cloudAccount());
-        instances.put(id, instance);
+        instances.put(new Key(spec.application(), spec.cluster(), spec.idSeed()), instance);
         return instance;
     }
 
     @Override
     public LoadBalancerInstance configure(LoadBalancerInstance instance, LoadBalancerSpec spec, boolean force) {
-        var id = new LoadBalancerId(spec.application(), spec.cluster());
-        var oldInstance = Objects.requireNonNull(instances.get(id), "expected existing load balancer " + id);
+        var id = new Key(spec.application(), spec.cluster(), spec.idSeed());
+        var oldInstance = requireNonNull(instances.get(id), "expected existing load balancer " + id);
         if (!force && !oldInstance.reals().isEmpty() && spec.reals().isEmpty()) {
             throw new IllegalArgumentException("Refusing to remove all reals from load balancer " + id);
         }
@@ -84,12 +96,21 @@ public class LoadBalancerServiceMock implements LoadBalancerService {
     }
 
     @Override
-    public void remove(LoadBalancer loadBalancer) {
-        instances.remove(loadBalancer.id());
+    public void reallocate(LoadBalancerSpec spec) {
+        instances.put(new Key(spec.application(), spec.cluster(), spec.idSeed()),
+                      requireNonNull(instances.remove(new Key(null, null, spec.idSeed())))); // ᕙ༼◕_◕༽ᕤ
     }
 
     @Override
-    public Availability healthy(Endpoint endpoint) {
+    public void remove(LoadBalancer loadBalancer) {
+        requireNonNull(instances.remove(new Key(loadBalancer.id().application(),
+                                                loadBalancer.id().cluster(),
+                                                loadBalancer.idSeed())),
+                       "expected load balancer to exist: " + loadBalancer.id());
+    }
+
+    @Override
+    public Availability healthy(Endpoint endpoint, String idSeed) {
         return Availability.ready;
     }
 

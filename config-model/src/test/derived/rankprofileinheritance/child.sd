@@ -1,4 +1,4 @@
-# Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+# Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 schema child {
 
   document child inherits parent1, parent2 {
@@ -37,6 +37,17 @@ schema child {
       attribute(field3)
     }
 
+  }
+
+  rank-profile profile5 inherits profile1 {
+    match-features {
+      attribute(field3)
+    }
+  }
+
+  rank-profile profile6 inherits profile1 {
+    summary-features { }
+    match-features { }
   }
 
 }

@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include "persistencehandlerproxy.h"
 #include "documentdb.h"
@@ -51,6 +51,13 @@ void
 PersistenceHandlerProxy::handleRemove(FeedToken token, const Bucket &bucket, Timestamp timestamp, const document::DocumentId &id)
 {
     auto op = std::make_unique<RemoveOperationWithDocId>(bucket.getBucketId().stripUnused(), timestamp, id);
+    _feedHandler.handleOperation(std::move(token), std::move(op));
+}
+
+void
+PersistenceHandlerProxy::handleRemoveByGid(FeedToken token, const storage::spi::Bucket &bucket, Timestamp timestamp, vespalib::stringref doc_type, const document::GlobalId& gid)
+{
+    auto op = std::make_unique<RemoveOperationWithGid>(bucket.getBucketId().stripUnused(), timestamp, gid, doc_type);
     _feedHandler.handleOperation(std::move(token), std::move(op));
 }
 
@@ -136,6 +143,12 @@ void
 PersistenceHandlerProxy::handlePopulateActiveBuckets(document::BucketId::List buckets, IGenericResultHandler &resultHandler)
 {
     _bucketHandler.handlePopulateActiveBuckets(std::move(buckets), resultHandler);
+}
+
+const DocTypeName&
+PersistenceHandlerProxy::doc_type_name() const noexcept
+{
+    return _documentDB->getDocTypeName();
 }
 
 } // namespace proton

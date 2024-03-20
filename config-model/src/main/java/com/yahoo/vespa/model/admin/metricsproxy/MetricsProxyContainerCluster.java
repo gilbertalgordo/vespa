@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 package com.yahoo.vespa.model.admin.metricsproxy;
 
@@ -48,6 +48,7 @@ import java.util.stream.Stream;
 import static ai.vespa.metrics.set.DefaultMetrics.defaultMetricSet;
 import static ai.vespa.metrics.set.MetricSet.empty;
 import static ai.vespa.metrics.set.SystemMetrics.systemMetricSet;
+import static ai.vespa.metrics.set.Vespa9DefaultMetricSet.vespa9defaultMetricSet;
 import static com.yahoo.vespa.model.admin.metricsproxy.ConsumersConfigGenerator.addMetrics;
 import static com.yahoo.vespa.model.admin.metricsproxy.ConsumersConfigGenerator.generateConsumers;
 import static com.yahoo.vespa.model.admin.metricsproxy.ConsumersConfigGenerator.toConsumerBuilder;
@@ -159,7 +160,10 @@ public class MetricsProxyContainerCluster extends ContainerCluster<MetricsProxyC
 
         builder.consumer.add(toConsumerBuilder(MetricsConsumer.defaultConsumer));
         builder.consumer.add(toConsumerBuilder(newDefaultConsumer()));
-        if (isHostedVespa()) builder.consumer.add(toConsumerBuilder(MetricsConsumer.vespa9));
+        if (isHostedVespa()) {
+            var amendedVespa9Consumer = addMetrics(MetricsConsumer.vespa9, getAdditionalDefaultMetrics().getMetrics());
+            builder.consumer.add(toConsumerBuilder(amendedVespa9Consumer));
+        }
         getAdmin()
                 .map(Admin::getAmendedMetricsConsumers)
                 .map(consumers -> consumers.stream().map(ConsumersConfigGenerator::toConsumerBuilder).toList())
@@ -169,8 +173,7 @@ public class MetricsProxyContainerCluster extends ContainerCluster<MetricsProxyC
 
     public MetricsConsumer newDefaultConsumer() {
         if (isHostedVespa()) {
-            // TODO: use different metric set for hosted vespa.
-            return MetricsConsumer.consumer(NEW_DEFAULT_CONSUMER_ID, defaultMetricSet, systemMetricSet);
+            return MetricsConsumer.consumer(NEW_DEFAULT_CONSUMER_ID, vespa9defaultMetricSet, systemMetricSet);
         }
         return MetricsConsumer.consumer(NEW_DEFAULT_CONSUMER_ID, defaultMetricSet, systemMetricSet);
     }
@@ -200,7 +203,7 @@ public class MetricsProxyContainerCluster extends ContainerCluster<MetricsProxyC
 
     private Optional<String> getSystemName() {
         Monitoring monitoring = getMonitoringService();
-        return monitoring != null && ! monitoring.getClustername().equals("") ?
+        return monitoring != null && !monitoring.getClustername().isEmpty() ?
                 Optional.of(monitoring.getClustername()) : Optional.empty();
     }
 

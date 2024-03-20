@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 #pragma once
 
 #include "document_iterator.h"
@@ -109,6 +109,7 @@ public:
     BucketInfoResult getBucketInfo(const Bucket&) const override;
     void putAsync(const Bucket &, Timestamp, storage::spi::DocumentSP, OperationComplete::UP) override;
     void removeAsync(const Bucket&, std::vector<storage::spi::IdAndTimestamp> ids, OperationComplete::UP) override;
+    void removeByGidAsync(const Bucket&, std::vector<storage::spi::DocTypeGidAndTimestamp> ids, std::unique_ptr<OperationComplete>) override;
     void updateAsync(const Bucket&, Timestamp, storage::spi::DocumentUpdateSP, OperationComplete::UP) override;
     GetResult get(const Bucket&, const document::FieldSet&, const document::DocumentId&, Context&) const override;
     CreateIteratorResult

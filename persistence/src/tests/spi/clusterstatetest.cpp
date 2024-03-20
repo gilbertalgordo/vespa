@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include <vespa/persistence/spi/test.h>
 #include <vespa/persistence/dummyimpl/dummypersistence.h>
@@ -297,7 +297,7 @@ TEST(DocEntryTest, test_doctype_and_gid) {
     DocEntry::UP e = DocEntry::create(Timestamp(9), DocumentMetaEnum::NONE, "doc_type", GlobalId::parse("gid(0xc4cef118f9f9649222750be2)"));
     EXPECT_EQ(9, e->getTimestamp());
     EXPECT_FALSE(e->isRemove());
-    EXPECT_EQ(20, e->getSize());
+    EXPECT_EQ(44, e->getSize());
     EXPECT_EQ(nullptr, e->getDocument());
     EXPECT_EQ(nullptr, e->getDocumentId());
     EXPECT_EQ("doc_type", e->getDocumentType());

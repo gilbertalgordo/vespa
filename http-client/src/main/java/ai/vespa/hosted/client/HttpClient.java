@@ -1,9 +1,10 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package ai.vespa.hosted.client;
 
 import ai.vespa.http.HttpURL;
 import ai.vespa.http.HttpURL.Path;
 import ai.vespa.http.HttpURL.Query;
+import ai.vespa.json.Json;
 import com.yahoo.time.TimeBudget;
 import org.apache.hc.client5.http.config.RequestConfig;
 import org.apache.hc.core5.http.ClassicHttpRequest;
@@ -139,6 +140,9 @@ public interface HttpClient extends Closeable {
 
         /** Reads and maps the response, or throws if unsuccessful. */
         <T> T read(Function<byte[], T> mapper);
+
+        /** Reads the response as a {@link Json}, or throws if unsuccessful. */
+        Json readAsJson();
 
         /** Discards the response, but throws if unsuccessful. */
         void discard();

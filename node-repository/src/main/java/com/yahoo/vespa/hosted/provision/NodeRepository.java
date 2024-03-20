@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.hosted.provision;
 
 import com.yahoo.component.AbstractComponent;
@@ -7,6 +7,8 @@ import com.yahoo.concurrent.maintenance.JobControl;
 import com.yahoo.config.provision.ApplicationTransaction;
 import com.yahoo.config.provision.ClusterSpec;
 import com.yahoo.config.provision.DockerImage;
+import com.yahoo.config.provision.EndpointsChecker.HealthChecker;
+import com.yahoo.config.provision.EndpointsChecker.HealthCheckerProvider;
 import com.yahoo.config.provision.NodeFlavors;
 import com.yahoo.config.provision.Zone;
 import com.yahoo.config.provisioning.NodeRepositoryConfig;
@@ -19,6 +21,8 @@ import com.yahoo.vespa.hosted.provision.Node.State;
 import com.yahoo.vespa.hosted.provision.applications.Applications;
 import com.yahoo.vespa.hosted.provision.archive.ArchiveUriManager;
 import com.yahoo.vespa.hosted.provision.autoscale.MetricsDb;
+import com.yahoo.vespa.hosted.provision.lb.LoadBalancer;
+import com.yahoo.vespa.hosted.provision.lb.LoadBalancerInstance;
 import com.yahoo.vespa.hosted.provision.lb.LoadBalancers;
 import com.yahoo.vespa.hosted.provision.maintenance.InfrastructureVersions;
 import com.yahoo.vespa.hosted.provision.node.Agent;
@@ -34,6 +38,7 @@ import com.yahoo.vespa.hosted.provision.provisioning.FirmwareChecks;
 import com.yahoo.vespa.hosted.provision.provisioning.HostResourcesCalculator;
 import com.yahoo.vespa.hosted.provision.provisioning.NodeResourceLimits;
 import com.yahoo.vespa.hosted.provision.provisioning.ProvisionServiceProvider;
+import com.yahoo.vespa.hosted.provision.provisioning.ProvisionServiceProvider.ProtoHealthChecker;
 import com.yahoo.vespa.orchestrator.Orchestrator;
 
 import java.time.Clock;
@@ -45,7 +50,7 @@ import java.util.Optional;
  *
  * @author bratseth
  */
-public class NodeRepository extends AbstractComponent {
+public class NodeRepository extends AbstractComponent implements HealthCheckerProvider {
 
     private final CuratorDb db;
     private final Clock clock;
@@ -67,6 +72,7 @@ public class NodeRepository extends AbstractComponent {
     private final MetricsDb metricsDb;
     private final Orchestrator orchestrator;
     private final int spareCount;
+    private final ProtoHealthChecker healthChecker;
     private final JacksonFlag<SharedHost> sharedHosts;
 
     /**
@@ -131,7 +137,7 @@ public class NodeRepository extends AbstractComponent {
         this.resourcesCalculator = provisionServiceProvider.getHostResourcesCalculator();
         this.nodeResourceLimits = new NodeResourceLimits(this);
         this.nameResolver = nameResolver;
-        this.osVersions = new OsVersions(this);
+        this.osVersions = new OsVersions(this, provisionServiceProvider.getHostProvisioner());
         this.infrastructureVersions = new InfrastructureVersions(db);
         this.firmwareChecks = new FirmwareChecks(db, clock);
         this.containerImages = new ContainerImages(containerImage, tenantContainerImage, tenantGpuContainerImage);
@@ -142,6 +148,7 @@ public class NodeRepository extends AbstractComponent {
         this.orchestrator = orchestrator;
         this.spareCount = spareCount;
         this.sharedHosts = PermanentFlags.SHARED_HOST.bindTo(flagSource());
+        this.healthChecker = provisionServiceProvider.getHealthChecker();
         nodes.rewrite();
     }
 
@@ -201,6 +208,11 @@ public class NodeRepository extends AbstractComponent {
     /** The number of nodes we should ensure has free capacity for node failures whenever possible */
     public int spareCount() { return spareCount; }
 
+    /** Returns whether nodes must be allocated to hosts that are exclusive to the cluster type. */
+    public boolean exclusiveClusterType(ClusterSpec cluster) {
+        return sharedHosts.value().hasClusterType(cluster.type().name());
+    }
+
     /**
      * Returns whether nodes are allocated exclusively in this instance given this cluster spec.
      * Exclusive allocation requires that the wanted node resources matches the advertised resources of the node
@@ -209,7 +221,12 @@ public class NodeRepository extends AbstractComponent {
     public boolean exclusiveAllocation(ClusterSpec clusterSpec) {
         return clusterSpec.isExclusive() ||
                ( clusterSpec.type().isContainer() && zone.system().isPublic() && !zone.environment().isTest() ) ||
-               ( !zone().cloud().allowHostSharing() && !sharedHosts.value().isEnabled(clusterSpec.type().name()));
+               ( !zone().cloud().allowHostSharing() && !sharedHosts.value().supportsClusterType(clusterSpec.type().name()));
+    }
+
+    /** Whether the nodes of this cluster must be running on hosts that are specifically provisioned for the application. */
+    public boolean exclusiveProvisioning(ClusterSpec clusterSpec) {
+        return !zone.cloud().allowHostSharing() && clusterSpec.isExclusive();
     }
 
     /**
@@ -238,6 +255,16 @@ public class NodeRepository extends AbstractComponent {
 
     private static Optional<DockerImage> optionalImage(String image) {
         return Optional.of(image).filter(s -> !s.isEmpty()).map(DockerImage::fromString);
+    }
+
+    @Override
+    public HealthChecker getHealthChecker() {
+        return endpoint -> healthChecker.healthy(endpoint,
+                                                 loadBalancers.list(endpoint.applicationId())
+                                                              .cluster(endpoint.clusterName())
+                                                              .first()
+                                                              .map(LoadBalancer::idSeed)
+                                                              .orElseThrow(() -> new IllegalArgumentException("no load balancer for '" + endpoint + "'")));
     }
 
 }

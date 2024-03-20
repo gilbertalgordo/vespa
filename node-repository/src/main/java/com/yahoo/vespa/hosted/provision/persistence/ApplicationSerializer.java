@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.hosted.provision.persistence;
 
 import com.yahoo.config.provision.ClusterInfo;
@@ -6,6 +6,7 @@ import com.yahoo.config.provision.IntRange;
 import com.yahoo.config.provision.ApplicationId;
 import com.yahoo.config.provision.ClusterResources;
 import com.yahoo.config.provision.ClusterSpec;
+import com.yahoo.slime.ArrayTraverser;
 import com.yahoo.slime.Cursor;
 import com.yahoo.slime.Inspector;
 import com.yahoo.slime.ObjectTraverser;
@@ -56,6 +57,7 @@ public class ApplicationSerializer {
     private static final String groupSizeKey = "groupSize";
     private static final String requiredKey = "required";
     private static final String suggestedKey = "suggested";
+    private static final String suggestionsKey = "suggestionsKey";
     private static final String clusterInfoKey = "clusterInfo";
     private static final String bcpDeadlineKey = "bcpDeadline";
     private static final String hostTTLKey = "hostTTL";
@@ -76,6 +78,8 @@ public class ApplicationSerializer {
     private static final String cpuKey = "cpu";
     private static final String memoryKey = "memory";
     private static final String diskKey = "disk";
+    private static final String gpuKey = "gpu";
+    private static final String gpuMemory = "gpuMemory";
     private static final String fromKey = "from";
     private static final String toKey = "to";
     private static final String generationKey = "generation";
@@ -137,7 +141,9 @@ public class ApplicationSerializer {
         toSlime(cluster.maxResources(), clusterObject.setObject(maxResourcesKey));
         toSlime(cluster.groupSize(), clusterObject.setObject(groupSizeKey));
         clusterObject.setBool(requiredKey, cluster.required());
-        toSlime(cluster.suggested(), clusterObject.setObject(suggestedKey));
+        // TODO(olaa): Remove 'suggested' once all configservers have stopped reading entry
+        toSlime(Autoscaling.empty(), clusterObject.setObject(suggestedKey));
+        toSlime(cluster.suggestions(), clusterObject.setArray(suggestionsKey));
         toSlime(cluster.target(), clusterObject.setObject(targetKey));
         if (! cluster.clusterInfo().isEmpty())
             toSlime(cluster.clusterInfo(), clusterObject.setObject(clusterInfoKey));
@@ -153,11 +159,18 @@ public class ApplicationSerializer {
                            clusterResourcesFromSlime(clusterObject.field(maxResourcesKey)),
                            intRangeFromSlime(clusterObject.field(groupSizeKey)),
                            clusterObject.field(requiredKey).asBool(),
-                           autoscalingFromSlime(clusterObject.field(suggestedKey)),
+                           suggestionsFromSlime(clusterObject.field(suggestionsKey)),
                            autoscalingFromSlime(clusterObject.field(targetKey)),
                            clusterInfoFromSlime(clusterObject.field(clusterInfoKey)),
                            bcpGroupInfoFromSlime(clusterObject.field(bcpGroupInfoKey)),
                            scalingEventsFromSlime(clusterObject.field(scalingEventsKey)));
+    }
+
+    private static void toSlime(List<Autoscaling> suggestions, Cursor suggestionsArray) {
+        suggestions.forEach(suggestion -> {
+            var suggestionObject = suggestionsArray.addObject();
+            toSlime(suggestion, suggestionObject);
+        });
     }
 
     private static void toSlime(Autoscaling autoscaling, Cursor autoscalingObject) {
@@ -201,12 +214,16 @@ public class ApplicationSerializer {
         loadObject.setDouble(cpuKey, load.cpu());
         loadObject.setDouble(memoryKey, load.memory());
         loadObject.setDouble(diskKey, load.disk());
+        loadObject.setDouble(gpuKey, load.gpu());
+        loadObject.setDouble(gpuMemory, load.gpuMemory());
     }
 
     private static Load loadFromSlime(Inspector loadObject) {
         return new Load(loadObject.field(cpuKey).asDouble(),
                         loadObject.field(memoryKey).asDouble(),
-                        loadObject.field(diskKey).asDouble());
+                        loadObject.field(diskKey).asDouble(),
+                        loadObject.field(gpuKey).asDouble(),
+                        loadObject.field(gpuMemory).asDouble());
     }
 
     private static void toSlime(Autoscaling.Metrics metrics, Cursor metricsObject) {
@@ -219,6 +236,13 @@ public class ApplicationSerializer {
         return new Autoscaling.Metrics(metricsObject.field(queryRateKey).asDouble(),
                                        metricsObject.field(growthRateHeadroomKey).asDouble(),
                                        metricsObject.field(cpuCostPerQueryKey).asDouble());
+    }
+
+    private static List<Autoscaling> suggestionsFromSlime(Inspector suggestionsObject) {
+        var suggestions = new ArrayList<Autoscaling>();
+        if (!suggestionsObject.valid()) return suggestions;
+        suggestionsObject.traverse((ArrayTraverser) (id, suggestion) -> suggestions.add(autoscalingFromSlime(suggestion)));
+        return suggestions;
     }
 
     private static Autoscaling autoscalingFromSlime(Inspector autoscalingObject) {

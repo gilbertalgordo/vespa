@@ -1,8 +1,10 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include "document_iterator.h"
+#include "ipersistencehandler.h"
 #include <vespa/persistence/spi/docentry.h>
 #include <vespa/searchcore/proton/common/cachedselect.h>
+#include <vespa/searchcore/proton/common/doctypename.h>
 #include <vespa/searchcore/proton/common/selectcontext.h>
 #include <vespa/document/select/gid_filter.h>
 #include <vespa/document/select/node.h>
@@ -18,7 +20,9 @@ using storage::spi::DocEntry;
 using storage::spi::Timestamp;
 using document::Document;
 using document::DocumentId;
+using document::GlobalId;
 using storage::spi::DocumentMetaEnum;
+using vespalib::stringref;
 
 namespace proton {
 
@@ -27,6 +31,11 @@ namespace {
 std::unique_ptr<DocEntry>
 createDocEntry(Timestamp timestamp, bool removed) {
     return DocEntry::create(timestamp, removed ? DocumentMetaEnum::REMOVE_ENTRY : DocumentMetaEnum::NONE);
+}
+
+std::unique_ptr<DocEntry>
+createDocEntry(Timestamp timestamp, bool removed, stringref doc_type, const GlobalId &gid) {
+    return DocEntry::create(timestamp, (removed ? DocumentMetaEnum::REMOVE_ENTRY : DocumentMetaEnum::NONE), doc_type, gid);
 }
 
 std::unique_ptr<DocEntry>
@@ -92,17 +101,23 @@ DocumentIterator::DocumentIterator(const storage::spi::Bucket &bucket,
 DocumentIterator::~DocumentIterator() = default;
 
 void
+DocumentIterator::add(const DocTypeName &doc_type_name, IDocumentRetriever::SP retriever)
+{
+    _sources.emplace_back(doc_type_name, std::move(retriever));
+}
+
+void
 DocumentIterator::add(IDocumentRetriever::SP retriever)
 {
-    _sources.push_back(std::move(retriever));
+    add(DocTypeName(""), std::move(retriever));
 }
 
 IterateResult
 DocumentIterator::iterate(size_t maxBytes)
 {
     if ( ! _fetchedData ) {
-        for (const IDocumentRetriever::SP & source : _sources) {
-            fetchCompleteSource(*source, _list);
+        for (const auto & source : _sources) {
+            fetchCompleteSource(source.first, *source.second, _list);
         }
         _fetchedData = true;
     }
@@ -156,28 +171,31 @@ public:
         }
     }
 
-    bool willAlwaysFail() const { return _willAlwaysFail; }
+    [[nodiscard]] bool willAlwaysFail() const noexcept { return _willAlwaysFail; }
 
-    bool match(const search::DocumentMetaData & meta) const {
+    [[nodiscard]] bool match(const search::DocumentMetaData & meta) const {
         if (meta.lid >= _docidLimit) {
             return false;
         }
         if (_dscTrue || _metaOnly) {
             return true;
         }
-        if (_selectCxt) {
-            _selectCxt->_docId = meta.lid;
-        }
         if (!_gidFilter.gid_might_match_selection(meta.gid)) {
             return false;
         }
-        return _selectSession->contains(*_selectCxt);
+        assert(_selectCxt);
+        _selectCxt->_docId = meta.lid;
+        _selectCxt->_doc = nullptr;
+        return _selectSession->contains_pre_doc(*_selectCxt);
     }
-    bool match(const search::DocumentMetaData & meta, const Document * doc) const {
+    [[nodiscard]] bool match(const search::DocumentMetaData & meta, const Document * doc) const {
         if (_dscTrue || _metaOnly) {
             return true;
         }
-        return (doc && (doc->getId().getGlobalId() == meta.gid) && _selectSession->contains(*doc));
+        assert(_selectCxt);
+        _selectCxt->_docId = meta.lid;
+        _selectCxt->_doc = doc;
+        return (doc && (doc->getId().getGlobalId() == meta.gid) && _selectSession->contains_doc(*_selectCxt));
     }
 private:
     bool                           _dscTrue;
@@ -235,7 +253,9 @@ private:
 }
 
 void
-DocumentIterator::fetchCompleteSource(const IDocumentRetriever & source, IterateResult::List & list)
+DocumentIterator::fetchCompleteSource(const DocTypeName & doc_type_name,
+                                      const IDocumentRetriever & source,
+                                      IterateResult::List & list)
 {
     IDocumentRetriever::ReadGuard sourceReadGuard(source.getReadGuard());
     search::DocumentMetaData::Vector metaData;
@@ -269,7 +289,7 @@ DocumentIterator::fetchCompleteSource(const IDocumentRetriever & source, Iterate
         for (uint32_t lid : lidsToFetch) {
             const search::DocumentMetaData & meta = metaData[lidIndexMap[lid]];
             assert(lid == meta.lid);
-            list.push_back(createDocEntry(storage::spi::Timestamp(meta.timestamp), meta.removed));
+            list.push_back(createDocEntry(storage::spi::Timestamp(meta.timestamp), meta.removed, doc_type_name.getName(), meta.gid));
         }
     } else {
         MatchVisitor visitor(matcher, metaData, lidIndexMap, _fields.get(), list, _defaultSerializedSize);

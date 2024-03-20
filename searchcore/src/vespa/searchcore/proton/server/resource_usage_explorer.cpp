@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include "resource_usage_explorer.h"
 #include "disk_mem_usage_filter.h"
@@ -11,7 +11,7 @@ using storage::spi::AttributeResourceUsage;
 namespace proton {
 
 void
-convertDiskStatsToSlime(const HwInfo &hwInfo, uint64_t diskUsedSizeBytes, Cursor &object)
+convertDiskStatsToSlime(const vespalib::HwInfo &hwInfo, uint64_t diskUsedSizeBytes, Cursor &object)
 {
     object.setLong("capacity", hwInfo.disk().sizeBytes());
     object.setLong("used", diskUsedSizeBytes);

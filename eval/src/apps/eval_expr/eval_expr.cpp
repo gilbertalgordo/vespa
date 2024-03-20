@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include <vespa/vespalib/util/require.h>
 #include <vespa/eval/eval/function.h>
@@ -406,6 +406,7 @@ int main(int argc, char **argv) {
     }
     Context ctx;
     if ((expr_cnt == 1) && (vespalib::string(argv[expr_idx]) == "interactive")) {
+        setlocale(LC_ALL, "");
         return interactive_mode(ctx);
     }
     if ((expr_cnt == 1) && (vespalib::string(argv[expr_idx]) == "json-repl")) {

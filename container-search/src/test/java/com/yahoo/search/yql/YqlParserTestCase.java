@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.search.yql;
 
 import com.yahoo.component.chain.Chain;
@@ -16,12 +16,14 @@ import com.yahoo.prelude.query.IndexedItem;
 import com.yahoo.prelude.query.Item;
 import com.yahoo.prelude.query.MarkerWordItem;
 import com.yahoo.prelude.query.NearestNeighborItem;
+import com.yahoo.prelude.query.NumericInItem;
 import com.yahoo.prelude.query.PhraseItem;
 import com.yahoo.prelude.query.PhraseSegmentItem;
 import com.yahoo.prelude.query.PrefixItem;
 import com.yahoo.prelude.query.QueryCanonicalizer;
 import com.yahoo.prelude.query.RegExpItem;
 import com.yahoo.prelude.query.SegmentingRule;
+import com.yahoo.prelude.query.StringInItem;
 import com.yahoo.prelude.query.Substring;
 import com.yahoo.prelude.query.SubstringItem;
 import com.yahoo.prelude.query.SuffixItem;
@@ -43,9 +45,13 @@ import com.yahoo.search.query.Sorting.LowerCaseSorter;
 import com.yahoo.search.query.Sorting.Order;
 import com.yahoo.search.query.Sorting.UcaSorter;
 import com.yahoo.search.query.parser.Parsable;
+import com.yahoo.search.query.parser.Parser;
 import com.yahoo.search.query.parser.ParserEnvironment;
 
+import com.yahoo.search.query.parser.ParserFactory;
 import com.yahoo.search.searchchain.Execution;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -63,7 +69,44 @@ import static org.junit.jupiter.api.Assertions.*;
  */
 public class YqlParserTestCase {
 
-    private final YqlParser parser = new YqlParser(new ParserEnvironment());
+    private YqlParser parser;
+
+    @BeforeEach
+    public void setUp() throws Exception {
+        ParserEnvironment env = new ParserEnvironment();
+        parser = new YqlParser(env);
+    }
+
+    @AfterEach
+    public void tearDown() throws Exception {
+        parser = null;
+    }
+
+    static private IndexFacts createIndexFactsForInTest() {
+        SearchDefinition sd = new SearchDefinition("default");
+        Index fieldIndex = new Index("field");
+        fieldIndex.setInteger(true);
+        sd.addIndex(fieldIndex);
+        Index stringIndex = new Index("string");
+        stringIndex.setString(true);
+        sd.addIndex(stringIndex);
+        Index floatIndex = new Index("float");
+        sd.addIndex(floatIndex);
+        Index mixedIndex = new Index("mixed");
+        mixedIndex.setInteger(true);
+        mixedIndex.setString(true);
+        sd.addIndex(mixedIndex);
+        return new IndexFacts(new IndexModel(sd));
+    }
+
+    private static Query createUserQuery() {
+        var builder = new Query.Builder();
+        var query = builder.build();
+        // Following two properties are used by testing of IN operator (cf. testIn)
+        query.properties().set("foostring", "'this', \"might\", work ");
+        query.properties().set("foonumeric", "26, 25, -11, 24 ");
+        return query;
+    }
 
     @Test
     void failsGracefullyOnMissingQuoteEscapingAndSubsequentUnicodeCharacter() {
@@ -1073,9 +1116,7 @@ public class YqlParserTestCase {
     void testBackslash() {
         {
             String queryString = "select * from testtype where title contains \"\\\\\""; // Java escaping * YQL escaping
-
             QueryTree query = parse(queryString);
-
             assertEquals("title:\\", query.toString());
         }
 
@@ -1139,6 +1180,68 @@ public class YqlParserTestCase {
     @Test
     void testAndSegmenting() {
         parse("select * from sources * where (default contains ({stem: false}\"m\") AND default contains ({origin: {original: \"m\'s\", offset: 0, length: 3}, andSegmenting: true}phrase(\"m\", \"s\"))) timeout 472");
+    }
+
+    @Test
+    void testIn() {
+        parser = new YqlParser(new ParserEnvironment().setIndexFacts(createIndexFactsForInTest()));
+        parser.setUserQuery(createUserQuery());
+        var query = parse("select * from sources * where field in (42, 22L, -7, @foonumeric)");
+        assertNumericInItem("field", new long[]{-11, -7, 22, 24, 25, 26, 42}, query);
+        parser.setUserQuery(createUserQuery());
+        query = parse("select * from sources * where string in ('a','b', @foostring)");
+        assertStringInItem("string", new String[]{"a","b","might","this", "work"}, query);
+        parser.setUserQuery(null);
+        assertParseFail("select * from sources * where field in (29.9, -7.4)",
+                new ClassCastException("Cannot cast java.lang.Double to java.lang.Long"));
+        assertParseFail("select * from sources * where string in ('a', 25L)",
+                new ClassCastException("Cannot cast java.lang.Long to java.lang.String"));
+        assertParseFail("select * from sources * where field in ('a', 25L)",
+                new ClassCastException("Cannot cast java.lang.String to java.lang.Number"));
+        assertParseFail("select * from sources * where nofield in ('a', 25L)",
+                new IllegalArgumentException("Field 'nofield' does not exist."));
+        assertParseFail("select * from sources * where field not in (25)",
+                new IllegalArgumentException("Expected AND, CALL, CONTAINS, EQ, GT, GTEQ, IN, LT, LTEQ or OR, got NOT_IN."));
+        assertParseFail("select * from sources * where float in (25)",
+                new IllegalArgumentException("The in operator is only supported for integer and string fields. " +
+                        "The field float is not of these types"));
+        assertParseFail("select * from sources * where mixed in (25)",
+                new IllegalArgumentException("The in operator is not supported for fieldsets with a mix of integer " +
+                        "and string fields. The fieldset mixed has both"));
+    }
+
+    // TODO: Put this in the documentation
+    @Test
+    public void testProgrammaticYqlParsing() {
+        Execution execution = new Execution(Execution.Context.createContextStub());
+        Parser parser = ParserFactory.newInstance(Query.Type.YQL,
+                                                  ParserEnvironment.fromExecutionContext(execution.context()));
+        Query query = new Query();
+        query.getModel().setType(Query.Type.YQL);
+        query.getModel().setQueryString("select * from myDoc where foo contains 'bar' and fuz contains '3'");
+        parser.parse(Parsable.fromQueryModel(query.getModel()));
+    }
+
+    private static void assertNumericInItem(String field, long[] values, QueryTree query) {
+        var exp = buildNumericInItem(field, values);
+        assertEquals(exp, query.getRoot());
+    }
+
+    private static void assertStringInItem(String field, String[] values, QueryTree query) {
+        var exp = buildStringInItem(field, values);
+        assertEquals(exp, query.getRoot());
+    }
+
+    private static NumericInItem buildNumericInItem(String field, long[] values) {
+        var item = new NumericInItem(field);
+        for (var value : values) item.addToken(value);
+        return item;
+    }
+
+    private static StringInItem buildStringInItem(String field, String[] values) {
+        var item = new StringInItem(field);
+        for (var value : values) item.addToken(value);
+        return item;
     }
 
     private void assertUrlQuery(String field, Query query, boolean startAnchor, boolean endAnchor, boolean endAnchorIsDefault) {

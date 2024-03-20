@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include <vespa/document/fieldvalue/fieldvalues.h>
 #include <vespa/document/datatype/documenttype.h>
@@ -74,7 +74,6 @@ protected:
     void testFeatureSet();
 
     DocumentType _docType;
-    std::vector<vsm::StorageDocument::UP> _backedHits;
 
     HitCollectorTest();
     ~HitCollectorTest() override;
@@ -85,7 +84,7 @@ HitCollectorTest::HitCollectorTest()
 {
 }
 
-HitCollectorTest::~HitCollectorTest() {}
+HitCollectorTest::~HitCollectorTest() = default;
 
 void
 HitCollectorTest::assertHit(SearchResult::RankType expRank, uint32_t hitNo, SearchResult & rs)
@@ -109,21 +108,22 @@ void
 HitCollectorTest::addHit(HitCollector &hc, uint32_t docId, double score, const char *sortData, size_t sortDataSize)
 {
     auto doc = document::Document::make_without_repo(_docType, DocumentId("id:ns:testdoc::"));
-    auto sdoc = std::make_unique<StorageDocument>(std::move(doc), SharedFieldPathMap(), 0);
+    auto sdoc = std::make_shared<StorageDocument>(std::move(doc), SharedFieldPathMap(), 0);
     ASSERT_TRUE(sdoc->valid());
     MatchData md(MatchData::params());
-    hc.addHit(sdoc.get(), docId, md, score, sortData, sortDataSize);
-    _backedHits.push_back(std::move(sdoc));
+    hc.addHit(std::move(sdoc), docId, md, score, sortData, sortDataSize);
 }
 
 TEST_F(HitCollectorTest, simple)
 {
-    HitCollector hc(5);
+    HitCollector hc(5, false);
 
     // add hits to hit collector
     for (uint32_t i = 0; i < 5; ++i) {
         addHit(hc, i, 10 + i);
     }
+    EXPECT_EQ(5, hc.numHits());
+    EXPECT_EQ(5, hc.numHitsOnHeap());
     // merge from match data heap and fill search result
     for (size_t i = 0; i < 2; ++i) { // try it twice
         SearchResult sr;
@@ -135,11 +135,15 @@ TEST_F(HitCollectorTest, simple)
         assertHit(13, 3, sr);
         assertHit(14, 4, sr);
     }
+    EXPECT_EQ(5, hc.numHits());
+    EXPECT_EQ(5, hc.numHitsOnHeap());
 }
 
 TEST_F(HitCollectorTest, gaps_in_docid)
 {
-    HitCollector hc(5);
+    SearchResult sr;
+    sr.setWantedHitCount(5);
+    HitCollector hc(sr.getWantedHitCount(), false);
 
     // add hits to hit collector
     for (uint32_t i = 0; i < 5; ++i) {
@@ -147,7 +151,6 @@ TEST_F(HitCollectorTest, gaps_in_docid)
     }
 
     // merge from heap into search result
-    SearchResult sr;
     hc.fillSearchResult(sr);
 
     ASSERT_TRUE(sr.getHitCount() == 5);
@@ -161,43 +164,52 @@ TEST_F(HitCollectorTest, gaps_in_docid)
 TEST_F(HitCollectorTest, heap_property)
 {
     {
-        HitCollector hc(3);
+        SearchResult sr;
+        sr.setWantedHitCount(3);
+        HitCollector hc(sr.getWantedHitCount(), false);
         // add hits (low to high)
         for (uint32_t i = 0; i < 6; ++i) {
             addHit(hc, i, i + 10);
         }
-        SearchResult sr;
         hc.fillSearchResult(sr);
         ASSERT_TRUE(sr.getHitCount() == 3);
         assertHit(13, 3, 0, sr);
         assertHit(14, 4, 1, sr);
         assertHit(15, 5, 2, sr);
+        EXPECT_EQ(6, hc.numHits());
+        EXPECT_EQ(3, hc.numHitsOnHeap());
     }
     {
-        HitCollector hc(3);
+        SearchResult sr;
+        sr.setWantedHitCount(3);
+        HitCollector hc(sr.getWantedHitCount(), false);
         // add hits (high to low)
         for (uint32_t i = 0; i < 6; ++i) {
             addHit(hc, i, 10 - i);
         }
-        SearchResult sr;
         hc.fillSearchResult(sr);
         ASSERT_TRUE(sr.getHitCount() == 3);
         assertHit(10, 0, 0, sr);
         assertHit(9,  1, 1, sr);
         assertHit(8,  2, 2, sr);
+        EXPECT_EQ(6, hc.numHits());
+        EXPECT_EQ(3, hc.numHitsOnHeap());
     }
     {
-        HitCollector hc(3);
+        SearchResult sr;
+        sr.setWantedHitCount(3);
+        HitCollector hc(sr.getWantedHitCount(), false);
         // add hits (same rank score)
         for (uint32_t i = 0; i < 6; ++i) {
             addHit(hc, i, 10);
         }
-        SearchResult sr;
         hc.fillSearchResult(sr);
         ASSERT_TRUE(sr.getHitCount() == 3);
         assertHit(10, 0, 0, sr);
         assertHit(10, 1, 1, sr);
         assertHit(10, 2, 2, sr);
+        EXPECT_EQ(6, hc.numHits());
+        EXPECT_EQ(3, hc.numHitsOnHeap());
     }
 }
 
@@ -211,12 +223,13 @@ TEST_F(HitCollectorTest, heap_property_with_sorting)
     sortData.push_back('e');
     sortData.push_back('f');
     {
-        HitCollector hc(3);
+        SearchResult sr;
+        sr.setWantedHitCount(3);
+        HitCollector hc(sr.getWantedHitCount(), true);
         // add hits ('a' is sorted/ranked better than 'b')
         for (uint32_t i = 0; i < 6; ++i) {
             addHit(hc, i, i + 10, &sortData[i], 1);
         }
-        SearchResult sr;
         hc.fillSearchResult(sr);
         ASSERT_TRUE(sr.getHitCount() == 3);
         assertHit(10, 0, 0, sr);
@@ -224,12 +237,13 @@ TEST_F(HitCollectorTest, heap_property_with_sorting)
         assertHit(12, 2, 2, sr);
     }
     {
-        HitCollector hc(3);
+        SearchResult sr;
+        sr.setWantedHitCount(3);
+        HitCollector hc(sr.getWantedHitCount(), true);
         // add hits ('a' is sorted/ranked better than 'b')
         for (uint32_t i = 0; i < 6; ++i) {
             addHit(hc, i, i + 10, &sortData[5 - i], 1);
         }
-        SearchResult sr;
         hc.fillSearchResult(sr);
         ASSERT_TRUE(sr.getHitCount() == 3);
         assertHit(13, 3, 0, sr);
@@ -237,12 +251,13 @@ TEST_F(HitCollectorTest, heap_property_with_sorting)
         assertHit(15, 5, 2, sr);
     }
     {
-        HitCollector hc(3);
+        SearchResult sr;
+        sr.setWantedHitCount(3);
+        HitCollector hc(sr.getWantedHitCount(), true);
         // add hits (same sort blob)
         for (uint32_t i = 0; i < 6; ++i) {
             addHit(hc, i, 10, &sortData[0], 1);
         }
-        SearchResult sr;
         hc.fillSearchResult(sr);
         ASSERT_TRUE(sr.getHitCount() == 3);
         assertHit(10, 0, 0, sr);
@@ -253,8 +268,21 @@ TEST_F(HitCollectorTest, heap_property_with_sorting)
 
 TEST_F(HitCollectorTest, empty)
 {
-    HitCollector hc(0);
+    HitCollector hc(0, false);
     addHit(hc, 0, 0);
+    SearchResult rs;
+    hc.fillSearchResult(rs);
+    ASSERT_TRUE(rs.getHitCount() == 0);
+}
+
+TEST_F(HitCollectorTest, all_hits_are_kept)
+{
+    HitCollector hc(0, false);
+    EXPECT_EQ(0, hc.numHits());
+    EXPECT_EQ(0, hc.numHitsOnHeap());
+    addHit(hc, 0, 0);
+    EXPECT_EQ(1, hc.numHits());
+    EXPECT_EQ(0, hc.numHitsOnHeap());
     SearchResult rs;
     hc.fillSearchResult(rs);
     ASSERT_TRUE(rs.getHitCount() == 0);
@@ -298,7 +326,7 @@ MyRankProgram::~MyRankProgram() = default;
 
 TEST_F(HitCollectorTest, feature_set)
 {
-    HitCollector hc(3);
+    HitCollector hc(3, false);
 
     addHit(hc, 0, 10);
     addHit(hc, 1, 50); // on heap
@@ -361,7 +389,7 @@ TEST_F(HitCollectorTest, feature_set)
 
 TEST_F(HitCollectorTest, match_features)
 {
-    HitCollector hc(3);
+    HitCollector hc(3, false);
 
     addHit(hc, 0, 10);
     addHit(hc, 1, 50); // on heap

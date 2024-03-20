@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.prelude.querytransform.test;
 
 import com.yahoo.component.chain.Chain;
@@ -18,6 +18,8 @@ import com.yahoo.search.query.parser.ParserEnvironment;
 import com.yahoo.search.query.parser.ParserFactory;
 import com.yahoo.search.searchchain.Execution;
 
+import com.yahoo.search.test.QueryTestCase;
+import com.yahoo.search.yql.MinimalQueryInserter;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -29,7 +31,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 public class CJKSearcherTestCase {
 
     private final IndexFacts indexFacts = IndexFactsFactory.newInstance("file:src/test/java/com/yahoo/prelude/" +
-                                                                        "querytransform/test/cjk-index-info.cfg", null);
+                                                                        "querytransform/test/cjk-index-info.cfg");
 
     @Test
     void testTermWeight() {
@@ -51,6 +53,13 @@ public class CJKSearcherTestCase {
         // While "efg" will be segmented into one of the standard options, "e" "fg"
         assertTransformed("efg", "SAND e fg", Query.Type.ALL, Language.CHINESE_SIMPLIFIED, Language.CHINESE_TRADITIONAL,
                 TestLinguistics.INSTANCE);
+    }
+
+    @Test
+    public void testEquivAndChinese() {
+        Query query = new Query(QueryTestCase.httpEncode("search?yql=select * from music-only where default contains equiv('a', 'b c') or default contains '东'"));
+        new Execution(new Chain<>(new MinimalQueryInserter(), new CJKSearcher()), Execution.Context.createContextStub()).search(query);
+        assertEquals("OR (EQUIV default:a default:'b c') default:东", query.getModel().getQueryTree().toString());
     }
 
     private void assertTransformed(String queryString, String expected, Query.Type mode, Language actualLanguage,

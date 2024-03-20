@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include "attribute_writer.h"
 #include "attributemanager.h"
@@ -549,6 +549,7 @@ public:
                 for (auto lidToRemove : _lidsToRemove) {
                     applyRemoveToAttribute(_serialNum, lidToRemove, attr, _onWriteDone);
                 }
+                attr.commitIfChangeVectorTooLarge();
             }
         }
     }
@@ -626,7 +627,7 @@ AttributeWriter::internalPut(SerialNum serialNum, const Document &doc, DocumentI
                              bool allAttributes, OnWriteDoneType onWriteDone)
 {
     for (const auto &wc : _writeContexts) {
-        if (wc.use_two_phase_put()) {
+        if (allAttributes && wc.use_two_phase_put()) {
             assert(wc.getFields().size() == 1);
             wc.consider_build_field_paths(doc);
             auto prepare_task = std::make_unique<PreparePutTask>(serialNum, lid, wc, doc);

@@ -1,7 +1,8 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.hosted.provision.autoscale;
 
 import ai.vespa.metrics.ContainerMetrics;
+import ai.vespa.metrics.DistributorMetrics;
 import ai.vespa.metrics.HostedNodeAdminMetrics;
 import ai.vespa.metrics.SearchNodeMetrics;
 import ai.vespa.metrics.StorageMetrics;
@@ -75,10 +76,12 @@ public class MetricsResponse {
         nodeMetrics.add(new Pair<>(hostname, new NodeMetricSnapshot(at,
                                                                     new Load(Metric.cpu.from(nodeValues),
                                                                              Metric.memory.from(nodeValues),
-                                                                             Metric.disk.from(nodeValues)),
-                                                                    (long)Metric.generation.from(nodeValues),
+                                                                             Metric.disk.from(nodeValues),
+                                                                             Metric.gpu.from(nodeValues),
+                                                                             Metric.gpuMemory.from(nodeValues)),
+                                                                    (long) Metric.generation.from(nodeValues),
                                                                     Metric.inService.from(nodeValues) > 0,
-                                                                    clusterIsStable(node.get(), applicationNodes),
+                                                                    clusterIsStable(node.get(), applicationNodes, nodeValues),
                                                                     Metric.queryRate.from(nodeValues))));
 
         var cluster = node.get().allocation().get().membership().cluster().id();
@@ -107,7 +110,11 @@ public class MetricsResponse {
         item.field("values").traverse((ObjectTraverser)(name, value) -> values.put(name, value.asDouble()));
     }
 
-    private boolean clusterIsStable(Node node, NodeList applicationNodes) {
+    private boolean clusterIsStable(Node node, NodeList applicationNodes, ListMap<String, Double> nodeValues) {
+        if (Metric.redistributing.from(nodeValues) > 0) {
+            return false;
+        }
+        // TODO(mpolden): This check can be removed after everything has upgraded to 8.271+
         ClusterSpec cluster = node.allocation().get().membership().cluster();
         return applicationNodes.cluster(cluster.id()).retired().isEmpty();
     }
@@ -121,6 +128,7 @@ public class MetricsResponse {
 
             @Override
             public List<String> metricResponseNames() {
+                // TODO(mpolden): Track only CPU util once we support proper GPU scaling
                 return List.of(HostedNodeAdminMetrics.CPU_UTIL.baseName(), HostedNodeAdminMetrics.GPU_UTIL.baseName());
             }
 
@@ -134,6 +142,7 @@ public class MetricsResponse {
 
             @Override
             public List<String> metricResponseNames() {
+                // TODO(mpolden): Track only CPU memory once we support proper GPU scaling
                 return List.of(HostedNodeAdminMetrics.MEM_UTIL.baseName(),
                                SearchNodeMetrics.CONTENT_PROTON_RESOURCE_USAGE_MEMORY.average(),
                                HostedNodeAdminMetrics.GPU_MEM_USED.baseName(),
@@ -142,7 +151,7 @@ public class MetricsResponse {
 
             @Override
             double computeFinal(ListMap<String, Double> values) {
-                return Math.max(gpuMemUtil(values), cpuMemUtil(values));
+                return Math.max(cpuMemUtil(values), gpuMemory.computeFinal(values));
             }
 
             private double cpuMemUtil(ListMap<String, Double> values) {
@@ -153,12 +162,6 @@ public class MetricsResponse {
                 if ( ! valueList.isEmpty()) return valueList.get(0) / 100; // % to ratio
 
                 return 0;
-            }
-
-            private double gpuMemUtil(ListMap<String, Double> values) {
-                var usedGpuMemory = values.get(HostedNodeAdminMetrics.GPU_MEM_USED.baseName()).stream().mapToDouble(v -> v).sum();
-                var totalGpuMemory = values.get(HostedNodeAdminMetrics.GPU_MEM_TOTAL.baseName()).stream().mapToDouble(v -> v).sum();
-                return totalGpuMemory > 0 ? usedGpuMemory / totalGpuMemory : 0;
             }
 
         },
@@ -179,6 +182,35 @@ public class MetricsResponse {
                 if ( ! valueList.isEmpty()) return valueList.get(0) / 100; // % to ratio
 
                 return 0;
+            }
+
+        },
+        gpu { // a node resource
+
+            @Override
+            public List<String> metricResponseNames() {
+                return List.of(HostedNodeAdminMetrics.GPU_UTIL.baseName());
+            }
+
+            @Override
+            double computeFinal(ListMap<String, Double> values) {
+                return values.values().stream().flatMap(List::stream).mapToDouble(v -> v).max().orElse(0) / 100; // % to ratio
+            }
+
+        },
+        gpuMemory { // a node resource
+
+            @Override
+            public List<String> metricResponseNames() {
+                return List.of(HostedNodeAdminMetrics.GPU_MEM_USED.baseName(),
+                               HostedNodeAdminMetrics.GPU_MEM_TOTAL.baseName());
+            }
+
+            @Override
+            double computeFinal(ListMap<String, Double> values) {
+                var usedGpuMemory = values.get(HostedNodeAdminMetrics.GPU_MEM_USED.baseName()).stream().mapToDouble(v -> v).sum();
+                var totalGpuMemory = values.get(HostedNodeAdminMetrics.GPU_MEM_TOTAL.baseName()).stream().mapToDouble(v -> v).sum();
+                return totalGpuMemory > 0 ? usedGpuMemory / totalGpuMemory : 0;
             }
 
         },
@@ -204,6 +236,20 @@ public class MetricsResponse {
             double computeFinal(ListMap<String, Double> values) {
                 // Really a boolean. Default true. If any is oos -> oos.
                 return values.values().stream().flatMap(List::stream).anyMatch(v -> v == 0) ? 0 : 1;
+            }
+
+        },
+        redistributing { // whether data redistribution is ongoing
+
+            @Override
+            public List<String> metricResponseNames() {
+                return List.of(DistributorMetrics.VDS_IDEALSTATE_MERGE_BUCKET_PENDING.last());
+            }
+
+            @Override
+            double computeFinal(ListMap<String, Double> values) {
+                // Really a bool. True if any node is merging buckets.
+                return values.values().stream().flatMap(List::stream).anyMatch(v -> v > 0) ? 1 : 0;
             }
 
         },

@@ -1,19 +1,17 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.prelude.cluster;
 
+import com.yahoo.collections.TinyIdentitySet;
 import com.yahoo.component.annotation.Inject;
 import com.yahoo.component.ComponentId;
 import com.yahoo.component.chain.dependencies.After;
 import com.yahoo.component.provider.ComponentRegistry;
-import com.yahoo.container.QrSearchersConfig;
 import com.yahoo.container.core.documentapi.VespaDocumentAccess;
 import com.yahoo.container.handler.VipStatus;
-import com.yahoo.prelude.IndexFacts;
 import com.yahoo.prelude.fastsearch.ClusterParams;
 import com.yahoo.prelude.fastsearch.DocumentdbInfoConfig;
-import com.yahoo.prelude.fastsearch.FastSearcher;
-import com.yahoo.prelude.fastsearch.SummaryParameters;
-import com.yahoo.prelude.fastsearch.VespaBackEndSearcher;
+import com.yahoo.prelude.fastsearch.IndexedBackend;
+import com.yahoo.prelude.fastsearch.VespaBackend;
 import com.yahoo.search.Query;
 import com.yahoo.search.Result;
 import com.yahoo.search.Searcher;
@@ -22,25 +20,27 @@ import com.yahoo.search.dispatch.Dispatcher;
 import com.yahoo.search.query.ParameterParser;
 import com.yahoo.search.ranking.GlobalPhaseRanker;
 import com.yahoo.search.result.ErrorMessage;
+import com.yahoo.search.schema.Cluster;
 import com.yahoo.search.schema.SchemaInfo;
 import com.yahoo.search.searchchain.Execution;
-import com.yahoo.vespa.streamingvisitors.StreamingSearcher;
+import com.yahoo.vespa.streamingvisitors.StreamingBackend;
 import com.yahoo.yolean.Exceptions;
 
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executor;
 import java.util.concurrent.FutureTask;
 import java.util.concurrent.RejectedExecutionException;
-
-import static com.yahoo.container.QrSearchersConfig.Searchcluster.Indexingmode.STREAMING;
+import java.util.stream.Collectors;
 
 /**
  * A searcher which forwards to a cluster of monitored native Vespa backends.
@@ -58,19 +58,18 @@ public class ClusterSearcher extends Searcher {
     private final String searchClusterName;
 
     // The set of document types contained in this search cluster
-    private final Set<String> schemas;
+    private final Map<String, VespaBackend> schema2Searcher;
+    private final SchemaInfo schemaInfo;
 
     private final long maxQueryTimeout; // in milliseconds
     private final long maxQueryCacheTimeout; // in milliseconds
 
-    private final VespaBackEndSearcher server;
     private final Executor executor;
     private final GlobalPhaseRanker globalPhaseRanker;
 
     @Inject
     public ClusterSearcher(ComponentId id,
                            Executor executor,
-                           QrSearchersConfig qrsConfig,
                            ClusterConfig clusterConfig,
                            DocumentdbInfoConfig documentDbConfig,
                            SchemaInfo schemaInfo,
@@ -80,109 +79,109 @@ public class ClusterSearcher extends Searcher {
                            VespaDocumentAccess access) {
         super(id);
         this.executor = executor;
-        int searchClusterIndex = clusterConfig.clusterId();
+        this.schemaInfo = schemaInfo;
         searchClusterName = clusterConfig.clusterName();
-        QrSearchersConfig.Searchcluster searchClusterConfig = getSearchClusterConfigFromClusterName(qrsConfig, searchClusterName);
-        this.globalPhaseRanker = searchClusterConfig.globalphase() ? globalPhaseRanker : null;
-        schemas = new LinkedHashSet<>();
+        this.globalPhaseRanker = globalPhaseRanker;
+        schema2Searcher = new LinkedHashMap<>();
 
         maxQueryTimeout = ParameterParser.asMilliSeconds(clusterConfig.maxQueryTimeout(), DEFAULT_MAX_QUERY_TIMEOUT);
         maxQueryCacheTimeout = ParameterParser.asMilliSeconds(clusterConfig.maxQueryCacheTimeout(), DEFAULT_MAX_QUERY_CACHE_TIMEOUT);
 
-        SummaryParameters docSumParams = new SummaryParameters(qrsConfig
-                .com().yahoo().prelude().fastsearch().FastSearcher().docsum()
-                .defaultclass());
-
-        for (DocumentdbInfoConfig.Documentdb docDb : documentDbConfig.documentdb())
-            schemas.add(docDb.name());
-
-        String uniqueServerId = UUID.randomUUID().toString();
-        if (searchClusterConfig.indexingmode() == STREAMING) {
-            server = streamingCluster(uniqueServerId, searchClusterIndex,
-                                      searchClusterConfig, docSumParams, documentDbConfig, schemaInfo, access);
-            vipStatus.addToRotation(server.getName());
-        } else {
-            server = searchDispatch(searchClusterIndex, searchClusterName, uniqueServerId,
-                                    docSumParams, documentDbConfig, schemaInfo, dispatchers);
-        }
-    }
-
-    private static QrSearchersConfig.Searchcluster getSearchClusterConfigFromClusterName(QrSearchersConfig config, String name) {
-        for (QrSearchersConfig.Searchcluster searchCluster : config.searchcluster()) {
-            if (searchCluster.name().equals(name)) {
-                return searchCluster;
+        VespaBackend streaming = null, indexed = null;
+        ClusterParams clusterParams = makeClusterParams(searchClusterName, documentDbConfig, schemaInfo);
+        for (DocumentdbInfoConfig.Documentdb docDb : documentDbConfig.documentdb()) {
+            if (docDb.mode() == DocumentdbInfoConfig.Documentdb.Mode.Enum.INDEX) {
+                if (indexed == null) {
+                    indexed = searchDispatch(clusterParams, searchClusterName, dispatchers);
+                }
+                schema2Searcher.put(docDb.name(), indexed);
+            } else if (docDb.mode() == DocumentdbInfoConfig.Documentdb.Mode.Enum.STREAMING) {
+                if (streaming == null) {
+                    streaming = streamingCluster(clusterParams, clusterConfig, access);
+                    vipStatus.addToRotation(streaming.getName());
+                }
+                schema2Searcher.put(docDb.name(), streaming);
             }
         }
-        return null;
     }
 
-    private static ClusterParams makeClusterParams(int searchclusterIndex) {
-        return new ClusterParams("sc" + searchclusterIndex + ".num" + 0);
+    private static ClusterParams makeClusterParams(String searchclusterName, DocumentdbInfoConfig documentDbConfig, SchemaInfo schemaInfo)
+    {
+        return new ClusterParams(searchclusterName + ".num" + 0, UUID.randomUUID().toString(),
+                                 null, documentDbConfig, schemaInfo);
     }
 
-    private static FastSearcher searchDispatch(int searchclusterIndex,
-                                               String searchClusterName,
-                                               String serverId,
-                                               SummaryParameters docSumParams,
-                                               DocumentdbInfoConfig documentdbInfoConfig,
-                                               SchemaInfo schemaInfo,
-                                               ComponentRegistry<Dispatcher> dispatchers) {
-        ClusterParams clusterParams = makeClusterParams(searchclusterIndex);
+    private static IndexedBackend searchDispatch(ClusterParams clusterParams,
+                                                 String searchClusterName,
+                                                 ComponentRegistry<Dispatcher> dispatchers)
+    {
         ComponentId dispatcherComponentId = new ComponentId("dispatcher." + searchClusterName);
         Dispatcher dispatcher = dispatchers.getComponent(dispatcherComponentId);
         if (dispatcher == null)
-            throw new IllegalArgumentException("Configuration error: No dispatcher " + dispatcherComponentId +
-                                               " is configured");
-        return new FastSearcher(serverId, dispatcher, docSumParams, clusterParams, documentdbInfoConfig, schemaInfo);
+            throw new IllegalArgumentException("Configuration error: No dispatcher " + dispatcherComponentId + " is configured");
+        return new IndexedBackend(clusterParams, dispatcher);
     }
 
-    private static StreamingSearcher streamingCluster(String serverId,
-                                                      int searchclusterIndex,
-                                                      QrSearchersConfig.Searchcluster searchClusterConfig,
-                                                      SummaryParameters docSumParams,
-                                                      DocumentdbInfoConfig documentdbInfoConfig,
-                                                      SchemaInfo schemaInfo,
-                                                      VespaDocumentAccess access) {
-        if (searchClusterConfig.searchdef().size() != 1)
-            throw new IllegalArgumentException("Streaming search clusters can only contain a single schema but got " +
-                                               searchClusterConfig.searchdef());
-        ClusterParams clusterParams = makeClusterParams(searchclusterIndex);
-        StreamingSearcher searcher = new StreamingSearcher(access);
-        searcher.setSearchClusterName(searchClusterConfig.rankprofiles().configid());
-        searcher.setDocumentType(searchClusterConfig.searchdef(0));
-        searcher.setStorageClusterRouteSpec(searchClusterConfig.storagecluster().routespec());
-        searcher.init(serverId, docSumParams, clusterParams, documentdbInfoConfig, schemaInfo);
-        return searcher;
+    private static StreamingBackend streamingCluster(ClusterParams clusterParams,
+                                                     ClusterConfig clusterConfig,
+                                                     VespaDocumentAccess access)
+    {
+        return new StreamingBackend(clusterParams, clusterConfig.configid(),
+                                    access, clusterConfig.storageRoute());
     }
 
     /** Do not use, for internal testing purposes only. **/
-    ClusterSearcher(Set<String> schemas, VespaBackEndSearcher searcher, Executor executor) {
-        this.schemas = schemas;
+    ClusterSearcher(SchemaInfo schemaInfo, Map<String, VespaBackend> schema2Searcher, Executor executor) {
+        this.schemaInfo = schemaInfo;
         searchClusterName = "testScenario";
         maxQueryTimeout = DEFAULT_MAX_QUERY_TIMEOUT;
         maxQueryCacheTimeout = DEFAULT_MAX_QUERY_CACHE_TIMEOUT;
-        server = searcher;
         this.executor = executor;
         this.globalPhaseRanker = null;
+        this.schema2Searcher = schema2Searcher;
     }
 
     /** Do not use, for internal testing purposes only. **/
-    ClusterSearcher(Set<String> schemas) {
-        this(schemas, null, null);
+    ClusterSearcher(SchemaInfo schemaInfo, Map<String, VespaBackend> schema2Searcher) {
+        this(schemaInfo, schema2Searcher, null);
     }
 
     @Override
-    public void fill(com.yahoo.search.Result result, String summaryClass, Execution execution) {
-        Query query = result.getQuery();
+    public Result search(Query query, Execution execution) {
+        validateQueryTimeout(query);
+        validateQueryCache(query);
+        if (schema2Searcher.isEmpty()) {
+            return new Result(query, ErrorMessage.createNoBackendsInService("Could not search"));
+        }
+        if (query.getTimeLeft() <= 0) {
+            return new Result(query, ErrorMessage.createTimeout("No time left for searching"));
+        }
 
-        Searcher searcher = server;
-        if (searcher != null) {
-            if (query.getTimeLeft() > 0) {
-                searcher.fill(result, summaryClass, execution);
-            } else {
-                if (result.hits().getErrorHit() == null) {
-                    result.hits().addError(ErrorMessage.createTimeout("No time left to get summaries, query timeout was " +
-                                                                      query.getTimeout() + " ms"));
+        return doSearch(query);
+    }
+
+    @Override
+    public void fill(Result result, String summaryClass, Execution execution) {
+        fill(result, summaryClass);
+    }
+    private void fill(Result result, String summaryClass) {
+        Query query = result.getQuery();
+        var restrict = query.getModel().getRestrict();
+        Collection<VespaBackend> servers = (restrict != null && ! restrict.isEmpty())
+                ? query.getModel().getRestrict().stream()
+                    .map(schema2Searcher::get)
+                    .collect(Collectors.toCollection(TinyIdentitySet::new))
+                : schema2Searcher.values().stream().collect(Collectors.toCollection(TinyIdentitySet::new));
+
+        if ( ! servers.isEmpty() ) {
+            for (var server : servers) {
+                if (query.getTimeLeft() > 0) {
+                    server.fill(result, summaryClass);
+                } else {
+                    if (result.hits().getErrorHit() == null) {
+                        result.hits().addError(ErrorMessage.createTimeout("No time left to get summaries, query timeout was " +
+                                query.getTimeout() + " ms"));
+                    }
                 }
             }
         } else {
@@ -190,21 +189,6 @@ public class ClusterSearcher extends Searcher {
                 result.hits().addError(ErrorMessage.createNoBackendsInService("Could not fill result"));
             }
         }
-    }
-
-    @Override
-    public Result search(Query query, Execution execution) {
-        validateQueryTimeout(query);
-        validateQueryCache(query);
-        Searcher searcher = server;
-        if (searcher == null) {
-            return new Result(query, ErrorMessage.createNoBackendsInService("Could not search"));
-        }
-        if (query.getTimeLeft() <= 0) {
-            return new Result(query, ErrorMessage.createTimeout("No time left for searching"));
-        }
-
-        return doSearch(searcher, query, execution);
     }
 
     private void validateQueryTimeout(Query query) {
@@ -228,29 +212,39 @@ public class ClusterSearcher extends Searcher {
         query.getRanking().setQueryCache(false);
     }
 
-    private Result doSearch(Searcher searcher, Query query, Execution execution) {
-        if (schemas.size() > 1) {
-            return searchMultipleDocumentTypes(searcher, query, execution);
+    private Result doSearch(Query query) {
+        if (schema2Searcher.size() > 1) {
+            return searchMultipleDocumentTypes(query);
         } else {
-            String docType = schemas.iterator().next();
-            query.getModel().setRestrict(docType);
-            return perSchemaSearch(searcher, query, execution);
+            String schema = schema2Searcher.keySet().iterator().next();
+            query.getModel().setRestrict(schema);
+            return perSchemaSearch(schema, query);
         }
     }
 
-    private Result perSchemaSearch(Searcher searcher, Query query, Execution execution) {
+    private Result perSchemaSearch(String schema, Query query) {
         Set<String> restrict = query.getModel().getRestrict();
         if (restrict.size() != 1) {
             throw new IllegalStateException("perSchemaSearch must always be called with 1 schema, got: " + restrict.size());
         }
-        String schema = restrict.iterator().next();
-        boolean useGlobalPhase = globalPhaseRanker != null;
+        int rerankCount = globalPhaseRanker != null ? globalPhaseRanker.getRerankCount(query, schema) : 0;
+        boolean useGlobalPhase = rerankCount > 0;
+        final int wantOffset = query.getOffset();
+        final int wantHits = query.getHits();
         if (useGlobalPhase) {
             var error = globalPhaseRanker.validateNoSorting(query, schema).orElse(null);
             if (error != null) return new Result(query, error);
+            int useHits = Math.max(wantOffset + wantHits, rerankCount);
+            query.setOffset(0);
+            query.setHits(useHits);
         }
-        Result result = searcher.search(query, execution);
-        if (useGlobalPhase) globalPhaseRanker.rerankHits(query, result, schema);
+        Result result = schema2Searcher.get(schema).search(schema, query);
+        if (useGlobalPhase) {
+            globalPhaseRanker.rerankHits(query, result, schema);
+            result.hits().trim(wantOffset, wantHits);
+            query.setOffset(wantOffset);
+            query.setHits(wantHits);
+        }
         return result;
     }
 
@@ -259,23 +253,29 @@ public class ClusterSearcher extends Searcher {
             Result result = task.get();
             mergedResult.mergeWith(result);
             mergedResult.hits().addAll(result.hits().asUnorderedHits());
-        } catch (ExecutionException | InterruptedException e) {
+        } catch (ExecutionException e) {
+            mergedResult.hits().addError(ErrorMessage.createInternalServerError("Failed querying '" +
+                                                                                query.getModel().getRestrict() + "': " +
+                                                                                Exceptions.toMessageString(e),
+                                                                                e));
+        } catch (InterruptedException e) {
             mergedResult.hits().addError(ErrorMessage.createInternalServerError("Failed querying '" +
                                                                                 query.getModel().getRestrict() + "': " +
                                                                                 Exceptions.toMessageString(e)));
         }
     }
 
-    private Result searchMultipleDocumentTypes(Searcher searcher, Query query, Execution execution) {
-        Set<String> schemas = resolveSchemas(query, execution.context().getIndexFacts());
-        List<Query> queries = createQueries(query, schemas);
-        if (queries.size() == 1) {
-            return perSchemaSearch(searcher, queries.get(0), execution);
+    private Result searchMultipleDocumentTypes(Query query) {
+        Set<String> schemas = resolveSchemas(query);
+        Map<String, Query> schemaQueries = createQueries(query, schemas);
+        if (schemaQueries.size() == 1) {
+            var entry = schemaQueries.entrySet().iterator().next();
+            return perSchemaSearch(entry.getKey(), entry.getValue());
         } else {
             Result mergedResult = new Result(query);
-            List<FutureTask<Result>> pending = new ArrayList<>(queries.size());
-            for (Query q : queries) {
-                FutureTask<Result> task = new FutureTask<>(() -> perSchemaSearch(searcher, q, execution));
+            List<FutureTask<Result>> pending = new ArrayList<>(schemaQueries.size());
+            for (var entry : schemaQueries.entrySet()) {
+                FutureTask<Result> task = new FutureTask<>(() -> perSchemaSearch(entry.getKey(), entry.getValue()));
                 try {
                     executor.execute(task);
                     pending.add(task);
@@ -291,7 +291,7 @@ public class ClusterSearcher extends Searcher {
             if (query.getOffset() > 0 || query.getHits() < mergedResult.hits().size()) {
                 if (mergedResult.getHitOrderer() != null) {
                     // Make sure we have the necessary data for sorting
-                    searcher.fill(mergedResult, VespaBackEndSearcher.SORTABLE_ATTRIBUTES_SUMMARY_CLASS, execution);
+                    fill(mergedResult, VespaBackend.SORTABLE_ATTRIBUTES_SUMMARY_CLASS);
                 }
                 mergedResult.hits().trim(query.getOffset(), query.getHits());
                 query.setOffset(0); // Needed when doing a trim
@@ -300,13 +300,24 @@ public class ClusterSearcher extends Searcher {
         }
     }
 
-    Set<String> resolveSchemas(Query query, IndexFacts indexFacts) {
+    private Set<String> resolveSourceSubset(Set<String> sources) {
+        Set<String> candidates = new HashSet<>();
+        for (String source : sources) {
+            Cluster cluster = schemaInfo.clusters().get(source);
+            if (cluster != null)
+                candidates.addAll(cluster.schemas());
+        }
+        return (candidates.isEmpty() ? sources : candidates).stream()
+                .filter(schema2Searcher::containsKey).collect(Collectors.toUnmodifiableSet());
+    }
+
+    Set<String> resolveSchemas(Query query) {
         Set<String> restrict = query.getModel().getRestrict();
         if (restrict == null || restrict.isEmpty()) {
             Set<String> sources = query.getModel().getSources();
             return (sources == null || sources.isEmpty())
-                    ? schemas
-                    : new HashSet<>(indexFacts.newSession(sources, Collections.emptyList(), schemas).documentTypes());
+                    ? schema2Searcher.keySet()
+                    : resolveSourceSubset(sources);
         } else {
             return filterValidDocumentTypes(restrict);
         }
@@ -315,34 +326,40 @@ public class ClusterSearcher extends Searcher {
     private Set<String> filterValidDocumentTypes(Collection<String> restrict) {
         Set<String> retval = new LinkedHashSet<>();
         for (String docType : restrict) {
-            if (docType != null && schemas.contains(docType)) {
+            if (docType != null && schema2Searcher.containsKey(docType)) {
                 retval.add(docType);
             }
         }
         return retval;
     }
 
-    private List<Query> createQueries(Query query, Set<String> docTypes) {
+    private Map<String, Query> createQueries(Query query, Set<String> schemas) {
         query.getModel().getQueryTree(); // performance: parse query before cloning such that it is only done once
-        List<Query> retval = new ArrayList<>(docTypes.size());
-        if (docTypes.size() == 1) {
-            query.getModel().setRestrict(docTypes.iterator().next());
-            retval.add(query);
-        } else if ( ! docTypes.isEmpty() ) {
-            for (String docType : docTypes) {
+        if (schemas.size() == 1) {
+            String schema = schemas.iterator().next();
+            query.getModel().setRestrict(schema);
+            return Map.of(schema, query);
+        } else if ( ! schemas.isEmpty() ) {
+            var schemaQueries = new HashMap<String, Query>();
+            for (String schema : schemas) {
                 Query q = query.clone();
                 q.setOffset(0);
                 q.setHits(query.getOffset() + query.getHits());
-                q.getModel().setRestrict(docType);
-                retval.add(q);
+                q.getModel().setRestrict(schema);
+                schemaQueries.put(schema, q);
             }
+            return schemaQueries;
         }
-        return retval;
+        return Map.of();
     }
 
     @Override
     public void deconstruct() {
-        if (server != null) {
+        Map<String, VespaBackend> servers = new HashMap<>();
+        for (var server : schema2Searcher.values()) {
+            servers.put(server.getName(), server);
+        }
+        for (var server : servers.values()) {
             server.shutDown();
         }
     }

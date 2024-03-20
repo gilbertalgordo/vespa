@@ -1,3 +1,4 @@
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package cmd
 
 import (
@@ -10,16 +11,11 @@ import (
 
 // Waiter waits for Vespa services to become ready, within a timeout.
 type Waiter struct {
-	// Once species whether we should wait at least one time, irregardless of timeout.
-	Once bool
-
 	// Timeout specifies how long we should wait for an operation to complete.
 	Timeout time.Duration // TODO(mpolden): Consider making this a budget
 
 	cli *CLI
 }
-
-func (w *Waiter) wait() bool { return w.Once || w.Timeout > 0 }
 
 // DeployService returns the service providing the deploy API on given target,
 func (w *Waiter) DeployService(target vespa.Target) (*vespa.Service, error) {
@@ -35,7 +31,7 @@ func (w *Waiter) DeployService(target vespa.Target) (*vespa.Service, error) {
 
 // Service returns the service identified by cluster ID, available on target.
 func (w *Waiter) Service(target vespa.Target, cluster string) (*vespa.Service, error) {
-	targetType, err := w.cli.targetType(false)
+	targetType, err := w.cli.targetType(anyTarget)
 	if err != nil {
 		return nil, err
 	}
@@ -73,8 +69,6 @@ func (w *Waiter) Services(target vespa.Target) ([]*vespa.Service, error) {
 func (w *Waiter) maybeWaitFor(service *vespa.Service) error {
 	if w.Timeout > 0 {
 		w.cli.printInfo("Waiting up to ", color.CyanString(w.Timeout.String()), " for ", service.Description(), "...")
-	}
-	if w.wait() {
 		return service.Wait(w.Timeout)
 	}
 	return nil

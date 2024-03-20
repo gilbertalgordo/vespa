@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.schema;
 
 import com.yahoo.searchlib.rankingexpression.Reference;
@@ -27,6 +27,7 @@ public class FeatureNames {
     /** Returns true if the given reference is an attribute, constant or query feature */
     public static boolean isSimpleFeature(Reference reference) {
         if ( ! reference.isSimple()) return false;
+        if (reference.output() != null) return false;
         String name = reference.name();
         return name.equals("attribute") || name.equals("constant") || name.equals("query");
     }

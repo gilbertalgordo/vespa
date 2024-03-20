@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include "bucketmanager.h"
 #include "minimumusedbitstracker.h"
@@ -33,10 +33,9 @@ using namespace std::chrono_literals;
 
 namespace storage {
 
-BucketManager::BucketManager(const config::ConfigUri & configUri, ServiceLayerComponentRegister& compReg)
+BucketManager::BucketManager(const StorServerConfig& bootstrap_config, ServiceLayerComponentRegister& compReg)
     : StorageLink("Bucket manager"),
       framework::StatusReporter("bucketdb", "Bucket database"),
-      _configUri(configUri),
       _workerLock(),
       _workerCond(),
       _clusterStateLock(),
@@ -60,8 +59,7 @@ BucketManager::BucketManager(const config::ConfigUri & configUri, ServiceLayerCo
     ns.setMinUsedBits(58);
     _component.getStateUpdater().setReportedNodeState(ns);
 
-    auto server_config = config::ConfigGetter<vespa::config::content::core::StorServerConfig>::getConfig(configUri.getConfigId(), configUri.getContext());
-    _simulated_processing_delay = std::chrono::milliseconds(std::max(0, server_config->simulatedBucketRequestLatencyMsec));
+    _simulated_processing_delay = std::chrono::milliseconds(std::max(0, bootstrap_config.simulatedBucketRequestLatencyMsec));
 }
 
 BucketManager::~BucketManager()
@@ -150,12 +148,13 @@ DistributorInfoGatherer::operator()(uint64_t bucketId, const StorBucketDatabase:
 struct MetricsUpdater {
     struct Count {
         uint64_t docs;
+        uint64_t entries; // docs + tombstones
         uint64_t bytes;
         uint64_t buckets;
         uint64_t active;
         uint64_t ready;
 
-        constexpr Count() noexcept : docs(0), bytes(0), buckets(0), active(0), ready(0) {}
+        constexpr Count() noexcept : docs(0), entries(0), bytes(0), buckets(0), active(0), ready(0) {}
     };
     Count    count;
     uint32_t lowestUsedBit;
@@ -176,8 +175,9 @@ struct MetricsUpdater {
             if (data.getBucketInfo().isReady()) {
                 ++count.ready;
             }
-            count.docs += data.getBucketInfo().getDocumentCount();
-            count.bytes += data.getBucketInfo().getTotalDocumentSize();
+            count.docs    += data.getBucketInfo().getDocumentCount();
+            count.entries += data.getBucketInfo().getMetaCount();
+            count.bytes   += data.getBucketInfo().getTotalDocumentSize();
 
             if (bucket.getUsedBits() < lowestUsedBit) {
                 lowestUsedBit = bucket.getUsedBits();
@@ -190,6 +190,7 @@ struct MetricsUpdater {
         const auto& s = rhs.count;
         d.buckets += s.buckets;
         d.docs    += s.docs;
+        d.entries += s.entries;
         d.bytes   += s.bytes;
         d.ready   += s.ready;
         d.active  += s.active;
@@ -236,11 +237,15 @@ BucketManager::report(vespalib::JsonStream & json) const {
         MetricsUpdater m = getMetrics(space.second->bucketDatabase());
         output(json, "vds.datastored.bucket_space.buckets_total", m.count.buckets,
                document::FixedBucketSpaces::to_string(space.first));
+        output(json, "vds.datastored.bucket_space.entries", m.count.entries,
+               document::FixedBucketSpaces::to_string(space.first));
+        output(json, "vds.datastored.bucket_space.docs", m.count.docs,
+               document::FixedBucketSpaces::to_string(space.first));
         total.add(m);
     }
     const auto & src = total.count;
-    output(json, "vds.datastored.alldisks.docs", src.docs);
-    output(json, "vds.datastored.alldisks.bytes", src.bytes);
+    output(json, "vds.datastored.alldisks.docs",    src.docs);
+    output(json, "vds.datastored.alldisks.bytes",   src.bytes);
     output(json, "vds.datastored.alldisks.buckets", src.buckets);
 }
 
@@ -260,6 +265,7 @@ BucketManager::updateMetrics() const
         auto bm = _metrics->bucket_spaces.find(space.first);
         assert(bm != _metrics->bucket_spaces.end());
         bm->second->buckets_total.set(m.count.buckets);
+        bm->second->entries.set(m.count.entries);
         bm->second->docs.set(m.count.docs);
         bm->second->bytes.set(m.count.bytes);
         bm->second->active_buckets.set(m.count.active);
@@ -414,9 +420,7 @@ BucketManager::dump(std::ostream& out) const
 
 void BucketManager::onOpen()
 {
-    if (!_configUri.empty()) {
-        startWorkerThread();
-    }
+    startWorkerThread();
 }
 
 void BucketManager::startWorkerThread()

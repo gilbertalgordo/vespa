@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.schema.processing;
 
 import com.yahoo.document.DataType;
@@ -6,7 +6,11 @@ import com.yahoo.document.Field;
 import com.yahoo.schema.Schema;
 import com.yahoo.schema.document.Attribute;
 import com.yahoo.vespa.indexinglanguage.ValueTransformProvider;
-import com.yahoo.vespa.indexinglanguage.expressions.*;
+import com.yahoo.vespa.indexinglanguage.expressions.AttributeExpression;
+import com.yahoo.vespa.indexinglanguage.expressions.Expression;
+import com.yahoo.vespa.indexinglanguage.expressions.IndexExpression;
+import com.yahoo.vespa.indexinglanguage.expressions.OutputExpression;
+import com.yahoo.vespa.indexinglanguage.expressions.SummaryExpression;
 
 /**
  * @author Simon Thoresen Hult
@@ -39,9 +43,17 @@ public abstract class TypedTransformProvider extends ValueTransformProvider {
             }
             else if (exp instanceof SummaryExpression) {
                 Field field = schema.getSummaryField(fieldName);
-                if (field == null)
-                    throw new IllegalArgumentException("Summary field '" + fieldName + "' not found.");
-                fieldType = field.getDataType();
+                if (field == null) {
+                    // Use document field if summary field is not found
+                    var sdField = schema.getConcreteField(fieldName);
+                    if (sdField != null && sdField.doesSummarying()) {
+                        fieldType = sdField.getDataType();
+                    } else {
+                        throw new IllegalArgumentException("Summary field '" + fieldName + "' not found.");
+                    }
+                } else {
+                    fieldType = field.getDataType();
+                }
             }
             else {
                 throw new UnsupportedOperationException();

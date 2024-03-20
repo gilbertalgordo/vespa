@@ -1,5 +1,5 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
-package com.yahoo.vespa.model.application.validation;// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+package com.yahoo.vespa.model.application.validation;
 
 import com.yahoo.config.model.MapConfigModelRegistry;
 import com.yahoo.config.model.NullConfigModelRegistry;
@@ -39,7 +39,7 @@ public class AccessControlFilterValidatorTest {
         VespaModel model = new VespaModel(new NullConfigModelRegistry(), deployState);
 
         try {
-            new AccessControlFilterValidator().validate(model, deployState);
+            ValidationTester.validate(new AccessControlFilterValidator(), model, deployState);
             fail();
         } catch (IllegalArgumentException e) {
             assertEquals("The 'access-control' feature is not available in open-source Vespa.", e.getMessage());
@@ -53,7 +53,7 @@ public class AccessControlFilterValidatorTest {
                 MapConfigModelRegistry.createFromList(new ModelBuilderAddingAccessControlFilter()),
                 deployState);
 
-        new AccessControlFilterValidator().validate(model, deployState);
+        ValidationTester.validate(new AccessControlFilterValidator(), model, deployState);
     }
 
     private static DeployState createDeployState() {
@@ -61,4 +61,5 @@ public class AccessControlFilterValidatorTest {
                 .applicationPackage(new MockApplicationPackage.Builder().withServices(SERVICES_XML).build())
                 .build();
     }
+
 }

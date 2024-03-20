@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include <vespa/document/test/fieldvalue_helpers.h>
 #include <vespa/document/base/testdocman.h>
@@ -22,14 +22,13 @@
 #include <vespa/document/repo/documenttyperepo.h>
 #include <vespa/document/serialization/vespadocumentdeserializer.h>
 #include <vespa/document/serialization/vespadocumentserializer.h>
-#include <vespa/vespalib/objects/nbostream.h>
-#include <vespa/vespalib/util/growablebytebuffer.h>
-
-#include <vespa/vespalib/testkit/test_kit.h>
 #include <vespa/document/util/serializableexceptions.h>
 #include <vespa/document/util/bytebuffer.h>
+#include <vespa/vespalib/gtest/gtest.h>
+#include <vespa/vespalib/objects/nbostream.h>
+#include <vespa/vespalib/testkit/test_path.h>
+#include <vespa/vespalib/util/growablebytebuffer.h>
 #include <fcntl.h>
-#include <gtest/gtest.h>
 #include <gmock/gmock.h>
 #include <filesystem>
 

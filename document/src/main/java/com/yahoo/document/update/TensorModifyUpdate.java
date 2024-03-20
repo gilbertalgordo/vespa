@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.document.update;
 
 import com.yahoo.document.DataType;
@@ -119,7 +119,7 @@ public class TensorModifyUpdate extends ValueUpdate<TensorFieldValue> {
         for (int i = 0; i < type.dimensions().size(); ++i) {
             var dim = type.dimensions().get(i);
             if (dim.isMapped()) {
-                builder.add(dim.name(), address.label(i));
+                builder.add(dim.name(), address.numericLabel(i));
             }
         }
         return builder.build();

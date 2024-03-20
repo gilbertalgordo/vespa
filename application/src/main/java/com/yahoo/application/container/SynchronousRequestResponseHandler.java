@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.application.container;
 
 import com.yahoo.api.annotations.Beta;
@@ -90,6 +90,7 @@ final class SynchronousRequestResponseHandler {
                                                                             URI.create(request.getUri()),
                                                                             com.yahoo.jdisc.http.HttpRequest.Method.valueOf(request.getMethod().name()));
             request.getUserPrincipal().ifPresent(httpRequest::setUserPrincipal);
+            request.remoteAddress().ifPresent(httpRequest::setRemoteAddress);
             discRequest = httpRequest;
         } else {
             discRequest = new com.yahoo.jdisc.Request(currentContainer, URI.create(request.getUri()));

@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package ai.vespa.intellij.schema;
 
 import com.intellij.openapi.util.IconLoader;
@@ -12,7 +12,7 @@ import javax.swing.Icon;
  */
 public class SdIcons {
 
-    public static final Icon FILE = IconLoader.getIcon("icons/sd_icon.png", SdIcons.class);
+    public static final Icon FILE = IconLoader.getIcon("icons/sd_icon.svg", SdIcons.class);
     public static final Icon STRUCT_FIELD = IconLoader.getIcon("icons/struct_field_icon.png", SdIcons.class);
     public static final Icon IMPORTED_FIELD = IconLoader.getIcon("icons/imported_field_icon.png", SdIcons.class);
     public static final Icon DOCUMENT_SUMMARY = IconLoader.getIcon("icons/document_summary_icon.png", SdIcons.class);

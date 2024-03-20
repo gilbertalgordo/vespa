@@ -1,9 +1,10 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include <vespa/document/base/testdocman.h>
 #include <vespa/persistence/conformancetest/conformancetest.h>
 #include <vespa/persistence/spi/test.h>
 #include <vespa/persistence/spi/catchresult.h>
+#include <vespa/persistence/spi/doctype_gid_and_timestamp.h>
 #include <vespa/persistence/spi/resource_usage_listener.h>
 #include <vespa/persistence/spi/docentry.h>
 #include <vespa/document/fieldset/fieldsets.h>
@@ -25,6 +26,7 @@
 #include <vespa/config-stor-distribution.h>
 #include <limits>
 #include <gtest/gtest.h>
+#include <gmock/gmock.h>
 
 using document::BucketId;
 using document::BucketSpace;
@@ -35,12 +37,21 @@ using document::IntFieldValue;
 using storage::spi::test::makeSpiBucket;
 using storage::spi::test::cloneDocEntry;
 
+using namespace ::testing;
+
 namespace storage::spi {
 
 using PersistenceProviderUP = std::unique_ptr<PersistenceProvider>;
 using DocEntryList = std::vector<DocEntry::UP>;
 
 namespace {
+
+template <typename T>
+std::shared_ptr<T>
+as_sp(std::unique_ptr<T> value)
+{
+    return value;
+}
 
 std::unique_ptr<PersistenceProvider>
 getSpi(ConformanceTest::PersistenceFactory &factory, const document::TestDocMan &testDocMan) {
@@ -50,8 +61,7 @@ getSpi(ConformanceTest::PersistenceFactory &factory, const document::TestDocMan 
     return result;
 }
 
-enum SELECTION_FIELDS
-{
+enum class SelectionFields {
     METADATA_ONLY = 0,
     ALL_FIELDS = 1
 };
@@ -60,18 +70,10 @@ CreateIteratorResult
 createIterator(PersistenceProvider& spi,
                const Bucket& b,
                const Selection& sel,
-               IncludedVersions versions = NEWEST_DOCUMENT_ONLY,
-               int fields = ALL_FIELDS)
+               IncludedVersions versions = NEWEST_DOCUMENT_ONLY)
 {
-    document::FieldSet::SP fieldSet;
-    if (fields & ALL_FIELDS) {
-        fieldSet = std::make_shared<document::AllFields>();
-    } else {
-        fieldSet = std::make_shared<document::DocIdOnly>();
-    }
-
     Context context(Priority(0), Trace::TraceLevel(0));
-    return spi.createIterator(b, std::move(fieldSet), sel, versions, context);
+    return spi.createIterator(b, std::make_shared<document::AllFields>(), sel, versions, context);
 }
 
 Selection
@@ -198,14 +200,21 @@ getEntriesFromChunks(const std::vector<Chunk>& chunks)
 DocEntryList
 iterateBucket(PersistenceProvider& spi,
               const Bucket& bucket,
-              IncludedVersions versions)
+              IncludedVersions versions,
+              SelectionFields fields = SelectionFields::ALL_FIELDS)
 {
     DocEntryList ret;
     DocumentSelection docSel("");
     Selection sel(docSel);
+    document::FieldSet::SP field_set;
+    if (fields == SelectionFields::ALL_FIELDS) {
+        field_set = std::make_shared<document::AllFields>();
+    } else {
+        field_set = std::make_shared<document::NoFields>();
+    }
 
     Context context(Priority(0), Trace::TraceLevel(0));
-    CreateIteratorResult iter = spi.createIterator(bucket, std::make_shared<document::AllFields>(), sel, versions, context);
+    CreateIteratorResult iter = spi.createIterator(bucket, std::move(field_set), sel, versions, context);
 
     EXPECT_EQ(Result::ErrorType::NONE, iter.getErrorCode());
 
@@ -907,6 +916,44 @@ TEST_F(ConformanceTest, testRemoveMerge)
     }
 }
 
+TEST_F(ConformanceTest, testRemoveByGid)
+{
+    document::TestDocMan testDocMan;
+    _factory->clear();
+    PersistenceProviderUP spi(getSpi(*_factory, testDocMan));
+    Context context(Priority(0), Trace::TraceLevel(0));
+
+    Bucket bucket(makeSpiBucket(BucketId(8, 0x01)));
+    auto doc1 = as_sp(testDocMan.createRandomDocumentAtLocation(0x01, 1));
+    auto doc2 = as_sp(testDocMan.createRandomDocumentAtLocation(0x01, 2));
+    auto doc3 = as_sp(testDocMan.createRandomDocumentAtLocation(0x01, 3));
+    auto doc4 = as_sp(testDocMan.createRandomDocumentAtLocation(0x01, 4));
+    spi->createBucket(bucket);
+    EXPECT_EQ(Result(), Result(spi->put(bucket, Timestamp(11), doc1)));
+    EXPECT_EQ(Result(), Result(spi->put(bucket, Timestamp(12), doc2)));
+    EXPECT_EQ(Result(), Result(spi->put(bucket, Timestamp(13), doc3)));
+    EXPECT_EQ(Result(), Result(spi->remove(bucket, Timestamp(14), doc3->getId())));
+    auto info = spi->getBucketInfo(bucket).getBucketInfo();
+    EXPECT_EQ(2, info.getDocumentCount());
+    std::vector<DocTypeGidAndTimestamp> ids;
+    ids.emplace_back(doc1->getId().getDocType(), doc1->getId().getGlobalId(), Timestamp(10));
+    assert_remove_by_gid(*spi, bucket, ids, 0, 2, "ignored removebygid");
+    ids.back().timestamp = Timestamp(11);
+    assert_remove_by_gid(*spi, bucket, ids, 1, 1, "removebygid");
+    ids.back().timestamp = Timestamp(15);
+    ids.back().gid = doc3->getId().getGlobalId();
+    assert_remove_by_gid(*spi, bucket, ids, 0, 1, "already removed removebygid");
+    ids.back().gid = doc4->getId().getGlobalId();
+    assert_remove_by_gid(*spi, bucket, ids, 0, 1, "not found removebygid");
+    if (_factory->hasPersistence()) {
+        spi.reset();
+        document::TestDocMan testDocMan2;
+        spi = getSpi(*_factory, testDocMan2);
+        info = spi->getBucketInfo(bucket).getBucketInfo();
+        EXPECT_EQ(1, info.getDocumentCount());
+    }
+}
+
 TEST_F(ConformanceTest, testUpdate)
 {
     document::TestDocMan testDocMan;
@@ -1439,6 +1486,35 @@ TEST_F(ConformanceTest, test_iterate_empty_bucket)
 TEST_F(ConformanceTest, test_iterate_missing_bucket)
 {
     test_iterate_empty_or_missing_bucket(false);
+}
+
+TEST_F(ConformanceTest, metadata_iteration_includes_doctype_and_gid)
+{
+    document::TestDocMan testDocMan;
+    _factory->clear();
+    PersistenceProviderUP spi(getSpi(*_factory, testDocMan));
+
+    Context context(Priority(0), Trace::TraceLevel(0));
+    Bucket bucket(makeSpiBucket(BucketId(8, 0x01)));
+    Document::SP doc1 = testDocMan.createRandomDocumentAtLocation(0x01, 1);
+    Document::SP doc2 = testDocMan.createRandomDocumentAtLocation(0x01, 2);
+    spi->createBucket(bucket);
+    EXPECT_EQ(Result(), Result(spi->put(bucket, Timestamp(1), doc1)));
+    EXPECT_EQ(Result(), Result(spi->put(bucket, Timestamp(2), doc2)));
+    EXPECT_EQ(Result(), Result(spi->remove(bucket, Timestamp(3), doc1->getId())));
+
+    auto entries = iterateBucket(*spi, bucket, NEWEST_DOCUMENT_OR_REMOVE, SelectionFields::METADATA_ONLY);
+    ASSERT_THAT(entries, SizeIs(2));
+
+    EXPECT_EQ(entries[0]->getMetaEnum(), DocumentMetaEnum::NONE);
+    EXPECT_EQ(entries[0]->getGid(), doc2->getId().getGlobalId());
+    EXPECT_EQ(entries[0]->getTimestamp(), Timestamp(2));
+    EXPECT_EQ(entries[0]->getDocumentType(), "testdoctype1");
+
+    EXPECT_EQ(entries[1]->getMetaEnum(), DocumentMetaEnum::REMOVE_ENTRY);
+    EXPECT_EQ(entries[1]->getGid(), doc1->getId().getGlobalId());
+    EXPECT_EQ(entries[1]->getTimestamp(), Timestamp(3));
+    EXPECT_EQ(entries[1]->getDocumentType(), "testdoctype1");
 }
 
 TEST_F(ConformanceTest, testDeleteBucket)
@@ -2225,6 +2301,25 @@ ConformanceTest::test_empty_bucket_info(bool bucket_exists, bool active)
     EXPECT_EQ(0u, info_result.getBucketInfo().getDocumentCount());
     EXPECT_TRUE(info_result.getBucketInfo().isReady());
     EXPECT_EQ(active, info_result.getBucketInfo().isActive());
+}
+
+void
+ConformanceTest::assert_remove_by_gid(PersistenceProvider& spi,
+                                      const Bucket& bucket, std::vector<DocTypeGidAndTimestamp> ids,
+                                      size_t exp_removed, size_t exp_remaining,
+                                      const vespalib::string& label)
+{
+    SCOPED_TRACE(label);
+    auto onDone = std::make_unique<CatchResult>();
+    auto future = onDone->future_result();
+    spi.removeByGidAsync(bucket, std::move(ids), std::move(onDone));
+    auto result = future.get();
+    ASSERT_TRUE(result);
+    auto removeResult = dynamic_cast<spi::RemoveResult *>(result.get());
+    ASSERT_TRUE(removeResult != nullptr);
+    EXPECT_EQ(exp_removed, removeResult->num_removed());
+    auto info = spi.getBucketInfo(bucket).getBucketInfo();
+    EXPECT_EQ(exp_remaining, info.getDocumentCount());
 }
 
 TEST_F(ConformanceTest, test_empty_bucket_gives_empty_bucket_info)

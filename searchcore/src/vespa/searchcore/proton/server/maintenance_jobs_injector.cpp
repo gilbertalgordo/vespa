@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include "maintenance_jobs_injector.h"
 #include "bucketmovejob.h"
@@ -37,7 +37,7 @@ injectLidSpaceCompactionJobs(MaintenanceController &controller,
         auto job = lidspace::CompactionJob::create(config.getLidSpaceCompactionConfig(), controller.retainDB(),
                                                    std::move(lidHandler), opStorer, controller.masterThread(),
                                                    bucketExecutor, diskMemUsageNotifier,config.getBlockableJobConfig(),
-                                                   clusterStateChangedNotifier, calc && calc->nodeRetired(), bucketSpace);
+                                                   clusterStateChangedNotifier, calc && calc->node_retired_or_maintenance(), bucketSpace);
         controller.registerJob(trackJob(tracker, std::move(job)));
     }
 }

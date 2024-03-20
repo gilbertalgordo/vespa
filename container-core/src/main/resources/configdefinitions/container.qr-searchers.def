@@ -1,4 +1,4 @@
-# Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+# Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 namespace=container
 
 # this file needs more comments
@@ -22,10 +22,6 @@ com.yahoo.prelude.searcher.JuniperSearcher.source string default=""
 com.yahoo.prelude.searcher.JuniperSearcher.defaultdoctype string default=""
 
 com.yahoo.prelude.searcher.XMLStringSearcher.source string default=""
-
-## Default docsum class the QR server should ask the backend to
-## use for representing hints as default.
-com.yahoo.prelude.fastsearch.FastSearcher.docsum.defaultclass string default=""
 
 com.yahoo.prelude.querytransform.PhrasingSearcher.automatonfile string default=""
 com.yahoo.prelude.querytransform.NonPhrasingSearcher.automatonfile string default=""
@@ -64,13 +60,10 @@ searchcluster[].name string
 searchcluster[].searchdef[] string
 
 ## configid that may be used to get rank-profiles config for the cluster.
-searchcluster[].rankprofiles.configid reference default=""
+searchcluster[].rankprofiles_configid string default=""
 
 ## Indexing mode of search cluster.
 searchcluster[].indexingmode enum { REALTIME, STREAMING } default=REALTIME
 
 ## Storage cluster route to use for search cluster if indexingmode is streaming.
 searchcluster[].storagecluster.routespec string default=""
-
-## Enable global phase ranking
-searchcluster[].globalphase bool default=false

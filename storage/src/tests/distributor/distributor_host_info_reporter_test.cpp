@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include <vespa/storage/distributor/bucket_spaces_stats_provider.h>
 #include <vespa/storage/distributor/distributor_host_info_reporter.h>
@@ -194,20 +194,6 @@ TEST_F(DistributorHostInfoReporterTest, generate_example_json) {
     vespalib::slime::JsonFormat::decode(jsonMemory, jsonSlime);
 
     EXPECT_EQ(goldenSlime, jsonSlime);
-}
-
-TEST_F(DistributorHostInfoReporterTest, no_report_generated_if_disabled) {
-    Fixture f;
-    f.reporter.enableReporting(false);
-
-    MinReplicaStats minReplica;
-    minReplica[0] = 2;
-    minReplica[5] = 9;
-    f.minReplicaProvider.minReplica = minReplica;
-
-    vespalib::Slime root;
-    util::reporterToSlime(f.reporter, root);
-    EXPECT_EQ(0, root.get().children());
 }
 
 TEST_F(DistributorHostInfoReporterTest, bucket_spaces_stats_are_reported) {

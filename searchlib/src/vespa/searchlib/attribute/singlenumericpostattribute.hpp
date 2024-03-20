@@ -1,10 +1,11 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #pragma once
 
 #include "singlenumericpostattribute.h"
-#include "enumstore.h"
 #include "enumcomparator.h"
+#include "enumstore.h"
+#include "numeric_direct_posting_store_adapter.hpp"
 #include "singlenumericenumattribute.hpp"
 
 namespace search {
@@ -21,7 +22,8 @@ template <typename B>
 SingleValueNumericPostingAttribute<B>::SingleValueNumericPostingAttribute(const vespalib::string & name,
                                                                           const AttributeVector::Config & c) :
     SingleValueNumericEnumAttribute<B>(name, c),
-    PostingParent(*this, this->getEnumStore())
+    PostingParent(*this, this->getEnumStore()),
+    _posting_store_adapter(this->get_posting_store(), this->_enumStore, this->getIsFilter())
 {
 }
 
@@ -37,7 +39,7 @@ void
 SingleValueNumericPostingAttribute<B>::mergeMemoryStats(vespalib::MemoryUsage & total)
 {
     auto& compaction_strategy = this->getConfig().getCompactionStrategy();
-    total.merge(this->_postingList.update_stat(compaction_strategy));
+    total.merge(this->_posting_store.update_stat(compaction_strategy));
 }
 
 template <typename B>
@@ -124,16 +126,16 @@ void
 SingleValueNumericPostingAttribute<B>::reclaim_memory(generation_t oldest_used_gen)
 {
     SingleValueNumericEnumAttribute<B>::reclaim_memory(oldest_used_gen);
-    _postingList.reclaim_memory(oldest_used_gen);
+    _posting_store.reclaim_memory(oldest_used_gen);
 }
 
 template <typename B>
 void
 SingleValueNumericPostingAttribute<B>::before_inc_generation(generation_t current_gen)
 {
-    _postingList.freeze();
+    _posting_store.freeze();
     SingleValueNumericEnumAttribute<B>::before_inc_generation(current_gen);
-    _postingList.assign_generation(current_gen);
+    _posting_store.assign_generation(current_gen);
 }
 
 template <typename B>
@@ -148,5 +150,15 @@ SingleValueNumericPostingAttribute<B>::getSearch(QueryTermSimple::UP qTerm,
     return std::make_unique<SC>(std::move(base_sc), params, *this);
 }
 
-} // namespace search
+template <typename B>
+const IDocidPostingStore*
+SingleValueNumericPostingAttribute<B>::as_docid_posting_store() const
+{
+    if (this->getConfig().basicType().is_integer_type()) {
+        return &_posting_store_adapter;
+    }
+    return nullptr;
+}
+
+}
 

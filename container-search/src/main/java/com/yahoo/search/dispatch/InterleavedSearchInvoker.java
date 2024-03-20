@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.search.dispatch;
 
 import com.yahoo.concurrent.Timer;
@@ -111,9 +111,9 @@ public class InterleavedSearchInvoker extends SearchInvoker implements ResponseM
     }
 
     @Override
-    protected InvokerResult getSearchResult(Execution execution) throws IOException {
+    protected InvokerResult getSearchResult() throws IOException {
         InvokerResult result = new InvokerResult(query, query.getHits());
-        List<LeanHit> merged = Collections.emptyList();
+        List<LeanHit> merged = List.of();
         long nextTimeout = query.getTimeLeft();
         var groupingResultAggregator = new GroupingResultAggregator();
         try {
@@ -124,7 +124,7 @@ public class InterleavedSearchInvoker extends SearchInvoker implements ResponseM
                             coverageAggregator.getAnsweredNodes() + " responses received");
                     break;
                 } else {
-                    InvokerResult toMerge = invoker.getSearchResult(execution);
+                    InvokerResult toMerge = invoker.getSearchResult();
                     merged = mergeResult(result.getResult(), toMerge, merged, groupingResultAggregator);
                     ejectInvoker(invoker);
                 }

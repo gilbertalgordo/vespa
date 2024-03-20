@@ -1,12 +1,10 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package version
 
 import (
 	"fmt"
 	"strconv"
 	"strings"
-
-	"github.com/vespa-engine/vespa/client/go/internal/util"
 )
 
 // Version represents a semantic version number.
@@ -74,7 +72,7 @@ func (v1 Version) Less(v2 Version) bool { return v1.Compare(v2) < 0 }
 func MustParse(s string) Version {
 	v, err := Parse(s)
 	if err != nil {
-		util.JustExitWith(err)
+		panic(err)
 	}
 	return v
 }

@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.model.content;
 
 import ai.vespa.metrics.DistributorMetrics;
@@ -127,10 +127,8 @@ public class DistributorCluster extends TreeConfigProducer<Distributor> implemen
                     .selectiontoremove("not (" + gc.selection + ")")
                     .interval(gc.interval));
         }
-        builder.enable_revert(parent.getPersistence().supportRevert());
         builder.disable_bucket_activation(!hasIndexedDocumentType);
         builder.max_activation_inhibited_out_of_sync_groups(maxActivationInhibitedOutOfSyncGroups);
-        builder.enable_condition_probing(true);
         if (contentLayerMetadataFeatureLevel > 0) {
             builder.enable_operation_cancellation(true);
         }

@@ -1,6 +1,5 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
-#include <vespa/document/config/documenttypes_config_fwd.h>
 #include <vespa/document/repo/configbuilder.h>
 #include <vespa/document/repo/document_type_repo_factory.h>
 #include <vespa/document/repo/documenttyperepo.h>
@@ -506,12 +505,10 @@ App::get_options(int argc, char **argv)
         { "documents", 1, nullptr, 0 },
         { "flip-nodes", 1, nullptr, 0 },
         { "groups", 1, nullptr, 0 },
-        { "ignore-merge-queue-limit", 0, nullptr, 0 },
         { "indexing-sequencer", 1, nullptr, 0 },
         { "max-merges-per-node", 1, nullptr, 0 },
         { "max-merge-queue-size", 1, nullptr, 0 },
         { "max-pending", 1, nullptr, 0 },
-        { "max-pending-idealstate-operations", 1, nullptr, 0 },
         { "mbus-distributor-node-max-pending-count", 1, nullptr, 0 },
         { "mode", 1, nullptr, 0 },
         { "nodes-per-group", 1, nullptr, 0 },
@@ -535,12 +532,10 @@ App::get_options(int argc, char **argv)
         LONGOPT_DOCUMENTS,
         LONGOPT_FLIP_NODES,
         LONGOPT_GROUPS,
-        LONGOPT_IGNORE_MERGE_QUEUE_LIMIT,
         LONGOPT_INDEXING_SEQUENCER,
         LONGOPT_MAX_MERGES_PER_NODE,
         LONGOPT_MAX_MERGE_QUEUE_SIZE,
         LONGOPT_MAX_PENDING,
-        LONGOPT_MAX_PENDING_IDEALSTATE_OPERATIONS,
         LONGOPT_MBUS_DISTRIBUTOR_NODE_MAX_PENDING_COUNT,
         LONGOPT_MODE,
         LONGOPT_NODES_PER_GROUP,
@@ -585,9 +580,6 @@ App::get_options(int argc, char **argv)
             case LONGOPT_GROUPS:
                 _bm_params.set_groups(atoi(optarg));
                 break;
-            case LONGOPT_IGNORE_MERGE_QUEUE_LIMIT:
-                _bm_params.set_disable_queue_limits_for_chained_merges(true);
-                break;
             case LONGOPT_INDEXING_SEQUENCER:
                 _bm_params.set_indexing_sequencer(optarg);
                 break;
@@ -599,9 +591,6 @@ App::get_options(int argc, char **argv)
                 break;
             case LONGOPT_MAX_PENDING:
                 _bm_params.set_max_pending(atoi(optarg));
-                break;
-            case LONGOPT_MAX_PENDING_IDEALSTATE_OPERATIONS:
-                _bm_params.set_max_pending_idealstate_operations(atoi(optarg));
                 break;
             case LONGOPT_MBUS_DISTRIBUTOR_NODE_MAX_PENDING_COUNT:
                 _bm_params.set_mbus_distributor_node_max_pending_count(atoi(optarg));

@@ -1,3 +1,4 @@
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.container.plugin.mojo;
 
 import org.apache.maven.artifact.Artifact;
@@ -26,6 +27,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.SortedSet;
@@ -102,7 +104,7 @@ public class AssembleFatJarMojo extends AbstractMojo {
         var jarsToShade = projectDependencies.stream()
                 .filter(d -> !installedDependencies.contains(d) && !d.getType().equals("pom") && d.getScope().equals("compile"))
                 .map(Artifact::getFile)
-                .collect(Collectors.toCollection(TreeSet::new));
+                .collect(Collectors.toCollection(LinkedHashSet::new));
         jarsToShade.add(project.getArtifact().getFile());
         try {
             var classpath = generateClasspath(installedDependencies, projectDependencies);

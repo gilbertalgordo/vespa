@@ -1,3 +1,4 @@
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package document
 
 import (
@@ -9,8 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/vespa-engine/vespa/client/go/internal/httputil"
 	"github.com/vespa-engine/vespa/client/go/internal/mock"
-	"github.com/vespa-engine/vespa/client/go/internal/util"
 )
 
 type manualClock struct {
@@ -32,7 +33,7 @@ type mockHTTPClient struct {
 
 func TestLeastBusyClient(t *testing.T) {
 	httpClient := mock.HTTPClient{}
-	var httpClients []util.HTTPClient
+	var httpClients []httputil.Client
 	for i := 0; i < 4; i++ {
 		httpClients = append(httpClients, &mockHTTPClient{i, &httpClient})
 	}
@@ -82,7 +83,7 @@ func TestClientSend(t *testing.T) {
 	client, _ := NewClient(ClientOptions{
 		BaseURL: "https://example.com:1337",
 		Timeout: time.Duration(5 * time.Second),
-	}, []util.HTTPClient{&httpClient})
+	}, []httputil.Client{&httpClient})
 	clock := manualClock{t: time.Now(), tick: time.Second}
 	client.now = clock.now
 	var stats Stats
@@ -119,7 +120,7 @@ func TestClientSend(t *testing.T) {
 		if !reflect.DeepEqual(res, wantRes) {
 			t.Fatalf("#%d: got result %+v, want %+v", i, res, wantRes)
 		}
-		stats.Add(res)
+		stats.Add(res, false)
 		r := httpClient.LastRequest
 		if r.Method != tt.method {
 			t.Errorf("#%d: got r.Method = %q, want %q", i, r.Method, tt.method)
@@ -138,8 +139,9 @@ func TestClientSend(t *testing.T) {
 		}
 	}
 	want := Stats{
-		Requests:  5,
-		Responses: 4,
+		Operations: 5,
+		Requests:   5,
+		Responses:  4,
 		ResponsesByCode: map[int]int64{
 			200: 3,
 			502: 1,
@@ -162,7 +164,7 @@ func TestClientGet(t *testing.T) {
 	client, _ := NewClient(ClientOptions{
 		BaseURL: "https://example.com:1337",
 		Timeout: time.Duration(5 * time.Second),
-	}, []util.HTTPClient{&httpClient})
+	}, []httputil.Client{&httpClient})
 	clock := manualClock{t: time.Now(), tick: time.Second}
 	client.now = clock.now
 	doc := `{
@@ -194,7 +196,7 @@ func TestClientSendCompressed(t *testing.T) {
 	client, _ := NewClient(ClientOptions{
 		BaseURL: "https://example.com:1337",
 		Timeout: time.Duration(5 * time.Second),
-	}, []util.HTTPClient{httpClient})
+	}, []httputil.Client{httpClient})
 
 	bigBody := fmt.Sprintf(`{"fields": {"foo": "%s"}}`, strings.Repeat("s", 512+1))
 	bigDoc := Document{Create: true, Id: mustParseId("id:ns:type::doc1"), Operation: OperationUpdate, Body: []byte(bigBody)}
@@ -311,7 +313,7 @@ func TestClientMethodAndURL(t *testing.T) {
 	httpClient := mock.HTTPClient{}
 	client, _ := NewClient(ClientOptions{
 		BaseURL: "https://example.com/",
-	}, []util.HTTPClient{&httpClient})
+	}, []httputil.Client{&httpClient})
 	for i, tt := range tests {
 		client.options.Timeout = tt.options.Timeout
 		client.options.Route = tt.options.Route
@@ -331,7 +333,7 @@ func benchmarkClientSend(b *testing.B, compression Compression, document Documen
 		Compression: compression,
 		BaseURL:     "https://example.com:1337",
 		Timeout:     time.Duration(5 * time.Second),
-	}, []util.HTTPClient{&httpClient})
+	}, []httputil.Client{&httpClient})
 	b.ResetTimer() // ignore setup
 	for n := 0; n < b.N; n++ {
 		client.Send(document)

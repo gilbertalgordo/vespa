@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #pragma once
 
@@ -72,6 +72,7 @@ public:
     void prepareRemove(RemoveOperation &rmOp) override;
     void handleRemove(FeedToken token, const RemoveOperation &rmOp) override;
     void prepareDeleteBucket(DeleteBucketOperation &delOp) override;
+    bool isMoveStillValid(const MoveOperation & moveOp) const override;
     void prepareMove(MoveOperation &putOp) override;
     void handleDeleteBucket(const DeleteBucketOperation &delOp, DoneCallback onDone) override;
     void handleMove(const MoveOperation &moveOp, DoneCallback onDone) override;

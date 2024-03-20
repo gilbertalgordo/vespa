@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include <vespa/searchlib/common/bitvectoriterator.h>
 #include <vespa/searchlib/diskindex/disktermblueprint.h>
@@ -382,7 +382,8 @@ DiskIndexTest::build_index(const IOSettings& io_settings, const EmptySettings& e
     if (empty_settings._empty_word) {
         name << "we";
     }
-    openIndex(name.str(), io_settings._use_directio, io_settings._use_mmap, empty_settings._empty_field, empty_settings._empty_doc, empty_settings._empty_word);
+    openIndex(name.str(), io_settings._use_directio, io_settings._use_mmap, empty_settings._empty_field,
+              empty_settings._empty_doc, empty_settings._empty_word);
 }
 
 void

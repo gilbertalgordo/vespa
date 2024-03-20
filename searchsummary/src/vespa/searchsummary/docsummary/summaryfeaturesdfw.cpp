@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include "summaryfeaturesdfw.h"
 #include "docsumstate.h"
@@ -41,11 +41,7 @@ SummaryFeaturesDFW::insertField(uint32_t docid, GetDocsumsState& state, vespalib
             obj.setDouble(name, values[i].as_double());
         }
     }
-    if (state._summaryFeaturesCached) {
-        obj.setDouble(_M_cached, 1.0);
-    } else {
-        obj.setDouble(_M_cached, 0.0);
-    }
+    obj.setDouble(_M_cached, 0.0); // TODO Remove, has not been cached for many years
 }
 
 }

@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.hosted.provision.provisioning;
 
 import com.yahoo.config.provision.ApplicationId;
@@ -9,7 +9,6 @@ import com.yahoo.vespa.hosted.provision.Node;
 import com.yahoo.vespa.hosted.provision.NodeList;
 import com.yahoo.vespa.hosted.provision.node.IP;
 import com.yahoo.vespa.hosted.provision.node.Nodes;
-import com.yahoo.vespa.hosted.provision.persistence.NameResolver;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -40,14 +39,16 @@ public class NodePrioritizer {
     private final IP.Allocation.Context ipAllocationContext;
     private final Nodes nodes;
     private final boolean dynamicProvisioning;
+    private final boolean allowHostSharing;
+    private final boolean exclusiveAllocation;
     private final boolean canAllocateToSpareHosts;
     private final boolean topologyChange;
     private final int currentClusterSize;
     private final Set<Node> spareHosts;
 
     public NodePrioritizer(LockedNodeList allNodes, ApplicationId application, ClusterSpec clusterSpec, NodeSpec nodeSpec,
-                           boolean dynamicProvisioning, IP.Allocation.Context ipAllocationContext, Nodes nodes,
-                           HostResourcesCalculator hostResourcesCalculator, int spareCount) {
+                           boolean dynamicProvisioning, boolean allowHostSharing, IP.Allocation.Context ipAllocationContext, Nodes nodes,
+                           HostResourcesCalculator hostResourcesCalculator, int spareCount, boolean exclusiveAllocation) {
         this.allNodes = allNodes;
         this.calculator = hostResourcesCalculator;
         this.capacity = new HostCapacity(this.allNodes, hostResourcesCalculator);
@@ -55,6 +56,8 @@ public class NodePrioritizer {
         this.clusterSpec = clusterSpec;
         this.application = application;
         this.dynamicProvisioning = dynamicProvisioning;
+        this.allowHostSharing = allowHostSharing;
+        this.exclusiveAllocation = exclusiveAllocation;
         this.spareHosts = dynamicProvisioning ?
                 capacity.findSpareHostsInDynamicallyProvisionedZones(this.allNodes.asList()) :
                 capacity.findSpareHosts(this.allNodes.asList(), spareCount);
@@ -81,9 +84,9 @@ public class NodePrioritizer {
 
     /** Collects all node candidates for this application and returns them in the most-to-least preferred order */
     public List<NodeCandidate> collect() {
-        addApplicationNodes();
+        addExistingNodes();
         addReadyNodes();
-        addCandidatesOnExistingHosts();
+        addNewNodes();
         return prioritize();
     }
 
@@ -114,7 +117,7 @@ public class NodePrioritizer {
     }
 
     /** Add a node on each host with enough capacity for the requested flavor  */
-    private void addCandidatesOnExistingHosts() {
+    private void addNewNodes() {
         if (requested.resources().isEmpty()) return;
 
         for (Node host : allNodes) {
@@ -122,7 +125,9 @@ public class NodePrioritizer {
             if (nodes.suspended(host)) continue; // Hosts that are suspended may be down for some time, e.g. for OS upgrade
             if (host.reservedTo().isPresent() && !host.reservedTo().get().equals(application.tenant())) continue;
             if (host.reservedTo().isPresent() && application.instance().isTester()) continue;
-            if (host.exclusiveToApplicationId().isPresent() && ! fitsPerfectly(host)) continue;
+            if ( ! allowHostSharing && exclusiveAllocation && ! fitsPerfectly(host)) continue;
+            if ( ! host.provisionedForApplicationId().map(application::equals).orElse(true)) continue;
+            if ( ! host.exclusiveToApplicationId().map(application::equals).orElse(true)) continue;
             if ( ! host.exclusiveToClusterType().map(clusterSpec.type()::equals).orElse(true)) continue;
             if (spareHosts.contains(host) && !canAllocateToSpareHosts) continue;
             if ( ! capacity.hasCapacity(host, requested.resources().get())) continue;
@@ -143,7 +148,7 @@ public class NodePrioritizer {
     }
 
     /** Add existing nodes allocated to the application */
-    private void addApplicationNodes() {
+    private void addExistingNodes() {
         EnumSet<Node.State> legalStates = EnumSet.of(Node.State.active, Node.State.inactive, Node.State.reserved);
         allNodes.stream()
                 .filter(node -> node.type() == requested.type())
@@ -200,7 +205,7 @@ public class NodePrioritizer {
 
     /**
      * We may regret that a non-active node is allocated to a host and not offer it to the application
-     * now, e.g if we want to retire the host.
+     * now, e.g., if we want to retire the host.
      *
      * @return true if we still want to allocate the given node to its parent
      */

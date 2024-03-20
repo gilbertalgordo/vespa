@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include "search_context.h"
 #include "documentmetastore.h"
@@ -113,10 +113,10 @@ SearchContext::onFind(DocId, int32_t ) const
     throw vespalib::IllegalStateException("The function is not implemented for documentmetastore::SearchContext");
 }
 
-unsigned int
-SearchContext::approximateHits() const
+search::attribute::HitEstimate
+SearchContext::calc_hit_estimate() const
 {
-    return _isWord ? 1 : search::attribute::SearchContext::approximateHits();
+    return _isWord ? search::attribute::HitEstimate(1) : search::attribute::SearchContext::calc_hit_estimate();
 }
 
 SearchIterator::UP

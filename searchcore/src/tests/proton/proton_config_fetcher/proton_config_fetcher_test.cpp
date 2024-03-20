@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include <vespa/config-attributes.h>
 #include <vespa/config-bucketspaces.h>
@@ -17,16 +17,15 @@
 #include <vespa/searchcore/proton/server/proton_config_snapshot.h>
 #include <vespa/searchcore/proton/server/i_proton_configurer.h>
 #include <vespa/searchcore/proton/common/alloc_config.h>
-#include <vespa/searchcore/proton/common/hw_info.h>
 #include <vespa/searchcore/proton/common/subdbtype.h>
 #include <vespa/searchcore/proton/test/transport_helper.h>
 #include <vespa/searchsummary/config/config-juniperrc.h>
-#include <vespa/document/config/documenttypes_config_fwd.h>
 #include <vespa/document/repo/documenttyperepo.h>
 #include <vespa/fileacquirer/config-filedistributorrpc.h>
+#include <vespa/vespalib/util/hw_info.h>
 #include <vespa/vespalib/util/varholder.h>
-#include <vespa/vespalib/util/size_literals.h>
 #include <vespa/vespalib/testkit/testapp.h>
+#include <vespa/config.h>
 #include <map>
 #include <thread>
 
@@ -47,6 +46,7 @@ using std::map;
 using vespalib::VarHolder;
 using search::GrowStrategy;
 using vespalib::datastore::CompactionStrategy;
+using vespalib::HwInfo;
 
 struct DoctypeFixture {
     using UP = std::unique_ptr<DoctypeFixture>;
@@ -73,7 +73,7 @@ struct ConfigTestFixture {
     std::shared_ptr<IConfigContext> context;
     int idcounter;
 
-    ConfigTestFixture(const std::string & id)
+    explicit ConfigTestFixture(const std::string & id)
         : configId(id),
           protonBuilder(),
           documenttypesBuilder(),
@@ -93,7 +93,15 @@ struct ConfigTestFixture {
 
     ~ConfigTestFixture() = default;
 
-    DoctypeFixture *addDocType(const std::string &name, bool isGlobal = false) {
+    DoctypeFixture *addDocType(const std::string &name) {
+        return addDocType(name, ProtonConfig::Documentdb::Mode::INDEX);
+    }
+
+    DoctypeFixture *addDocType(const std::string &name, ProtonConfig::Documentdb::Mode mode) {
+        return addDocType(name, mode, false);
+    }
+
+    DoctypeFixture *addDocType(const std::string &name, ProtonConfig::Documentdb::Mode mode, bool isGlobal) {
         DocumenttypesConfigBuilder::Documenttype dt;
         dt.bodystruct = -1270491200;
         dt.headerstruct = 306916075;
@@ -106,6 +114,7 @@ struct ConfigTestFixture {
         db.inputdoctypename = name;
         db.configid = configId + "/" + name;
         db.global = isGlobal;
+        db.mode = mode;
         protonBuilder.documentdb.push_back(db);
 
         DoctypeFixture::UP fixture = std::make_unique<DoctypeFixture>();
@@ -118,7 +127,7 @@ struct ConfigTestFixture {
         set.addBuilder(db.configid, &fixture->summaryBuilder);
         set.addBuilder(db.configid, &fixture->juniperrcBuilder);
         set.addBuilder(db.configid, &fixture->importedFieldsBuilder);
-        return dbConfig.emplace(std::make_pair(name, std::move(fixture))).first->second.get();
+        return dbConfig.emplace(name, std::move(fixture)).first->second.get();
     }
 
     void removeDocType(const std::string & name)
@@ -142,20 +151,20 @@ struct ConfigTestFixture {
         }
     }
 
-    bool configEqual(const std::string & name, DocumentDBConfig::SP dbc) {
+    bool configEqual(const std::string & name, const DocumentDBConfig & dbc) {
         auto itr = dbConfig.find(name);
         ASSERT_TRUE(itr != dbConfig.end());
         const auto *fixture = itr->second.get();
-        return (fixture->attributesBuilder == dbc->getAttributesConfig() &&
-                fixture->rankProfilesBuilder == dbc->getRankProfilesConfig() &&
-                fixture->indexschemaBuilder == dbc->getIndexschemaConfig() &&
-                fixture->summaryBuilder == dbc->getSummaryConfig() &&
-                fixture->juniperrcBuilder == dbc->getJuniperrcConfig());
+        return (fixture->attributesBuilder == dbc.getAttributesConfig() &&
+                fixture->rankProfilesBuilder == dbc.getRankProfilesConfig() &&
+                fixture->indexschemaBuilder == dbc.getIndexschemaConfig() &&
+                fixture->summaryBuilder == dbc.getSummaryConfig() &&
+                fixture->juniperrcBuilder == dbc.getJuniperrcConfig());
     }
 
-    bool configEqual(BootstrapConfig::SP bootstrapConfig) {
-        return (protonBuilder == bootstrapConfig->getProtonConfig() &&
-                documenttypesBuilder == bootstrapConfig->getDocumenttypesConfig());
+    bool configEqual(const BootstrapConfig & bootstrapConfig) const {
+        return (protonBuilder == bootstrapConfig.getProtonConfig() &&
+                documenttypesBuilder == bootstrapConfig.getDocumenttypesConfig());
     }
 
     BootstrapConfig::SP getBootstrapConfig(int64_t generation, const HwInfo & hwInfo) const {
@@ -180,7 +189,7 @@ struct ProtonConfigOwner : public proton::IProtonConfigurer
 
     ProtonConfigOwner() : _configured(false), _config() { }
     ~ProtonConfigOwner() override;
-    bool waitUntilConfigured(vespalib::duration timeout) {
+    bool waitUntilConfigured(vespalib::duration timeout) const {
         vespalib::Timer timer;
         while (timer.elapsed() < timeout) {
             if (getConfigured())
@@ -189,7 +198,7 @@ struct ProtonConfigOwner : public proton::IProtonConfigurer
         }
         return getConfigured();
     }
-    virtual void reconfigure(std::shared_ptr<ProtonConfigSnapshot> cfg) override {
+    void reconfigure(std::shared_ptr<ProtonConfigSnapshot> cfg) override {
         std::lock_guard<std::mutex> guard(_mutex);
         _config.set(cfg);
         _configured = true;
@@ -198,11 +207,11 @@ struct ProtonConfigOwner : public proton::IProtonConfigurer
         std::lock_guard<std::mutex> guard(_mutex);
         return _configured;
     }
-    BootstrapConfig::SP getBootstrapConfig() {
+    BootstrapConfig::SP getBootstrapConfig() const {
         auto snapshot = _config.get();
         return snapshot->getBootstrapConfig();
     }
-    DocumentDBConfig::SP getDocumentDBConfig(const vespalib::string &name)
+    DocumentDBConfig::SP getDocumentDBConfig(const vespalib::string &name) const
     {
         auto snapshot = _config.get();
         auto &dbcs = snapshot->getDocumentDBConfigs();
@@ -210,7 +219,7 @@ struct ProtonConfigOwner : public proton::IProtonConfigurer
         if (dbitr != dbcs.end()) {
             return dbitr->second;
         } else {
-            return DocumentDBConfig::SP();
+            return {};
         }
     }
 };
@@ -232,18 +241,18 @@ TEST_FFF("require that bootstrap config manager updates config", ConfigTestFixtu
                                                                  BootstrapConfigManager(f1.configId),
                                                                  ConfigRetriever(f2.createConfigKeySet(), f1.context)) {
     f2.update(f3.getBootstrapConfigs());
-    ASSERT_TRUE(f1.configEqual(f2.getConfig()));
+    ASSERT_TRUE(f1.configEqual(*f2.getConfig()));
     f1.protonBuilder.rpcport = 9010;
-    ASSERT_FALSE(f1.configEqual(f2.getConfig()));
+    ASSERT_FALSE(f1.configEqual(*f2.getConfig()));
     f1.reload();
     f2.update(f3.getBootstrapConfigs());
-    ASSERT_TRUE(f1.configEqual(f2.getConfig()));
+    ASSERT_TRUE(f1.configEqual(*f2.getConfig()));
 
     f1.addDocType("foobar");
-    ASSERT_FALSE(f1.configEqual(f2.getConfig()));
+    ASSERT_FALSE(f1.configEqual(*f2.getConfig()));
     f1.reload();
     f2.update(f3.getBootstrapConfigs());
-    ASSERT_TRUE(f1.configEqual(f2.getConfig()));
+    ASSERT_TRUE(f1.configEqual(*f2.getConfig()));
 }
 
 DocumentDBConfig::SP
@@ -267,7 +276,7 @@ TEST_FF("require that documentdb config manager subscribes for config",
     f1.addDocType("typea");
     const ConfigKeySet keySet(f2.createConfigKeySet());
     ASSERT_EQUAL(9u, keySet.size());
-    ASSERT_TRUE(f1.configEqual("typea", getDocumentDBConfig(f1, f2)));
+    ASSERT_TRUE(f1.configEqual("typea", *getDocumentDBConfig(f1, f2)));
 }
 
 TEST_FF("require that documentdb config manager builds schema with imported attribute fields"
@@ -305,12 +314,12 @@ TEST_FFF("require that proton config fetcher follows changes to bootstrap",
          ProtonConfigFetcher(f1.transport.transport(), ConfigUri(f1.configId, f1.context), f2, 60s)) {
     f3.start();
     ASSERT_TRUE(f2._configured);
-    ASSERT_TRUE(f1.configEqual(f2.getBootstrapConfig()));
+    ASSERT_TRUE(f1.configEqual(*f2.getBootstrapConfig()));
     f2._configured = false;
     f1.protonBuilder.rpcport = 9010;
     f1.reload();
     ASSERT_TRUE(f2.waitUntilConfigured(120s));
-    ASSERT_TRUE(f1.configEqual(f2.getBootstrapConfig()));
+    ASSERT_TRUE(f1.configEqual(*f2.getBootstrapConfig()));
     f3.close();
 }
 
@@ -324,13 +333,13 @@ TEST_FFF("require that proton config fetcher follows changes to doctypes",
     f1.addDocType("typea");
     f1.reload();
     ASSERT_TRUE(f2.waitUntilConfigured(60s));
-    ASSERT_TRUE(f1.configEqual(f2.getBootstrapConfig()));
+    ASSERT_TRUE(f1.configEqual(*f2.getBootstrapConfig()));
 
     f2._configured = false;
     f1.removeDocType("typea");
     f1.reload();
     ASSERT_TRUE(f2.waitUntilConfigured(60s));
-    ASSERT_TRUE(f1.configEqual(f2.getBootstrapConfig()));
+    ASSERT_TRUE(f1.configEqual(*f2.getBootstrapConfig()));
     f3.close();
 }
 
@@ -346,9 +355,9 @@ TEST_FFF("require that proton config fetcher reconfigures dbowners",
     f1.addDocType("typea");
     f1.reload();
     ASSERT_TRUE(f2.waitUntilConfigured(60s));
-    ASSERT_TRUE(f1.configEqual(f2.getBootstrapConfig()));
+    ASSERT_TRUE(f1.configEqual(*f2.getBootstrapConfig()));
     ASSERT_TRUE(static_cast<bool>(f2.getDocumentDBConfig("typea")));
-    ASSERT_TRUE(f1.configEqual("typea", f2.getDocumentDBConfig("typea")));
+    ASSERT_TRUE(f1.configEqual("typea", *f2.getDocumentDBConfig("typea")));
 
     // Remove and verify that config for db is no longer provided
     f2._configured = false;
@@ -363,9 +372,54 @@ TEST_FF("require that lid space compaction is disabled for globally distributed 
         ConfigTestFixture("search"),
         DocumentDBConfigManager(f1.configId + "/global", "global"))
 {
-    f1.addDocType("global", true);
+    f1.addDocType("global", ProtonConfig::Documentdb::Mode::INDEX, true);
     auto config = getDocumentDBConfig(f1, f2);
     EXPECT_TRUE(config->getMaintenanceConfigSP()->getLidSpaceCompactionConfig().isDisabled());
+}
+
+HwInfo
+createHwInfoWithMemory(uint64_t mem) {
+    return {HwInfo::Disk(1, false, false), HwInfo::Memory(mem), HwInfo::Cpu(1)};
+}
+
+TEST_FF("require that target numdocs is fixed 1k for indexed mode",
+        ConfigTestFixture("search"),
+        DocumentDBConfigManager(f1.configId + "/test", "test"))
+{
+    f1.addDocType("test", ProtonConfig::Documentdb::Mode::INDEX, true);
+    for (uint64_t memory : {1_Gi, 10_Gi}) {
+        auto config = getDocumentDBConfig(f1, f2, createHwInfoWithMemory(memory));
+        AllocStrategy strategy = config->get_alloc_config().make_alloc_strategy(SubDbType::READY);
+        EXPECT_EQUAL(1024u, strategy.get_grow_strategy().getMinimumCapacity());
+    }
+}
+
+constexpr bool target_numdocs_hw_adjustment_is_enabled() noexcept {
+    // Must mirror logic of `use_hw_memory_presized_target_num_docs()` in documentdbconfigmanager.cpp
+#ifndef VESPA_USE_SANITIZER
+    return true;
+#else
+    return false;
+#endif
+}
+
+TEST_FF("require that target numdocs follows memory for streaming mode",
+        ConfigTestFixture("search"),
+        DocumentDBConfigManager(f1.configId + "/test", "test"))
+{
+    f1.addDocType("test", ProtonConfig::Documentdb::Mode::STREAMING, true);
+    {
+        auto config = getDocumentDBConfig(f1, f2, createHwInfoWithMemory(1_Gi));
+        AllocStrategy strategy = config->get_alloc_config().make_alloc_strategy(SubDbType::READY);
+        const auto expected = target_numdocs_hw_adjustment_is_enabled() ? 23342213u : 1024u;
+        EXPECT_EQUAL(expected, strategy.get_grow_strategy().getMinimumCapacity());
+    }
+    {
+        auto config = getDocumentDBConfig(f1, f2, createHwInfoWithMemory(10_Gi));
+        AllocStrategy strategy = config->get_alloc_config().make_alloc_strategy(SubDbType::READY);
+        const auto expected = target_numdocs_hw_adjustment_is_enabled() ? 233422135u : 1024u;
+        EXPECT_EQUAL(expected, strategy.get_grow_strategy().getMinimumCapacity());
+    }
 }
 
 TEST_FF("require that prune removed documents interval can be set based on age",
@@ -383,7 +437,7 @@ TEST_FF("require that docstore config computes cachesize automatically if unset"
         ConfigTestFixture("test"),
         DocumentDBConfigManager(f1.configId + "/test", "test"))
 {
-    HwInfo hwInfo(HwInfo::Disk(1, false, false), HwInfo::Memory(1000000), HwInfo::Cpu(1));
+    HwInfo hwInfo = createHwInfoWithMemory(1000000);
     f1.addDocType("test");
     f1.protonBuilder.summary.cache.maxbytes = 2000;
     auto config = getDocumentDBConfig(f1, f2, hwInfo);
@@ -400,7 +454,7 @@ TEST_FF("require that docstore config computes cachesize automatically if unset"
 
 GrowStrategy
 growStrategy(uint32_t initial) {
-    return GrowStrategy(initial, 0.1, 1, initial, 0.15);
+    return {initial, 0.1, 1, initial, 0.15};
 }
 TEST_FF("require that allocation config is propagated",
         ConfigTestFixture("test"),

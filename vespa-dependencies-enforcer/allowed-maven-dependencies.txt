@@ -1,11 +1,9 @@
-# Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+# Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 ai.djl.huggingface:tokenizers:${huggingface.vespa.version}
 ai.djl:api:${huggingface.vespa.version}
 aopalliance:aopalliance:${aopalliance.vespa.version}
 backport-util-concurrent:backport-util-concurrent:3.1
-ch.qos.logback:logback-classic:1.2.10
-ch.qos.logback:logback-core:1.2.10
 classworlds:classworlds:1.1-alpha-2
 com.amazonaws:aws-java-sdk-core:${aws-sdk.vespa.version}
 com.amazonaws:aws-java-sdk-kms:${aws-sdk.vespa.version}
@@ -21,10 +19,10 @@ com.fasterxml.jackson.dataformat:jackson-dataformat-cbor:${jackson2.vespa.versio
 com.fasterxml.jackson.datatype:jackson-datatype-jdk8:${jackson2.vespa.version}
 com.fasterxml.jackson.datatype:jackson-datatype-jsr310:${jackson2.vespa.version}
 com.github.luben:zstd-jni:${luben.zstd.vespa.version}
-com.github.spotbugs:spotbugs-annotations:3.1.9
+com.github.spotbugs:spotbugs-annotations:${spotbugs.vespa.version}
 com.google.code.findbugs:jsr305:${findbugs.vespa.version}
 com.google.errorprone:error_prone_annotations:${error-prone-annotations.vespa.version}
-com.google.guava:failureaccess:1.0.1
+com.google.guava:failureaccess:${failureaccess.vespa.version}
 com.google.guava:guava:${guava.vespa.version}
 com.google.inject:guice:${guice.vespa.version}
 com.google.j2objc:j2objc-annotations:2.8
@@ -32,7 +30,7 @@ com.google.jimfs:jimfs:${jimfs.vespa.version}
 com.google.protobuf:protobuf-java:${protobuf.vespa.version}
 com.ibm.icu:icu4j:${icu4j.vespa.version}
 com.microsoft.onnxruntime:onnxruntime:${onnxruntime.vespa.version}
-com.sun.activation:javax.activation:${properties-maven-plugin.vespa.version}
+com.sun.activation:javax.activation:1.2.0
 com.sun.istack:istack-commons-runtime:4.1.2
 com.sun.xml.bind:jaxb-core:${jaxb-core.vespa.version}
 com.sun.xml.bind:jaxb-impl:${jaxb-impl.vespa.version}
@@ -43,11 +41,11 @@ com.yahoo.athenz:athenz-zms-core:${athenz.vespa.version}
 com.yahoo.athenz:athenz-zpe-java-client:${athenz.vespa.version}
 com.yahoo.athenz:athenz-zts-core:${athenz.vespa.version}
 com.yahoo.rdl:rdl-java:1.5.4
-commons-cli:commons-cli:1.5.0
+commons-cli:commons-cli:${commons-cli.vespa.version}
 commons-codec:commons-codec:${commons-codec.vespa.version}
-commons-fileupload:commons-fileupload:1.5
 commons-io:commons-io:${commons-io.vespa.version}
 commons-logging:commons-logging:${commons-logging.vespa.version}
+io.airlift:aircompressor:${aircompressor.vespa.version}
 io.airlift:airline:${airline.vespa.version}
 io.dropwizard.metrics:metrics-core:${dropwizard.metrics.vespa.version}
 io.jsonwebtoken:jjwt-api:${java-jjwt.vespa.version}
@@ -58,10 +56,15 @@ io.netty:netty-codec:${netty.vespa.version}
 io.netty:netty-common:${netty.vespa.version}
 io.netty:netty-handler:${netty.vespa.version}
 io.netty:netty-resolver:${netty.vespa.version}
+io.netty:netty-tcnative-boringssl-static:${netty-tcnative.vespa.version}
+io.netty:netty-tcnative-boringssl-static:${netty-tcnative.vespa.version}:linux-aarch_64
+io.netty:netty-tcnative-boringssl-static:${netty-tcnative.vespa.version}:linux-x86_64
+io.netty:netty-tcnative-boringssl-static:${netty-tcnative.vespa.version}:osx-aarch_64
+io.netty:netty-tcnative-boringssl-static:${netty-tcnative.vespa.version}:osx-x86_64
+io.netty:netty-tcnative-boringssl-static:${netty-tcnative.vespa.version}:windows-x86_64
 io.netty:netty-tcnative-classes:${netty-tcnative.vespa.version}
-io.netty:netty-tcnative:${netty-tcnative.vespa.version}
 io.netty:netty-transport-classes-epoll:${netty.vespa.version}
-io.netty:netty-transport-native-epoll:${netty.vespa.version}
+io.netty:netty-transport-native-epoll:${netty.vespa.version}:linux-x86_64
 io.netty:netty-transport-native-unix-common:${netty.vespa.version}
 io.netty:netty-transport:${netty.vespa.version}
 io.prometheus:simpleclient:${prometheus.client.vespa.version}
@@ -70,8 +73,8 @@ io.prometheus:simpleclient_tracer_common:${prometheus.client.vespa.version}
 io.prometheus:simpleclient_tracer_otel:${prometheus.client.vespa.version}
 io.prometheus:simpleclient_tracer_otel_agent:${prometheus.client.vespa.version}
 jakarta.inject:jakarta.inject-api:${jakarta.inject.vespa.version}
-javax.activation:javax.activation-api:${properties-maven-plugin.vespa.version}
-javax.annotation:javax.annotation-api:${commons-logging.vespa.version}
+javax.activation:javax.activation-api:1.2.0
+javax.annotation:javax.annotation-api:${javax.annotation.vespa.version}
 javax.inject:javax.inject:${javax.inject.vespa.version}
 javax.servlet:javax.servlet-api:${javax.servlet-api.vespa.version}
 javax.ws.rs:javax.ws.rs-api:${javax.ws.rs-api.vespa.version}
@@ -86,8 +89,6 @@ org.antlr:antlr-runtime:${antlr.vespa.version}
 org.antlr:antlr4-runtime:${antlr4.vespa.version}
 org.apache.aries.spifly:org.apache.aries.spifly.dynamic.bundle:${spifly.vespa.version}
 org.apache.commons:commons-compress:${commons-compress.vespa.version}
-org.apache.commons:commons-csv:${commons-csv.vespa.version}
-org.apache.commons:commons-exec:${commons-exec.vespa.version}
 org.apache.commons:commons-lang3:${commons-lang3.vespa.version}
 org.apache.commons:commons-math3:${commons.math3.vespa.version}
 org.apache.curator:curator-client:${curator.vespa.version}
@@ -119,12 +120,12 @@ org.apache.maven:maven-project:2.2.1
 org.apache.maven:maven-repository-metadata:${maven-core.vespa.version}
 org.apache.maven:maven-settings:${maven-core.vespa.version}
 org.apache.opennlp:opennlp-tools:${opennlp.vespa.version}
-org.apache.velocity:velocity-engine-core:2.3
+org.apache.velocity:velocity-engine-core:${velocity.vespa.version}
 org.apache.yetus:audience-annotations:0.12.0
 org.apache.zookeeper:zookeeper-jute:${zookeeper.client.vespa.version}
-org.apache.zookeeper:zookeeper-jute:3.8.1
+org.apache.zookeeper:zookeeper-jute:3.9.1
 org.apache.zookeeper:zookeeper:${zookeeper.client.vespa.version}
-org.apache.zookeeper:zookeeper:3.8.1
+org.apache.zookeeper:zookeeper:3.9.1
 org.apiguardian:apiguardian-api:${apiguardian.vespa.version}
 org.assertj:assertj-core:${assertj.vespa.version}
 org.bouncycastle:bcpkix-jdk18on:${bouncycastle.vespa.version}
@@ -132,12 +133,12 @@ org.bouncycastle:bcprov-jdk18on:${bouncycastle.vespa.version}
 org.bouncycastle:bcutil-jdk18on:${bouncycastle.vespa.version}
 org.codehaus.plexus:plexus-archiver:4.8.0
 org.codehaus.plexus:plexus-classworlds:2.7.0
-org.codehaus.plexus:plexus-component-annotations:1.5.5
+org.codehaus.plexus:plexus-component-annotations:2.1.0
 org.codehaus.plexus:plexus-container-default:1.0-alpha-9-stable-1
-org.codehaus.plexus:plexus-interpolation:1.26
+org.codehaus.plexus:plexus-interpolation:${plexus-interpolation.vespa.version}
 org.codehaus.plexus:plexus-io:${maven-enforcer-plugin.vespa.version}
-org.codehaus.plexus:plexus-utils:${maven-shade-plugin.vespa.version}
-org.eclipse.angus:angus-activation:${jakarta.inject.vespa.version}
+org.codehaus.plexus:plexus-utils:${plexus-utils.vespa.version}
+org.eclipse.angus:angus-activation:${eclipse-angus.vespa.version}
 org.eclipse.collections:eclipse-collections-api:${eclipse-collections.vespa.version}
 org.eclipse.collections:eclipse-collections:${eclipse-collections.vespa.version}
 org.eclipse.jetty.http2:http2-client:${jetty.vespa.version}
@@ -158,8 +159,8 @@ org.eclipse.jetty:jetty-security:${jetty.vespa.version}
 org.eclipse.jetty:jetty-server:${jetty.vespa.version}
 org.eclipse.jetty:jetty-servlet:${jetty.vespa.version}
 org.eclipse.jetty:jetty-util:${jetty.vespa.version}
-org.eclipse.sisu:org.eclipse.sisu.inject:0.3.5
-org.eclipse.sisu:org.eclipse.sisu.plexus:0.3.5
+org.eclipse.sisu:org.eclipse.sisu.inject:${eclipse-sisu.vespa.version}
+org.eclipse.sisu:org.eclipse.sisu.plexus:${eclipse-sisu.vespa.version}
 org.fusesource.jansi:jansi:1.18
 org.glassfish.jaxb:jaxb-core:${jaxb.runtime.vespa.version}
 org.glassfish.jaxb:jaxb-runtime:${jaxb.runtime.vespa.version}
@@ -182,7 +183,6 @@ org.junit.platform:junit-platform-engine:${junit.platform.vespa.version}
 org.junit.platform:junit-platform-launcher:${junit.platform.vespa.tenant.version}
 org.junit.vintage:junit-vintage-engine:${junit.vespa.tenant.version}
 org.junit.vintage:junit-vintage-engine:${junit.vespa.version}
-org.kohsuke:libpam4j:1.11
 org.lz4:lz4-java:${org.lz4.vespa.version}
 org.mockito:mockito-core:${mockito.vespa.version}
 org.mockito:mockito-junit-jupiter:${mockito.vespa.version}
@@ -202,5 +202,4 @@ org.slf4j:slf4j-simple:${slf4j.vespa.version}
 org.tukaani:xz:1.9
 org.wiremock:wiremock-standalone:${wiremock.vespa.version}
 org.xerial.snappy:snappy-java:${snappy.vespa.version}
-software.amazon.ion:ion-java:1.0.2
 xerces:xercesImpl:${xerces.vespa.version}

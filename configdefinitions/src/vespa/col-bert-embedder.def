@@ -1,3 +1,4 @@
+# Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 namespace=embedding
 
@@ -24,6 +25,9 @@ transformerAttentionMask string default=attention_mask
 transformerStartSequenceToken int default=101
 transformerEndSequenceToken   int default=102
 transformerMaskToken   int default=103
+transformerPadToken    int default=0
+queryTokenId     int default=1
+documentTokenId  int default=2
 
 # Output name
 transformerOutput string default=contextual

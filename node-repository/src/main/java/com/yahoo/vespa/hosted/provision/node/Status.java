@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.hosted.provision.node;
 
 import com.yahoo.component.Version;
@@ -130,11 +130,6 @@ public class Status {
 
     /** Returns a copy of this with prefer-to-retire set to given value */
     public Status withPreferToRetire(boolean preferToRetire) {
-        return new Status(reboot, vespaVersion, containerImage, failCount, wantToRetire, wantToDeprovision, wantToRebuild, preferToRetire, wantToFail, wantToUpgradeFlavor, osVersion, firmwareVerifiedAt);
-    }
-
-    /** Returns a copy of this with wantToUpgradeFlavor set to given value */
-    public Status withWantToUpgradeFlavor(boolean wantToUpgradeFlavor) {
         return new Status(reboot, vespaVersion, containerImage, failCount, wantToRetire, wantToDeprovision, wantToRebuild, preferToRetire, wantToFail, wantToUpgradeFlavor, osVersion, firmwareVerifiedAt);
     }
 

@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include "hash_map.hpp"
 #include "hash_map_equal.hpp"
@@ -20,6 +20,7 @@ VESPALIB_HASH_MAP_INSTANTIATE(uint16_t, uint16_t);
 VESPALIB_HASH_MAP_INSTANTIATE(uint16_t, uint32_t);
 VESPALIB_HASH_MAP_INSTANTIATE(uint32_t, int32_t);
 VESPALIB_HASH_MAP_INSTANTIATE(uint32_t, uint32_t);
+VESPALIB_HASH_MAP_INSTANTIATE(uint32_t, double);
 VESPALIB_HASH_MAP_INSTANTIATE(uint64_t, uint32_t);
 VESPALIB_HASH_MAP_INSTANTIATE(uint64_t, uint64_t);
 VESPALIB_HASH_MAP_INSTANTIATE(uint64_t, bool);

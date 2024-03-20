@@ -1,5 +1,5 @@
 #! /bin/bash
-# Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+# Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 # common environment setup for vespa scripts
 
 # put these two lines in all scripts:
@@ -163,7 +163,7 @@ export MALLOC_ARENA_MAX=1
 optionally_reduce_base_frequency
 
 # Prefer newer gdb and pstack
-prepend_path /opt/rh/gcc-toolset-12/root/usr/bin
+prepend_path /opt/rh/gcc-toolset/root/usr/bin
 
 # Maven is needed for tester applications
 prepend_path "$VESPA_HOME/local/maven/bin"

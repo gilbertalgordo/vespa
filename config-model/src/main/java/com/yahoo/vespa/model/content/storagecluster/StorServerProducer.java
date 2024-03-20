@@ -1,6 +1,7 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.model.content.storagecluster;
 
+import com.yahoo.config.model.api.ModelContext;
 import com.yahoo.vespa.config.content.core.StorServerConfig;
 import com.yahoo.vespa.model.builder.xml.dom.ModelElement;
 import com.yahoo.vespa.model.content.cluster.ContentCluster;
@@ -10,10 +11,10 @@ import com.yahoo.vespa.model.content.cluster.ContentCluster;
  */
 public class StorServerProducer implements StorServerConfig.Producer {
     public static class Builder {
-        StorServerProducer build(ModelElement element) {
+        StorServerProducer build(ModelContext.Properties properties, ModelElement element) {
             ModelElement tuning = element.child("tuning");
 
-            StorServerProducer producer = new StorServerProducer(ContentCluster.getClusterId(element));
+            StorServerProducer producer = new StorServerProducer(ContentCluster.getClusterId(element), properties.featureFlags());
             if (tuning == null) return producer;
 
             ModelElement merges = tuning.child("merges");
@@ -42,7 +43,7 @@ public class StorServerProducer implements StorServerConfig.Producer {
         return this;
     }
 
-    StorServerProducer(String clusterName) {
+    StorServerProducer(String clusterName, ModelContext.FeatureFlags featureFlags) {
         this.clusterName = clusterName;
     }
 
@@ -60,5 +61,8 @@ public class StorServerProducer implements StorServerConfig.Producer {
         if (queueSize != null) {
             builder.max_merge_queue_size(queueSize);
         }
+        builder.merge_throttling_memory_limit(
+                new StorServerConfig.Merge_throttling_memory_limit.Builder()
+                        .max_usage_bytes(0));
     }
 }

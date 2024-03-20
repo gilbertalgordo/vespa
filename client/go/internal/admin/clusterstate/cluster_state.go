@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 // Author: arnej
 
 // utilities to get and manipulate node states in a storage cluster
@@ -11,7 +11,7 @@ import (
 	"strings"
 
 	"github.com/vespa-engine/vespa/client/go/internal/admin/trace"
-	"github.com/vespa-engine/vespa/client/go/internal/util"
+	"github.com/vespa-engine/vespa/client/go/internal/osutil"
 )
 
 // common struct used various places in the clustercontroller REST api:
@@ -117,6 +117,6 @@ func (model *VespaModelConfig) getClusterState(cluster string) (*ClusterState, *
 		return &parsedJson, &cc
 	}
 	// no success:
-	util.JustExitMsg(fmt.Sprint(errs))
+	osutil.ExitMsg(fmt.Sprint(errs))
 	panic("unreachable")
 }

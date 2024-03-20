@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #pragma once
 
@@ -59,6 +59,7 @@ struct NoUnpack {
         (void) docid;
         (void) search;
     }
+    void each(auto &&f, size_t n) { (void) f; (void) n; }
     void onRemove(size_t index) { (void) index; }
     void onInsert(size_t index) { (void) index; }
     bool needUnpack(size_t index) const { (void) index; return false; }

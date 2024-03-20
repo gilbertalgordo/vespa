@@ -1,8 +1,10 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include <vespa/vespalib/testkit/testapp.h>
 
 #include <vespa/document/fieldvalue/fieldvalues.h>
+#include <vespa/searchlib/query/streaming/fuzzy_term.h>
+#include <vespa/searchlib/query/streaming/regexp_term.h>
 #include <vespa/searchlib/query/streaming/queryterm.h>
 #include <vespa/vsm/searcher/boolfieldsearcher.h>
 #include <vespa/vsm/searcher/fieldsearcher.h>
@@ -15,12 +17,21 @@
 #include <vespa/vsm/searcher/utf8substringsearcher.h>
 #include <vespa/vsm/searcher/utf8substringsnippetmodifier.h>
 #include <vespa/vsm/searcher/utf8suffixstringfieldsearcher.h>
+#include <vespa/vsm/searcher/tokenizereader.h>
 #include <vespa/vsm/vsm/snippetmodifier.h>
+#include <concepts>
+#include <charconv>
+#include <stdexcept>
+#include <utility>
 
 using namespace document;
 using search::streaming::HitList;
 using search::streaming::QueryNodeResultFactory;
+using search::streaming::FuzzyTerm;
+using search::streaming::RegexpTerm;
 using search::streaming::QueryTerm;
+using search::Normalizing;
+using Searchmethod = VsmfieldsConfig::Fieldspec::Searchmethod;
 using search::streaming::QueryTermList;
 using TermType = QueryTerm::Type;
 using namespace vsm;
@@ -33,7 +44,7 @@ public:
     Vector<T> & add(T v) { this->push_back(v); return *this; }
 };
 
-using Hits = Vector<size_t>;
+using Hits = Vector<std::pair<uint32_t, uint32_t>>;
 using StringList = Vector<std::string> ;
 using HitsList = Vector<Hits>;
 using BoolList = Vector<bool>;
@@ -47,23 +58,72 @@ class String
 private:
     const std::string & _str;
 public:
-    String(const std::string & str) : _str(str) {}
+    explicit String(const std::string & str) : _str(str) {}
     bool operator==(const String & rhs) const {
         return _str == rhs._str;
     }
 };
 
+namespace {
+
+template <std::integral T>
+std::string_view maybe_consume_into(std::string_view str, T& val_out) {
+    auto [ptr, ec] = std::from_chars(str.data(), str.data() + str.size(), val_out);
+    if (ec != std::errc()) {
+        return str;
+    }
+    return str.substr(ptr - str.data());
+}
+
+// Parse optional max edits and prefix lock length from term string.
+// Syntax:
+//   "term"      -> {2, 0, "term"} (default max edits & prefix length)
+//   "{1}term"   -> {1, 0, "term"}
+//   "{1,3}term" -> {1, 3, "term"}
+//
+// Note: this is not a "proper" parser (it accepts empty numeric values); only for testing!
+std::tuple<uint8_t, uint32_t, std::string_view> parse_fuzzy_params(std::string_view term) {
+    if (term.empty() || term[0] != '{') {
+        return {2, 0, term};
+    }
+    uint8_t  max_edits = 2;
+    uint32_t prefix_length = 0;
+    term = maybe_consume_into(term.substr(1), max_edits);
+    if (term.empty() || (term[0] != ',' && term[0] != '}')) {
+        throw std::invalid_argument("malformed fuzzy params at (or after) max_edits");
+    }
+    if (term[0] == '}') {
+        return {max_edits, prefix_length, term.substr(1)};
+    }
+    term = maybe_consume_into(term.substr(1), prefix_length);
+    if (term.empty() || term[0] != '}') {
+        throw std::invalid_argument("malformed fuzzy params at (or after) prefix_length");
+    }
+    return {max_edits, prefix_length, term.substr(1)};
+}
+
+}
+
 class Query
 {
 private:
-    void setupQuery(const StringList & terms) {
-        for (size_t i = 0; i < terms.size(); ++i) {
-            ParsedQueryTerm pqt = parseQueryTerm(terms[i]);
+    void setupQuery(const StringList & terms, Normalizing normalizing) {
+        for (const auto & term : terms) {
+            ParsedQueryTerm pqt = parseQueryTerm(term);
             ParsedTerm pt = parseTerm(pqt.second);
-            qtv.push_back(std::make_unique<QueryTerm>(eqnr.create(), pt.first, pqt.first.empty() ? "index" : pqt.first, pt.second));
+            std::string effective_index = pqt.first.empty() ? "index" : pqt.first;
+            if (pt.second == TermType::REGEXP) {
+                qtv.push_back(std::make_unique<RegexpTerm>(eqnr.create(), pt.first, effective_index, TermType::REGEXP, normalizing));
+            } else if (pt.second == TermType::FUZZYTERM) {
+                auto [max_edits, prefix_length, actual_term] = parse_fuzzy_params(pt.first);
+                qtv.push_back(std::make_unique<FuzzyTerm>(eqnr.create(), vespalib::stringref(actual_term.data(), actual_term.size()),
+                                                          effective_index, TermType::FUZZYTERM, normalizing, max_edits, prefix_length));
+            } else {
+                qtv.push_back(std::make_unique<QueryTerm>(eqnr.create(), pt.first, effective_index, pt.second, normalizing));
+            }
         }
-        for (size_t i = 0; i < qtv.size(); ++i) {
-            qtl.push_back(qtv[i].get());
+        for (const auto & i : qtv) {
+            qtl.push_back(i.get());
         }
     }
 public:
@@ -72,20 +132,26 @@ public:
     QueryNodeResultFactory   eqnr;
     std::vector<QueryTerm::UP> qtv;
     QueryTermList          qtl;
-    Query(const StringList & terms);
+
+    explicit Query(const StringList & terms) : Query(terms, Normalizing::LOWERCASE_AND_FOLD) {}
+    Query(const StringList & terms, Normalizing normalizing);
     ~Query();
     static ParsedQueryTerm parseQueryTerm(const std::string & queryTerm) {
         size_t i = queryTerm.find(':');
         if (i != std::string::npos) {
-            return ParsedQueryTerm(queryTerm.substr(0, i), queryTerm.substr(i + 1));
+            return {queryTerm.substr(0, i), queryTerm.substr(i + 1)};
         }
-        return ParsedQueryTerm(std::string(), queryTerm);
+        return {std::string(), queryTerm};
     }
     static ParsedTerm parseTerm(const std::string & term) {
         if (term[0] == '*' && term[term.size() - 1] == '*') {
             return std::make_pair(term.substr(1, term.size() - 2), TermType::SUBSTRINGTERM);
         } else if (term[0] == '*') {
             return std::make_pair(term.substr(1, term.size() - 1), TermType::SUFFIXTERM);
+        } else if (term[0] == '#') { // magic regex enabler
+            return std::make_pair(term.substr(1), TermType::REGEXP);
+        } else if (term[0] == '%') { // equally magic fuzzy enabler
+            return std::make_pair(term.substr(1), TermType::FUZZYTERM);
         } else if (term[term.size() - 1] == '*') {
             return std::make_pair(term.substr(0, term.size() - 1), TermType::PREFIXTERM);
         } else {
@@ -94,8 +160,8 @@ public:
     }
 };
 
-Query::Query(const StringList & terms) : eqnr(), qtv(), qtl() {
-    setupQuery(terms);
+Query::Query(const StringList & terms, Normalizing normalizing) : eqnr(), qtv(), qtl() {
+    setupQuery(terms, normalizing);
 }
 Query::~Query() = default;
 
@@ -111,7 +177,7 @@ struct SnippetModifierSetup
 
 SnippetModifierSetup::SnippetModifierSetup(const StringList & terms)
     : query(terms),
-      searcher(new UTF8SubstringSnippetModifier()),
+      searcher(new UTF8SubstringSnippetModifier(0)),
       env(),
       modifier(searcher)
 {
@@ -254,8 +320,8 @@ getFieldValue(const StringList & fv)
 
     static ArrayDataType type(*DataType::STRING);
     ArrayFieldValue afv(type);
-    for (size_t i = 0; i < fv.size(); ++i) {
-        afv.add(StringFieldValue(fv[i]));
+    for (const auto & v : fv) {
+        afv.add(StringFieldValue(v));
     }
     return afv;
 }
@@ -265,8 +331,8 @@ getFieldValue(const LongList & fv)
 {
     static ArrayDataType type(*DataType::LONG);
     ArrayFieldValue afv(type);
-    for (size_t i = 0; i < fv.size(); ++i) {
-        afv.add(LongFieldValue(fv[i]));
+    for (long v : fv) {
+        afv.add(LongFieldValue(v));
     }
     return afv;
 }
@@ -276,8 +342,8 @@ getFieldValue(const FloatList & fv)
 {
     static ArrayDataType type(*DataType::FLOAT);
     ArrayFieldValue afv(type);
-    for (size_t i = 0; i < fv.size(); ++i) {
-        afv.add(FloatFieldValue(fv[i]));
+    for (float v : fv) {
+        afv.add(FloatFieldValue(v));
     }
     return afv;
 }
@@ -286,8 +352,8 @@ bool
 assertMatchTermSuffix(const std::string & term, const std::string & word)
 {
     QueryNodeResultFactory eqnr;
-    QueryTerm qa(eqnr.create(), term, "index", TermType::WORD);
-    QueryTerm qb(eqnr.create(), word, "index", TermType::WORD);
+    QueryTerm qa(eqnr.create(), term, "index", TermType::WORD, Normalizing::LOWERCASE_AND_FOLD);
+    QueryTerm qb(eqnr.create(), word, "index", TermType::WORD, Normalizing::LOWERCASE_AND_FOLD);
     const ucs4_t * a;
     size_t alen = qa.term(a);
     const ucs4_t * b;
@@ -299,8 +365,8 @@ void
 assertNumeric(FieldSearcher & fs, const StringList & query, const FieldValue & fv, const BoolList & exp)
 {
     HitsList hl;
-    for (size_t i = 0; i < exp.size(); ++i) {
-        hl.push_back(exp[i] ? Hits().add(0) : Hits());
+    for (bool v : exp) {
+        hl.push_back(v ? Hits().add({0, 0}) : Hits());
     }
     assertSearch(fs, query, fv, hl);
 }
@@ -308,7 +374,7 @@ assertNumeric(FieldSearcher & fs, const StringList & query, const FieldValue & f
 std::vector<QueryTerm::UP>
 performSearch(FieldSearcher & fs, const StringList & query, const FieldValue & fv)
 {
-    Query q(query);
+    Query q(query, fs.normalize_mode());
 
     // prepare field searcher
     test::MockFieldSearcherEnv env;
@@ -316,7 +382,7 @@ performSearch(FieldSearcher & fs, const StringList & query, const FieldValue & f
 
     // setup document
     SharedFieldPathMap sfim(new FieldPathMapT());
-    sfim->push_back(FieldPath());
+    sfim->emplace_back();
     StorageDocument doc(std::make_unique<document::Document>(), sfim, 1);
     doc.setField(0, document::FieldValue::UP(fv.clone()));
 
@@ -335,14 +401,16 @@ assertSearch(FieldSearcher & fs, const StringList & query, const FieldValue & fv
         EXPECT_EQUAL(hl.size(), exp[i].size());
         ASSERT_TRUE(hl.size() == exp[i].size());
         for (size_t j = 0; j < hl.size(); ++j) {
-            EXPECT_EQUAL((size_t)hl[j].pos(), exp[i][j]);
+            EXPECT_EQUAL(0u, hl[j].field_id());
+            EXPECT_EQUAL((size_t)hl[j].element_id(), exp[i][j].first);
+            EXPECT_EQUAL((size_t)hl[j].position(), exp[i][j].second);
         }
     }
 }
 
 bool
 assertFieldInfo(FieldSearcher & fs, const StringList & query,
-                              const FieldValue & fv, const FieldInfoList & exp)
+                const FieldValue & fv, const FieldInfoList & exp)
 {
     auto qtv = performSearch(fs, query, fv);
     if (!EXPECT_EQUAL(qtv.size(), exp.size())) return false;
@@ -358,7 +426,7 @@ assertFieldInfo(FieldSearcher & fs, const StringList & query,
 void
 assertSnippetModifier(const StringList & query, const std::string & fv, const std::string & exp)
 {
-    UTF8SubstringSnippetModifier mod;
+    UTF8SubstringSnippetModifier mod(0);
     performSearch(mod, query, StringFieldValue(fv));
     EXPECT_EQUAL(mod.getModifiedBuf().getPos(), exp.size());
     std::string actual(mod.getModifiedBuf().getBuffer(), mod.getModifiedBuf().getPos());
@@ -369,7 +437,7 @@ assertSnippetModifier(const StringList & query, const std::string & fv, const st
 void assertSnippetModifier(SnippetModifierSetup & setup, const FieldValue & fv, const std::string & exp)
 {
     FieldValue::UP mfv = setup.modifier.modify(fv);
-    const document::LiteralFieldValueB & lfv = static_cast<const document::LiteralFieldValueB &>(*mfv.get());
+    const auto & lfv = static_cast<const document::LiteralFieldValueB &>(*mfv.get());
     const std::string & actual = lfv.getValue();
     EXPECT_EQUAL(actual.size(), exp.size());
     EXPECT_EQUAL(actual, exp);
@@ -377,11 +445,11 @@ void assertSnippetModifier(SnippetModifierSetup & setup, const FieldValue & fv, 
 
 void assertQueryTerms(const SnippetModifierManager & man, FieldIdT fId, const StringList & terms)
 {
-    if (terms.size() == 0) {
-        ASSERT_TRUE(man.getModifiers().getModifier(fId) == NULL);
+    if (terms.empty()) {
+        ASSERT_TRUE(man.getModifiers().getModifier(fId) == nullptr);
         return;
     }
-    ASSERT_TRUE(man.getModifiers().getModifier(fId) != NULL);
+    ASSERT_TRUE(man.getModifiers().getModifier(fId) != nullptr);
     UTF8SubstringSnippetModifier * searcher =
         (static_cast<SnippetModifier *>(man.getModifiers().getModifier(fId)))->getSearcher().get();
     EXPECT_EQUAL(searcher->getQueryTerms().size(), terms.size());
@@ -400,9 +468,9 @@ bool assertCountWords(size_t numWords, const std::string & field)
 bool
 testStringFieldInfo(StrChrFieldSearcher & fs)
 {
-    assertString(fs,    "foo", StringList().add("foo bar baz").add("foo bar").add("baz foo"), Hits().add(0).add(3).add(6));
+    assertString(fs,    "foo", StringList().add("foo bar baz").add("foo bar").add("baz foo"), Hits().add({0, 0}).add({1, 0}).add({2, 1}));
     assertString(fs,    StringList().add("foo").add("bar"), StringList().add("foo bar baz").add("foo bar").add("baz foo"),
-                 HitsList().add(Hits().add(0).add(3).add(6)).add(Hits().add(1).add(4)));
+                 HitsList().add(Hits().add({0, 0}).add({1, 0}).add({2, 1})).add(Hits().add({0, 1}).add({1, 1})));
 
     bool retval = true;
     if (!EXPECT_TRUE(assertFieldInfo(fs, "foo", "foo", QTFieldInfo(0, 1, 1)))) retval = false;
@@ -431,22 +499,22 @@ testStrChrFieldSearcher(StrChrFieldSearcher & fs)
     std::string field = "operators and operator overloading with utf8 char oe = \xc3\x98";
     assertString(fs, "oper",  field, Hits());
     assertString(fs, "tor",   field, Hits());
-    assertString(fs, "oper*", field, Hits().add(0).add(2));
-    assertString(fs, "and",   field, Hits().add(1));
+    assertString(fs, "oper*", field, Hits().add({0, 0}).add({0, 2}));
+    assertString(fs, "and",   field, Hits().add({0, 1}));
 
     assertString(fs, StringList().add("oper").add("tor"), field, HitsList().add(Hits()).add(Hits()));
-    assertString(fs, StringList().add("and").add("overloading"), field, HitsList().add(Hits().add(1)).add(Hits().add(3)));
+    assertString(fs, StringList().add("and").add("overloading"), field, HitsList().add(Hits().add({0, 1})).add(Hits().add({0, 3})));
 
-    fs.setMatchType(FieldSearcher::PREFIX);
-    assertString(fs, "oper",  field, Hits().add(0).add(2));
-    assertString(fs, StringList().add("oper").add("tor"), field, HitsList().add(Hits().add(0).add(2)).add(Hits()));
+    fs.match_type(FieldSearcher::PREFIX);
+    assertString(fs, "oper",  field, Hits().add({0, 0}).add({0, 2}));
+    assertString(fs, StringList().add("oper").add("tor"), field, HitsList().add(Hits().add({0, 0}).add({0, 2})).add(Hits()));
 
-    fs.setMatchType(FieldSearcher::REGULAR);
+    fs.match_type(FieldSearcher::REGULAR);
     if (!EXPECT_TRUE(testStringFieldInfo(fs))) return false;
 
     { // test handling of several underscores
         StringList query = StringList().add("foo").add("bar");
-        HitsList exp = HitsList().add(Hits().add(0)).add(Hits().add(1));
+        HitsList exp = HitsList().add(Hits().add({0, 0})).add(Hits().add({0, 1}));
         assertString(fs, query, "foo_bar", exp);
         assertString(fs, query, "foo__bar", exp);
         assertString(fs, query, "foo___bar", exp);
@@ -456,36 +524,61 @@ testStrChrFieldSearcher(StrChrFieldSearcher & fs)
         query = StringList().add("foo").add("thisisaveryveryverylongword");
         assertString(fs, query, "foo____________________thisisaveryveryverylongword", exp);
 
-        assertString(fs, "bar", "foo                    bar", Hits().add(1));
-        assertString(fs, "bar", "foo____________________bar", Hits().add(1));
-        assertString(fs, "bar", "foo____________________thisisaveryveryverylongword____________________bar", Hits().add(2));
+        assertString(fs, "bar", "foo                    bar", Hits().add({0, 1}));
+        assertString(fs, "bar", "foo____________________bar", Hits().add({0, 1}));
+        assertString(fs, "bar", "foo____________________thisisaveryveryverylongword____________________bar", Hits().add({0, 2}));
     }
     return true;
 }
 
-    TEST("verify correct term parsing") {
-        ASSERT_TRUE(Query::parseQueryTerm("index:term").first == "index");
-        ASSERT_TRUE(Query::parseQueryTerm("index:term").second == "term");
-        ASSERT_TRUE(Query::parseQueryTerm("term").first == "");
-        ASSERT_TRUE(Query::parseQueryTerm("term").second == "term");
-        ASSERT_TRUE(Query::parseTerm("*substr*").first == "substr");
-        ASSERT_TRUE(Query::parseTerm("*substr*").second == TermType::SUBSTRINGTERM);
-        ASSERT_TRUE(Query::parseTerm("*suffix").first == "suffix");
-        ASSERT_TRUE(Query::parseTerm("*suffix").second == TermType::SUFFIXTERM);
-        ASSERT_TRUE(Query::parseTerm("prefix*").first == "prefix");
-        ASSERT_TRUE(Query::parseTerm("prefix*").second == TermType::PREFIXTERM);
-        ASSERT_TRUE(Query::parseTerm("term").first == "term");
-        ASSERT_TRUE(Query::parseTerm("term").second == TermType::WORD);
-    }
+TEST("parsing of test-only fuzzy term params can extract numeric values") {
+    uint8_t max_edits = 0;
+    uint32_t prefix_length = 1234;
+    std::string_view out;
 
-    TEST("suffix matching") {
-        EXPECT_EQUAL(assertMatchTermSuffix("a",      "vespa"), true);
-        EXPECT_EQUAL(assertMatchTermSuffix("spa",    "vespa"), true);
-        EXPECT_EQUAL(assertMatchTermSuffix("vespa",  "vespa"), true);
-        EXPECT_EQUAL(assertMatchTermSuffix("vvespa", "vespa"), false);
-        EXPECT_EQUAL(assertMatchTermSuffix("fspa",   "vespa"), false);
-        EXPECT_EQUAL(assertMatchTermSuffix("v",      "vespa"), false);
-    }
+    std::tie(max_edits, prefix_length, out) = parse_fuzzy_params("myterm");
+    EXPECT_EQUAL(max_edits, 2u);
+    EXPECT_EQUAL(prefix_length, 0u);
+    EXPECT_EQUAL(out, "myterm");
+
+    std::tie(max_edits, prefix_length, out) = parse_fuzzy_params("{3}myterm");
+    EXPECT_EQUAL(max_edits, 3u);
+    EXPECT_EQUAL(prefix_length, 0u);
+    EXPECT_EQUAL(out, "myterm");
+
+    std::tie(max_edits, prefix_length, out) = parse_fuzzy_params("{2,70}myterm");
+    EXPECT_EQUAL(max_edits, 2u);
+    EXPECT_EQUAL(prefix_length, 70u);
+    EXPECT_EQUAL(out, "myterm");
+}
+
+TEST("verify correct term parsing") {
+    ASSERT_TRUE(Query::parseQueryTerm("index:term").first == "index");
+    ASSERT_TRUE(Query::parseQueryTerm("index:term").second == "term");
+    ASSERT_TRUE(Query::parseQueryTerm("term").first.empty());
+    ASSERT_TRUE(Query::parseQueryTerm("term").second == "term");
+    ASSERT_TRUE(Query::parseTerm("*substr*").first == "substr");
+    ASSERT_TRUE(Query::parseTerm("*substr*").second == TermType::SUBSTRINGTERM);
+    ASSERT_TRUE(Query::parseTerm("*suffix").first == "suffix");
+    ASSERT_TRUE(Query::parseTerm("*suffix").second == TermType::SUFFIXTERM);
+    ASSERT_TRUE(Query::parseTerm("prefix*").first == "prefix");
+    ASSERT_TRUE(Query::parseTerm("prefix*").second == TermType::PREFIXTERM);
+    ASSERT_TRUE(Query::parseTerm("#regex").first == "regex");
+    ASSERT_TRUE(Query::parseTerm("#regex").second == TermType::REGEXP);
+    ASSERT_TRUE(Query::parseTerm("%fuzzy").first == "fuzzy");
+    ASSERT_TRUE(Query::parseTerm("%fuzzy").second == TermType::FUZZYTERM);
+    ASSERT_TRUE(Query::parseTerm("term").first == "term");
+    ASSERT_TRUE(Query::parseTerm("term").second == TermType::WORD);
+}
+
+TEST("suffix matching") {
+    EXPECT_EQUAL(assertMatchTermSuffix("a",      "vespa"), true);
+    EXPECT_EQUAL(assertMatchTermSuffix("spa",    "vespa"), true);
+    EXPECT_EQUAL(assertMatchTermSuffix("vespa",  "vespa"), true);
+    EXPECT_EQUAL(assertMatchTermSuffix("vvespa", "vespa"), false);
+    EXPECT_EQUAL(assertMatchTermSuffix("fspa",   "vespa"), false);
+    EXPECT_EQUAL(assertMatchTermSuffix("v",      "vespa"), false);
+}
 
 TEST("Test basic strchrfield searchers") {
     {
@@ -503,16 +596,16 @@ testUTF8SubStringFieldSearcher(StrChrFieldSearcher & fs)
 {
     std::string field = "operators and operator overloading";
     assertString(fs, "rsand", field, Hits());
-    assertString(fs, "ove",   field, Hits().add(3));
-    assertString(fs, "ing",   field, Hits().add(3));
-    assertString(fs, "era",   field, Hits().add(0).add(2));
-    assertString(fs, "a",     field, Hits().add(0).add(1).add(2).add(3));
+    assertString(fs, "ove",   field, Hits().add({0, 3}));
+    assertString(fs, "ing",   field, Hits().add({0, 3}));
+    assertString(fs, "era",   field, Hits().add({0, 0}).add({0, 2}));
+    assertString(fs, "a",     field, Hits().add({0, 0}).add({0, 1}).add({0, 2}).add({0, 3}));
 
     assertString(fs, StringList().add("dn").add("gn"), field, HitsList().add(Hits()).add(Hits()));
-    assertString(fs, StringList().add("ato").add("load"), field, HitsList().add(Hits().add(0).add(2)).add(Hits().add(3)));
+    assertString(fs, StringList().add("ato").add("load"), field, HitsList().add(Hits().add({0, 0}).add({0, 2})).add(Hits().add({0, 3})));
 
     assertString(fs, StringList().add("aa").add("ab"), "aaaab",
-                 HitsList().add(Hits().add(0).add(0).add(0)).add(Hits().add(0)));
+                 HitsList().add(Hits().add({0, 0}).add({0, 0}).add({0, 0})).add(Hits().add({0, 0})));
 
     if (!EXPECT_TRUE(testStringFieldInfo(fs))) return false;
     return true;
@@ -522,20 +615,20 @@ TEST("utf8 substring search") {
     {
         UTF8SubStringFieldSearcher fs(0);
         EXPECT_TRUE(testUTF8SubStringFieldSearcher(fs));
-        assertString(fs, "aa", "aaaa", Hits().add(0).add(0));
+        assertString(fs, "aa", "aaaa", Hits().add({0, 0}).add({0, 0}));
     }
     {
         UTF8SubStringFieldSearcher fs(0);
         EXPECT_TRUE(testUTF8SubStringFieldSearcher(fs));
-        assertString(fs, "abc", "abc bcd abc", Hits().add(0).add(2));
+        assertString(fs, "abc", "abc bcd abc", Hits().add({0, 0}).add({0, 2}));
         fs.maxFieldLength(4);
-        assertString(fs, "abc", "abc bcd abc", Hits().add(0));
+        assertString(fs, "abc", "abc bcd abc", Hits().add({0, 0}));
     }
     {
         UTF8SubstringSnippetModifier fs(0);
         EXPECT_TRUE(testUTF8SubStringFieldSearcher(fs));
         // we don't have 1 term optimization
-        assertString(fs, "aa", "aaaa", Hits().add(0).add(0).add(0));
+        assertString(fs, "aa", "aaaa", Hits().add({0, 0}).add({0, 0}).add({0, 0}));
     }
 }
 
@@ -550,12 +643,12 @@ TEST("utf8 substring search with empty term")
 TEST("utf8 suffix search") {
     UTF8SuffixStringFieldSearcher fs(0);
     std::string field = "operators and operator overloading";
-    assertString(fs, "rsand", field, Hits());
-    assertString(fs, "tor",   field, Hits().add(2));
-    assertString(fs, "tors",  field, Hits().add(0));
+    TEST_DO(assertString(fs, "rsand", field, Hits()));
+    TEST_DO(assertString(fs, "tor",   field, Hits().add({0, 2})));
+    TEST_DO(assertString(fs, "tors",  field, Hits().add({0, 0})));
 
-    assertString(fs, StringList().add("an").add("din"), field, HitsList().add(Hits()).add(Hits()));
-    assertString(fs, StringList().add("nd").add("g"), field, HitsList().add(Hits().add(1)).add(Hits().add(3)));
+    TEST_DO(assertString(fs, StringList().add("an").add("din"), field, HitsList().add(Hits()).add(Hits())));
+    TEST_DO(assertString(fs, StringList().add("nd").add("g"), field, HitsList().add(Hits().add({0, 1})).add(Hits().add({0, 3}))));
 
     EXPECT_TRUE(testStringFieldInfo(fs));
 }
@@ -563,47 +656,185 @@ TEST("utf8 suffix search") {
 TEST("utf8 exact match") {
     UTF8ExactStringFieldSearcher fs(0);
     // regular
-    TEST_DO(assertString(fs, "vespa", "vespa", Hits().add(0)));
+    TEST_DO(assertString(fs, "vespa", "vespa", Hits().add({0, 0})));
     TEST_DO(assertString(fs, "vespar", "vespa", Hits()));
     TEST_DO(assertString(fs, "vespa", "vespar", Hits()));
     TEST_DO(assertString(fs, "vespa", "vespa vespa", Hits()));
     TEST_DO(assertString(fs, "vesp",  "vespa", Hits()));
-    TEST_DO(assertString(fs, "vesp*",  "vespa", Hits().add(0)));
-    TEST_DO(assertString(fs, "hutte",  "hutte", Hits().add(0)));
-    TEST_DO(assertString(fs, "hütte",  "hütte", Hits().add(0)));
+    TEST_DO(assertString(fs, "vesp*",  "vespa", Hits().add({0, 0})));
+    TEST_DO(assertString(fs, "hutte",  "hutte", Hits().add({0, 0})));
+    TEST_DO(assertString(fs, "hütte",  "hütte", Hits().add({0, 0})));
     TEST_DO(assertString(fs, "hutte",  "hütte", Hits()));
     TEST_DO(assertString(fs, "hütte",  "hutte", Hits()));
     TEST_DO(assertString(fs, "hütter", "hütte", Hits()));
     TEST_DO(assertString(fs, "hütte",  "hütter", Hits()));
 }
 
-TEST("utf8 flexible searcher"){
+TEST("utf8 flexible searcher (except regex)"){
     UTF8FlexibleStringFieldSearcher fs(0);
     // regular
-    assertString(fs, "vespa", "vespa", Hits().add(0));
+    assertString(fs, "vespa", "vespa", Hits().add({0, 0}));
     assertString(fs, "vesp",  "vespa", Hits());
     assertString(fs, "esp",   "vespa", Hits());
     assertString(fs, "espa",  "vespa", Hits());
 
     // prefix
-    assertString(fs, "vesp*",  "vespa", Hits().add(0));
-    fs.setMatchType(FieldSearcher::PREFIX);
-    assertString(fs, "vesp",   "vespa", Hits().add(0));
+    assertString(fs, "vesp*",  "vespa", Hits().add({0, 0}));
+    fs.match_type(FieldSearcher::PREFIX);
+    assertString(fs, "vesp",   "vespa", Hits().add({0, 0}));
 
     // substring
-    fs.setMatchType(FieldSearcher::REGULAR);
-    assertString(fs, "*esp*",  "vespa", Hits().add(0));
-    fs.setMatchType(FieldSearcher::SUBSTRING);
-    assertString(fs, "esp",  "vespa", Hits().add(0));
+    fs.match_type(FieldSearcher::REGULAR);
+    assertString(fs, "*esp*",  "vespa", Hits().add({0, 0}));
+    fs.match_type(FieldSearcher::SUBSTRING);
+    assertString(fs, "esp",  "vespa", Hits().add({0, 0}));
 
     // suffix
-    fs.setMatchType(FieldSearcher::REGULAR);
-    assertString(fs, "*espa",  "vespa", Hits().add(0));
-    fs.setMatchType(FieldSearcher::SUFFIX);
-    assertString(fs, "espa",  "vespa", Hits().add(0));
+    fs.match_type(FieldSearcher::REGULAR);
+    assertString(fs, "*espa",  "vespa", Hits().add({0, 0}));
+    fs.match_type(FieldSearcher::SUFFIX);
+    assertString(fs, "espa",  "vespa", Hits().add({0, 0}));
 
-    fs.setMatchType(FieldSearcher::REGULAR);
+    fs.match_type(FieldSearcher::REGULAR);
     EXPECT_TRUE(testStringFieldInfo(fs));
+}
+
+TEST("utf8 flexible searcher handles regex and by default has case-insensitive partial match semantics") {
+    UTF8FlexibleStringFieldSearcher fs(0);
+    // Note: the # term prefix is a magic term-as-regex symbol used only for tests in this file
+    TEST_DO(assertString(fs, "#abc",   "ABC", Hits().add({0, 0})));
+    TEST_DO(assertString(fs, "#bc",    "ABC", Hits().add({0, 0})));
+    TEST_DO(assertString(fs, "#ab",    "ABC", Hits().add({0, 0})));
+    TEST_DO(assertString(fs, "#[a-z]", "ABC", Hits().add({0, 0})));
+    TEST_DO(assertString(fs, "#(zoid)(berg)", "why not zoidberg?", Hits().add({0, 0})));
+    TEST_DO(assertString(fs, "#[a-z]", "123", Hits()));
+}
+
+TEST("utf8 flexible searcher handles case-sensitive regex matching") {
+    UTF8FlexibleStringFieldSearcher fs(0);
+    fs.normalize_mode(Normalizing::NONE);
+    TEST_DO(assertString(fs, "#abc",   "ABC", Hits()));
+    TEST_DO(assertString(fs, "#abc",   "abc", Hits().add({0, 0})));
+    TEST_DO(assertString(fs, "#[A-Z]",   "A", Hits().add({0, 0})));
+    TEST_DO(assertString(fs, "#[A-Z]", "ABC", Hits().add({0, 0})));
+    TEST_DO(assertString(fs, "#[A-Z]", "abc", Hits()));
+}
+
+TEST("utf8 flexible searcher handles regexes with explicit anchoring") {
+    UTF8FlexibleStringFieldSearcher fs(0);
+    TEST_DO(assertString(fs, "#^foo",  "food", Hits().add({0, 0})));
+    TEST_DO(assertString(fs, "#^foo",  "afoo", Hits()));
+    TEST_DO(assertString(fs, "#foo$",  "afoo", Hits().add({0, 0})));
+    TEST_DO(assertString(fs, "#foo$",  "food", Hits()));
+    TEST_DO(assertString(fs, "#^foo$", "foo",  Hits().add({0, 0})));
+    TEST_DO(assertString(fs, "#^foo$", "food", Hits()));
+    TEST_DO(assertString(fs, "#^foo$", "oo",   Hits()));
+}
+
+TEST("utf8 flexible searcher regex matching treats field as 1 word") {
+    UTF8FlexibleStringFieldSearcher fs(0);
+    // Match case
+    TEST_DO(assertFieldInfo(fs, "#.*", "foo bar baz", QTFieldInfo(0, 1, 1)));
+    // Mismatch case
+    TEST_DO(assertFieldInfo(fs, "#^zoid$", "foo bar baz", QTFieldInfo(0, 0, 1)));
+}
+
+TEST("utf8 flexible searcher handles fuzzy search in uncased mode") {
+    UTF8FlexibleStringFieldSearcher fs(0);
+    // Term syntax (only applies to these tests):
+    //   %{k}term   => fuzzy match "term" with max edits k
+    //   %{k,p}term => fuzzy match "term" with max edits k, prefix lock length p
+
+    // DFA is used for k in {1, 2}
+    TEST_DO(assertString(fs, "%{1}abc",  "abc",    Hits().add({0, 0})));
+    TEST_DO(assertString(fs, "%{1}ABC",  "abc",    Hits().add({0, 0})));
+    TEST_DO(assertString(fs, "%{1}abc",  "ABC",    Hits().add({0, 0})));
+    TEST_DO(assertString(fs, "%{1}Abc",  "abd",    Hits().add({0, 0})));
+    TEST_DO(assertString(fs, "%{1}abc",  "ABCD",   Hits().add({0, 0})));
+    TEST_DO(assertString(fs, "%{1}abc",  "abcde",  Hits()));
+    TEST_DO(assertString(fs, "%{2}abc",  "abcde",  Hits().add({0, 0})));
+    TEST_DO(assertString(fs, "%{2}abc",  "xabcde", Hits()));
+    // Fallback to non-DFA matcher when k not in {1, 2}
+    TEST_DO(assertString(fs, "%{3}abc",  "abc",   Hits().add({0, 0})));
+    TEST_DO(assertString(fs, "%{3}abc",  "XYZ",   Hits().add({0, 0})));
+    TEST_DO(assertString(fs, "%{3}abc",  "XYZ!",  Hits()));
+}
+
+TEST("utf8 flexible searcher handles fuzzy search in cased mode") {
+    UTF8FlexibleStringFieldSearcher fs(0);
+    fs.normalize_mode(Normalizing::NONE);
+    TEST_DO(assertString(fs, "%{1}abc", "abc",  Hits().add({0, 0})));
+    TEST_DO(assertString(fs, "%{1}abc", "Abc",  Hits().add({0, 0})));
+    TEST_DO(assertString(fs, "%{1}ABC", "abc",  Hits()));
+    TEST_DO(assertString(fs, "%{2}Abc", "abc",  Hits().add({0, 0})));
+    TEST_DO(assertString(fs, "%{2}abc", "AbC",  Hits().add({0, 0})));
+    TEST_DO(assertString(fs, "%{3}abc", "ABC",  Hits().add({0, 0})));
+    TEST_DO(assertString(fs, "%{3}abc", "ABCD", Hits()));
+}
+
+TEST("utf8 flexible searcher handles fuzzy search with prefix locking") {
+    UTF8FlexibleStringFieldSearcher fs(0);
+    // DFA
+    TEST_DO(assertString(fs, "%{1,4}zoid",     "zoi",        Hits()));
+    TEST_DO(assertString(fs, "%{1,4}zoid",     "zoid",       Hits().add({0, 0})));
+    TEST_DO(assertString(fs, "%{1,4}zoid",     "ZOID",       Hits().add({0, 0})));
+    TEST_DO(assertString(fs, "%{1,4}zoidberg", "zoid",       Hits()));
+    TEST_DO(assertString(fs, "%{1,4}zoidberg", "ZoidBerg",   Hits().add({0, 0})));
+    TEST_DO(assertString(fs, "%{1,4}zoidberg", "ZoidBergg",  Hits().add({0, 0})));
+    TEST_DO(assertString(fs, "%{1,4}zoidberg", "zoidborg",   Hits().add({0, 0})));
+    TEST_DO(assertString(fs, "%{1,4}zoidberg", "zoidblergh", Hits()));
+    TEST_DO(assertString(fs, "%{2,4}zoidberg", "zoidblergh", Hits().add({0, 0})));
+    // Fallback
+    TEST_DO(assertString(fs, "%{3,4}zoidberg", "zoidblergh", Hits().add({0, 0})));
+    TEST_DO(assertString(fs, "%{3,4}zoidberg", "zoidbooorg", Hits().add({0, 0})));
+    TEST_DO(assertString(fs, "%{3,4}zoidberg", "zoidzooorg", Hits()));
+
+    fs.normalize_mode(Normalizing::NONE);
+    // DFA
+    TEST_DO(assertString(fs, "%{1,4}zoid",     "ZOID",       Hits()));
+    TEST_DO(assertString(fs, "%{1,4}ZOID",     "zoid",       Hits()));
+    TEST_DO(assertString(fs, "%{1,4}zoidberg", "zoidBerg",   Hits().add({0, 0}))); // 1 edit
+    TEST_DO(assertString(fs, "%{1,4}zoidberg", "zoidBblerg", Hits()));        // 2 edits, 1 max
+    TEST_DO(assertString(fs, "%{2,4}zoidberg", "zoidBblerg", Hits().add({0, 0}))); // 2 edits, 2 max
+    // Fallback
+    TEST_DO(assertString(fs, "%{3,4}zoidberg", "zoidBERG",   Hits()));        // 4 edits, 3 max
+    TEST_DO(assertString(fs, "%{4,4}zoidberg", "zoidBERG",   Hits().add({0, 0}))); // 4 edits, 4 max
+}
+
+TEST("utf8 flexible searcher fuzzy match with max_edits=0 implies exact match") {
+    UTF8FlexibleStringFieldSearcher fs(0);
+    TEST_DO(assertString(fs, "%{0}zoid",   "zoi",  Hits()));
+    TEST_DO(assertString(fs, "%{0,4}zoid", "zoi",  Hits()));
+    TEST_DO(assertString(fs, "%{0}zoid",   "zoid", Hits().add({0, 0})));
+    TEST_DO(assertString(fs, "%{0}zoid",   "ZOID", Hits().add({0, 0})));
+    TEST_DO(assertString(fs, "%{0,4}zoid", "ZOID", Hits().add({0, 0})));
+    fs.normalize_mode(Normalizing::NONE);
+    TEST_DO(assertString(fs, "%{0}zoid",   "ZOID", Hits()));
+    TEST_DO(assertString(fs, "%{0,4}zoid", "ZOID", Hits()));
+    TEST_DO(assertString(fs, "%{0}zoid",   "zoid", Hits().add({0, 0})));
+    TEST_DO(assertString(fs, "%{0,4}zoid", "zoid", Hits().add({0, 0})));
+}
+
+TEST("utf8 flexible searcher caps oversized fuzzy prefix length to term length") {
+    UTF8FlexibleStringFieldSearcher fs(0);
+    // DFA
+    TEST_DO(assertString(fs, "%{1,5}zoid",    "zoid", Hits().add({0, 0})));
+    TEST_DO(assertString(fs, "%{1,9001}zoid", "zoid", Hits().add({0, 0})));
+    TEST_DO(assertString(fs, "%{1,9001}zoid", "boid", Hits()));
+    // Fallback
+    TEST_DO(assertString(fs, "%{0,5}zoid",    "zoid", Hits().add({0, 0})));
+    TEST_DO(assertString(fs, "%{5,5}zoid",    "zoid", Hits().add({0, 0})));
+    TEST_DO(assertString(fs, "%{0,9001}zoid", "zoid", Hits().add({0, 0})));
+    TEST_DO(assertString(fs, "%{5,9001}zoid", "zoid", Hits().add({0, 0})));
+    TEST_DO(assertString(fs, "%{5,9001}zoid", "boid", Hits()));
+}
+
+TEST("utf8 flexible searcher fuzzy matching treats field as 1 word") {
+    UTF8FlexibleStringFieldSearcher fs(0);
+    // Match case
+    TEST_DO(assertFieldInfo(fs, "%{1}foo bar baz", "foo jar baz", QTFieldInfo(0, 1, 1)));
+    // Mismatch case
+    TEST_DO(assertFieldInfo(fs, "%{1}foo", "foo bar baz", QTFieldInfo(0, 0, 1)));
 }
 
 TEST("bool search") {
@@ -630,6 +861,8 @@ TEST("integer search")
     TEST_DO(assertInt(fs,    "<11",  10, true));
     TEST_DO(assertInt(fs,    "<11",  11, false));
     TEST_DO(assertInt(fs,    "-10", -10, true));
+    TEST_DO(assertInt(fs,     "10", -10, false));
+    TEST_DO(assertInt(fs,    "-10",  10, false));
     TEST_DO(assertInt(fs,     "-9", -10, false));
     TEST_DO(assertInt(fs,      "a",  10, false));
     TEST_DO(assertInt(fs, "[-5;5]",  -5, true));
@@ -642,9 +875,9 @@ TEST("integer search")
     TEST_DO(assertInt(fs, StringList().add("9").add("10"),  10, BoolList().add(false).add(true)));
     TEST_DO(assertInt(fs, StringList().add("10").add(">9"), 10, BoolList().add(true).add(true)));
 
-    TEST_DO(assertInt(fs, "10", LongList().add(10).add(20).add(10).add(30), Hits().add(0).add(2)));
+    TEST_DO(assertInt(fs, "10", LongList().add(10).add(20).add(10).add(30), Hits().add({0, 0}).add({2, 0})));
     TEST_DO(assertInt(fs, StringList().add("10").add("20"), LongList().add(10).add(20).add(10).add(30),
-                      HitsList().add(Hits().add(0).add(2)).add(Hits().add(1))));
+                      HitsList().add(Hits().add({0, 0}).add({2, 0})).add(Hits().add({1, 0}))));
 
     TEST_DO(assertFieldInfo(fs, "10", 10, QTFieldInfo(0, 1, 1)));
     TEST_DO(assertFieldInfo(fs, "10", LongList().add(10).add(20).add(10).add(30), QTFieldInfo(0, 2, 4)));
@@ -656,7 +889,7 @@ TEST("integer search")
 
 TEST("floating point search")
 {
-    FloatFieldSearcher fs;
+    FloatFieldSearcher fs(0);
     TEST_DO(assertFloat(fs,         "10",    10, true));
     TEST_DO(assertFloat(fs,       "10.5",  10.5, true));
     TEST_DO(assertFloat(fs,      "-10.5", -10.5, true));
@@ -677,9 +910,9 @@ TEST("floating point search")
     TEST_DO(assertFloat(fs, StringList().add("10").add("10.5"),    10.5, BoolList().add(false).add(true)));
     TEST_DO(assertFloat(fs, StringList().add(">10.4").add("10.5"), 10.5, BoolList().add(true).add(true)));
 
-    TEST_DO(assertFloat(fs, "10.5", FloatList().add(10.5).add(20.5).add(10.5).add(30.5), Hits().add(0).add(2)));
+    TEST_DO(assertFloat(fs, "10.5", FloatList().add(10.5).add(20.5).add(10.5).add(30.5), Hits().add({0, 0}).add({2, 0})));
     TEST_DO(assertFloat(fs, StringList().add("10.5").add("20.5"), FloatList().add(10.5).add(20.5).add(10.5).add(30.5),
-                    HitsList().add(Hits().add(0).add(2)).add(Hits().add(1))));
+                    HitsList().add(Hits().add({0, 0}).add({2, 0})).add(Hits().add({1, 0}))));
 
     TEST_DO(assertFieldInfo(fs, "10.5", 10.5, QTFieldInfo(0, 1, 1)));
     TEST_DO(assertFieldInfo(fs, "10.5", FloatList().add(10.5).add(20.5).add(10.5).add(30.5), QTFieldInfo(0, 2, 4)));
@@ -723,7 +956,7 @@ TEST("Snippet modifier search") {
                                                       "\xe7\x9f\xb3\x1f\xe6\x98\x8e\xe5\x87\xb1\x1f\xe5\x9c\xa8");
 
     { // check that resizing works
-        UTF8SubstringSnippetModifier mod;
+        UTF8SubstringSnippetModifier mod(0);
         EXPECT_EQUAL(mod.getModifiedBuf().getLength(), 32u);
         EXPECT_EQUAL(mod.getModifiedBuf().getPos(), 0u);
         performSearch(mod, StringList().add("a"), StringFieldValue("aaaaaaaaaaaaaaaa"));
@@ -760,28 +993,44 @@ TEST("snippet modifier") {
     }
 }
 
-TEST("FieldSearchSpec constrution") {
+TEST("FieldSearchSpec construction") {
     {
         FieldSearchSpec f;
         EXPECT_FALSE(f.valid());
         EXPECT_EQUAL(0u, f.id());
         EXPECT_EQUAL("", f.name());
         EXPECT_EQUAL(0x100000u, f.maxLength());
+        EXPECT_EQUAL("", f.arg1());
+        EXPECT_TRUE(Normalizing::LOWERCASE_AND_FOLD == f.normalize_mode());
     }
     {
-        FieldSearchSpec f(7, "f0", VsmfieldsConfig::Fieldspec::Searchmethod::AUTOUTF8, "substring", 789);
+        FieldSearchSpec f(7, "f0", Searchmethod::AUTOUTF8, Normalizing::LOWERCASE, "substring", 789);
         EXPECT_TRUE(f.valid());
         EXPECT_EQUAL(7u, f.id());
         EXPECT_EQUAL("f0", f.name());
         EXPECT_EQUAL(789u, f.maxLength());
         EXPECT_EQUAL(789u, f.searcher().maxFieldLength());
+        EXPECT_EQUAL("substring", f.arg1());
+        EXPECT_TRUE(Normalizing::LOWERCASE == f.normalize_mode());
     }
+}
+
+TEST("FieldSearchSpec reconfiguration preserves match/normalization properties for new searcher") {
+    FieldSearchSpec f(7, "f0", Searchmethod::AUTOUTF8, Normalizing::NONE, "substring", 789);
+    QueryNodeResultFactory qnrf;
+    QueryTerm qt(qnrf.create(), "foo", "index", TermType::EXACTSTRINGTERM, Normalizing::LOWERCASE_AND_FOLD);
+    // Match type, normalization mode and max length are all properties of the original spec
+    // and should be propagated to the new searcher.
+    f.reconfig(qt);
+    EXPECT_EQUAL(f.searcher().match_type(), FieldSearcher::MatchType::SUBSTRING);
+    EXPECT_EQUAL(f.searcher().normalize_mode(), Normalizing::NONE);
+    EXPECT_EQUAL(f.searcher().maxFieldLength(), 789u);
 }
 
 TEST("snippet modifier manager") {
     FieldSearchSpecMapT specMap;
-    specMap[0] = FieldSearchSpec(0, "f0", VsmfieldsConfig::Fieldspec::Searchmethod::AUTOUTF8, "substring", 1000);
-    specMap[1] = FieldSearchSpec(1, "f1", VsmfieldsConfig::Fieldspec::Searchmethod::AUTOUTF8, "", 1000);
+    specMap[0] = FieldSearchSpec(0, "f0", Searchmethod::AUTOUTF8, Normalizing::LOWERCASE, "substring", 1000);
+    specMap[1] = FieldSearchSpec(1, "f1", Searchmethod::AUTOUTF8, Normalizing::NONE, "", 1000);
     IndexFieldMapT indexMap;
     indexMap["i0"].push_back(0);
     indexMap["i1"].push_back(1);
@@ -822,13 +1071,13 @@ TEST("snippet modifier manager") {
         Query query(StringList().add("i2:foo").add("i2:*bar*"));
         man.setup(query.qtl, specMap, indexMap, *env.field_paths, env.query_env);
         {
-            SnippetModifier * sm = static_cast<SnippetModifier *>(man.getModifiers().getModifier(0));
+            auto * sm = static_cast<SnippetModifier *>(man.getModifiers().getModifier(0));
             UTF8SubstringSnippetModifier * searcher = sm->getSearcher().get();
             EXPECT_EQUAL(sm->getValueBuf().getLength(), 128u);
             EXPECT_EQUAL(searcher->getModifiedBuf().getLength(), 64u);
         }
         {
-            SnippetModifier * sm = static_cast<SnippetModifier *>(man.getModifiers().getModifier(1));
+            auto * sm = static_cast<SnippetModifier *>(man.getModifiers().getModifier(1));
             UTF8SubstringSnippetModifier * searcher = sm->getSearcher().get();
             EXPECT_EQUAL(sm->getValueBuf().getLength(), 128u);
             EXPECT_EQUAL(searcher->getModifiedBuf().getLength(), 64u);
@@ -859,8 +1108,43 @@ TEST("counting of words") {
     // check that 'a' is counted as 1 word
     UTF8StrChrFieldSearcher fs(0);
     StringList field = StringList().add("a").add("aa bb cc");
-    assertString(fs, "bb", field, Hits().add(2));
-    assertString(fs, StringList().add("bb").add("not"), field, HitsList().add(Hits().add(2)).add(Hits()));
+    assertString(fs, "bb", field, Hits().add({1, 1}));
+    assertString(fs, StringList().add("bb").add("not"), field, HitsList().add(Hits().add({1, 1})).add(Hits()));
+}
+
+TEST("element lengths")
+{
+    UTF8StrChrFieldSearcher fs(0);
+    auto field = StringList().add("a").add("b a c").add("d a");
+    auto query = StringList().add("a");
+    auto qtv = performSearch(fs, query, getFieldValue(field));
+    EXPECT_EQUAL(1u, qtv.size());
+    auto& qt = *qtv[0];
+    auto& hl = qt.getHitList();
+    EXPECT_EQUAL(3u, hl.size());
+    EXPECT_EQUAL(1u, hl[0].element_length());
+    EXPECT_EQUAL(3u, hl[1].element_length());
+    EXPECT_EQUAL(2u, hl[2].element_length());
+}
+
+vespalib::string NormalizationInput = "test That Somehing happens with during NårmØlization";
+
+void
+verifyNormalization(Normalizing normalizing, size_t expected_len, const char * expected) {
+    ucs4_t buf[256];
+    TokenizeReader reader(reinterpret_cast<const search::byte *>(NormalizationInput.c_str()), NormalizationInput.size(), buf);
+    while (reader.hasNext()) {
+        reader.normalize(reader.next(), normalizing);
+    }
+    size_t len = reader.complete();
+    EXPECT_EQUAL(expected_len, len);
+    EXPECT_EQUAL(0,  Fast_UnicodeUtil::utf8cmp(expected, buf));
+}
+
+TEST("test normalizing") {
+    verifyNormalization(Normalizing::NONE, 52, NormalizationInput.c_str());
+    verifyNormalization(Normalizing::LOWERCASE, 52, "test that somehing happens with during nårmølization");
+    verifyNormalization(Normalizing::LOWERCASE_AND_FOLD, 54, "test that somehing happens with during naarmoelization");
 }
 
 TEST_MAIN() { TEST_RUN_ALL(); }

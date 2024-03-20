@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #pragma once
 
@@ -14,6 +14,7 @@
 
 namespace search::predicate {
 
+class ISaver;
 struct PredicateTreeAnnotations;
 
 /**
@@ -66,7 +67,7 @@ public:
                    SimpleIndexDeserializeObserver<> & observer, uint32_t version);
 
     ~PredicateIndex() override;
-    void serialize(vespalib::DataBuffer &buffer) const;
+    std::unique_ptr<ISaver> make_saver() const;
     void onDeserializationCompleted();
 
     void indexEmptyDocument(uint32_t doc_id);

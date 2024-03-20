@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.schema.derived;
 
 import com.yahoo.config.model.application.provider.BaseDeployLogger;
@@ -25,6 +25,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
 /**
  * Tests summary extraction
@@ -79,7 +80,7 @@ public class SummaryTestCase extends AbstractSchemaTestCase {
         assertSummaryField("description", SummaryClassField.Type.LONGSTRING, fields.next());
         assertSummaryField("dyndesc", SummaryClassField.Type.LONGSTRING, "dynamicteaser", "description", fields.next());
         assertSummaryField("longdesc", SummaryClassField.Type.LONGSTRING, fields.next());
-        assertSummaryField("longstat", SummaryClassField.Type.LONGSTRING, fields.next());
+        assertSummaryField("longstat", SummaryClassField.Type.LONGSTRING, "copy", "longdesc", fields.next());
         assertSummaryField("dynlong", SummaryClassField.Type.LONGSTRING, "dynamicteaser", "longdesc", fields.next());
         assertSummaryField("dyndesc2", SummaryClassField.Type.LONGSTRING, "dynamicteaser", "longdesc", fields.next());
         assertSummaryField("measurement", SummaryClassField.Type.INTEGER, "attribute", "measurement", fields.next());
@@ -131,7 +132,7 @@ public class SummaryTestCase extends AbstractSchemaTestCase {
                                     "    }",
                                     "  }",
                                     "  document-summary my_summary {",
-                                    "    summary other_campaign_ref type reference<campaign> {}",
+                                    "    summary other_campaign_ref {}",
                                     "  }",
                                     "}"));
         builder.build(true);
@@ -146,11 +147,11 @@ public class SummaryTestCase extends AbstractSchemaTestCase {
                 "    field foo type string { indexing: summary }",
                 "  }",
                 "  document-summary bar {",
-                "    summary foo type string {}",
+                "    summary foo {}",
                 "    omit-summary-features",
                 "  }",
                 "  document-summary baz {",
-                "    summary foo type string {}",
+                "    summary foo {}",
                 "  }",
                 "}");
         var search = ApplicationBuilder.createFromString(sd).getSchema();
@@ -221,9 +222,39 @@ public class SummaryTestCase extends AbstractSchemaTestCase {
     void documentid_summary_field_has_corresponding_summary_transform() throws ParseException {
         var schema = buildSchema("field foo type string { indexing: summary }",
                 joinLines("document-summary bar {",
-                        "    summary documentid type string {}",
+                        "    summary documentid {}",
                         "}"));
         assertOverride(schema, "documentid", SummaryTransform.DOCUMENT_ID.getName(), "", "bar");
+    }
+
+    private void check_tokens_override(boolean index, boolean attribute, SummaryTransform exp) throws ParseException {
+        var schema = buildSchema("field foo type string { indexing: " +
+                (index ? "index | " : "") +
+                (attribute ? "attribute | " : "") + "summary }",
+                joinLines("document-summary bar {",
+                        "    summary baz {",
+                        "        source: foo ",
+                        "        tokens",
+                        "     }",
+                        "    from-disk",
+                        "}"));
+        assertOverride(schema, "baz", exp.getName(), "foo", "bar");
+        assert(!schema.getSummary("default").getSummaryFields().containsKey("baz"));
+    }
+
+    @Test
+    void tokens_override() throws ParseException {
+        try {
+            check_tokens_override(false, false, SummaryTransform.TOKENS);
+            fail("Expected IllegalArgumentException");
+        } catch (IllegalArgumentException e) {
+            assertEquals("For schema 'test', document-summary 'bar'" +
+                    ", summary field 'baz', source field 'foo'" +
+                    ": tokens summary field setting requires index or attribute for source field", e.getMessage());
+        }
+        check_tokens_override(false, true, SummaryTransform.ATTRIBUTE_TOKENS);
+        check_tokens_override(true, false, SummaryTransform.TOKENS);
+        check_tokens_override(true, true, SummaryTransform.TOKENS);
     }
 
     @Test

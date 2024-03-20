@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.search.grouping.vespa;
 
 import com.yahoo.component.ComponentId;
@@ -91,7 +91,7 @@ public class GroupingExecutor extends Searcher {
         Result result = performSearch(query, execution, groupingMap);
 
         // Convert Vespa style results to hits.
-        HitConverter hitConverter = new HitConverter(this, query);
+        HitConverter hitConverter = new HitConverter(this);
         for (RequestContext context : requestContextList) {
             RootGroup group = convertResult(context, groupingMap, hitConverter);
             result.hits().add(group);

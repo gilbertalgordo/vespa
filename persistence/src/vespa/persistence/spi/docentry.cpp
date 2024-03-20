@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include "docentry.h"
 #include <vespa/document/fieldvalue/document.h>
@@ -71,7 +71,7 @@ DocEntryWithId::DocEntryWithId(Timestamp t, DocumentMetaEnum metaEnum, const Doc
 { }
 
 DocEntryWithTypeAndGid::DocEntryWithTypeAndGid(Timestamp t, DocumentMetaEnum metaEnum, vespalib::stringref docType, GlobalId gid)
-    : DocEntry(t, metaEnum, docType.size() + sizeof(gid)),
+    : DocEntry(t, metaEnum, sizeof(DocEntry) + docType.size() + sizeof(gid)),
       _type(docType),
       _gid(gid)
 { }

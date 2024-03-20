@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 // Author: arnej
 
 package prog
@@ -10,7 +10,7 @@ import (
 
 	"github.com/vespa-engine/vespa/client/go/internal/admin/envvars"
 	"github.com/vespa-engine/vespa/client/go/internal/admin/trace"
-	"github.com/vespa-engine/vespa/client/go/internal/util"
+	"github.com/vespa-engine/vespa/client/go/internal/osutil"
 )
 
 const (
@@ -23,7 +23,7 @@ func (p *Spec) ConfigureNumaCtl() {
 	if p.Getenv(envvars.VESPA_NO_NUMACTL) != "" {
 		return
 	}
-	backticks := util.BackTicksIgnoreStderr
+	backticks := osutil.BackTicksIgnoreStderr
 	out, err := backticks.Run(NUMACTL_PROG, "--hardware")
 	trace.Debug("numactl --hardware says:", out)
 	if err != nil {

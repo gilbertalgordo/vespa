@@ -1,6 +1,7 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 #include "mysearch.h"
 #include <vespa/vespalib/testkit/testapp.h>
+#include <vespa/searchlib/queryeval/flow.h>
 #include <vespa/searchlib/queryeval/blueprint.h>
 #include <vespa/searchlib/queryeval/intermediate_blueprints.h>
 #include <vespa/vespalib/objects/objectdumper.h>
@@ -16,12 +17,22 @@ using namespace search::fef;
 
 namespace {
 
+auto opts = Blueprint::Options::all();
+
 //-----------------------------------------------------------------------------
 
 class MyOr : public IntermediateBlueprint
 {
 private:
+    AnyFlow my_flow(InFlow in_flow) const override {
+        return AnyFlow::create<OrFlow>(in_flow);
+    }
 public:
+    FlowStats calculate_flow_stats(uint32_t) const final {
+        return {OrFlow::estimate_of(get_children()),
+                OrFlow::cost_of(get_children(), false),
+                OrFlow::cost_of(get_children(), true)};
+    }
     HitEstimate combine(const std::vector<HitEstimate> &data) const override {
         return max(data);
     }
@@ -30,7 +41,7 @@ public:
         return mixChildrenFields();
     }
 
-    void sort(Children &children) const override {
+    void sort(Children &children, bool, bool) const override {
         std::sort(children.begin(), children.end(), TieredGreaterEstimate());
     }
 
@@ -81,7 +92,7 @@ public:
     }
 
     FieldSpecBaseList exposeFields() const override {
-        return FieldSpecBaseList();
+        return {};
     }
 
     bool inheritStrict(size_t i) const override {
@@ -139,8 +150,11 @@ struct MyTerm : SimpleLeafBlueprint {
     MyTerm(FieldSpecBase field, uint32_t hitEstimate) : SimpleLeafBlueprint(field) {
         setEstimate(HitEstimate(hitEstimate, false));
     }
+    FlowStats calculate_flow_stats(uint32_t docid_limit) const override {
+        return default_flow_stats(docid_limit, getState().estimate().estHits, 0);
+    }
     SearchIterator::UP createLeafSearch(const search::fef::TermFieldMatchDataArray &, bool) const override {
-        return SearchIterator::UP();
+        return {};
     }
     SearchIteratorUP createFilterSearch(bool strict, FilterConstraint constraint) const override {
         return create_default_filter(strict, constraint);
@@ -311,13 +325,13 @@ TEST("testHitEstimateCalculation")
 
 TEST("testHitEstimatePropagation")
 {
-    MyLeaf *leaf1 = new MyLeaf();
+    auto *leaf1 = new MyLeaf();
     leaf1->estimate(10);
 
-    MyLeaf *leaf2 = new MyLeaf();
+    auto *leaf2 = new MyLeaf();
     leaf2->estimate(20);
 
-    MyLeaf *leaf3 = new MyLeaf();
+    auto *leaf3 = new MyLeaf();
     leaf3->estimate(30);
 
     MyOr *parent = new MyOr();
@@ -346,7 +360,7 @@ TEST("testHitEstimatePropagation")
     leaf3->estimate(25);
     EXPECT_EQUAL(20u, root->getState().estimate().estHits);
     parent->addChild(std::move(tmp));
-    EXPECT_TRUE(tmp.get() == 0);
+    EXPECT_FALSE(tmp);
     EXPECT_EQUAL(25u, root->getState().estimate().estHits);
 }
 
@@ -438,7 +452,8 @@ TEST_F("testChildAndNotCollapsing", Fixture)
                                    )
                               );
     TEST_DO(f.check_not_equal(*sorted, *unsorted));
-    unsorted = Blueprint::optimize(std::move(unsorted));
+    unsorted->setDocIdLimit(1000);
+    unsorted = Blueprint::optimize_and_sort(std::move(unsorted), true, opts);
     TEST_DO(f.check_equal(*sorted, *unsorted));
 }
 
@@ -477,7 +492,8 @@ TEST_F("testChildAndCollapsing", Fixture)
                               );
 
     TEST_DO(f.check_not_equal(*sorted, *unsorted));
-    unsorted = Blueprint::optimize(std::move(unsorted));
+    unsorted->setDocIdLimit(1000);
+    unsorted = Blueprint::optimize_and_sort(std::move(unsorted), true, opts);
     TEST_DO(f.check_equal(*sorted, *unsorted));
 }
 
@@ -515,7 +531,10 @@ TEST_F("testChildOrCollapsing", Fixture)
                                    .add(MyLeafSpec(1).addField(2, 42).create())
                               );
     TEST_DO(f.check_not_equal(*sorted, *unsorted));
-    unsorted = Blueprint::optimize(std::move(unsorted));
+    unsorted->setDocIdLimit(1000);
+    // we sort non-strict here since a strict OR does not have a
+    // deterministic sort order.
+    unsorted = Blueprint::optimize_and_sort(std::move(unsorted), false, opts);
     TEST_DO(f.check_equal(*sorted, *unsorted));
 }
 
@@ -558,7 +577,8 @@ TEST_F("testChildSorting", Fixture)
                               );
 
     TEST_DO(f.check_not_equal(*sorted, *unsorted));
-    unsorted = Blueprint::optimize(std::move(unsorted));
+    unsorted->setDocIdLimit(1000);
+    unsorted = Blueprint::optimize_and_sort(std::move(unsorted), true, opts);
     TEST_DO(f.check_equal(*sorted, *unsorted));
 }
 
@@ -572,7 +592,7 @@ TEST_F("testSearchCreation", Fixture)
                              .addField(3, 3).create());
         SearchIterator::UP leafsearch = f.create(*l);
 
-        MySearch *lw = new MySearch("leaf", true, true);
+        auto *lw = new MySearch("leaf", true, true);
         lw->addHandle(1).addHandle(2).addHandle(3);
         SearchIterator::UP wantleaf(lw);
 
@@ -584,11 +604,11 @@ TEST_F("testSearchCreation", Fixture)
                              .add(MyLeafSpec(2).addField(2, 2).create()));
         SearchIterator::UP andsearch = f.create(*a);
 
-        MySearch *l1 = new MySearch("leaf", true, true);
-        MySearch *l2 = new MySearch("leaf", true, false);
+        auto *l1 = new MySearch("leaf", true, true);
+        auto *l2 = new MySearch("leaf", true, false);
         l1->addHandle(1);
         l2->addHandle(2);
-        MySearch *aw = new MySearch("and", false, true);
+        auto *aw = new MySearch("and", false, true);
         aw->add(l1);
         aw->add(l2);
         SearchIterator::UP wanted(aw);
@@ -600,11 +620,11 @@ TEST_F("testSearchCreation", Fixture)
                              .add(MyLeafSpec(2).addField(2, 22).create()));
         SearchIterator::UP orsearch = f.create(*o);
 
-        MySearch *l1 = new MySearch("leaf", true, true);
-        MySearch *l2 = new MySearch("leaf", true, true);
+        auto *l1 = new MySearch("leaf", true, true);
+        auto *l2 = new MySearch("leaf", true, true);
         l1->addHandle(11);
         l2->addHandle(22);
-        MySearch *ow = new MySearch("or", false, true);
+        auto *ow = new MySearch("or", false, true);
         ow->add(l1);
         ow->add(l2);
         SearchIterator::UP wanted(ow);
@@ -619,7 +639,7 @@ TEST("testBlueprintMakeNew")
                             .add(MyLeafSpec(2).addField(2, 22).create()));
     orig->setSourceId(42);
     MyOr *myOr = dynamic_cast<MyOr*>(orig.get());
-    ASSERT_TRUE(myOr != 0);
+    ASSERT_TRUE(myOr != nullptr);
     EXPECT_EQUAL(42u, orig->getSourceId());
     EXPECT_EQUAL(2u, orig->getState().numFields());
 }
@@ -643,6 +663,9 @@ getExpectedBlueprint()
            "        tree_size: 2\n"
            "        allow_termwise_eval: false\n"
            "    }\n"
+           "    relative_estimate: 0\n"
+           "    cost: 0\n"
+           "    strict_cost: 0\n"
            "    sourceId: 4294967295\n"
            "    docid_limit: 0\n"
            "    children: std::vector {\n"
@@ -662,6 +685,9 @@ getExpectedBlueprint()
            "                tree_size: 1\n"
            "                allow_termwise_eval: true\n"
            "            }\n"
+           "            relative_estimate: 0\n"
+           "            cost: 0\n"
+           "            strict_cost: 0\n"
            "            sourceId: 4294967295\n"
            "            docid_limit: 0\n"
            "        }\n"
@@ -691,6 +717,9 @@ getExpectedSlimeBlueprint() {
            "        tree_size: 2,"
            "        allow_termwise_eval: false"
            "    },"
+           "    relative_estimate: 0.0,"
+           "    cost: 0.0,"
+           "    strict_cost: 0.0,"
            "    sourceId: 4294967295,"
            "    docid_limit: 0,"
            "    children: {"
@@ -715,6 +744,9 @@ getExpectedSlimeBlueprint() {
            "                tree_size: 1,"
            "                allow_termwise_eval: true"
            "            },"
+           "            relative_estimate: 0.0,"
+           "            cost: 0.0,"
+           "            strict_cost: 0.0,"
            "            sourceId: 4294967295,"
            "            docid_limit: 0"
            "        }"
@@ -768,8 +800,8 @@ TEST("requireThatDocIdLimitInjectionWorks")
 
 TEST("Control object sizes") {
     EXPECT_EQUAL(32u, sizeof(Blueprint::State));
-    EXPECT_EQUAL(32u, sizeof(Blueprint));
-    EXPECT_EQUAL(64u, sizeof(LeafBlueprint));
+    EXPECT_EQUAL(56u, sizeof(Blueprint));
+    EXPECT_EQUAL(88u, sizeof(LeafBlueprint));
 }
 
 TEST_MAIN() {

@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 // Author: arnej
 
 package envvars
@@ -22,6 +22,7 @@ const (
 	MALLOC_ARENA_MAX                       = "MALLOC_ARENA_MAX"
 	NO_VESPAMALLOC_LIST                    = "NO_VESPAMALLOC_LIST"
 	NUM_PROCESSES_LIMIT                    = "num_processes_limit"
+	OPENBLAS_CORETYPE                      = "OPENBLAS_CORETYPE"
 	PATH                                   = "PATH"
 	PRELOAD                                = "PRELOAD"
 	ROOT                                   = "ROOT"

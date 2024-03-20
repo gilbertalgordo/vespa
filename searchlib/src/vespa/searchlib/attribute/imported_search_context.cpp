@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include "imported_search_context.h"
 #include "bitvector_search_cache.h"
@@ -97,21 +97,21 @@ ImportedSearchContext::calc_exact_hits() const
     return sum_hits;
 }
 
-unsigned int
-ImportedSearchContext::approximateHits() const
+HitEstimate
+ImportedSearchContext::calc_hit_estimate() const
 {
-    uint32_t target_approx_hits = _target_search_context->approximateHits();
-    if (target_approx_hits == 0) {
+    uint32_t target_est_hits = _target_search_context->calc_hit_estimate().est_hits();
+    if (target_est_hits == 0) {
         _zero_hits.store(true, std::memory_order_relaxed);
-        return 0;
+        return HitEstimate(0);
     }
     if (!_target_attribute.getIsFastSearch()) {
-        return _reference_attribute.getNumDocs();
+        return HitEstimate::unknown(_reference_attribute.getNumDocs());
     }
-    if (target_approx_hits >= MIN_TARGET_HITS_FOR_APPROXIMATION) {
-        return calc_approx_hits(target_approx_hits);
+    if (target_est_hits >= MIN_TARGET_HITS_FOR_APPROXIMATION) {
+        return HitEstimate(calc_approx_hits(target_est_hits));
     } else {
-        return calc_exact_hits();
+        return HitEstimate(calc_exact_hits());
     }
 }
 
@@ -128,7 +128,7 @@ ImportedSearchContext::createIterator(fef::TermFieldMatchData* matchData, bool s
             return SearchIterator::UP(new EmptySearch());
         } else {
             using Posting = vespalib::btree::BTreeKeyData<uint32_t, int32_t>;
-            using DocIt = DocIdIterator<Posting>;
+            using DocIt = ArrayIterator<Posting>;
             DocIt postings;
             auto array = _merger.getArray();
             postings.set(&array[0], &array[array.size()]);
@@ -308,7 +308,7 @@ void
 ImportedSearchContext::fetchPostings(const queryeval::ExecuteInfo &execInfo) {
     if (!_searchCacheLookup) {
         _target_search_context->fetchPostings(execInfo);
-        if (!_merger.merge_done() && (execInfo.isStrict() || (_target_attribute.getIsFastSearch() && execInfo.hitRate() > 0.01))) {
+        if (!_merger.merge_done() && (execInfo.is_strict() || (_target_attribute.getIsFastSearch() && execInfo.hit_rate() > 0.01))) {
                 makeMergedPostings(_target_attribute.getIsFilter());
                 considerAddSearchCacheEntry();
         }

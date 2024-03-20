@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.model.content;
 
 import com.yahoo.vespa.config.content.StorDistributionConfig;
@@ -33,9 +33,9 @@ public class Redundancy implements StorDistributionConfig.Producer, ProtonConfig
     }
 
     /** Returns the final redundancy per group */
-    public int finalRedundancy() { return effectiveFinalRedundancy()/groups; }
+    public int finalRedundancy() { return (int)Math.ceil((double)effectiveFinalRedundancy()/groups); }
 
-    public int readyCopies() { return effectiveReadyCopies()/groups; }
+    public int readyCopies() { return (int)Math.ceil((double)effectiveReadyCopies()/groups); }
     public int groups() { return groups; }
     public int totalNodes() { return totalNodes; }
 

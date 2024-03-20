@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.schema.processing;
 
 import com.yahoo.collections.Pair;
@@ -35,8 +35,8 @@ public class TensorTransformTestCase extends AbstractSchemaTestCase {
                 "max(1.0,2.0)");
         assertTransformedExpression("min(attribute(double_field),x)",
                 "min(attribute(double_field),x)");
-        assertTransformedExpression("max(attribute(double_field),attribute(double_array_field))",
-                "max(attribute(double_field),attribute(double_array_field))");
+        assertTransformedExpression("max(attribute(double_field),attribute(double_array_field).count)",
+                "max(attribute(double_field),attribute(double_array_field).count)");
         assertTransformedExpression("min(attribute(tensor_field_1),attribute(double_field))",
                 "min(attribute(tensor_field_1),attribute(double_field))");
         assertTransformedExpression("reduce(max(attribute(tensor_field_1),attribute(tensor_field_2)),sum)",

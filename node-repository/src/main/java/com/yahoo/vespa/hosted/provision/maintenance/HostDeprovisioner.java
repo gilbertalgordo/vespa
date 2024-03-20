@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.hosted.provision.maintenance;
 
 import com.yahoo.jdisc.Metric;
@@ -46,8 +46,8 @@ public class HostDeprovisioner extends NodeRepositoryMaintainer {
                 //   holding it over longer periods
                 // * We are about to remove these hosts anyway, so only reason we'd want to hold the lock is
                 //   if we want to support aborting deprovision if operator manually intervenes
-                hostProvisioner.deprovision(host);
-                nodeRepository().nodes().removeRecursively(host, true);
+                if (hostProvisioner.deprovision(host))
+                    nodeRepository().nodes().removeRecursively(host, true);
             } catch (RuntimeException e) {
                 failures++;
                 log.log(Level.WARNING, "Failed to deprovision " + host.hostname() + ", will retry in " + interval(), e);

@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.model.container;
 
 import com.yahoo.config.model.api.ModelContext;
@@ -28,7 +28,6 @@ import com.yahoo.vespa.model.container.component.SimpleComponent;
 import com.yahoo.vespa.model.container.http.ConnectorFactory;
 import com.yahoo.vespa.model.container.http.Http;
 import com.yahoo.vespa.model.container.http.JettyHttpServer;
-import com.yahoo.vespa.model.filedistribution.FileDistributionConfigProducer;
 
 import java.time.Duration;
 import java.util.ArrayList;
@@ -39,7 +38,6 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 
-import static com.yahoo.container.QrConfig.Filedistributor;
 import static com.yahoo.container.QrConfig.Rpc;
 import static com.yahoo.vespa.defaults.Defaults.getDefaults;
 
@@ -109,7 +107,7 @@ public abstract class Container extends AbstractService implements
         addChild(new SimpleComponent("com.yahoo.container.jdisc.ConfiguredApplication$ApplicationContext"));
 
         appendJvmOptions(jvmOmitStackTraceInFastThrowOption(deployState.featureFlags()));
-        addEnvironmentVariable("VESPA_MALLOC_MMAP_THRESHOLD","0x200000");
+        addEnvironmentVariable("VESPA_MALLOC_MMAP_THRESHOLD","0x1000000"); // 16M
     }
 
     protected String jvmOmitStackTraceInFastThrowOption(ModelContext.FeatureFlags featureFlags) {
@@ -316,7 +314,6 @@ public abstract class Container extends AbstractService implements
                             .enabled(rpcServerEnabled())
                             .port(getRpcPort())
                             .slobrokId(serviceSlobrokId()))
-                .filedistributor(filedistributorConfig())
                 .discriminator((clusterName != null ? clusterName + "." : "" ) + name)
                 .clustername(clusterName != null ? clusterName : "")
                 .nodeIndex(index)
@@ -329,16 +326,6 @@ public abstract class Container extends AbstractService implements
     
     private String serviceSlobrokId() {
         return "vespa/service/" + getConfigId();
-    }
-
-    private Filedistributor.Builder filedistributorConfig() {
-        Filedistributor.Builder builder = new Filedistributor.Builder();
-
-        FileDistributionConfigProducer fileDistribution = getRoot().getFileDistributionConfigProducer();
-        if (fileDistribution != null) {
-            builder.configid(fileDistribution.getConfigProducer(getHost().getHost()).getConfigId());
-        }
-        return builder;
     }
 
     @Override

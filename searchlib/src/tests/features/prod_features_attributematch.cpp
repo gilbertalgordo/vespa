@@ -1,13 +1,10 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include "prod_features_test.h"
 #include <vespa/searchlib/features/attributematchfeature.h>
 #include <vespa/searchlib/attribute/attributefactory.h>
 #include <vespa/searchlib/attribute/attributevector.h>
 #include <vespa/searchcommon/attribute/config.h>
-
-#include <vespa/log/log.h>
-LOG_SETUP(".prod_features_attributematch");
 
 using namespace search::features;
 using namespace search::fef;
@@ -23,8 +20,7 @@ using AVCT = search::attribute::CollectionType;
 using CollectionType = FieldInfo::CollectionType;
 using DataType = FieldInfo::DataType;
 
-void
-Test::testAttributeMatch()
+TEST_F(ProdFeaturesTest, test_attribute_match)
 {
     AttributeMatchBlueprint pt;
     {

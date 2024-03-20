@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.hosted.provision.maintenance;
 
 import com.yahoo.config.provision.ApplicationId;
@@ -69,7 +69,9 @@ public class SwitchRebalancer extends NodeMover<Move> {
     private NodeList clusterOf(Node node, NodeList allNodes) {
         ApplicationId application = node.allocation().get().owner();
         ClusterSpec.Id cluster = node.allocation().get().membership().cluster().id();
-        return allNodes.state(Node.State.active)
+        // This considers some non-active states to prevent unnecessary moves. E.g. we don't want to start moving nodes
+        // to a host which already contain a failed node in our cluster
+        return allNodes.state(Node.State.reserved, Node.State.active, Node.State.failed, Node.State.parked)
                        .owner(application)
                        .cluster(cluster);
     }

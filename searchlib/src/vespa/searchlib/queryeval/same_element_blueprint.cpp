@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include "same_element_blueprint.h"
 #include "same_element_search.h"
@@ -28,7 +28,7 @@ SameElementBlueprint::~SameElementBlueprint() = default;
 FieldSpec
 SameElementBlueprint::getNextChildField(const vespalib::string &field_name, uint32_t field_id)
 {
-    return FieldSpec(field_name, field_id, _layout.allocTermField(field_id), false);
+    return {field_name, field_id, _layout.allocTermField(field_id), false};
 }
 
 void
@@ -44,20 +44,39 @@ SameElementBlueprint::addTerm(Blueprint::UP term)
     _terms.push_back(std::move(term));
 }
 
-void
-SameElementBlueprint::optimize_self()
+FlowStats
+SameElementBlueprint::calculate_flow_stats(uint32_t docid_limit) const
 {
-    std::sort(_terms.begin(), _terms.end(),
-              [](const auto &a, const auto &b) {
-                  return (a->getState().estimate() < b->getState().estimate());
-              });
+    for (auto &term: _terms) {
+        term->update_flow_stats(docid_limit);
+    }
+    double est = AndFlow::estimate_of(_terms);
+    return {est,
+            AndFlow::cost_of(_terms, false) + est * _terms.size(),
+            AndFlow::cost_of(_terms, true) + est * _terms.size()};
+}
+
+void
+SameElementBlueprint::optimize_self(OptimizePass pass)
+{
+    if (pass == OptimizePass::LAST) {
+        std::sort(_terms.begin(), _terms.end(),
+                  [](const auto &a, const auto &b) {
+                      return (a->getState().estimate() < b->getState().estimate());
+                  });
+    }
 }
 
 void
 SameElementBlueprint::fetchPostings(const ExecuteInfo &execInfo)
 {
-    for (size_t i = 0; i < _terms.size(); ++i) {
-        _terms[i]->fetchPostings(ExecuteInfo::create(execInfo.isStrict() && (i == 0), execInfo));
+    if (_terms.empty()) return;
+    _terms[0]->fetchPostings(execInfo);
+    double hit_rate = execInfo.hit_rate() * _terms[0]->estimate();
+    for (size_t i = 1; i < _terms.size(); ++i) {
+        Blueprint & term = *_terms[i];
+        term.fetchPostings(ExecuteInfo::create(false, hit_rate, execInfo));
+        hit_rate = hit_rate * _terms[i]->estimate();
     }
 }
 

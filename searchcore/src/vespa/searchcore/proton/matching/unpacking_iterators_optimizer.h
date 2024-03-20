@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #pragma once
 
@@ -12,9 +12,7 @@ namespace proton::matching {
  * expensive.
  **/
 struct UnpackingIteratorsOptimizer {
-    static search::query::Node::UP optimize(search::query::Node::UP root,
-                                            bool has_white_list,
-                                            bool split_unpacking_iterators);
+    static search::query::Node::UP optimize(search::query::Node::UP root, bool has_white_list, bool always_mark_phrase_expensive);
 };
 
 }

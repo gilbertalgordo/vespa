@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include "bucketdb.h"
 #include "remove_batch_entry.h"
@@ -62,7 +62,6 @@ BucketDB::checkActiveCount() const {
 void
 BucketDB::unloadBucket(BucketId bucket, const BucketState &delta)
 {
-    checkActiveCount();
     BucketState *state = getBucketStatePtr(bucket);
     assert(state);
     *state -= delta;

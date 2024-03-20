@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 #include <vespa/vespalib/testkit/test_kit.h>
 #include <vespa/eval/eval/value_cache/constant_tensor_loader.h>
 #include <vespa/eval/eval/simple_value.h>
@@ -128,6 +128,30 @@ TEST_F("require that mixed tensor blocks form can be loaded", ConstantTensorLoad
 
 TEST_F("require that bad lz4 file fails to load creating empty result", ConstantTensorLoader(factory)) {
     TEST_DO(verify_tensor(sparse_tensor_nocells(), f1.create(TEST_PATH("bad_lz4.json.lz4"), "tensor(x{},y{})")));
+}
+
+void checkBitEq(double a, double b) {
+    size_t aa, bb;
+    memcpy(&aa, &a, sizeof(aa));
+    memcpy(&bb, &b, sizeof(bb));
+    EXPECT_EQUAL(aa, bb);
+}
+
+TEST_F("require that special string-encoded values work", ConstantTensorLoader(factory)) {
+    auto c = f1.create(TEST_PATH("dense-special.json"), "tensor<float>(z[11])");
+    const auto &v = c->value();
+    auto cells = v.cells().template typify<float>();
+    EXPECT_EQUAL(std::numeric_limits<float>::infinity(), cells[0]);
+    EXPECT_EQUAL(std::numeric_limits<float>::infinity(), cells[1]);
+    EXPECT_EQUAL(std::numeric_limits<float>::infinity(), cells[2]);
+    EXPECT_EQUAL(std::numeric_limits<float>::infinity(), cells[3]);
+    EXPECT_EQUAL(-std::numeric_limits<float>::infinity(), cells[4]);
+    EXPECT_EQUAL(-std::numeric_limits<float>::infinity(), cells[5]);
+    TEST_DO(checkBitEq(std::numeric_limits<float>::quiet_NaN(), cells[6]));
+    TEST_DO(checkBitEq(std::numeric_limits<float>::quiet_NaN(), cells[7]));
+    TEST_DO(checkBitEq(std::numeric_limits<float>::quiet_NaN(), cells[8]));
+    TEST_DO(checkBitEq(-std::numeric_limits<float>::quiet_NaN(), cells[9]));
+    TEST_DO(checkBitEq(-std::numeric_limits<float>::quiet_NaN(), cells[10]));
 }
 
 TEST_MAIN() { TEST_RUN_ALL(); }

@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.search.query.profile.types;
 
 import com.yahoo.processing.request.Properties;
@@ -48,7 +48,8 @@ public class TensorFieldType extends FieldType {
     @Override
     public Object convertFrom(Object o, ConversionContext context) {
         if (o instanceof SubstituteString) return new SubstituteStringTensor((SubstituteString) o, type);
-        return new TensorConverter(context.embedders()).convertTo(type, context.destination(), o, context.language());
+        return new TensorConverter(context.embedders()).convertTo(type, context.destination(), o,
+                                                                  context.language(), context.contextValues(), context.properties());
     }
 
     public static TensorFieldType fromTypeString(String s) {

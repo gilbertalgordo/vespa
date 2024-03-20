@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.tensor.evaluation;
 
 import com.yahoo.tensor.TensorType;
@@ -25,6 +25,5 @@ public interface TypeContext<NAMETYPE extends Name> {
      *         or null if getTensor will return null.
      */
     TensorType getType(String name);
-
 
 }

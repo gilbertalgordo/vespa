@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.search.querytransform;
 
 import com.yahoo.prelude.IndexFacts;
@@ -64,6 +64,8 @@ public abstract class LowercasingSearcher extends Searcher {
                 }
             } else if (next instanceof WordAlternativesItem) {
                 lowerCase((WordAlternativesItem) next, indexFacts);
+            } else if (next instanceof StringInItem) {
+                lowerCase((StringInItem) next, indexFacts);
             }
         }
     }
@@ -142,6 +144,23 @@ public abstract class LowercasingSearcher extends Searcher {
             alternatives.addTerm(lowerCased, term.exactness * .7d);
         }
 
+    }
+
+    private void lowerCase(StringInItem set, IndexFacts.Session indexFacts) {
+        if ( ! syntheticLowerCaseCheck(set.getIndexName(), indexFacts, true)) {
+            return;
+        }
+
+        // set.getTokens() uses Set.copyOf(), thus modification to original set is not reflected in
+        // set being iterated over.
+        var originalTokens = set.getTokens();
+        for (String originalToken : originalTokens) {
+            String token = toLowerCase(originalToken);
+            if (!originalToken.equals(token)) {
+                set.removeToken(originalToken);
+                set.addToken(token);
+            }
+        }
     }
 
     /**

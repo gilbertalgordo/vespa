@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 /**
  * Class that simplifies operations where we want to iterate through all
  * the documents in a bucket (possibly with a document selection) and do
@@ -23,8 +23,8 @@ class BucketProcessor
 public:
     class EntryProcessor {
     public:
-        virtual ~EntryProcessor() {};
-        virtual void process(spi::DocEntry&) = 0;
+        virtual ~EntryProcessor() = default;
+        virtual void process(std::unique_ptr<spi::DocEntry>) = 0;
     };
 
     static void iterateAll(spi::PersistenceProvider&,

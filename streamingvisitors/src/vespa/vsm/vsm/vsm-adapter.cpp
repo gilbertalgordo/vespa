@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include "vsm-adapter.hpp"
 #include "docsum_field_writer_factory.h"
@@ -29,7 +29,6 @@ void GetDocsumsStateCallback::fillSummaryFeatures(GetDocsumsState& state)
 {
     if (_summaryFeatures) { // set the summary features to write to the docsum
         state._summaryFeatures = _summaryFeatures;
-        state._summaryFeaturesCached = true;
     }
 }
 

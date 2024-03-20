@@ -1,4 +1,4 @@
-# Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+# Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 # Hack to speed up jar packing for now
 %define __jar_repack %{nil}
@@ -32,6 +32,7 @@
 %define _create_vespa_service 1
 %define _defattr_is_vespa_vespa 0
 %define _command_cmake cmake3
+%global _vespa_build_depencencies_version 1.2.7
 
 Name:           vespa
 Version:        _VESPA_VERSION_
@@ -42,7 +43,7 @@ License:        Commercial
 URL:            http://vespa.ai
 Source0:        vespa-%{version}.tar.gz
 
-BuildRequires: vespa-build-dependencies = 1.0.1
+BuildRequires: vespa-build-dependencies = %{_vespa_build_depencencies_version}
 
 Requires: %{name}-base             = %{version}-%{release}
 Requires: %{name}-base-libs        = %{version}-%{release}
@@ -68,7 +69,7 @@ Requires: zstd
 
 %if 0%{?el8}
 %global _centos_stream %(grep -qs '^NAME="CentOS Stream"' /etc/os-release && echo 1 || echo 0)
-%define _devtoolset_enable /opt/rh/gcc-toolset-12/enable
+%define _devtoolset_enable /opt/rh/gcc-toolset/enable
 
 %define _use_vespa_gtest 1
 %define _use_vespa_openblas 1
@@ -85,7 +86,7 @@ Requires: vespa-gtest = 1.13.0
 
 %if 0%{?el9}
 %global _centos_stream %(grep -qs '^NAME="CentOS Stream"' /etc/os-release && echo 1 || echo 0)
-%define _devtoolset_enable /opt/rh/gcc-toolset-12/enable
+%define _devtoolset_enable /opt/rh/gcc-toolset/enable
 %define _use_vespa_protobuf 1
 
 Requires: gtest
@@ -149,14 +150,14 @@ Requires: vespa-xxhash >= 0.8.1
 Requires: xxhash-libs >= 0.8.1
 %endif
 %if 0%{?el8}
-Requires: vespa-openssl >= 3.1.2
+Requires: vespa-openssl >= 3.1.4
 %else
 Requires: openssl-libs
 %endif
 Requires: vespa-lz4 >= 1.9.4-1
 Requires: vespa-libzstd >= 1.5.4-1
 %if 0%{?el8}
-Requires: vespa-openblas >= 0.3.21
+Requires: vespa-openblas >= 0.3.26
 %else
 Requires: openblas-serial
 %endif
@@ -180,7 +181,7 @@ Summary: Vespa - The open big data serving engine - C++ libraries
 Requires: %{name}-base-libs = %{version}-%{release}
 Requires: libicu
 %if 0%{?el8}
-Requires: vespa-openssl >= 3.1.2
+Requires: vespa-openssl >= 3.1.4
 %else
 Requires: openssl-libs
 %endif
@@ -196,7 +197,7 @@ Requires: vespa-protobuf = 3.21.12
 Requires: protobuf
 Requires: llvm-libs
 %endif
-Requires: vespa-onnxruntime = 1.15.1
+Requires: vespa-onnxruntime = 1.17.1
 
 %description libs
 
@@ -217,17 +218,6 @@ Summary: Vespa - The open big data serving engine - config models
 %description config-model-fat
 
 Vespa - The open big data serving engine - config models
-
-%package node-admin
-
-Summary: Vespa - The open big data serving engine - node-admin
-
-Requires: %{name}-base = %{version}-%{release}
-Requires: %{name}-jars = %{version}-%{release}
-
-%description node-admin
-
-Vespa - The open big data serving engine - node-admin
 
 %package jars
 
@@ -273,35 +263,13 @@ Vespa - The open big data serving engine - tools for system tests
 
 Summary: Vespa - The open big data serving engine - devel package
 
+Requires: vespa-build-dependencies = %{_vespa_build_depencencies_version}
 Requires: %{name}           = %{version}-%{release}
 Requires: %{name}-base-libs = %{version}-%{release}
 
 %description devel
 
 Vespa - The open big data serving engine - devel package
-
-%package ann-benchmark
-
-Summary: Vespa - The open big data serving engine - ann-benchmark
-
-Requires: %{name}-base-libs = %{version}-%{release}
-Requires: %{name}-libs = %{version}-%{release}
-%if 0%{?el8}
-Requires: python39
-%endif
-%if 0%{?el9}
-Requires: python3
-%endif
-%if 0%{?fedora}
-Requires: python3
-%endif
-
-%description ann-benchmark
-
-Vespa - The open big data serving engine - ann-benchmark
-
-Python binding for the Vespa implementation of an HNSW index for
-nearest neighbor search used for low-level benchmarking.
 
 %prep
 %if 0%{?installdir:1}
@@ -312,21 +280,6 @@ nearest neighbor search used for low-level benchmarking.
 %endif
 %else
 %setup -q
-file_to_patch=/opt/rh/gcc-toolset-12/root/usr/include/c++/12/bits/stl_vector.h
-if test -f $file_to_patch
-then
-  if grep -qs '_M_realloc_insert(iterator __position, const value_type& __x) __attribute((noinline))' $file_to_patch
-  then
-    :
-  else
-    if test -w $file_to_patch
-    then
-      patch $file_to_patch < dist/patch.stl_vector.h.diff
-    else
-      echo "Failed patching $file_to_patch since it is not writable for me"
-    fi
-  fi
-fi
 
 echo '%{version}' > VERSION
 case '%{version}' in
@@ -383,10 +336,6 @@ export JAVA_HOME=%{?_java_home}
 export JAVA_HOME=/usr/lib/jvm/java-17-openjdk
 %endif
 export PATH="$JAVA_HOME/bin:$PATH"
-%if 0%{?el8}
-python3.9 -m pip install --user pytest
-%endif
-export PYTHONPATH="$PYTHONPATH:/usr/local/lib/$(basename $(readlink -f $(which python3)))/site-packages"
 #%{?_use_mvn_wrapper:./mvnw}%{!?_use_mvn_wrapper:mvn} --batch-mode -nsu -T 1C -Dmaven.javadoc.skip=true test
 make test ARGS="--output-on-failure %{_smp_mflags}"
 %endif
@@ -425,6 +374,11 @@ getent group %{_vespa_group} >/dev/null || groupadd -r %{_vespa_group}
 getent passwd %{_vespa_user} >/dev/null || \
     useradd -r %{?_vespa_user_uid:-u %{_vespa_user_uid}} -g %{_vespa_group} --home-dir %{_prefix} -s /sbin/nologin \
     -c "Create owner of all Vespa data files" %{_vespa_user}
+%endif
+%if 0%{?el8} || 0%{?el9}
+# TODO Hardcoded toolset version, should be detected in a better way.
+mkdir -p /opt/rh
+ln -sf /opt/rh/gcc-toolset-13 /opt/rh/gcc-toolset
 %endif
 echo "pathmunge %{_prefix}/bin" > /etc/profile.d/vespa.sh
 echo "export VESPA_HOME=%{_prefix}" >> /etc/profile.d/vespa.sh
@@ -537,23 +491,18 @@ fi
 %{_prefix}/lib/jars/zookeeper-command-line-client-jar-with-dependencies.jar
 %{_prefix}/lib/perl5
 %{_prefix}/libexec
-%exclude %{_prefix}/libexec/vespa_ann_benchmark
 %exclude %{_prefix}/libexec/vespa/common-env.sh
 %exclude %{_prefix}/libexec/vespa/vespa-wrapper
 %exclude %{_prefix}/libexec/vespa/find-pid
-%exclude %{_prefix}/libexec/vespa/node-admin.sh
 %exclude %{_prefix}/libexec/vespa/standalone-container.sh
 %exclude %{_prefix}/libexec/vespa/vespa-curl-wrapper
 %dir %attr(-,%{_vespa_user},%{_vespa_group}) %{_prefix}/logs
 %dir %attr(-,%{_vespa_user},%{_vespa_group}) %{_prefix}/logs/vespa
 %dir %attr(-,%{_vespa_user},%{_vespa_group}) %{_prefix}/logs/vespa/access
 %dir %attr(-,%{_vespa_user},%{_vespa_group}) %{_prefix}/logs/vespa/configserver
-%dir %attr(-,%{_vespa_user},%{_vespa_group}) %{_prefix}/logs/vespa/node-admin
 %dir %attr(-,%{_vespa_user},%{_vespa_group}) %{_prefix}/logs/vespa/search
 %{_prefix}/man
 %{_prefix}/sbin
-%{_prefix}/share
-%exclude %{_prefix}/share/cmake
 %dir %attr(-,%{_vespa_user},%{_vespa_group}) %{_prefix}/var
 %dir %attr(-,%{_vespa_user},%{_vespa_group}) %{_prefix}/var/crash
 %dir %attr(-,%{_vespa_user},%{_vespa_group}) %{_prefix}/var/db
@@ -607,6 +556,8 @@ fi
 %{_prefix}/libexec/vespa/vespa-wrapper
 %{_prefix}/libexec/vespa/find-pid
 %{_prefix}/libexec/vespa/vespa-curl-wrapper
+%{_prefix}/share
+%exclude %{_prefix}/share/cmake
 
 %files base-libs
 %if %{_defattr_is_vespa_vespa}
@@ -662,17 +613,6 @@ fi
 %dir %{_prefix}/lib/jars
 %{_prefix}/lib/jars/config-model-fat.jar
 
-%files node-admin
-%if %{_defattr_is_vespa_vespa}
-%defattr(-,%{_vespa_user},%{_vespa_group},-)
-%endif
-%dir %{_prefix}
-%dir %{_prefix}/conf
-%{_prefix}/conf/node-admin-app
-%dir %{_prefix}/libexec
-%dir %{_prefix}/libexec/vespa
-%{_prefix}/libexec/vespa/node-admin.sh
-
 %files jars
 %if %{_defattr_is_vespa_vespa}
 %defattr(-,%{_vespa_user},%{_vespa_group},-)
@@ -680,7 +620,6 @@ fi
 %dir %{_prefix}
 %dir %{_prefix}/lib
 %dir %{_prefix}/lib/jars
-%{_prefix}/lib/jars/airlift-zstd.jar
 %{_prefix}/lib/jars/application-model-jar-with-dependencies.jar
 %{_prefix}/lib/jars/bc*-jdk18on-*.jar
 %{_prefix}/lib/jars/config-bundle-jar-with-dependencies.jar
@@ -703,6 +642,7 @@ fi
 %{_prefix}/lib/jars/jdisc-security-filters-jar-with-dependencies.jar
 %{_prefix}/lib/jars/jna-*.jar
 %{_prefix}/lib/jars/linguistics-components-jar-with-dependencies.jar
+%{_prefix}/lib/jars/lucene-linguistics-jar-with-dependencies.jar
 %{_prefix}/lib/jars/model-evaluation-jar-with-dependencies.jar
 %{_prefix}/lib/jars/model-integration-jar-with-dependencies.jar
 %{_prefix}/lib/jars/security-utils.jar
@@ -762,13 +702,5 @@ fi
 %dir %{_prefix}
 %{_prefix}/include
 %{_prefix}/share/cmake
-
-%files ann-benchmark
-%if %{_defattr_is_vespa_vespa}
-%defattr(-,%{_vespa_user},%{_vespa_group},-)
-%endif
-%dir %{_prefix}
-%dir %{_prefix}/libexec
-%{_prefix}/libexec/vespa_ann_benchmark
 
 %changelog

@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include <vespa/searchlib/common/fileheadercontext.h>
 #include <vespa/searchlib/docstore/filechunk.h>
@@ -202,7 +202,7 @@ assertUpdateLidMap(FixtureType &f)
     f.assertBucketizer(expLids);
     size_t entrySize = 10 + 8;
     EXPECT_EQUAL(9 * entrySize, f.chunk.getAddedBytes());
-    EXPECT_EQUAL(3u, f.chunk.getBloatCount());
+    EXPECT_EQUAL(3u, f.chunk.getErasedCount());
     EXPECT_EQUAL(3 * entrySize, f.chunk.getErasedBytes());
 }
 

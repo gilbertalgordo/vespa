@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.schema;
 
 import com.yahoo.config.model.application.provider.BaseDeployLogger;
@@ -40,7 +40,7 @@ public class SchemaImporterTestCase extends AbstractSchemaTestCase {
 
         SDDocumentType document = schema.getDocument();
         assertEquals("simple", document.getName());
-        assertEquals(23, document.getFieldCount());
+        assertEquals(20, document.getFieldCount());
 
         SDField field;
         Attribute attribute;

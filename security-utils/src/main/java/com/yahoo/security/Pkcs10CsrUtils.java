@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.security;
 
 import org.bouncycastle.openssl.PEMParser;
@@ -10,6 +10,8 @@ import java.io.IOException;
 import java.io.StringReader;
 import java.io.StringWriter;
 import java.io.UncheckedIOException;
+import java.util.List;
+import java.util.stream.Stream;
 
 /**
  * @author bjorncs
@@ -35,4 +37,13 @@ public class Pkcs10CsrUtils {
             throw new UncheckedIOException(e);
         }
     }
+
+    /** Returns all DNS names contained in given CSR (CN + subject alternative names) */
+    public static List<String> dnsNames(Pkcs10Csr csr) {
+        return Stream.concat(X509CertificateUtils.getCommonNames(csr.getSubject()).stream(),
+                             csr.getSubjectAlternativeNames().stream()
+                                .map(SubjectAlternativeName::getValue))
+                     .toList();
+    }
+
 }

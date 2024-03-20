@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.tensor;
 
 import java.util.Arrays;
@@ -21,6 +21,10 @@ class IndexedDoubleTensor extends IndexedTensor {
     public long size() {
         return values.length;
     }
+
+    /** Once we can store more cells than an int we should drop this method. */
+    @Override
+    public int sizeAsInt() { return values.length; }
 
     @Override
     public double get(long valueIndex) { return values[(int)valueIndex]; }

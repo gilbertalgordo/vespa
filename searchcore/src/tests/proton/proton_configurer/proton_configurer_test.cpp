@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include <map>
 #include <vespa/config-attributes.h>
@@ -43,6 +43,7 @@ using search::index::Schema;
 using search::fef::OnnxModels;
 using search::fef::RankingConstants;
 using search::fef::RankingExpressions;
+using vespalib::HwInfo;
 
 struct DBConfigFixture {
     using UP = std::unique_ptr<DBConfigFixture>;

@@ -1,13 +1,13 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #define DEBUG_FROZENBTREE
 #define LOG_FROZENBTREEXX
-#include <vespa/vespalib/testkit/testapp.h>
 #include <vespa/vespalib/btree/btreeroot.h>
 #include <vespa/vespalib/btree/btreeiterator.hpp>
 #include <vespa/vespalib/btree/btreeroot.hpp>
 #include <vespa/vespalib/btree/btreenodeallocator.hpp>
 #include <vespa/vespalib/datastore/buffer_type.hpp>
+#include <vespa/vespalib/gtest/gtest.h>
 #include <vespa/vespalib/util/rand48.h>
 #include <map>
 
@@ -24,11 +24,11 @@ using vespalib::GenerationHandler;
 namespace vespalib {
 
 
-class FrozenBTreeTest : public vespalib::TestApp
+class FrozenBTreeTest : public ::testing::Test
 {
 public:
     using KeyType = int;
-private:
+protected:
     std::vector<KeyType> _randomValues;
     std::vector<KeyType> _sortedRandomValues;
 
@@ -43,7 +43,7 @@ public:
     using LeafNodeType = Tree::LeafNodeType;
     using Iterator = Tree::Iterator;
     using ConstIterator = Tree::ConstIterator;
-private:
+protected:
     GenerationHandler *_generationHandler;
     NodeAllocator *_allocator;
     Tree *_tree;
@@ -70,21 +70,21 @@ private:
     }
 public:
     FrozenBTreeTest();
-    ~FrozenBTreeTest();
-
-    int Main() override;
+    ~FrozenBTreeTest() override;
 };
 
 FrozenBTreeTest::FrozenBTreeTest()
-    : vespalib::TestApp(),
+    : ::testing::Test(),
       _randomValues(),
       _sortedRandomValues(),
       _generationHandler(NULL),
       _allocator(NULL),
       _tree(NULL),
       _randomGenerator()
-{}
-FrozenBTreeTest::~FrozenBTreeTest() {}
+{
+}
+
+FrozenBTreeTest::~FrozenBTreeTest() = default;
 
 void
 FrozenBTreeTest::allocTree()
@@ -410,62 +410,31 @@ FrozenBTreeTest::printEnumTree(const Tree *tree,
 
 
 
-int
-FrozenBTreeTest::Main()
+TEST_F(FrozenBTreeTest, test_frozen_btree)
 {
-    TEST_INIT("frozenbtree_test");
-
     fillRandomValues(1000);
     sortRandomValues();
 
     allocTree();
-    insertRandomValues(*_tree, *_allocator, _randomValues);
-    lookupRandomValues(*_tree, *_allocator, _randomValues);
+    ASSERT_NO_FATAL_FAILURE(insertRandomValues(*_tree, *_allocator, _randomValues));
+    ASSERT_NO_FATAL_FAILURE(lookupRandomValues(*_tree, *_allocator, _randomValues));
     EXPECT_TRUE(_tree->getFrozenView(*_allocator).empty());
     _allocator->freeze();
     EXPECT_FALSE(_tree->getFrozenView(*_allocator).empty());
     _allocator->assign_generation(_generationHandler->getCurrentGeneration());
     lookupFrozenRandomValues(*_tree, *_allocator, _randomValues);
-    traverseTreeIterator(*_tree,
-                         *_allocator,
-                         _sortedRandomValues,
-                         false);
-    traverseTreeIterator(*_tree,
-                         *_allocator,
-                         _sortedRandomValues,
-                         true);
-    traverseTreeIterator(*_tree,
-                         *_allocator,
-                         _sortedRandomValues,
-                         false);
-    traverseTreeIterator(*_tree,
-                         *_allocator,
-                         _sortedRandomValues,
-                         true);
-    removeRandomValues(*_tree, *_allocator, _randomValues);
-    lookupGoneRandomValues(*_tree, *_allocator, _randomValues);
-    lookupFrozenRandomValues(*_tree, *_allocator,_randomValues);
-    traverseTreeIterator(*_tree,
-                         *_allocator,
-                         _sortedRandomValues,
-                         true);
-    insertRandomValues(*_tree, *_allocator, _randomValues);
+    ASSERT_NO_FATAL_FAILURE(traverseTreeIterator(*_tree, *_allocator, _sortedRandomValues, false));
+    ASSERT_NO_FATAL_FAILURE(traverseTreeIterator(*_tree, *_allocator, _sortedRandomValues, true));
+    ASSERT_NO_FATAL_FAILURE(traverseTreeIterator(*_tree, *_allocator, _sortedRandomValues, false));
+    ASSERT_NO_FATAL_FAILURE(traverseTreeIterator(*_tree, *_allocator, _sortedRandomValues, true));
+    ASSERT_NO_FATAL_FAILURE(removeRandomValues(*_tree, *_allocator, _randomValues));
+    ASSERT_NO_FATAL_FAILURE(lookupGoneRandomValues(*_tree, *_allocator, _randomValues));
+    ASSERT_NO_FATAL_FAILURE(lookupFrozenRandomValues(*_tree, *_allocator,_randomValues));
+    ASSERT_NO_FATAL_FAILURE(traverseTreeIterator(*_tree, *_allocator, _sortedRandomValues, true));
+    ASSERT_NO_FATAL_FAILURE(insertRandomValues(*_tree, *_allocator, _randomValues));
     freeTree(true);
-
-    fillRandomValues(1000000);
-    sortRandomValues();
-
-    allocTree();
-    insertRandomValues(*_tree, *_allocator, _randomValues);
-    traverseTreeIterator(*_tree,
-                         *_allocator,
-                         _sortedRandomValues,
-                         false);
-    freeTree(false);
-
-    TEST_DONE();
 }
 
 }
 
-TEST_APPHOOK(vespalib::FrozenBTreeTest);
+GTEST_MAIN_RUN_ALL_TESTS()

@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include "string_search_helper.h"
 #include "dfa_fuzzy_matcher.h"
@@ -80,7 +80,8 @@ StringSearchHelper::isMatch(const char *src) const noexcept {
         return getRegex().valid() && getRegex().partial_match(std::string_view(src));
     }
     if (__builtin_expect(isFuzzy(), false)) {
-        return _dfa_fuzzy_matcher ? _dfa_fuzzy_matcher->is_match(src) : getFuzzyMatcher().isMatch(src);
+        return _dfa_fuzzy_matcher ? _dfa_fuzzy_matcher->is_match(std::string_view(src))
+                                  : getFuzzyMatcher().isMatch(std::string_view(src));
     }
     if (__builtin_expect(isCased(), false)) {
         int res = strncmp(_term, src, _termLen);

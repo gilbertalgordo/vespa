@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.jdisc.http.filter.security.misc;
 
 import java.time.LocalDate;
@@ -79,5 +79,18 @@ public class User {
     @Override
     public int hashCode() {
         return Objects.hash(name, email, nickname, picture, lastLogin, loginCount, isVerified);
+    }
+
+    @Override
+    public String toString() {
+        return "User{" +
+                "email='" + email + '\'' +
+                ", name='" + name + '\'' +
+                ", nickname='" + nickname + '\'' +
+                ", picture='" + picture + '\'' +
+                ", isVerified=" + isVerified +
+                ", loginCount=" + loginCount +
+                ", lastLogin=" + lastLogin +
+                '}';
     }
 }

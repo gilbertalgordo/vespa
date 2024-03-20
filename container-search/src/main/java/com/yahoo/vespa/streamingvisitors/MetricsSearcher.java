@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.streamingvisitors;
 
 import com.yahoo.log.event.Event;
@@ -15,7 +15,7 @@ import java.util.Map;
 import java.util.TreeMap;
 import java.util.logging.Logger;
 
-import static com.yahoo.vespa.streamingvisitors.StreamingSearcher.STREAMING_STATISTICS;
+import static com.yahoo.vespa.streamingvisitors.StreamingBackend.STREAMING_STATISTICS;
 
 /**
  * Generates mail-specific query metrics.

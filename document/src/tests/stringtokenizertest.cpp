@@ -1,10 +1,10 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include <iostream>
 #include <set>
 #include <sstream>
+#include <vespa/vespalib/gtest/gtest.h>
 #include <vespa/vespalib/text/stringtokenizer.h>
-#include <gtest/gtest.h>
 
 using vespalib::StringTokenizer;
 using std::string;

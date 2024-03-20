@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 /**
  * \class storage::TestServiceLayerApp
  * \ingroup common
@@ -22,6 +22,7 @@
 #include <vespa/document/bucket/fixed_bucket_spaces.h>
 #include <vespa/persistence/spi/types.h>
 #include <vespa/storage/bucketdb/storbucketdb.h>
+#include <vespa/storage/bucketdb/bucketdatabase.h>
 #include <vespa/storage/common/doneinitializehandler.h>
 #include <vespa/storage/common/hostreporter/hostinfo.h>
 #include <vespa/storage/common/node_identity.h>
@@ -36,7 +37,6 @@
 namespace storage {
 
 namespace spi { struct PersistenceProvider; }
-class StorageBucketDBInitializer;
 
 DEFINE_PRIMITIVE_WRAPPER(uint16_t, NodeIndex);
 DEFINE_PRIMITIVE_WRAPPER(uint16_t, NodeCount);

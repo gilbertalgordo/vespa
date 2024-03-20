@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.tensor.serialization;
 
 import com.yahoo.lang.MutableInteger;
@@ -16,15 +16,7 @@ import com.yahoo.tensor.MixedTensor;
 import com.yahoo.tensor.Tensor;
 import com.yahoo.tensor.TensorAddress;
 import com.yahoo.tensor.TensorType;
-import com.yahoo.tensor.evaluation.Name;
-import com.yahoo.tensor.functions.ConstantTensor;
-import com.yahoo.tensor.functions.Slice;
-
-import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.Iterator;
-import java.util.List;
-import java.util.Set;
 
 /**
  * Writes tensors on the JSON format used in Vespa tensor document fields:
@@ -60,8 +52,7 @@ public class JsonFormat {
                 // Short form for a single mapped dimension
                 Cursor parent = root == null ? slime.setObject() : root.setObject("cells");
                 encodeSingleDimensionCells((MappedTensor) tensor, parent);
-            } else if (tensor instanceof MixedTensor &&
-                       tensor.type().dimensions().stream().anyMatch(TensorType.Dimension::isMapped)) {
+            } else if (tensor instanceof MixedTensor && tensor.type().hasMappedDimensions()) {
                 // Short form for a mixed tensor
                 boolean singleMapped = tensor.type().dimensions().stream().filter(TensorType.Dimension::isMapped).count() == 1;
                 Cursor parent = root == null ? ( singleMapped ? slime.setObject() : slime.setArray() )
@@ -143,30 +134,22 @@ public class JsonFormat {
     }
 
     private static void encodeBlocks(MixedTensor tensor, Cursor cursor) {
-        var mappedDimensions = tensor.type().dimensions().stream().filter(d -> d.isMapped())
+        var mappedDimensions = tensor.type().dimensions().stream().filter(TensorType.Dimension::isMapped)
                 .map(d -> TensorType.Dimension.mapped(d.name())).toList();
-        if (mappedDimensions.size() < 1) {
+        if (mappedDimensions.isEmpty()) {
             throw new IllegalArgumentException("Should be ensured by caller");
         }
 
         // Create tensor type for mapped dimensions subtype
         TensorType mappedSubType = new TensorType.Builder(mappedDimensions).build();
-
-        // Find all unique indices for the mapped dimensions
-        Set<TensorAddress> denseSubSpaceAddresses = new HashSet<>();
-        tensor.cellIterator().forEachRemaining((cell) -> {
-            denseSubSpaceAddresses.add(subAddress(cell.getKey(), mappedSubType, tensor.type()));
-        });
-
-        // Slice out dense subspace of each and encode dense subspace as a list
-        for (TensorAddress denseSubSpaceAddress : denseSubSpaceAddresses) {
-            IndexedTensor denseSubspace = (IndexedTensor) sliceSubAddress(tensor, denseSubSpaceAddress, mappedSubType);
-
+        TensorType denseSubType = tensor.type().indexedSubtype();
+        for (var subspace : tensor.getInternalDenseSubspaces()) {
+            IndexedTensor denseSubspace = IndexedTensor.Builder.of(denseSubType, subspace.cells).build();
             if (mappedDimensions.size() == 1) {
-                encodeValues(denseSubspace, cursor.setArray(denseSubSpaceAddress.label(0)), new long[denseSubspace.dimensionSizes().dimensions()], 0);
+                encodeValues(denseSubspace, cursor.setArray(subspace.sparseAddress.label(0)), new long[denseSubspace.dimensionSizes().dimensions()], 0);
             } else {
                 Cursor block = cursor.addObject();
-                encodeAddress(mappedSubType, denseSubSpaceAddress, block.setObject("address"));
+                encodeAddress(mappedSubType, subspace.sparseAddress, block.setObject("address"));
                 encodeValues(denseSubspace, block.setArray("values"), new long[denseSubspace.dimensionSizes().dimensions()], 0);
             }
 
@@ -187,23 +170,6 @@ public class JsonFormat {
             cursor.setDouble(field, value);
     }
 
-    private static TensorAddress subAddress(TensorAddress address, TensorType subType, TensorType origType) {
-        TensorAddress.Builder builder = new TensorAddress.Builder(subType);
-        for (TensorType.Dimension dim : subType.dimensions()) {
-            builder.add(dim.name(), address.label(origType.indexOfDimension(dim.name()).
-                    orElseThrow(() -> new IllegalStateException("Could not find mapped dimension index"))));
-        }
-        return builder.build();
-    }
-
-    private static Tensor sliceSubAddress(Tensor tensor, TensorAddress subAddress, TensorType subType) {
-        List<Slice.DimensionValue<Name>> sliceDims = new ArrayList<>(subAddress.size());
-        for (int i = 0; i < subAddress.size(); ++i) {
-            sliceDims.add(new Slice.DimensionValue<>(subType.dimensions().get(i).name(), subAddress.label(i)));
-        }
-        return new Slice<>(new ConstantTensor<>(tensor), sliceDims).evaluate();
-    }
-
     /** Deserializes the given tensor from JSON format */
     // NOTE: This must be kept in sync with com.yahoo.document.json.readers.TensorReader in the document module
     public static Tensor decode(TensorType type, byte[] jsonTensorValue) {
@@ -212,7 +178,7 @@ public class JsonFormat {
 
         if (root.field("cells").valid() && ! primitiveContent(root.field("cells")))
             decodeCells(root.field("cells"), builder);
-        else if (root.field("values").valid() && builder.type().dimensions().stream().allMatch(d -> d.isIndexed()))
+        else if (root.field("values").valid() && ! builder.type().hasMappedDimensions())
             decodeValuesAtTop(root.field("values"), builder);
         else if (root.field("blocks").valid())
             decodeBlocks(root.field("blocks"), builder);
@@ -242,10 +208,11 @@ public class JsonFormat {
         TensorAddress address = decodeAddress(cell.field("address"), builder.type());
 
         Inspector value = cell.field("value");
-        if (value.type() != Type.LONG && value.type() != Type.DOUBLE)
+        if (value.valid()) {
+            builder.cell(address, decodeNumeric(value));
+        } else {
             throw new IllegalArgumentException("Excepted a cell to contain a numeric value called 'value'");
-
-        builder.cell(address, value.asDouble());
+        }
     }
 
     private static void decodeSingleDimensionCell(String key, Inspector value, Tensor.Builder builder) {
@@ -276,8 +243,8 @@ public class JsonFormat {
         values.traverse((ArrayTraverser) (__, value) -> {
             if (value.type() == Type.ARRAY)
                 decodeNestedValues(value, builder, index);
-            else if (value.type() == Type.LONG || value.type() == Type.DOUBLE)
-                indexedBuilder.cellByDirectIndex(index.next(), value.asDouble());
+            else if (value.type() == Type.LONG || value.type() == Type.DOUBLE || value.type() == Type.STRING || value.type() == Type.NIX)
+                indexedBuilder.cellByDirectIndex(index.next(), decodeNumeric(value));
             else
                 throw new IllegalArgumentException("Excepted the values array to contain numbers or nested arrays, not " + value.type());
         });
@@ -305,14 +272,14 @@ public class JsonFormat {
 
     /** Decodes a tensor value directly at the root, where the format is decided by the tensor type. */
     private static void decodeDirectValue(Inspector root, Tensor.Builder builder) {
-        boolean hasIndexed = builder.type().dimensions().stream().anyMatch(TensorType.Dimension::isIndexed);
-        boolean hasMapped = builder.type().dimensions().stream().anyMatch(TensorType.Dimension::isMapped);
+        boolean hasIndexed = builder.type().hasIndexedDimensions();
+        boolean hasMapped = builder.type().hasMappedDimensions();
 
         if (isArrayOfObjects(root))
             decodeCells(root, builder);
         else if ( ! hasMapped)
             decodeValuesAtTop(root, builder);
-        else if (hasMapped && hasIndexed)
+        else if (hasIndexed)
             decodeBlocks(root, builder);
         else
             decodeCells(root, builder);
@@ -408,21 +375,29 @@ public class JsonFormat {
         };
     }
 
+    private static void decodeMaybeNestedValuesInBlock(Inspector arrayField, double[] target, MutableInteger index) {
+        if (arrayField.entries() == 0) {
+            throw new IllegalArgumentException("The block value array does not contain any values");
+        }
+        arrayField.traverse((ArrayTraverser) (__, value) -> {
+                if (value.type() == Type.ARRAY) {
+                    decodeMaybeNestedValuesInBlock(value, target, index);
+                } else {
+                    target[index.next()] = decodeNumeric(value);
+                }
+            });
+    }
+
     private static double[] decodeValuesInBlock(Inspector valuesField, MixedTensor.BoundBuilder mixedBuilder) {
         double[] values = new double[(int)mixedBuilder.denseSubspaceSize()];
         if (valuesField.type() == Type.ARRAY) {
-            if (valuesField.entries() == 0) {
-                throw new IllegalArgumentException("The block value array does not contain any values");
-            }
-            valuesField.traverse((ArrayTraverser) (index, value) -> values[index] = decodeNumeric(value));
+            decodeMaybeNestedValuesInBlock(valuesField, values, new MutableInteger(0));
         } else if (valuesField.type() == Type.STRING) {
             double[] decoded = decodeHexString(valuesField.asString(), mixedBuilder.type().valueType());
             if (decoded.length == 0) {
                 throw new IllegalArgumentException("The block value string does not contain any values");
             }
-            for (int i = 0; i < decoded.length; i++) {
-                values[i] = decoded[i];
-            }
+            System.arraycopy(decoded, 0, values, 0, decoded.length);
         } else {
             throw new IllegalArgumentException("Expected a block to contain an array of values");
         }
@@ -444,9 +419,33 @@ public class JsonFormat {
     }
 
     private static double decodeNumeric(Inspector numericField) {
-        if (numericField.type() != Type.LONG && numericField.type() != Type.DOUBLE)
-            throw new IllegalArgumentException("Excepted a number, not " + numericField.type());
-        return numericField.asDouble();
+        if (numericField.type() == Type.DOUBLE || numericField.type() == Type.LONG) {
+            return numericField.asDouble();
+        }
+        if (numericField.type() == Type.STRING) {
+            return decodeNumberString(numericField.asString());
+        }
+        if (numericField.type() == Type.NIX) {
+            return Double.NaN;
+        }
+        throw new IllegalArgumentException("Excepted a number, not " + numericField.type());
+    }
+
+    public static double decodeNumberString(String input) {
+        String s = input.toLowerCase();
+        if (s.equals("infinity") || s.equals("+infinity") || s.equals("inf") || s.equals("+inf")) {
+            return Double.POSITIVE_INFINITY;
+        }
+        if (s.equals("-infinity") || s.equals("-inf")) {
+            return Double.NEGATIVE_INFINITY;
+        }
+        if (s.equals("nan") || s.equals("+nan")) {
+            return Double.NaN;
+        }
+        if (s.equals("-nan")) {
+            return Math.copySign(Double.NaN, -1.0); // or Double.longBitsToDouble(0xfff8000000000000L);
+        }
+        return Double.parseDouble(input);
     }
 
 }

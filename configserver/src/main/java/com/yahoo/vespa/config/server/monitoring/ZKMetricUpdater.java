@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.config.server.monitoring;
 
 import com.yahoo.cloud.config.ZookeeperServerConfig;
@@ -112,7 +112,7 @@ public class ZKMetricUpdater implements Runnable {
         if (tlsContext == null || TransportSecurityUtils.getInsecureMixedMode() == MixedMode.PLAINTEXT_CLIENT_MIXED_SERVER) {
             return new Socket();
         }
-        return tlsContext.context().getSocketFactory().createSocket();
+        return tlsContext.createClientSslSocket();
     }
 
     private static final Pattern MONITORING_REPORT = Pattern.compile("^(\\w+)\\s+(\\d+)$", Pattern.MULTILINE);

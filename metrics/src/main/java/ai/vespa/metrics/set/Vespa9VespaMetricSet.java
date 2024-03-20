@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 // TODO: This class to be used for managed Vespa.
 // TODO: Vespa 9: Let this class replace VespaMetricSet.
@@ -178,7 +178,7 @@ public class Vespa9VespaMetricSet {
 
         addMetric(metrics, ContainerMetrics.JDISC_DEACTIVATED_CONTAINERS_TOTAL.sum());
 
-        addMetric(metrics, ContainerMetrics.JDISC_SINGLETON_IS_ACTIVE.max());
+        addMetric(metrics, ContainerMetrics.JDISC_SINGLETON_IS_ACTIVE, EnumSet.of(min, max));
 
         addMetric(metrics, ContainerMetrics.ATHENZ_TENANT_CERT_EXPIRY_SECONDS.min());
         addMetric(metrics, ContainerMetrics.CONTAINER_IAM_ROLE_EXPIRY_SECONDS.baseName());
@@ -525,11 +525,15 @@ public class Vespa9VespaMetricSet {
         addMetric(metrics, StorageMetrics.VDS_FILESTOR_ALLTHREADS_DELETEBUCKETS_COUNT.rate());
         addMetric(metrics, StorageMetrics.VDS_FILESTOR_ALLTHREADS_DELETEBUCKETS_FAILED.rate());
         addMetric(metrics, StorageMetrics.VDS_FILESTOR_ALLTHREADS_DELETEBUCKETS_LATENCY, EnumSet.of(max, sum, count));
+        addMetric(metrics, StorageMetrics.VDS_FILESTOR_ALLTHREADS_REMOVE_BY_GID_COUNT.rate());
+        addMetric(metrics, StorageMetrics.VDS_FILESTOR_ALLTHREADS_REMOVE_BY_GID_FAILED.rate());
+        addMetric(metrics, StorageMetrics.VDS_FILESTOR_ALLTHREADS_REMOVE_BY_GID_LATENCY, EnumSet.of(max, sum, count));
         addMetric(metrics, StorageMetrics.VDS_FILESTOR_ALLTHREADS_SETBUCKETSTATES_COUNT.rate());
 
         addMetric(metrics, StorageMetrics.VDS_MERGETHROTTLER_AVERAGEQUEUEWAITINGTIME, EnumSet.of(max, sum, count));
         addMetric(metrics, StorageMetrics.VDS_MERGETHROTTLER_QUEUESIZE, EnumSet.of(max, sum, count));
         addMetric(metrics, StorageMetrics.VDS_MERGETHROTTLER_ACTIVE_WINDOW_SIZE, EnumSet.of(max, sum, count));
+        addMetric(metrics, StorageMetrics.VDS_MERGETHROTTLER_ESTIMATED_MERGE_MEMORY_USAGE, EnumSet.of(max, sum, count));
         addMetric(metrics, StorageMetrics.VDS_MERGETHROTTLER_BOUNCED_DUE_TO_BACK_PRESSURE.rate());
         addMetric(metrics, StorageMetrics.VDS_MERGETHROTTLER_LOCALLYEXECUTEDMERGES_OK.rate());
         addMetric(metrics, StorageMetrics.VDS_MERGETHROTTLER_MERGECHAINS_OK.rate());

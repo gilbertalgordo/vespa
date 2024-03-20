@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.security;
 
 import com.yahoo.security.tls.TlsContext;
@@ -129,7 +129,10 @@ public class SslContextBuilder {
         return this;
     }
 
-    public SSLContext build() {
+    public SSLContext build() { return buildContext().context(); }
+
+    /** @return same {@link #build()} but includes the {@link SSLContext} instance's associated trust/key managers */
+    public X509SslContext buildContext() {
         try {
             SSLContext sslContext = SSLContext.getInstance(TlsContext.SSL_CONTEXT_VERSION);
             X509ExtendedTrustManager trustManager = this.trustManager != null
@@ -139,7 +142,7 @@ public class SslContextBuilder {
                     ? this.keyManager
                     : keyManagerFactory.createKeyManager(keyStoreSupplier.get(), keyStorePassword);
             sslContext.init(new KeyManager[] {keyManager}, new TrustManager[] {trustManager}, null);
-            return sslContext;
+            return new X509SslContext(sslContext, trustManager, keyManager);
         } catch (GeneralSecurityException e) {
             throw new RuntimeException(e);
         } catch (IOException e) {

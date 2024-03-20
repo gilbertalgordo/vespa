@@ -1,9 +1,10 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.jdisc.http.server.jetty;
 
-import com.yahoo.jdisc.Response;
 import com.yahoo.jdisc.handler.CompletionHandler;
 import com.yahoo.jdisc.handler.ContentChannel;
+import com.yahoo.jdisc.http.ConnectorConfig;
+import com.yahoo.text.Text;
 import jakarta.servlet.ReadListener;
 import jakarta.servlet.ServletInputStream;
 import jakarta.servlet.http.HttpServletRequest;
@@ -16,6 +17,8 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+
+import static com.yahoo.jdisc.Response.Status.REQUEST_TOO_LONG;
 
 /**
  * Finished when either
@@ -105,12 +108,27 @@ class ServletRequestReader {
             Janitor janitor,
             RequestMetricReporter metricReporter) {
         this.req = Objects.requireNonNull(req);
-        long maxContentSize = RequestUtils.getConnector(req).connectorConfig().maxContentSize();
+        var cfg = RequestUtils.getConnector(req).connectorConfig();
+        long maxContentSize = resolveMaxContentSize(cfg);
+        var msgTemplate = resolveMaxContentSizeErrorMessage(cfg);
         this.requestContentChannel = maxContentSize >= 0
-                ? new ByteLimitedContentChannel(Objects.requireNonNull(requestContentChannel), maxContentSize)
+                ? new ByteLimitedContentChannel(
+                        Objects.requireNonNull(requestContentChannel), maxContentSize, msgTemplate, req.getContentLengthLong())
                 : Objects.requireNonNull(requestContentChannel);
         this.janitor = Objects.requireNonNull(janitor);
         this.metricReporter = Objects.requireNonNull(metricReporter);
+    }
+
+    private static String resolveMaxContentSizeErrorMessage(ConnectorConfig cfg) {
+        return cfg.maxContentSizeErrorMessageTemplate().strip();
+    }
+
+    private static long resolveMaxContentSize(ConnectorConfig cfg) {
+        // Scale based on max heap size if 0
+        long maxContentSize = cfg.maxContentSize() != 0
+                ? cfg.maxContentSize() : Math.min(Runtime.getRuntime().maxMemory() / 2, Integer.MAX_VALUE - 8);
+        log.fine(() -> Text.format("maxContentSize=%d", maxContentSize));
+        return maxContentSize;
     }
 
     /** Register read listener to start reading request data */
@@ -268,24 +286,30 @@ class ServletRequestReader {
 
     private static class ByteLimitedContentChannel implements ContentChannel {
         private final long maxContentSize;
+        private final String messageTemplate;
+        private final long contentLengthHeader;
         private final AtomicLong bytesWritten = new AtomicLong();
         private final ContentChannel delegate;
 
-        ByteLimitedContentChannel(ContentChannel delegate, long maxContentSize) {
+        ByteLimitedContentChannel(ContentChannel delegate, long maxContentSize, String messageTemplate, long contentLengthHeader) {
             this.delegate = delegate;
             this.maxContentSize = maxContentSize;
+            this.messageTemplate = messageTemplate;
+            this.contentLengthHeader = contentLengthHeader;
         }
 
         @Override
         public void write(ByteBuffer buf, CompletionHandler handler) {
             long written = bytesWritten.addAndGet(buf.remaining());
-            if (written > maxContentSize) {
+            if (contentLengthHeader != -1 && contentLengthHeader > maxContentSize) {
                 handler.failed(new RequestException(
-                        Response.Status.REQUEST_TOO_LONG,
-                        "Request content length %d exceeds limit of %d bytes".formatted(written, maxContentSize)));
-                return;
+                        REQUEST_TOO_LONG, messageTemplate.formatted(contentLengthHeader, maxContentSize)));
+            } else if (written > maxContentSize) {
+                handler.failed(new RequestException(
+                        REQUEST_TOO_LONG, messageTemplate.formatted(written, maxContentSize)));
+            } else {
+                delegate.write(buf, handler);
             }
-            delegate.write(buf, handler);
         }
 
         @Override public void close(CompletionHandler h) { delegate.close(h); }

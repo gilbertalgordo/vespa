@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.hosted.provision.autoscale;
 
 import com.yahoo.component.Version;
@@ -108,7 +108,7 @@ public class Fixture {
     }
 
     /** Compute an autoscaling suggestion for this. */
-    public Autoscaling suggest() {
+    public List<Autoscaling> suggest() {
         return tester().suggest(applicationId, clusterSpec.id(), capacity.minResources(), capacity.maxResources());
     }
 
@@ -177,7 +177,6 @@ public class Fixture {
                                                                new NodeResources(100, 1000, 1000, 1, NodeResources.DiskSpeed.any)));
         HostResourcesCalculator resourceCalculator = new DynamicProvisioningTester.MockHostResourcesCalculator(zone);
         final InMemoryFlagSource flagSource = new InMemoryFlagSource();
-        boolean reversedFlavorOrder = false;
         int hostCount = 0;
 
         public Fixture.Builder zone(Zone zone) {

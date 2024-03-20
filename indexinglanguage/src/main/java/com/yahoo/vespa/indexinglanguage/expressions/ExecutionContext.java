@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.indexinglanguage.expressions;
 
 import com.yahoo.document.DataType;
@@ -130,6 +130,12 @@ public class ExecutionContext implements FieldTypeAdapter, FieldValueAdapter, Cl
         variables.clear();
         value = null;
         return this;
+    }
+
+    void fillVariableTypes(VerificationContext vctx) {
+        for (var entry : variables.entrySet()) {
+            vctx.setVariable(entry.getKey(), entry.getValue().getDataType());
+        }
     }
 
 }

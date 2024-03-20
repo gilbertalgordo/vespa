@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.search.querytransform;
 
 import static com.yahoo.prelude.searcher.PosSearcher.POSITION_PARSING;
@@ -31,10 +31,6 @@ public class DefaultPositionSearcher extends Searcher {
     @Inject
     public DefaultPositionSearcher(DocumentmanagerConfig cfg) {
         this.useV8GeoPositions = cfg.usev8geopositions();
-    }
-
-    DefaultPositionSearcher() {
-        this.useV8GeoPositions = false;
     }
 
     @Override

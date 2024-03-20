@@ -1,7 +1,8 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include "dot_product_blueprint.h"
 #include "dot_product_search.h"
+#include "flow_tuning.h"
 #include "field_spec.hpp"
 #include <vespa/vespalib/objects/visit.hpp>
 
@@ -36,6 +37,17 @@ DotProductBlueprint::addTerm(Blueprint::UP term, int32_t weight, HitEstimate & e
     }
     _weights.push_back(weight);
     _terms.push_back(std::move(term));
+}
+
+FlowStats
+DotProductBlueprint::calculate_flow_stats(uint32_t docid_limit) const
+{
+    for (auto &term: _terms) {
+        term->update_flow_stats(docid_limit);
+    }
+    double est = OrFlow::estimate_of(_terms);
+    return {est, OrFlow::cost_of(_terms, false),
+            OrFlow::cost_of(_terms, true) + flow::heap_cost(est, _terms.size())};
 }
 
 SearchIterator::UP

@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include "attributesconfigscout.h"
 #include "attribute_type_matcher.h"
@@ -32,6 +32,9 @@ AttributesConfigScout::adjust(AttributesConfig::Attribute &attr,
     attr.densepostinglistthreshold = liveAttr.densepostinglistthreshold;
     attr.distancemetric = liveAttr.distancemetric;
     attr.index = liveAttr.index;
+    attr.match = liveAttr.match;
+    attr.dictionary.match = liveAttr.dictionary.match;
+    attr.dictionary.type = liveAttr.dictionary.type;
 }
 
 

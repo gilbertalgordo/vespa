@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include <vespa/config-stor-distribution.h>
 #include <vespa/document/datatype/documenttype.h>
@@ -27,6 +27,7 @@ using document::DocumentId;
 using document::DocumentType;
 using document::DocumentTypeRepo;
 using document::DocumentUpdate;
+using document::GlobalId;
 using document::test::makeBucketSpace;
 using search::DocumentMetaData;
 using storage::spi::Bucket;
@@ -160,8 +161,9 @@ struct MyHandler : public IPersistenceHandler, IBucketFreezer {
     const Document              *document;
     std::multiset<uint64_t>      frozen;
     std::multiset<uint64_t>      was_frozen;
+    DocTypeName                  _doc_type_name;
 
-    MyHandler()
+    MyHandler(const DocTypeName &type_name)
         : initialized(false),
           lastBucket(),
           lastTimestamp(),
@@ -179,7 +181,8 @@ struct MyHandler : public IPersistenceHandler, IBucketFreezer {
           _createBucketResult(),
           document(nullptr),
           frozen(),
-          was_frozen()
+          was_frozen(),
+          _doc_type_name(type_name)
     {
     }
 
@@ -216,6 +219,14 @@ struct MyHandler : public IPersistenceHandler, IBucketFreezer {
         bool wasFound = existingTimestamp > 0;
         token->setResult(std::make_unique<RemoveResult>(wasFound), wasFound);
         handle(token, bucket, timestamp, id);
+    }
+
+    void handleRemoveByGid(FeedToken token, const Bucket& bucket,
+                           Timestamp timestamp,
+                           vespalib::stringref, const GlobalId&) override {
+        bool wasFound = existingTimestamp > 0;
+        token->setResult(std::make_unique<RemoveResult>(wasFound), wasFound);
+        handle(token, bucket, timestamp, DocumentId());
     }
 
     void handleListBuckets(IBucketIdListResultHandler &resultHandler) override {
@@ -278,6 +289,10 @@ struct MyHandler : public IPersistenceHandler, IBucketFreezer {
         resultHandler.handle(Result());
     }
 
+    const DocTypeName &doc_type_name() const noexcept override {
+        return _doc_type_name;
+    }
+
     void freezeBucket(BucketId bucket) override {
         frozen.insert(bucket.getId());
         was_frozen.insert(bucket.getId());
@@ -302,8 +317,8 @@ struct HandlerSet {
 };
 
 HandlerSet::HandlerSet()
-    : phandler1(std::make_shared<MyHandler>()),
-      phandler2(std::make_shared<MyHandler>()),
+    : phandler1(std::make_shared<MyHandler>(DocTypeName("type1"))),
+      phandler2(std::make_shared<MyHandler>(DocTypeName("type2"))),
       handler1(dynamic_cast<MyHandler &>(*phandler1.get())),
       handler2(dynamic_cast<MyHandler &>(*phandler2.get()))
 {}

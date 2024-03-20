@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #pragma once
 
@@ -8,6 +8,7 @@
 #include "rankmanager.h"
 #include "rankprocessor.h"
 #include "searchenvironment.h"
+#include "querytermdata.h"
 #include <vespa/vsm/common/docsum.h>
 #include <vespa/vsm/common/documenttypemapping.h>
 #include <vespa/vsm/common/storagedocument.h>
@@ -42,7 +43,8 @@ class SearchEnvironmentSnapshot;
  * @brief Visitor that applies a search query to visitor data and
  * converts them to a QueryResultCommand.
  **/
-class SearchVisitor : public storage::Visitor {
+class SearchVisitor : public storage::Visitor,
+                      public search::QueryNormalization {
 public:
     SearchVisitor(storage::StorageComponent&, storage::VisitorEnvironment& vEnv,
                   const vdslib::Parameters & params);
@@ -125,11 +127,13 @@ private:
     private:
         vespalib::string               _rankProfile;
         std::shared_ptr<const RankManager::Snapshot>  _rankManagerSnapshot;
-        const search::fef::RankSetup * _rankSetup;
-        search::fef::Properties        _queryProperties;
+        search::feature_t              _rank_score_drop_limit;
         bool                           _hasRanking;
-        RankProcessor::UP              _rankProcessor;
+        bool                           _hasSummaryFeatures;
         bool                           _dumpFeatures;
+        search::fef::Properties        _queryProperties;
+        search::fef::Properties        _featureOverrides;
+        RankProcessor::UP              _rankProcessor;
         RankProcessor::UP              _dumpProcessor;
 
         /**
@@ -144,15 +148,16 @@ private:
     public:
         RankController();
         ~RankController();
-        bool valid() const { return _rankProcessor.get() != nullptr; }
+        bool valid() const { return bool(_rankProcessor); }
         void setRankProfile(const vespalib::string &rankProfile) { _rankProfile = rankProfile; }
         const vespalib::string &getRankProfile() const { return _rankProfile; }
         void setRankManagerSnapshot(const std::shared_ptr<const RankManager::Snapshot>& snapshot) { _rankManagerSnapshot = snapshot; }
         search::fef::Properties & getQueryProperties() { return _queryProperties; }
+        search::fef::Properties & getFeatureOverrides() { return _featureOverrides; }
         RankProcessor * getRankProcessor() { return _rankProcessor.get(); }
         void setDumpFeatures(bool dumpFeatures) { _dumpFeatures = dumpFeatures; }
         bool getDumpFeatures() const { return _dumpFeatures; }
-        const search::fef::RankSetup * getRankSetup() const { return _rankSetup; }
+        search::feature_t rank_score_drop_limit() const noexcept { return _rank_score_drop_limit; }
 
         /**
          * Setup rank processors used for ranking and dumping.
@@ -164,7 +169,7 @@ private:
          **/
         void setupRankProcessors(search::streaming::Query & query,
                                  const vespalib::string & location,
-                                 size_t wantedHitCount,
+                                 size_t wantedHitCount, bool use_sort_blob,
                                  const search::IAttributeManager & attrMan,
                                  std::vector<AttrInfo> & attributeFields);
         /**
@@ -194,12 +199,11 @@ private:
          * @param visitor the search visitor.
          * @param tmpSortBuffer the sort buffer containing the sort data.
          * @param document the document to collect. Must be kept alive on the outside.
-         * @return true if the document was added to the heap
          **/
-        bool collectMatchedDocument(bool hasSorting,
+        void collectMatchedDocument(bool hasSorting,
                                     SearchVisitor & visitor,
                                     const std::vector<char> & tmpSortBuffer,
-                                    const vsm::StorageDocument * document);
+                                    vsm::StorageDocument::SP document);
         /**
          * Callback function that is called when visiting is completed.
          * Perform second phase ranking and calculate summary features / rank features if asked for.
@@ -207,6 +211,7 @@ private:
          * @param docsumsStateCallback state object to store summary features and rank features.
          **/
         void onCompletedVisiting(vsm::GetDocsumsStateCallback & docsumsStateCallback, vdslib::SearchResult & searchResult);
+        vespalib::FeatureSet::SP getFeatureSet(search::DocumentIdT docId);
     };
 
     /**
@@ -253,19 +258,15 @@ private:
      * @param docsumSpec config with the field names used by the docsum setup.
      * @param fieldList list of field names that are built.
      **/
-    static void registerAdditionalFields(const std::vector<vsm::DocsumTools::FieldSpec> & docsumSpec,
-                                         std::vector<vespalib::string> & fieldList);
+    static std::vector<vespalib::string> registerAdditionalFields(const std::vector<vsm::DocsumTools::FieldSpec> & docsumSpec);
 
     /**
      * Setup the field searchers used when matching the query with the stream of documents.
      * This includes setting up various mappings in FieldSearchSpecMap and building mapping
      * for fields used by the query.
      *
-     * @param additionalFields list of additional field names used when setting up the mappings.
-     * @param fieldsInQuery mapping from field name to field id that are built based on the query.
      **/
-    void setupFieldSearchers(const std::vector<vespalib::string> & additionalFields,
-                             vsm::StringFieldIdTMap & fieldsInQuery);
+    vsm::StringFieldIdTMap setupFieldSearchers();
 
     /**
      * Prepare the field searchers for the given query.
@@ -323,9 +324,8 @@ private:
     /**
      * Process one document
      * @param document Document to process.
-     * @return true if the underlying buffer is needed later on, then it must be kept.
      */
-    bool handleDocument(vsm::StorageDocument & document);
+    void handleDocument(vsm::StorageDocument::SP document);
 
     /**
      * Collect the given document for grouping.
@@ -397,7 +397,6 @@ private:
         size_t _limit;
     };
     using GroupingList = std::vector< GroupingEntry >;
-    using DocumentVector = std::vector<vsm::StorageDocument::UP>;
 
     class StreamingDocsumsState {
         using ResolveClassInfo = search::docsummary::IDocsumWriter::ResolveClassInfo;
@@ -413,19 +412,20 @@ private:
     class SummaryGenerator : public HitsAggregationResult::SummaryGenerator
     {
     public:
-        explicit SummaryGenerator(const search::IAttributeManager& attr_manager);
+        explicit SummaryGenerator(const search::IAttributeManager&, const search::QueryNormalization &);
         ~SummaryGenerator() override;
         vsm::GetDocsumsStateCallback & getDocsumCallback() { return _callback; }
         void setFilter(std::unique_ptr<vsm::DocsumFilter> filter) { _docsumFilter = std::move(filter); }
         void setDocsumCache(const vsm::IDocSumCache & cache) { _docsumFilter->setDocSumStore(cache); }
         void setDocsumWriter(IDocsumWriter & docsumWriter) { _docsumWriter = & docsumWriter; }
-        vespalib::ConstBufferRef fillSummary(search::AttributeVector::DocId lid, const HitsAggregationResult::SummaryClassType & summaryClass) override;
+        vespalib::ConstBufferRef fillSummary(search::AttributeVector::DocId lid, vespalib::stringref summaryClass) override;
         void set_dump_features(bool dump_features) { _dump_features = dump_features; }
         void set_location(const vespalib::string& location) { _location = location; }
         void set_stack_dump(std::vector<char> stack_dump) { _stack_dump = std::move(stack_dump); }
         void add_summary_field(vespalib::stringref field) { _summaryFields.emplace_back(field); }
+        search::fef::Properties & highlightTerms() { return _highlight_terms;}
     private:
-        StreamingDocsumsState& get_streaming_docsums_state(const vespalib::string& summary_class);
+        StreamingDocsumsState& get_streaming_docsums_state(vespalib::stringref summary_class);
         vsm::GetDocsumsStateCallback            _callback;
         vespalib::hash_map<vespalib::string, std::unique_ptr<StreamingDocsumsState>> _docsum_states;
         std::vector<vespalib::string>           _summaryFields;
@@ -435,15 +435,17 @@ private:
         std::optional<bool>                     _dump_features;
         std::optional<vespalib::string>         _location;
         std::optional<std::vector<char>>        _stack_dump;
+        search::fef::Properties                 _highlight_terms;
         const search::IAttributeManager&        _attr_manager;
+        const search::QueryNormalization &      _query_normalization;
     };
 
     class HitsResultPreparator : public vespalib::ObjectOperation, public vespalib::ObjectPredicate
     {
     public:
-        explicit HitsResultPreparator(SummaryGenerator & summaryGenerator) :
-           _summaryGenerator(summaryGenerator),
-           _numHitsAggregators(0)
+        explicit HitsResultPreparator(SummaryGenerator & summaryGenerator)
+            : _summaryGenerator(summaryGenerator),
+              _numHitsAggregators(0)
         { }
         size_t getNumHitsAggregators() const  { return _numHitsAggregators; }
     private:
@@ -457,6 +459,7 @@ private:
     std::shared_ptr<const SearchEnvironmentSnapshot> _env;
     vdslib::Parameters                      _params;
     bool                                    _init_called;
+    bool                                    _collectGroupingHits;
     size_t                                  _docSearchedCount;
     size_t                                  _hitCount;
     size_t                                  _hitsRejectedCount;
@@ -477,17 +480,18 @@ private:
     std::vector<size_t>                     _sortList;
     vsm::SharedSearcherBuf                  _searchBuffer;
     std::vector<char>                       _tmpSortBuffer;
-    search::AttributeVector::SP    _documentIdAttributeBacking;
-    search::AttributeVector::SP    _rankAttributeBacking;
+    search::AttributeVector::SP             _documentIdAttributeBacking;
+    search::AttributeVector::SP             _rankAttributeBacking;
     search::SingleStringExtAttribute      & _documentIdAttribute;
     search::SingleFloatExtAttribute       & _rankAttribute;
     bool                                    _shouldFillRankAttribute;
     SyntheticFieldsController               _syntheticFieldsController;
     RankController                          _rankController;
-    DocumentVector                          _backingDocuments;
     vsm::StringFieldIdTMapT                 _fieldsUnion;
 
     void setupAttributeVector(const vsm::FieldPath &fieldPath);
+    bool is_text_matching(vespalib::stringref index) const noexcept override;
+    Normalizing normalizing_mode(vespalib::stringref index) const noexcept override;
 };
 
 class SearchVisitorFactory : public storage::VisitorFactory {
@@ -496,10 +500,11 @@ class SearchVisitorFactory : public storage::VisitorFactory {
     std::shared_ptr<storage::VisitorEnvironment> makeVisitorEnvironment(storage::StorageComponent&) override;
 
     storage::Visitor* makeVisitor(storage::StorageComponent&, storage::VisitorEnvironment&env,
-                         const vdslib::Parameters& params) override;
+                                  const vdslib::Parameters& params) override;
 public:
     explicit SearchVisitorFactory(const config::ConfigUri & configUri, FNET_Transport* transport, const vespalib::string& file_distributor_connection_spec);
     ~SearchVisitorFactory() override;
+    std::optional<int64_t> get_oldest_config_generation() const;
 };
 
 }

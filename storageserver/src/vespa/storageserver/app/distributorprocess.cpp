@@ -1,7 +1,9 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include "distributorprocess.h"
 #include <vespa/config/helper/configgetter.hpp>
+#include <vespa/storage/config/config-stor-distributormanager.h>
+#include <vespa/storage/config/config-stor-visitordispatcher.h>
 #include <vespa/storage/common/bucket_stripe_utils.h>
 #include <vespa/storage/common/i_storage_chain_builder.h>
 #include <vespa/storage/common/storagelink.h>
@@ -58,14 +60,8 @@ adjusted_num_distributor_stripes(int32_t cfg_n_stripes)
 void
 DistributorProcess::setupConfig(vespalib::duration subscribeTimeout)
 {
-    using vespa::config::content::core::StorDistributormanagerConfig;
-    using vespa::config::content::core::StorVisitordispatcherConfig;
-
-    auto distr_cfg = config::ConfigGetter<StorDistributormanagerConfig>::getConfig(
-            _configUri.getConfigId(), _configUri.getContext(), subscribeTimeout);
-    _num_distributor_stripes = adjusted_num_distributor_stripes(distr_cfg->numDistributorStripes);
-    _distributorConfigHandler = _configSubscriber.subscribe<StorDistributormanagerConfig>(_configUri.getConfigId(), subscribeTimeout);
-    _visitDispatcherConfigHandler = _configSubscriber.subscribe<StorVisitordispatcherConfig>(_configUri.getConfigId(), subscribeTimeout);
+    _distributorConfigHandler = _configSubscriber.subscribe<DistributorManagerConfig>(_configUri.getConfigId(), subscribeTimeout);
+    _visitDispatcherConfigHandler = _configSubscriber.subscribe<VisitorDispatcherConfig>(_configUri.getConfigId(), subscribeTimeout);
     Process::setupConfig(subscribeTimeout);
 }
 
@@ -99,8 +95,19 @@ DistributorProcess::configUpdated()
 void
 DistributorProcess::createNode()
 {
-    _node = std::make_unique<DistributorNode>(_configUri, _context, *this, _num_distributor_stripes, StorageLink::UP(), std::move(_storage_chain_builder));
-    _node->handleConfigChange(*_distributorConfigHandler->getConfig());
+    auto distributor_config = _distributorConfigHandler->getConfig();
+    _num_distributor_stripes = adjusted_num_distributor_stripes(distributor_config->numDistributorStripes);
+    // TODO dedupe, consolidate
+    StorageNode::BootstrapConfigs bc;
+    bc.bucket_spaces_cfg = _bucket_spaces_cfg_handle->getConfig();
+    bc.bouncer_cfg = _bouncer_cfg_handle->getConfig();
+    bc.comm_mgr_cfg = _comm_mgr_cfg_handle->getConfig();
+    bc.distribution_cfg = _distribution_cfg_handle->getConfig();
+    bc.server_cfg = _server_cfg_handle->getConfig();
+
+    _node = std::make_unique<DistributorNode>(_configUri, _context, std::move(bc), *this, _num_distributor_stripes,
+                                              StorageLink::UP(), std::move(_storage_chain_builder));
+    _node->handleConfigChange(*distributor_config);
     _node->handleConfigChange(*_visitDispatcherConfigHandler->getConfig());
 }
 

@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.prelude.querytransform;
 
 import com.yahoo.component.ComponentId;
@@ -44,7 +44,7 @@ public class NonPhrasingSearcher extends Searcher {
     }
 
     private void setupAutomatonFile(String phraseAutomatonFile) {
-        if (phraseAutomatonFile == null || phraseAutomatonFile.trim().equals("")) {
+        if (phraseAutomatonFile == null || phraseAutomatonFile.trim().isEmpty()) {
             //no file, just use dummy matcher
             phraseMatcher = PhraseMatcher.getNullMatcher();
         } else {

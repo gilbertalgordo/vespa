@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 #pragma once
 
 #include "iroutablefactory.h"
@@ -27,8 +27,9 @@ private:
 
     public:
         VersionMap();
-        bool putFactory(const vespalib::VersionSpecification &version, IRoutableFactory::SP factory);
-        IRoutableFactory::SP getFactory(const vespalib::Version &version) const;
+        ~VersionMap();
+        [[nodiscard]] bool putFactory(const vespalib::VersionSpecification &version, IRoutableFactory::SP factory);
+        [[nodiscard]] IRoutableFactory::SP getFactory(const vespalib::Version &version) const;
     };
 
     using CacheKey = std::pair<vespalib::Version, uint32_t>;

@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include "hw_info_sampler.h"
 #include <vespa/config-hwinfo.h>
@@ -22,6 +22,7 @@ using config::FileSpec;
 using vespa::config::search::core::HwinfoConfig;
 using vespa::config::search::core::HwinfoConfigBuilder;
 using vespalib::alloc::Alloc;
+using vespalib::HwInfo;
 
 using Clock = std::chrono::system_clock;
 

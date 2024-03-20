@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.schema.derived;
 
 import com.yahoo.schema.Schema;
@@ -9,6 +9,9 @@ import com.yahoo.schema.document.ImportedComplexField;
 import com.yahoo.schema.document.ImportedField;
 import com.yahoo.vespa.config.search.ImportedFieldsConfig;
 
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 
 import static com.yahoo.schema.document.ComplexAttributeFieldUtils.isArrayOfSimpleStruct;
@@ -20,7 +23,7 @@ import static com.yahoo.schema.document.ComplexAttributeFieldUtils.isMapOfSimple
  *
  * @author geirst
  */
-public class ImportedFields extends Derived implements ImportedFieldsConfig.Producer {
+public class ImportedFields extends Derived {
 
     private Optional<com.yahoo.schema.document.ImportedFields> importedFields = Optional.empty();
 
@@ -38,58 +41,65 @@ public class ImportedFields extends Derived implements ImportedFieldsConfig.Prod
         return "imported-fields";
     }
 
-    @Override
     public void getConfig(ImportedFieldsConfig.Builder builder) {
+        // Replace
         if (importedFields.isPresent()) {
-            importedFields.get().fields().forEach( (name, field) -> considerField(builder, field));
+            List<ImportedField> imported = new ArrayList<>();
+            importedFields.get().fields().forEach( (name, field) -> considerField(imported, field));
+            builder.attribute(imported.stream().map(ImportedFields::createAttributeBuilder).toList());
         }
+    }
+
+    public void export(String toDirectory) throws IOException {
+        var builder = new ImportedFieldsConfig.Builder();
+        getConfig(builder);
+        export(toDirectory, builder.build());
     }
 
     private static boolean isNestedFieldName(String fieldName) {
         return fieldName.indexOf('.') != -1;
     }
 
-    private static void considerField(ImportedFieldsConfig.Builder builder, ImportedField field) {
+    private static void considerField(List<ImportedField> importedFields, ImportedField field) {
         if (field instanceof ImportedComplexField) {
-            considerComplexField(builder, (ImportedComplexField) field);
+            considerComplexField(importedFields, (ImportedComplexField) field);
         } else {
-            considerSimpleField(builder, field);
+            considerSimpleField(importedFields, field);
         }
     }
 
-    private static void considerComplexField(ImportedFieldsConfig.Builder builder, ImportedComplexField field) {
+    private static void considerComplexField(List<ImportedField> importedFields, ImportedComplexField field) {
         ImmutableSDField targetField = field.targetField();
         if (GeoPos.isAnyPos(targetField)) {
             // no action needed
         } else if (isArrayOfSimpleStruct(targetField)) {
-            considerNestedFields(builder, field);
+            considerNestedFields(importedFields, field);
         } else if (isMapOfSimpleStruct(targetField)) {
-            considerSimpleField(builder, field.getNestedField("key"));
-            considerNestedFields(builder, field.getNestedField("value"));
+            considerSimpleField(importedFields, field.getNestedField("key"));
+            considerNestedFields(importedFields, field.getNestedField("value"));
         } else if (isMapOfPrimitiveType(targetField)) {
-            considerSimpleField(builder, field.getNestedField("key"));
-            considerSimpleField(builder, field.getNestedField("value"));
+            considerSimpleField(importedFields, field.getNestedField("key"));
+            considerSimpleField(importedFields, field.getNestedField("value"));
         }
     }
 
-    private static void considerNestedFields(ImportedFieldsConfig.Builder builder, ImportedField field) {
-        if (field instanceof ImportedComplexField) {
-            ImportedComplexField complexField = (ImportedComplexField) field;
-            complexField.getNestedFields().forEach(nestedField -> considerSimpleField(builder, nestedField));
+    private static void considerNestedFields(List<ImportedField> importedFields, ImportedField field) {
+        if (field instanceof ImportedComplexField complexField) {
+            complexField.getNestedFields().forEach(nestedField -> considerSimpleField(importedFields, nestedField));
         }
     }
 
-    private static void considerSimpleField(ImportedFieldsConfig.Builder builder, ImportedField field) {
+    private static void considerSimpleField(List<ImportedField> importedFields, ImportedField field) {
         ImmutableSDField targetField = field.targetField();
         String targetFieldName = targetField.getName();
         if (!isNestedFieldName(targetFieldName)) {
             if (targetField.doesAttributing()) {
-                builder.attribute.add(createAttributeBuilder(field));
+                importedFields.add(field);
             }
         } else {
             Attribute attribute = targetField.getAttribute();
             if (attribute != null) {
-                builder.attribute.add(createAttributeBuilder(field));
+                importedFields.add(field);
             }
         }
     }

@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include "stringbase.h"
 #include "attributevector.hpp"
@@ -281,6 +281,12 @@ StringAttribute::getChangeVectorMemoryUsage() const
 bool
 StringAttribute::get_match_is_cased() const noexcept {
     return getConfig().get_match() == attribute::Config::Match::CASED;
+}
+
+bool
+StringAttribute::has_uncased_matching() const noexcept
+{
+    return !get_match_is_cased();
 }
 
 template bool AttributeVector::clearDoc(StringAttribute::ChangeVector& changes, DocId doc);

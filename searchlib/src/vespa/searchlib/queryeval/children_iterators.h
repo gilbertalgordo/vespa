@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #pragma once
 
@@ -18,6 +18,8 @@ class ChildrenIterators {
           : _data(std::move(data)) {}
         ChildrenIterators(ChildrenIterators && other) = default;
 
+    size_t size() const noexcept { return _data.size(); }
+    
         // convenience constructors for unit tests:
         template <typename... Args>
         ChildrenIterators(SearchIterator::UP a, Args&&... args) {

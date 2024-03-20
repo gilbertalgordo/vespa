@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.document;
 
 import com.yahoo.document.datatypes.FieldValue;
@@ -147,7 +147,7 @@ public class DocumentUpdate extends DocumentOperation implements Iterable<FieldP
             Map.Entry<Integer, FieldUpdate> entry = iter.next();
             FieldUpdate update = entry.getValue();
             if (!update.isEmpty()) {
-                ValueUpdate last = update.getValueUpdate(update.size() - 1);
+                ValueUpdate<?> last = update.getValueUpdate(update.size() - 1);
                 if (last instanceof AssignValueUpdate) {
                     FieldValue currentValue = doc.getFieldValue(update.getField());
                     if ((currentValue != null) && currentValue.equals(last.getValue())) {
@@ -190,7 +190,7 @@ public class DocumentUpdate extends DocumentOperation implements Iterable<FieldP
 
     /** Returns the type of the document this updates
      *
-     * @return The documentype of the document
+     * @return The document type of the document
      */
     public DocumentType getDocumentType() {
         return documentType;
@@ -347,7 +347,7 @@ public class DocumentUpdate extends DocumentOperation implements Iterable<FieldP
     }
 
     public final void serialize(GrowableByteBuffer buf) {
-        serialize(DocumentSerializerFactory.create6(buf));
+        serialize(DocumentSerializerFactory.createHead(buf));
     }
 
     public void serialize(DocumentUpdateWriter data) {
@@ -357,9 +357,7 @@ public class DocumentUpdate extends DocumentOperation implements Iterable<FieldP
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;
-        if (!(o instanceof DocumentUpdate)) return false;
-
-        DocumentUpdate that = (DocumentUpdate) o;
+        if (!(o instanceof DocumentUpdate that)) return false;
 
         if (docId != null ? !docId.equals(that.docId) : that.docId != null) return false;
         if (documentType != null ? !documentType.equals(that.documentType) : that.documentType != null) return false;
@@ -413,7 +411,7 @@ public class DocumentUpdate extends DocumentOperation implements Iterable<FieldP
     }
 
     /**
-     * Returns whether or not this field update contains any field- or field path updates.
+     * Returns whether this field update contains any field- or field path updates.
      *
      * @return True if this update is empty.
      */

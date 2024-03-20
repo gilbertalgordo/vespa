@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.tensor.functions;
 
 import com.yahoo.tensor.TensorType;
@@ -44,11 +44,11 @@ public class Range<NAMETYPE extends Name> extends CompositeTensorFunction<NAMETY
 
     @Override
     public String toString(ToStringContext<NAMETYPE> context) {
-        return "range(" + dimensionNames().collect(Collectors.joining(",")) + ")" + rangeFunction;
+        return "range(" + type + ")";
     }
 
     private Stream<String> dimensionNames() {
-        return type.dimensions().stream().map(TensorType.Dimension::toString);
+        return type.dimensions().stream().map(TensorType.Dimension::name);
     }
 
     @Override

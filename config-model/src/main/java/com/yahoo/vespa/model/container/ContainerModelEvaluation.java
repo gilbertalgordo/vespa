@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.model.container;
 
 import ai.vespa.models.evaluation.ModelsEvaluator;
@@ -55,25 +55,25 @@ public class ContainerModelEvaluation implements
 
     @Override
     public void getConfig(RankProfilesConfig.Builder builder) {
-        rankProfileList.getConfig(builder);
+        builder.rankprofile(rankProfileList.getRankProfilesConfig());
     }
 
     @Override
     public void getConfig(RankingConstantsConfig.Builder builder) {
-        rankProfileList.getConfig(builder);
+        builder.constant(rankProfileList.getConstantsConfig());
     }
 
     @Override
     public void getConfig(OnnxModelsConfig.Builder builder) {
         if (onnxModels != null) {
-            onnxModels.getConfig(builder);
+            builder.model(onnxModels.getConfig());
         } else {
-            rankProfileList.getConfig(builder);
+            builder.model(rankProfileList.getOnnxConfig());
         }
     }
 
     public void getConfig(RankingExpressionsConfig.Builder builder) {
-        rankProfileList.getConfig(builder);
+        builder.expression(rankProfileList.getExpressionsConfig());
     }
 
     public static Handler getHandler() {

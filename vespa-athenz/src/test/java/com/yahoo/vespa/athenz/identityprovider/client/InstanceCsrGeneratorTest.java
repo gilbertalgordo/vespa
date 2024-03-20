@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.athenz.identityprovider.client;
 
 import com.yahoo.security.KeyAlgorithm;
@@ -42,7 +42,8 @@ public class InstanceCsrGeneratorTest {
         var expectedSans = Set.of(
                 new SubjectAlternativeName(DNS, "bar.foo.prod-us-north-1.vespa.yahoo.cloud"),
                 new SubjectAlternativeName(DNS, "0.default.default.foo-app.vespa.us-north-1.prod.node.instanceid.athenz.prod-us-north-1.vespa.yahoo.cloud"),
-                new SubjectAlternativeName(URI, "vespa://cluster-type/container"));
+                new SubjectAlternativeName(URI, "vespa://cluster-type/container"),
+                new SubjectAlternativeName(URI, "spiffe://foo/sa/bar"));
       assertEquals(expectedSans, actualSans);
     }
 }

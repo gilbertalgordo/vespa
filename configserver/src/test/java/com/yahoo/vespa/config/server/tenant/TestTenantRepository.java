@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.config.server.tenant;
 
 import com.yahoo.cloud.config.ConfigserverConfig;
@@ -8,6 +8,7 @@ import com.yahoo.concurrent.StripedExecutor;
 import com.yahoo.config.model.api.ConfigDefinitionRepo;
 import com.yahoo.config.model.api.OnnxModelCost;
 import com.yahoo.config.provision.Zone;
+import com.yahoo.container.jdisc.secretstore.SecretStore;
 import com.yahoo.vespa.config.server.ConfigServerDB;
 import com.yahoo.vespa.config.server.MockSecretStore;
 import com.yahoo.vespa.config.server.ConfigActivationListener;
@@ -34,6 +35,8 @@ import java.util.List;
  */
 public class TestTenantRepository extends TenantRepository {
 
+    private static final MockSecretStore mockSecretStore = new MockSecretStore();
+
     public TestTenantRepository(HostRegistry hostRegistry,
                                 Curator curator,
                                 Metrics metrics,
@@ -55,7 +58,7 @@ public class TestTenantRepository extends TenantRepository {
               fileDistributionFactory,
               flagSource,
               new InThreadExecutorService(),
-              new MockSecretStore(),
+              mockSecretStore,
               hostProvisionerProvider,
               configserverConfig,
               new ConfigServerDB(configserverConfig),
@@ -66,7 +69,8 @@ public class TestTenantRepository extends TenantRepository {
               configActivationListener,
               tenantListener,
               new ZookeeperServerConfig.Builder().myid(0).build(),
-              OnnxModelCost.disabled());
+              OnnxModelCost.disabled(),
+              List.of(new DefaultEndpointCertificateSecretStore(mockSecretStore)));
     }
 
     public static class Builder {

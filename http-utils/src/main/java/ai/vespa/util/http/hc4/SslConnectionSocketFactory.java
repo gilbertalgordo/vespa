@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package ai.vespa.util.http.hc4;
 
 import ai.vespa.util.http.AcceptAllHostnamesVerifier;
@@ -29,7 +29,7 @@ public class SslConnectionSocketFactory {
 
     public static SSLConnectionSocketFactory of(TlsContext ctx, HostnameVerifier verifier) {
         return new SSLConnectionSocketFactory(
-                ctx.context(), ctx.parameters().getProtocols(), ctx.parameters().getCipherSuites(), verifier);
+                ctx.sslContext().context(), ctx.parameters().getProtocols(), ctx.parameters().getCipherSuites(), verifier);
     }
 
     public static SSLConnectionSocketFactory of(SSLSocketFactory fac, HostnameVerifier verifier) {

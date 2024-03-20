@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.streamingvisitors;
 
 import com.yahoo.data.access.Inspectable;
@@ -9,14 +9,12 @@ import com.yahoo.messagebus.routing.Route;
 import com.yahoo.prelude.fastsearch.ClusterParams;
 import com.yahoo.prelude.fastsearch.DocumentdbInfoConfig;
 import com.yahoo.document.select.parser.ParseException;
-import com.yahoo.prelude.fastsearch.SummaryParameters;
 import com.yahoo.prelude.fastsearch.TimeoutException;
 import com.yahoo.search.Query;
 import com.yahoo.search.Result;
 import com.yahoo.search.result.Hit;
 import com.yahoo.search.schema.Schema;
 import com.yahoo.search.schema.SchemaInfo;
-import com.yahoo.search.searchchain.Execution;
 import com.yahoo.searchlib.aggregation.Grouping;
 import com.yahoo.vdslib.DocumentSummary;
 import com.yahoo.vdslib.SearchResult;
@@ -28,7 +26,6 @@ import com.yahoo.vespa.streamingvisitors.tracing.TraceExporter;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -48,6 +45,7 @@ public class StreamingSearcherTestCase {
 
     public static final String USERDOC_ID_PREFIX = "id:namespace:mytype:n=1:userspecific";
     public static final String GROUPDOC_ID_PREFIX = "id:namespace:mytype:g=group1:userspecific";
+    private static final ClusterParams CLUSTER_PARAMS = new ClusterParams("clusterName");
 
     private static class MockVisitor implements Visitor {
         private final Query query;
@@ -161,9 +159,8 @@ public class StreamingSearcherTestCase {
         }
     }
 
-    private static Result executeQuery(StreamingSearcher searcher, Query query) {
-        Execution execution = new Execution(Execution.Context.createContextStub());
-        return searcher.doSearch2(query, execution);
+    private static Result executeQuery(StreamingBackend searcher, Query query) {
+        return searcher.doSearch2("test", query);
     }
 
     private static Query[] generateTestQueries(String queryString) {
@@ -184,7 +181,7 @@ public class StreamingSearcherTestCase {
         return queries;
     }
 
-    private static void checkError(StreamingSearcher searcher, String queryString, String message, String detailedMessage) {
+    private static void checkError(StreamingBackend searcher, String queryString, String message, String detailedMessage) {
         for (Query query : generateTestQueries(queryString)) {
             Result result = executeQuery(searcher, query);
             assertNotNull(result.hits().getError());
@@ -197,7 +194,7 @@ public class StreamingSearcherTestCase {
         }
     }
 
-    private static void checkSearch(StreamingSearcher searcher, String queryString, int hitCount, String idPrefix) {
+    private static void checkSearch(StreamingBackend searcher, String queryString, int hitCount, String idPrefix) {
         for (Query query : generateTestQueries(queryString)) {
             Result result = executeQuery(searcher, query);
             assertNull(result.hits().getError());
@@ -215,11 +212,11 @@ public class StreamingSearcherTestCase {
         }
     }
 
-    private static void checkGrouping(StreamingSearcher searcher, String queryString, int hitCount) {
+    private static void checkGrouping(StreamingBackend searcher, String queryString, int hitCount) {
         checkSearch(searcher, queryString, hitCount, null);
     }
 
-    private static void checkMatchFeatures(StreamingSearcher searcher) {
+    private static void checkMatchFeatures(StreamingBackend searcher) {
         String queryString = "/?streaming.selection=true&query=match_features";
         Result result = executeQuery(searcher, new Query(queryString));
         assertNull(result.hits().getError());
@@ -232,29 +229,26 @@ public class StreamingSearcherTestCase {
     @Test
     void testBasics() {
         MockVisitorFactory factory = new MockVisitorFactory();
-        StreamingSearcher searcher = new StreamingSearcher(factory);
-
-        var schema = new Schema.Builder("test");
-        schema.add(new com.yahoo.search.schema.DocumentSummary.Builder("default").build());
-        searcher.init("container.0",
-                new SummaryParameters("default"),
-                new ClusterParams("clusterName"),
+        var schema = new Schema.Builder("test")
+                .add(new com.yahoo.search.schema.DocumentSummary.Builder("default").build())
+                .add(new com.yahoo.search.schema.DocumentSummary.Builder("summary").build())
+                .build();
+        ClusterParams clusterParams = new ClusterParams("clusterName", "server.0", "default",
                 new DocumentdbInfoConfig.Builder().documentdb(new DocumentdbInfoConfig.Documentdb.Builder().name("test")).build(),
-                new SchemaInfo(List.of(schema.build()), List.of()));
+                new SchemaInfo(List.of(schema), List.of()));
+        StreamingBackend searcher = new StreamingBackend(clusterParams, "search-cluster-A", factory, "content-cluster-A");
 
         // Magic query values are used to trigger specific behaviors from mock visitor.
         checkError(searcher, "/?query=noselection",
-                "Backend communication error", "Streaming search needs one and only one");
+                "Illegal query", "Streaming search requires either");
         checkError(searcher, "/?streaming.userid=1&query=parseexception",
-                "Backend communication error", "Failed to parse document selection string");
+                "Invalid query parameter", "Failed to parse document selection string");
         checkError(searcher, "/?streaming.userid=1&query=tokenizeexception",
-                "Backend communication error", "Failed to tokenize document selection string");
+                "Invalid query parameter", "Failed to tokenize document selection string");
         checkError(searcher, "/?streaming.userid=1&query=interruptedexception",
                 "Backend communication error", "Interrupted");
         checkError(searcher, "/?streaming.userid=1&query=timeoutexception",
                 "Timed out", "Timed out");
-        checkError(searcher, "/?streaming.userid=1&query=illegalargumentexception",
-                "Backend communication error", "Illegal argument");
         checkError(searcher, "/?streaming.userid=1&query=nosummary",
                 "Backend communication error", "Did not find summary for hit with document id");
         checkError(searcher, "/?streaming.userid=1&query=nosummarytofill",
@@ -281,25 +275,25 @@ public class StreamingSearcherTestCase {
         String groupId2 = "id:namespace:mytype:g=group2:userspecific";
         String badId = "unknowscheme:namespace:something";
 
-        assertTrue(StreamingSearcher.verifyDocId(userId1, generalQuery, true));
+        assertTrue(StreamingBackend.verifyDocId(userId1, generalQuery, true));
 
-        assertTrue(StreamingSearcher.verifyDocId(userId1, generalQuery, false));
-        assertTrue(StreamingSearcher.verifyDocId(userId2, generalQuery, false));
-        assertTrue(StreamingSearcher.verifyDocId(groupId1, generalQuery, false));
-        assertTrue(StreamingSearcher.verifyDocId(groupId2, generalQuery, false));
-        assertFalse(StreamingSearcher.verifyDocId(badId, generalQuery, false));
+        assertTrue(StreamingBackend.verifyDocId(userId1, generalQuery, false));
+        assertTrue(StreamingBackend.verifyDocId(userId2, generalQuery, false));
+        assertTrue(StreamingBackend.verifyDocId(groupId1, generalQuery, false));
+        assertTrue(StreamingBackend.verifyDocId(groupId2, generalQuery, false));
+        assertFalse(StreamingBackend.verifyDocId(badId, generalQuery, false));
 
-        assertTrue(StreamingSearcher.verifyDocId(userId1, user1Query, false));
-        assertFalse(StreamingSearcher.verifyDocId(userId2, user1Query, false));
-        assertFalse(StreamingSearcher.verifyDocId(groupId1, user1Query, false));
-        assertFalse(StreamingSearcher.verifyDocId(groupId2, user1Query, false));
-        assertFalse(StreamingSearcher.verifyDocId(badId, user1Query, false));
+        assertTrue(StreamingBackend.verifyDocId(userId1, user1Query, false));
+        assertFalse(StreamingBackend.verifyDocId(userId2, user1Query, false));
+        assertFalse(StreamingBackend.verifyDocId(groupId1, user1Query, false));
+        assertFalse(StreamingBackend.verifyDocId(groupId2, user1Query, false));
+        assertFalse(StreamingBackend.verifyDocId(badId, user1Query, false));
 
-        assertFalse(StreamingSearcher.verifyDocId(userId1, group1Query, false));
-        assertFalse(StreamingSearcher.verifyDocId(userId2, group1Query, false));
-        assertTrue(StreamingSearcher.verifyDocId(groupId1, group1Query, false));
-        assertFalse(StreamingSearcher.verifyDocId(groupId2, group1Query, false));
-        assertFalse(StreamingSearcher.verifyDocId(badId, group1Query, false));
+        assertFalse(StreamingBackend.verifyDocId(userId1, group1Query, false));
+        assertFalse(StreamingBackend.verifyDocId(userId2, group1Query, false));
+        assertTrue(StreamingBackend.verifyDocId(groupId1, group1Query, false));
+        assertFalse(StreamingBackend.verifyDocId(groupId2, group1Query, false));
+        assertFalse(StreamingBackend.verifyDocId(badId, group1Query, false));
     }
 
     private static class TraceFixture {
@@ -309,13 +303,13 @@ public class StreamingSearcherTestCase {
         TracingOptions options;
 
         MockVisitorFactory factory;
-        StreamingSearcher searcher;
+        StreamingBackend searcher;
 
         private TraceFixture(Long firstTimestamp, Long... additionalTimestamps) {
             clock = MockUtils.mockedClockReturning(firstTimestamp, additionalTimestamps);
             options = new TracingOptions(sampler, exporter, clock, 8, 2.0);
             factory = new MockVisitorFactory();
-            searcher = new StreamingSearcher(factory, options);
+            searcher = new StreamingBackend(CLUSTER_PARAMS, "search-cluster-A", factory, "content-cluster-A", options);
         }
 
         private TraceFixture() {

@@ -1,9 +1,9 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #pragma once
 
-#include <vespa/searchcore/proton/common/hw_info.h>
 #include <vespa/vespalib/stllike/string.h>
+#include <vespa/vespalib/util/hw_info.h>
 #include <vespa/vespalib/util/threadexecutor.h>
 #include <filesystem>
 #include <memory>
@@ -26,7 +26,7 @@ namespace proton {
      InitializeThreads _threads;
 
  public:
-     InitializeThreadsCalculator(const HwInfo::Cpu & cpu_info, const vespalib::string& base_dir, uint32_t configured_num_threads);
+     InitializeThreadsCalculator(const vespalib::HwInfo::Cpu & cpu_info, const vespalib::string& base_dir, uint32_t configured_num_threads);
      ~InitializeThreadsCalculator();
      uint32_t num_threads() const { return _num_threads; }
      InitializeThreads threads() const { return _threads; }

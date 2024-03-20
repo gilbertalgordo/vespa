@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #pragma once
 
@@ -32,7 +32,7 @@ public:
             : _attribute(attribute),
               _operation(operation)
         {}
-        bool enabled() const { return !_attribute.empty() && !_operation.empty(); }
+        bool enabled() const noexcept { return !_attribute.empty() && !_operation.empty(); }
         vespalib::string _attribute;
         vespalib::string _operation;
     };
@@ -65,10 +65,12 @@ private:
     std::vector<vespalib::string> _dumpFeatures;
     Warnings                 _warnings;
     StringStringMap          _feature_rename_map;
+    bool                     _sort_blueprints_by_cost;
     bool                     _ignoreDefaultRankFeatures;
     bool                     _compiled;
     bool                     _compileError;
     bool                     _degradationAscendingOrder;
+    bool                     _always_mark_phrase_expensive;
     vespalib::string         _diversityAttribute;
     uint32_t                 _diversityMinGroups;
     double                   _diversityCutoffFactor;
@@ -84,7 +86,6 @@ private:
     MutateOperation          _mutateOnSecondPhase;
     MutateOperation          _mutateOnSummary;
     bool                     _mutateAllowQueryOverride;
-    bool                     _enableNestedMultivalueGrouping;
 
     void compileAndCheckForErrors(BlueprintResolver &bp);
 public:
@@ -221,6 +222,7 @@ public:
     bool isDegradationOrderAscending() const {
         return _degradationAscendingOrder;
     }
+    bool always_mark_phrase_expensive() const noexcept { return _always_mark_phrase_expensive; }
     /** get number of hits to collect during graceful degradation in match phase */
     uint32_t getDegradationMaxHits() const {
         return _degradationMaxHits;
@@ -458,7 +460,7 @@ public:
     const MutateOperation & getMutateOnSummary() const { return _mutateOnSummary; }
 
     bool allowMutateQueryOverride() const { return _mutateAllowQueryOverride; }
-    bool enableNestedMultivalueGrouping() const { return _enableNestedMultivalueGrouping; }
+    bool sort_blueprints_by_cost() const noexcept { return _sort_blueprints_by_cost; }
 };
 
 }

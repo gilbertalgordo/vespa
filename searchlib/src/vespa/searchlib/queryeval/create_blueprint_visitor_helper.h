@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #pragma once
 
@@ -48,6 +48,7 @@ public:
     void visitDotProduct(query::DotProduct &n);
     void visitWandTerm(query::WandTerm &n);
     void visitNearestNeighborTerm(query::NearestNeighborTerm &n);
+    void visitInTerm(query::InTerm &n);
 
     void handleNumberTermAsText(query::NumberTerm &n);
 
@@ -69,6 +70,7 @@ public:
     void visit(query::WeightedSetTerm &n) override { visitWeightedSetTerm(n); }
     void visit(query::DotProduct &n) override { visitDotProduct(n); }
     void visit(query::WandTerm &n) override { visitWandTerm(n); }
+    void visit(query::InTerm& n) override { visitInTerm(n); }
 
     void visit(query::NumberTerm &n) override = 0;
     void visit(query::LocationTerm &n) override = 0;

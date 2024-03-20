@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.document.serialization;
 
 import com.yahoo.compress.CompressionType;
@@ -8,6 +8,7 @@ import com.yahoo.document.CollectionDataType;
 import com.yahoo.document.DataType;
 import com.yahoo.document.Document;
 import com.yahoo.document.DocumentId;
+import com.yahoo.document.DocumentRemove;
 import com.yahoo.document.DocumentType;
 import com.yahoo.document.DocumentUpdate;
 import com.yahoo.document.Field;
@@ -60,7 +61,6 @@ import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Iterator;
-import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 
@@ -105,8 +105,7 @@ public class VespaDocumentSerializer6 extends BufferSerializer implements Docume
 
         doc.getDataType().serialize(this);
         if (hasHead) {
-            StructuredFieldValue asStructured = doc;
-            write(null, asStructured);
+            write(null, (StructuredFieldValue) doc);
         }
 
         int finalPos = buf.position();
@@ -327,34 +326,35 @@ public class VespaDocumentSerializer6 extends BufferSerializer implements Docume
         GrowableByteBuffer buffer = new GrowableByteBuffer(4096, 2.0f);
         buf = buffer;
 
-        List<Integer> fieldIds = new LinkedList<>();
-        List<java.lang.Integer> fieldLengths = new LinkedList<>();
+        int numFields = s.getFieldCount();
+        int [] fieldIds = new int[numFields];
+        int [] fieldLengths = new int[numFields];
 
         var iter = s.iterator();
-        while (iter.hasNext()) {
+        for (int i=0; iter.hasNext(); i++) {
             Map.Entry<Field, FieldValue> value = iter.next();
 
             int startPos = buffer.position();
-            value.getValue().serialize(value.getKey(), this);
+            Field key = value.getKey();
+            value.getValue().serialize(key, this);
 
-            fieldLengths.add(buffer.position() - startPos);
-            fieldIds.add(value.getKey().getId());
+            fieldLengths[i] = buffer.position() - startPos;
+            fieldIds[i] = key.getId();
         }
 
         // Switch buffers again:
         buffer.flip();
         buf = bigBuffer;
 
-        int sz = fieldIds.size();
         // Actual serialization starts here.
         int lenPos = buf.position();
         putInt(null, 0); // Move back to this after compression is done.
         buf.put(CompressionType.NONE.getCode());
-        buf.putInt1_4Bytes(sz);
+        buf.putInt1_4Bytes(numFields);
 
-        for (int i = 0; i < sz; ++i) {
-            putInt1_4Bytes(null, fieldIds.get(i));
-            putInt2_4_8Bytes(null, fieldLengths.get(i));
+        for (int i = 0; i < numFields; ++i) {
+            putInt1_4Bytes(null, fieldIds[i]);
+            putInt2_4_8Bytes(null, fieldLengths[i]);
         }
 
         int pos = buf.position();
@@ -374,8 +374,7 @@ public class VespaDocumentSerializer6 extends BufferSerializer implements Docume
      * @param value - field value
      */
     public void write(FieldBase field, Struct value) {
-        StructuredFieldValue asStructured = value;
-        write(field, asStructured);
+        write(field, (StructuredFieldValue) value);
     }
 
     /**
@@ -426,6 +425,10 @@ public class VespaDocumentSerializer6 extends BufferSerializer implements Docume
         put(null, docType);
         putByte(null, ((byte) 0));
         putShort(null, (short) 0); // Used to hold the version. Is now always 0.
+    }
+
+    public void write(DocumentRemove documentRemove) {
+        throw new UnsupportedOperationException("serializing remove not implemented");
     }
 
     public void write(Annotation annotation) {
@@ -692,7 +695,7 @@ public class VespaDocumentSerializer6 extends BufferSerializer implements Docume
      * @return The size in bytes.
      */
     public static long getSerializedSize(Document doc) {
-        DocumentSerializer serializer = new VespaDocumentSerializer6(new GrowableByteBuffer());
+        DocumentSerializer serializer = new VespaDocumentSerializer6(new GrowableByteBuffer(8 * 1024, 2.0f));
         serializer.write(doc);
         return serializer.getBuf().position();
     }

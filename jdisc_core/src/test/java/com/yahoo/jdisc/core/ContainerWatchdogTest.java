@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.jdisc.core;
 
 import com.yahoo.jdisc.Metric;
@@ -9,10 +9,8 @@ import org.junit.jupiter.api.Test;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Map;
-import java.util.concurrent.ScheduledExecutorService;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.mockito.Mockito.mock;
 
 /**
  * @author bjorncs
@@ -24,7 +22,7 @@ public class ContainerWatchdogTest {
         TestDriver driver = TestDriver.newSimpleApplicationInstanceWithoutOsgi();
         ManualClock clock = new ManualClock(Instant.EPOCH);
         DummyMetric metric = new DummyMetric();
-        ContainerWatchdog watchdog = new ContainerWatchdog(mock(ScheduledExecutorService.class), clock);
+        ContainerWatchdog watchdog = new ContainerWatchdog(clock, false);
 
         ActiveContainer containerWithoutRetainedResources = new ActiveContainer(driver.newContainerBuilder());
 
@@ -42,6 +40,9 @@ public class ContainerWatchdogTest {
         assertEquals(1, runMonitorStepAndGetStaleContainerCount(watchdog, metric));
 
         containerWithoutRetainedResources.release();
+        assertEquals(1, runMonitorStepAndGetStaleContainerCount(watchdog, metric));
+
+        containerWithoutRetainedResources.shutdown().close();
         assertEquals(0, runMonitorStepAndGetStaleContainerCount(watchdog, metric));
     }
 

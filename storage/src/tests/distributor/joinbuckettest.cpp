@@ -1,9 +1,10 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 #include "dummy_cluster_context.h"
 #include <tests/distributor/distributor_stripe_test_util.h>
 #include <vespa/document/test/make_document_bucket.h>
 #include <vespa/storage/distributor/top_level_distributor.h>
 #include <vespa/storage/distributor/operations/idealstate/joinoperation.h>
+#include <vespa/storage/config/distributorconfiguration.h>
 #include <vespa/storageapi/message/bucketsplitting.h>
 #include <vespa/vespalib/gtest/gtest.h>
 #include <gmock/gmock.h>

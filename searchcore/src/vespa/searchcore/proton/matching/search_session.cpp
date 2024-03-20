@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 #include "search_session.h"
 #include "match_tools.h"
 #include "match_context.h"
@@ -28,7 +28,8 @@ SearchSession::OwnershipBundle::OwnershipBundle(MatchContext && match_context,
     : search_handler(std::move(searchHandler)),
       context(std::move(match_context)),
       feature_overrides(),
-      readGuard()
+      readGuard(),
+      stackDump()
 {}
 
 SearchSession::OwnershipBundle::OwnershipBundle() noexcept = default;

@@ -1,10 +1,11 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #pragma once
 
 #include "enum_store_dictionary.h"
-#include "postinglisttraits.h"
 #include "posting_store_compaction_spec.h"
+#include "posting_store_memory_usage.h"
+#include "postinglisttraits.h"
 #include <set>
 
 namespace search {
@@ -56,6 +57,9 @@ public:
     virtual ~PostingStoreBase2();
     bool resizeBitVectors(uint32_t newSize, uint32_t newCapacity);
     virtual bool removeSparseBitVectors() = 0;
+
+    // Only used by unit test.
+    const PostingStoreCompactionSpec& get_compaction_spec() const noexcept { return _compaction_spec; }
 };
 
 template <typename DataT>
@@ -74,6 +78,7 @@ public:
     using ConstIterator = typename Parent::ConstIterator;
     using KeyDataType = typename Parent::KeyDataType;
     using AggregatedType = typename Parent::AggregatedType;
+    using AggrCalcType = typename Parent::AggrCalcType;
     using BTreeTypeRefPair = typename Parent::BTreeTypeRefPair;
     using Builder = typename Parent::Builder;
     using CompactionSpec = vespalib::datastore::CompactionSpec;
@@ -186,11 +191,14 @@ public:
     bool has_btree(const EntryRef ref) const noexcept {
         return !ref.valid() || !isBitVector(getTypeId(RefType(ref))) || !isFilter();
     }
+    bool has_bitvector(const EntryRef ref) const noexcept {
+        return ref.valid() && isBitVector(getTypeId(RefType(ref)));
+    }
 
     std::unique_ptr<queryeval::SearchIterator> make_bitvector_iterator(RefType ref, uint32_t doc_id_limit, fef::TermFieldMatchData &match_data, bool strict) const;
 
     static inline DataT bitVectorWeight();
-    vespalib::MemoryUsage getMemoryUsage() const;
+    PostingStoreMemoryUsage getMemoryUsage() const;
     vespalib::MemoryUsage update_stat(const CompactionStrategy& compaction_strategy);
 
     void move_btree_nodes(const std::vector<EntryRef> &refs);

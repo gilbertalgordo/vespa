@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.restapi;
 
 import ai.vespa.http.HttpURL;
@@ -15,11 +15,11 @@ import com.yahoo.security.tls.ConnectionAuthContext;
 
 import javax.net.ssl.SSLSession;
 import java.io.InputStream;
+import java.math.BigDecimal;
+import java.net.InetSocketAddress;
 import java.security.Principal;
 import java.util.List;
 import java.util.Optional;
-import java.util.OptionalDouble;
-import java.util.OptionalLong;
 
 /**
  * Rest API routing and response serialization
@@ -148,25 +148,28 @@ public interface RestApi {
         /** Scheme, domain and port, for the original request. <em>Use this only for generating resources links, not for custom routing!</em> */
         // TODO: this needs to include path and query as well, to be useful for generating resource links that need not be rewritten.
         HttpURL baseRequestURL();
+        /** Full URL of the request */
+        HttpURL url();
         AclMapping.Action aclAction();
         Optional<Principal> userPrincipal();
         Principal userPrincipalOrThrow();
         Optional<SSLSession> sslSession();
         Optional<ConnectionAuthContext> connectionAuthContext();
+        InetSocketAddress remoteAddress();
 
         interface Parameters {
             Optional<String> getString(String name);
             String getStringOrThrow(String name);
             default Optional<Boolean> getBoolean(String name) { return getString(name).map(Boolean::valueOf);}
             default boolean getBooleanOrThrow(String name) { return Boolean.parseBoolean(getStringOrThrow(name)); }
-            default OptionalLong getLong(String name) {
-                return getString(name).map(Long::parseLong).map(OptionalLong::of).orElseGet(OptionalLong::empty);
-            }
+            default Optional<Long> getLong(String name) { return getString(name).map(Long::parseLong); }
             default long getLongOrThrow(String name) { return Long.parseLong(getStringOrThrow(name)); }
-            default OptionalDouble getDouble(String name) {
-                return getString(name).map(Double::parseDouble).map(OptionalDouble::of).orElseGet(OptionalDouble::empty);
-            }
+            default Optional<Double> getDouble(String name) { return getString(name).map(Double::parseDouble); }
+            default int getIntegerOrThrow(String name) { return Integer.parseInt(getStringOrThrow(name)); }
+            default Optional<Integer> getInteger(String name) { return getString(name).map(Integer::parseInt); }
             default double getDoubleOrThrow(String name) { return Double.parseDouble(getStringOrThrow(name)); }
+            default BigDecimal getBigDecimalOrThrow(String name) { return new BigDecimal(getStringOrThrow(name)); }
+            default Optional<BigDecimal> getBigDecimal(String name) { return getString(name).map(BigDecimal::new); }
         }
 
         interface PathParameters extends Parameters {
@@ -193,6 +196,7 @@ public interface RestApi {
     interface FilterContext {
         RequestContext requestContext();
         String route();
+        void setPrincipal(Principal principal);
         HttpResponse executeNext();
     }
 }

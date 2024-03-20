@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.config.server.http.v2.response;
 
 import com.yahoo.config.provision.ApplicationId;
@@ -28,9 +28,11 @@ public class DeploymentMetricsResponse extends SlimeJsonResponse {
             DeploymentMetricsAggregator aggregator = entry.getValue();
             Cursor metrics = cluster.setObject("metrics");
             aggregator.aggregateQueryRate().ifPresent(queryRate -> metrics.setDouble("queriesPerSecond", queryRate));
+            aggregator.aggregateReadRate().ifPresent(readRate -> metrics.setDouble("readsPerSecond", readRate));
             aggregator.aggregateFeedRate().ifPresent(feedRate -> metrics.setDouble("feedPerSecond", feedRate));
             aggregator.aggregateDocumentCount().ifPresent(documentCount -> metrics.setDouble("documentCount", documentCount));
             aggregator.aggregateQueryLatency().ifPresent(queryLatency -> metrics.setDouble("queryLatency",queryLatency));
+            aggregator.aggregateReadLatency().ifPresent(readLatency -> metrics.setDouble("readLatency", readLatency));
             aggregator.aggregateFeedLatency().ifPresent(feedLatency -> metrics.setDouble("feedLatency", feedLatency));
 
             aggregator.memoryUsage().ifPresent(memory -> {

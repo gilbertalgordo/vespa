@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include "dummy_cluster_context.h"
 #include <tests/distributor/distributor_stripe_test_util.h>
@@ -7,6 +7,7 @@
 #include <vespa/storage/distributor/idealstatemanager.h>
 #include <vespa/storage/distributor/idealstatemetricsset.h>
 #include <vespa/storage/distributor/operations/idealstate/garbagecollectionoperation.h>
+#include <vespa/storage/config/distributorconfiguration.h>
 #include <vespa/storageapi/message/removelocation.h>
 #include <vespa/vespalib/gtest/gtest.h>
 
@@ -59,14 +60,6 @@ struct GarbageCollectionOperationTest : Test, DistributorStripeTestUtil {
         with_two_phase.two_phase_remove_location = true;
         set_node_supported_features(0, with_two_phase);
         set_node_supported_features(1, with_two_phase);
-
-        config_enable_two_phase_gc(true);
-    }
-
-    void config_enable_two_phase_gc(bool enabled) {
-        auto config = make_config();
-        config->set_enable_two_phase_garbage_collection(enabled);
-        configure_stripe(std::move(config));
     }
 
     std::shared_ptr<GarbageCollectionOperation> create_op() {
@@ -234,8 +227,6 @@ TEST_F(GarbageCollectionOperationTest, two_phase_gc_requires_config_enabling_and
     with_two_phase.two_phase_remove_location = true;
     set_node_supported_features(1, with_two_phase);
 
-    config_enable_two_phase_gc(true);
-
     // Config enabled, but only 1 node says it supports two-phase RemoveLocation
     auto op = create_op();
     op->start(_sender);
@@ -246,13 +237,6 @@ TEST_F(GarbageCollectionOperationTest, two_phase_gc_requires_config_enabling_and
     op = create_op();
     op->start(_sender);
     EXPECT_TRUE(op->is_two_phase());
-
-    // But doesn't matter if two-phase GC is config-disabled
-    config_enable_two_phase_gc(false);
-
-    op = create_op();
-    op->start(_sender);
-    EXPECT_FALSE(op->is_two_phase());
 }
 
 TEST_F(GarbageCollectionOperationTest, first_phase_sends_enumerate_only_remove_locations_with_provided_gc_pri) {

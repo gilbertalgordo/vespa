@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include "sourceselector.h"
 #include <vespa/fastlib/io/bufferedfile.h>
@@ -81,7 +81,7 @@ void
 SourceSelector::LoadInfo::load()
 {
     const vespalib::string fileName = _header._baseFileName + ".dat";
-    Fast_BufferedFile file;
+    Fast_BufferedFile file(16_Ki);
     // XXX no checking for success
     file.ReadOpen(fileName.c_str());
 

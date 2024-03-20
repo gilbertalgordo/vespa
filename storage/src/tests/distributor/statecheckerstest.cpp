@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include "distributor_stripe_test_util.h"
 #include <vespa/config-stor-distribution.h>
@@ -12,11 +12,12 @@
 #include <vespa/storage/distributor/distributor_stripe.h>
 #include <vespa/storage/distributor/operations/idealstate/mergeoperation.h>
 #include <vespa/storage/distributor/statecheckers.h>
+#include <vespa/storage/config/distributorconfiguration.h>
+#include <vespa/storage/config/config-stor-distributormanager.h>
 #include <vespa/storageapi/message/persistence.h>
 #include <vespa/storageapi/message/stat.h>
 #include <vespa/vdslib/distribution/distribution.h>
 #include <vespa/vespalib/gtest/gtest.h>
-#include <gmock/gmock.h>
 
 using document::test::makeBucketSpace;
 using document::test::makeDocumentBucket;
@@ -60,12 +61,7 @@ struct StateCheckersTest : Test, DistributorStripeTestUtil {
                                  const std::vector<uint16_t>& expected)
     {
         auto& distributorBucketSpace(getIdealStateManager().getBucketSpaceRepo().get(makeBucketSpace()));
-        std::vector<uint16_t> idealNodes(
-                distributorBucketSpace
-                .getDistribution().getIdealStorageNodes(
-                        distributorBucketSpace.getClusterState(),
-                        bucket,
-                        "ui"));
+        std::vector<uint16_t> idealNodes(distributorBucketSpace.getDistribution().getIdealStorageNodes(distributorBucketSpace.getClusterState(), bucket, "ui"));
         ASSERT_EQ(expected, idealNodes);
     }
 
@@ -169,14 +165,9 @@ struct StateCheckersTest : Test, DistributorStripeTestUtil {
         static const PendingMessage NO_OP_BLOCKER;
         const PendingMessage* _blockerMessage {&NO_OP_BLOCKER};
         uint32_t _redundancy {2};
-        uint32_t _splitCount {0};
-        uint32_t _splitSize {0};
-        uint32_t _minSplitBits {0};
         bool _includeMessagePriority {false};
         bool _includeSchedulingPriority {false};
         bool _merge_operations_disabled {false};
-        bool _prioritize_global_bucket_merges {true};
-        bool _config_enable_default_space_merge_inhibition {false};
         bool _merges_inhibited_in_bucket_space {false};
         CheckerParams();
         ~CheckerParams();
@@ -197,10 +188,6 @@ struct StateCheckersTest : Test, DistributorStripeTestUtil {
             _pending_cluster_state = state;
             return *this;
         }
-        CheckerParams& blockerMessage(const PendingMessage& blocker) {
-            _blockerMessage = &blocker;
-            return *this;
-        }
         CheckerParams& redundancy(uint32_t r) {
             _redundancy = r;
             return *this;
@@ -217,16 +204,8 @@ struct StateCheckersTest : Test, DistributorStripeTestUtil {
             _merge_operations_disabled = disabled;
             return *this;
         }
-        CheckerParams& prioritize_global_bucket_merges(bool enabled) noexcept {
-            _prioritize_global_bucket_merges = enabled;
-            return *this;
-        }
         CheckerParams& bucket_space(document::BucketSpace bucket_space) noexcept {
             _bucket_space = bucket_space;
-            return *this;
-        }
-        CheckerParams& config_enable_default_space_merge_inhibition(bool enabled) noexcept {
-            _config_enable_default_space_merge_inhibition = enabled;
             return *this;
         }
         CheckerParams& merges_inhibited_in_bucket_space(bool inhibited) noexcept {
@@ -244,10 +223,8 @@ struct StateCheckersTest : Test, DistributorStripeTestUtil {
         addNodesToBucketDB(bucket, params._bucketInfo);
         set_redundancy(params._redundancy);
         enable_cluster_state(params._clusterState);
-        vespa::config::content::core::StorDistributormanagerConfigBuilder config;
+        DistributorManagerConfig config;
         config.mergeOperationsDisabled = params._merge_operations_disabled;
-        config.prioritizeGlobalBucketMerges = params._prioritize_global_bucket_merges;
-        config.inhibitDefaultMergesWhenGlobalMergesPending = params._config_enable_default_space_merge_inhibition;
         configure_stripe(config);
         if (!params._pending_cluster_state.empty()) {
             simulate_set_pending_cluster_state(params._pending_cluster_state);
@@ -734,7 +711,7 @@ TEST_F(StateCheckersTest, synchronize_and_move) {
             .clusterState("distributor:1 storage:4"));
 }
 
-TEST_F(StateCheckersTest, global_bucket_merges_have_very_high_priority_if_prioritization_enabled) {
+TEST_F(StateCheckersTest, global_bucket_merges_have_very_high_priority) {
     runAndVerify<SynchronizeAndMoveStateChecker>(
             CheckerParams().expect(
                             "[Synchronizing buckets with different checksums "
@@ -745,23 +722,7 @@ TEST_F(StateCheckersTest, global_bucket_merges_have_very_high_priority_if_priori
                     .bucketInfo("0=1,1=2")
                     .bucket_space(document::FixedBucketSpaces::global_space())
                     .includeSchedulingPriority(true)
-                    .includeMessagePriority(true)
-                    .prioritize_global_bucket_merges(true));
-}
-
-TEST_F(StateCheckersTest, global_bucket_merges_have_normal_priority_if_prioritization_disabled) {
-    runAndVerify<SynchronizeAndMoveStateChecker>(
-            CheckerParams().expect(
-                            "[Synchronizing buckets with different checksums "
-                            "node(idx=0,crc=0x1,docs=1/1,bytes=1/1,trusted=false,active=false,ready=false), "
-                            "node(idx=1,crc=0x2,docs=2/2,bytes=2/2,trusted=false,active=false,ready=false)] "
-                            "(pri 120) "
-                            "(scheduling pri MEDIUM)")
-                    .bucketInfo("0=1,1=2")
-                    .bucket_space(document::FixedBucketSpaces::global_space())
-                    .includeSchedulingPriority(true)
-                    .includeMessagePriority(true)
-                    .prioritize_global_bucket_merges(false));
+                    .includeMessagePriority(true));
 }
 
 // Upon entering a cluster state transition edge the distributor will
@@ -847,20 +808,6 @@ TEST_F(StateCheckersTest, no_merge_operation_generated_if_merges_inhibited_in_de
             CheckerParams()
                     .expect("NO OPERATIONS GENERATED") // Would normally generate a merge op
                     .bucketInfo("0=1,2=2")
-                    .config_enable_default_space_merge_inhibition(true)
-                    .merges_inhibited_in_bucket_space(true)
-                    .clusterState("distributor:1 storage:3"));
-}
-
-TEST_F(StateCheckersTest, merge_operation_still_generated_if_merges_inhibited_in_default_bucket_space_but_config_disallowed) {
-    runAndVerify<SynchronizeAndMoveStateChecker>(
-            CheckerParams()
-                    .expect("[Moving bucket to ideal node 1]"
-                            "[Synchronizing buckets with different checksums "
-                            "node(idx=0,crc=0x1,docs=1/1,bytes=1/1,trusted=false,active=false,ready=false), "
-                            "node(idx=2,crc=0x2,docs=2/2,bytes=2/2,trusted=false,active=false,ready=false)]")
-                    .bucketInfo("0=1,2=2")
-                    .config_enable_default_space_merge_inhibition(false)
                     .merges_inhibited_in_bucket_space(true)
                     .clusterState("distributor:1 storage:3"));
 }

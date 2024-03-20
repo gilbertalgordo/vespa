@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.model.ml;
 
 import com.yahoo.config.application.api.ApplicationPackage;
@@ -47,7 +47,7 @@ public class MlModelsTest {
         assertEquals(3, model.rankProfileList().getRankProfiles().size(), "Global models are created (although not used directly here)");
 
         RankProfilesConfig.Builder builder = new RankProfilesConfig.Builder();
-        model.getSearchClusters().get(0).getConfig(builder);
+        model.getConfig(builder, "test/search/cluster.test/test");
         RankProfilesConfig config = new RankProfilesConfig(builder);
         assertEquals(3, config.rankprofile().size());
         assertEquals("test", config.rankprofile(2).name());

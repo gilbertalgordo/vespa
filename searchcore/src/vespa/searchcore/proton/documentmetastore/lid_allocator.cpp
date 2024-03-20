@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include "lid_allocator.h"
 #include <vespa/searchlib/common/bitvectoriterator.h>
@@ -13,6 +13,7 @@ LOG_SETUP(".proton.documentmetastore.lid_allocator");
 
 using search::fef::TermFieldMatchDataArray;
 using search::queryeval::Blueprint;
+using search::queryeval::FlowStats;
 using search::queryeval::FullSearch;
 using search::queryeval::SearchIterator;
 using search::queryeval::SimpleLeafBlueprint;
@@ -204,6 +205,9 @@ private:
         }
         return search::BitVectorIterator::create(&_activeLids, get_docid_limit(), *tfmd, strict);
     }
+    FlowStats calculate_flow_stats(uint32_t docid_limit) const override {
+        return default_flow_stats(docid_limit, _activeLids.size(), 0);
+    }
     SearchIterator::UP
     createLeafSearch(const TermFieldMatchDataArray &tfmda, bool strict) const override
     {
@@ -222,7 +226,7 @@ public:
         setEstimate(HitEstimate(_activeLids.size(), false));
     }
 
-    bool isWhiteList() const override { return true; }
+    bool isWhiteList() const noexcept final { return true; }
 
     SearchIterator::UP createFilterSearch(bool strict, FilterConstraint) const override {
         if (_all_lids_active) {
@@ -231,7 +235,7 @@ public:
         return create_search_helper(strict);
     }
 
-    ~WhiteListBlueprint() {
+    ~WhiteListBlueprint() override {
         for (auto matchData : _matchDataVector) {
             delete matchData;
         }

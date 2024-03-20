@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.hosted.provision.provisioning;
 
 import com.yahoo.config.provision.ApplicationId;
@@ -9,7 +9,7 @@ import com.yahoo.config.provision.NodeResources;
 import com.yahoo.config.provision.NodeType;
 import com.yahoo.config.provision.SystemName;
 import com.yahoo.net.HostName;
-import com.yahoo.vespa.flags.FetchVector;
+import com.yahoo.vespa.flags.Dimension;
 import com.yahoo.vespa.flags.PermanentFlags;
 import com.yahoo.vespa.hosted.provision.Node;
 import com.yahoo.vespa.hosted.provision.NodeList;
@@ -94,9 +94,9 @@ class NodeAllocation {
         this.nextIndex = nextIndex;
         this.nodeRepository = nodeRepository;
         this.requiredHostFlavor = Optional.of(PermanentFlags.HOST_FLAVOR.bindTo(nodeRepository.flagSource())
-                                                                        .with(FetchVector.Dimension.INSTANCE_ID, application.serializedForm())
-                                                                        .with(FetchVector.Dimension.CLUSTER_TYPE, cluster.type().name())
-                                                                        .with(FetchVector.Dimension.CLUSTER_ID, cluster.id().value())
+                                                                        .with(Dimension.INSTANCE_ID, application.serializedForm())
+                                                                        .with(Dimension.CLUSTER_TYPE, cluster.type().name())
+                                                                        .with(Dimension.CLUSTER_ID, cluster.id().value())
                                                                         .value())
                                           .filter(s -> !s.isBlank());
     }
@@ -117,21 +117,21 @@ class NodeAllocation {
                 ClusterMembership membership = allocation.membership();
                 if ( ! allocation.owner().equals(application)) continue; // wrong application
                 if ( ! membership.cluster().satisfies(cluster)) continue; // wrong cluster id/type
-                if ( candidate.state() == Node.State.active && allocation.removable()) continue; // don't accept; causes removal
-                if ( candidate.state() == Node.State.active && candidate.wantToFail()) continue; // don't accept; causes failing
-                if ( indexes.contains(membership.index())) continue; // duplicate index (just to be sure)
+                if (candidate.state() == Node.State.active && allocation.removable()) continue; // don't accept; causes removal
+                if (candidate.state() == Node.State.active && candidate.wantToFail()) continue; // don't accept; causes failing
+                if (indexes.contains(membership.index())) continue; // duplicate index (just to be sure)
                 if (nodeRepository.zone().cloud().allowEnclave() && candidate.parent.isPresent() && ! candidate.parent.get().cloudAccount().equals(requested.cloudAccount())) continue; // wrong account
 
                 boolean resizeable = requested.considerRetiring() && candidate.isResizable;
 
-                if ((! saturated() && hasCompatibleResources(candidate) && requested.acceptable(candidate)) || acceptIncompatible(candidate)) {
+                if (( ! saturated() && hasCompatibleResources(candidate) && requested.acceptable(candidate)) || acceptIncompatible(candidate)) {
                     candidate = candidate.withNode();
                     if (candidate.isValid())
                         acceptNode(candidate, shouldRetire(candidate, candidates), resizeable);
                 }
             }
-            else if (! saturated() && hasCompatibleResources(candidate)) {
-                if (! nodeRepository.nodeResourceLimits().isWithinRealLimits(candidate, application, cluster)) {
+            else if ( ! saturated() && hasCompatibleResources(candidate)) {
+                if ( ! nodeRepository.nodeResourceLimits().isWithinRealLimits(candidate, application, cluster)) {
                     ++rejectedDueToInsufficientRealResources;
                     continue;
                 }
@@ -139,12 +139,19 @@ class NodeAllocation {
                     ++rejectedDueToClashingParentHost;
                     continue;
                 }
-                if ( violatesExclusivity(candidate)) {
-                    ++rejectedDueToExclusivity;
-                    continue;
+                switch (violatesExclusivity(candidate)) {
+                    case PARENT_HOST_NOT_EXCLUSIVE -> candidate = candidate.withExclusiveParent(true);
+                    case NONE -> {}
+                    case YES -> {
+                        ++rejectedDueToExclusivity;
+                        continue;
+                    }
                 }
                 if (candidate.wantToRetire()) {
                     continue;
+                }
+                if (requested.type() == NodeType.tenant && !requested.canFail()) {
+                    continue; // Cannot allocate nodes when bootstrapping
                 }
                 candidate = candidate.allocate(application,
                                                ClusterMembership.from(cluster, nextIndex.get()),
@@ -169,7 +176,7 @@ class NodeAllocation {
         if (candidate.parent.map(node -> node.status().wantToUpgradeFlavor()).orElse(false)) return Retirement.violatesHostFlavorGeneration;
         if (candidate.wantToRetire()) return Retirement.hardRequest;
         if (candidate.preferToRetire() && candidate.replaceableBy(candidates)) return Retirement.softRequest;
-        if (violatesExclusivity(candidate)) return Retirement.violatesExclusivity;
+        if (violatesExclusivity(candidate) != NodeCandidate.ExclusivityViolation.NONE) return Retirement.violatesExclusivity;
         if (requiredHostFlavor.isPresent() && ! candidate.parent.map(node -> node.flavor().name()).equals(requiredHostFlavor)) return Retirement.violatesHostFlavor;
         if (candidate.violatesSpares) return Retirement.violatesSpares;
         return Retirement.none;
@@ -186,39 +193,16 @@ class NodeAllocation {
     }
 
     private boolean offeredNodeHasParentHostnameAlreadyAccepted(NodeCandidate candidate) {
-        for (NodeCandidate acceptedNode : nodes.values()) {
-            if (acceptedNode.parentHostname().isPresent() && candidate.parentHostname().isPresent() &&
-                    acceptedNode.parentHostname().get().equals(candidate.parentHostname().get())) {
-                return true;
-            }
-        }
-        return false;
+        if (candidate.parentHostname().isEmpty()) return false;
+        return nodes.values().stream().anyMatch(acceptedNode -> acceptedNode.parentHostname().equals(candidate.parentHostname()));
     }
 
-    private boolean violatesExclusivity(NodeCandidate candidate) {
-        if (candidate.parentHostname().isEmpty()) return false;
-        if (requested.type() != NodeType.tenant) return false;
-
-        // In zones which does not allow host sharing, exclusivity is violated if...
-        if ( ! nodeRepository.zone().cloud().allowHostSharing()) {
-            // TODO: Write this in a way that is simple to read
-            // If either the parent is dedicated to a cluster type different from this cluster
-            return  ! candidate.parent.flatMap(Node::exclusiveToClusterType).map(cluster.type()::equals).orElse(true) ||
-                    // or the parent is dedicated to a different application
-                    ! candidate.parent.flatMap(Node::exclusiveToApplicationId).map(application::equals).orElse(true) ||
-                    // or this cluster requires exclusivity, but the host is not exclusive
-                    (nodeRepository.exclusiveAllocation(cluster) && candidate.parent.flatMap(Node::exclusiveToApplicationId).isEmpty());
-        }
-
-        // In zones with shared hosts we require that if either of the nodes on the host requires exclusivity,
-        // then all the nodes on the host must have the same owner
-        for (Node nodeOnHost : allNodes.childrenOf(candidate.parentHostname().get())) {
-            if (nodeOnHost.allocation().isEmpty()) continue;
-            if (nodeRepository.exclusiveAllocation(cluster) || nodeOnHost.allocation().get().membership().cluster().isExclusive()) {
-                if ( ! nodeOnHost.allocation().get().owner().equals(application)) return true;
-            }
-        }
-        return false;
+    private NodeCandidate.ExclusivityViolation violatesExclusivity(NodeCandidate candidate) {
+        return candidate.violatesExclusivity(cluster, application,
+                                             nodeRepository.exclusiveClusterType(cluster),
+                                             nodeRepository.exclusiveAllocation(cluster),
+                                             nodeRepository.exclusiveProvisioning(cluster),
+                                             nodeRepository.zone().cloud().allowHostSharing(), allNodes);
     }
 
     /**
@@ -331,8 +315,13 @@ class NodeAllocation {
     }
 
     /** Returns true if this allocation was already fulfilled and resulted in no new changes */
-    boolean fulfilledAndNoChanges() {
-        return fulfilled() && reservableNodes().isEmpty() && newNodes().isEmpty();
+    boolean fulfilledWithoutChanges() {
+        return fulfilled() && !changes();
+    }
+
+    /** Returns true if this allocation changed any nodes */
+    boolean changes() {
+        return !reservableNodes().isEmpty() || !newNodes().isEmpty();
     }
 
     /** Returns true if this allocation has retired nodes */
@@ -397,6 +386,14 @@ class NodeAllocation {
     /** The node type this is allocating */
     NodeType nodeType() {
         return requested.type();
+    }
+
+    List<Node> parentsRequiredToBeExclusive() {
+        return nodes.values()
+                    .stream()
+                    .filter(candidate -> candidate.exclusiveParent)
+                    .map(candidate -> candidate.parent.orElseThrow())
+                    .toList();
     }
 
     List<Node> finalNodes() {

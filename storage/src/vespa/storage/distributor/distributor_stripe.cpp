@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include "blockingoperationstarter.h"
 #include "distributor_bucket_space.h"
@@ -18,6 +18,7 @@
 #include <vespa/storage/distributor/maintenance/simplebucketprioritydatabase.h>
 #include <vespa/storage/distributor/operations/cancel_scope.h>
 #include <vespa/storage/distributor/operations/idealstate/garbagecollectionoperation.h>
+#include <vespa/storage/config/distributorconfiguration.h>
 #include <vespa/storageframework/generic/status/xmlstatusreporter.h>
 #include <vespa/vdslib/distribution/distribution.h>
 #include <vespa/vespalib/util/memoryusage.h>
@@ -885,7 +886,6 @@ DistributorStripe::propagate_config_snapshot_to_internal_components()
             getConfig().allowStaleReadsDuringClusterStateTransitions());
     _externalOperationHandler.set_use_weak_internal_read_consistency_for_gets(
             getConfig().use_weak_internal_read_consistency_for_client_gets());
-    _scheduler->set_implicitly_clear_priority_on_schedule(getConfig().implicitly_clear_priority_on_schedule());
 }
 
 void

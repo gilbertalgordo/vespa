@@ -1,6 +1,7 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include "dfa_fuzzy_matcher.h"
+#include "i_enum_store_dictionary.h"
 #include <vespa/vespalib/text/utf8.h>
 #include <vespa/vespalib/text/lowercase.h>
 
@@ -53,6 +54,11 @@ DfaFuzzyMatcher::DfaFuzzyMatcher(std::string_view target, uint8_t max_edits, uin
     _successor = _prefix;
 }
 
+DfaFuzzyMatcher::DfaFuzzyMatcher(std::string_view target, uint8_t max_edits, uint32_t prefix_size, bool cased)
+    : DfaFuzzyMatcher(target, max_edits, prefix_size, cased, LevenshteinDfa::DfaType::Table)
+{
+}
+
 DfaFuzzyMatcher::~DfaFuzzyMatcher() = default;
 
 const char*
@@ -68,10 +74,10 @@ DfaFuzzyMatcher::skip_prefix(const char* word) const
 }
 
 bool
-DfaFuzzyMatcher::is_match(const char* word) const
+DfaFuzzyMatcher::is_match(std::string_view word) const
 {
     if (_prefix_size > 0) {
-        Utf8ReaderForZTS reader(word);
+        Utf8Reader reader(word.data(), word.size());
         size_t pos = 0;
         for (; pos < _prefix.size() && reader.hasMore(); ++pos) {
             uint32_t code_point = reader.getChar();
@@ -88,10 +94,49 @@ DfaFuzzyMatcher::is_match(const char* word) const
         if (pos != _prefix_size) {
             return false;
         }
-        word = reader.get_current_ptr();
+        word = word.substr(reader.getPos());
     }
     auto match = _dfa.match(word);
     return match.matches();
 }
+
+template <typename DictionaryConstIteratorType>
+bool
+DfaFuzzyMatcher::is_match(const char* word, DictionaryConstIteratorType& itr, const DfaStringComparator::DataStoreType& data_store) {
+    if (_prefix_size > 0) {
+        word = skip_prefix(word);
+        if (_prefix.size() < _prefix_size) {
+            if (*word == '\0') {
+                return true;
+            }
+            _successor.resize(_prefix.size());
+            _successor.emplace_back(beyond_unicode);
+        } else {
+            _successor.resize(_prefix.size());
+            auto match = _dfa.match(word, _successor);
+            if (match.matches()) {
+                return true;
+            }
+        }
+    } else {
+        _successor.clear();
+        auto match = _dfa.match(word, _successor);
+        if (match.matches()) {
+            return true;
+        }
+    }
+    DfaStringComparator cmp(data_store, _successor, _cased);
+    assert(cmp.less(itr.getKey().load_acquire(), vespalib::datastore::EntryRef()));
+    itr.seek(vespalib::datastore::AtomicEntryRef(), cmp);
+    return false;
+}
+
+template
+bool
+DfaFuzzyMatcher::is_match(const char* word, EnumPostingTree::ConstIterator& itr, const DfaStringComparator::DataStoreType& data_store);
+
+template
+bool
+DfaFuzzyMatcher::is_match(const char* word, EnumTree::ConstIterator& itr, const DfaStringComparator::DataStoreType& data_store);
 
 }

@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #pragma once
 
@@ -45,7 +45,7 @@ public:
 
     predicate::PredicateIndex &getIndex() { return *_index; }
 
-    void onSave(IAttributeSaveTarget & saveTarget) override;
+    std::unique_ptr<AttributeSaver> onInitSave(vespalib::stringref fileName) override;
     bool onLoad(vespalib::Executor *executor) override;
     void onCommit() override;
     void reclaim_memory(generation_t oldest_used_gen) override;

@@ -1,6 +1,7 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.container.jdisc.state;
 
+import com.yahoo.json.Jackson;
 import ai.vespa.metrics.ContainerMetrics;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -45,7 +46,7 @@ import static com.yahoo.container.jdisc.state.JsonUtil.sanitizeDouble;
  */
 public class StateHandler extends AbstractRequestHandler implements CapabilityRequiringRequestHandler {
 
-    private static final ObjectMapper jsonMapper = new ObjectMapper();
+    private static final ObjectMapper jsonMapper = Jackson.mapper();
 
     public static final String STATE_API_ROOT = "/state/v1";
     private static final String METRICS_PATH = "metrics";
@@ -73,7 +74,7 @@ public class StateHandler extends AbstractRequestHandler implements CapabilityRe
 
     static SnapshotProvider getSnapshotProviderOrThrow(ComponentRegistry<SnapshotProvider> preprocessors) {
         List<SnapshotProvider> allPreprocessors = preprocessors.allComponents();
-        if (allPreprocessors.size() > 0) {
+        if (!allPreprocessors.isEmpty()) {
             return allPreprocessors.get(0);
         } else {
             throw new IllegalArgumentException("At least one snapshot provider is required.");
@@ -131,12 +132,12 @@ public class StateHandler extends AbstractRequestHandler implements CapabilityRe
         try {
             String suffix = resolvePath(requestUri);
             return switch (suffix) {
-            case "" -> ByteBuffer.wrap(apiLinks(requestUri));
-            case CONFIG_GENERATION_PATH -> ByteBuffer.wrap(toPrettyString(config));
-            case HISTOGRAMS_PATH -> ByteBuffer.wrap(buildHistogramsOutput());
-            case HEALTH_PATH, METRICS_PATH -> ByteBuffer.wrap(buildMetricOutput(suffix));
-            case VERSION_PATH -> ByteBuffer.wrap(buildVersionOutput());
-            default -> ByteBuffer.wrap(buildMetricOutput(suffix)); // XXX should possibly do something else here
+                case "" -> ByteBuffer.wrap(apiLinks(requestUri));
+                case CONFIG_GENERATION_PATH -> ByteBuffer.wrap(toPrettyString(config));
+                case HISTOGRAMS_PATH -> ByteBuffer.wrap(buildHistogramsOutput());
+                case HEALTH_PATH, METRICS_PATH -> ByteBuffer.wrap(buildMetricOutput(suffix));
+                case VERSION_PATH -> ByteBuffer.wrap(buildVersionOutput());
+                default -> ByteBuffer.wrap(buildMetricOutput(suffix)); // XXX should possibly do something else here
             };
         } catch (JsonProcessingException e) {
             throw new RuntimeException("Bad JSON construction", e);

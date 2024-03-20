@@ -1,5 +1,5 @@
 <?xml version="1.0"?>
-<!-- Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root. -->
+<!-- Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root. -->
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
   <modelVersion>4.0.0</modelVersion>
   <parent>
@@ -138,7 +138,6 @@
                     <i>com.yahoo.vespa:fat-model-dependencies:*:*</i>
 
                     <!-- Vespa artifacts embedded -->
-                    <i>com.yahoo.vespa:airlift-zstd:*:*</i>
                     <i>com.yahoo.vespa:annotations:*:*</i>
                     <i>com.yahoo.vespa:component:*:*</i>
                     <i>com.yahoo.vespa:config:*:*</i>
@@ -196,6 +195,7 @@
                     <i>com.sun.xml.bind:jaxb-core:*:*</i>
                     <i>com.sun.xml.bind:jaxb-impl:*:*</i>
                     <i>com.thaiopensource:jing:*:*</i>
+                    <i>io.airlift:aircompressor:*:*</i>
                     <i>io.prometheus:simpleclient:*:*</i>
                     <i>io.prometheus:simpleclient_common:*:*</i>
                     <i>io.prometheus:simpleclient_tracer_common:*:*</i>

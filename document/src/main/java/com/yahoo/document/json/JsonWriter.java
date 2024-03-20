@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.document.json;
 
 import com.fasterxml.jackson.core.JsonFactory;
@@ -7,7 +7,9 @@ import com.fasterxml.jackson.core.JsonGenerator;
 import com.fasterxml.jackson.core.StreamReadConstraints;
 import com.yahoo.document.Document;
 import com.yahoo.document.DocumentId;
+import com.yahoo.document.DocumentRemove;
 import com.yahoo.document.DocumentType;
+import com.yahoo.document.DocumentUpdate;
 import com.yahoo.document.Field;
 import com.yahoo.document.annotation.AnnotationReference;
 import com.yahoo.document.datatypes.Array;
@@ -261,6 +263,26 @@ public class JsonWriter implements DocumentWriter {
     @Override
     public void write(DocumentType type) {
         // NOP, fetched from Document
+    }
+
+    @Override
+    public void write(DocumentRemove documentRemove) {
+        try {
+            generator.writeStartObject();
+
+            serializeStringField(generator, new FieldBase("remove"), new StringFieldValue(documentRemove.getId().toString()));
+
+            generator.writeEndObject();
+            generator.flush();
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    @Override
+    public void write(DocumentUpdate documentUpdate) {
+        var serializer = new DocumentUpdateJsonSerializer(generator);
+        serializer.serialize(documentUpdate);
     }
 
     /**

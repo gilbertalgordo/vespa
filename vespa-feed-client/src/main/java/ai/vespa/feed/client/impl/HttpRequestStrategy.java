@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package ai.vespa.feed.client.impl;
 
 import ai.vespa.feed.client.DocumentId;
@@ -166,7 +166,7 @@ class HttpRequestStrategy implements RequestStrategy {
         }
 
         logResponse(FINE, response, request, attempt);
-        if (response.code() == 500 || response.code() == 502 || response.code() == 503 || response.code() == 504) { // Hopefully temporary errors.
+        if (response.code() == 503) { // Hopefully temporary errors.
             breaker.failure(response);
             return retry(request, attempt);
         }

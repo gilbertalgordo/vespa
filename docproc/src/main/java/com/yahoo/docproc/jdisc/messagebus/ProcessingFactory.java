@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.docproc.jdisc.messagebus;
 
 import com.yahoo.component.ComponentId;
@@ -81,7 +81,12 @@ class ProcessingFactory {
             log.fine(() -> "Unable to get document factory component '" + componentId + "' from document factory registry.");
             return document;
         }
-        return cdf.getDocumentCopy(document.getDataType().getName(), document, document.getId());
+        try {
+            return cdf.getDocumentCopy(document.getDataType().getName(), document, document.getId());
+        }
+        catch (RuntimeException e) {
+            throw new IllegalArgumentException("error in document with id '" + document.getId() + "'", e);
+        }
     }
 
     private ContainerDocumentConfig.Doctype getDocumentConfig(String name) {

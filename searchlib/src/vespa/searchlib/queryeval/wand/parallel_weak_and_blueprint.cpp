@@ -1,10 +1,11 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include "parallel_weak_and_blueprint.h"
 #include "wand_parts.h"
 #include "parallel_weak_and_search.h"
 #include <vespa/searchlib/queryeval/field_spec.hpp>
 #include <vespa/searchlib/queryeval/searchiterator.h>
+#include <vespa/searchlib/queryeval/flow_tuning.h>
 #include <vespa/searchlib/fef/termfieldmatchdata.h>
 #include <vespa/vespalib/objects/visit.hpp>
 #include <algorithm>
@@ -63,6 +64,19 @@ ParallelWeakAndBlueprint::addTerm(Blueprint::UP term, int32_t weight, HitEstimat
     }
     _weights.push_back(weight);
     _terms.push_back(std::move(term));
+}
+
+FlowStats
+ParallelWeakAndBlueprint::calculate_flow_stats(uint32_t docid_limit) const
+{
+    for (auto &term: _terms) {
+        term->update_flow_stats(docid_limit);
+    }
+    double child_est = OrFlow::estimate_of(_terms);
+    double my_est = abs_to_rel_est(_scores.getScoresToTrack(), docid_limit);
+    double est = (child_est + my_est) / 2.0;
+    return {est, OrFlow::cost_of(_terms, false),
+            OrFlow::cost_of(_terms, true) + flow::heap_cost(est, _terms.size())};
 }
 
 SearchIterator::UP

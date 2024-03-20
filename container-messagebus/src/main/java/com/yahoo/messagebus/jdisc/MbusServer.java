@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.messagebus.jdisc;
 
 import com.google.inject.Inject;
@@ -28,7 +28,7 @@ import java.util.logging.Logger;
  */
 public final class MbusServer extends AbstractResource implements ServerProvider, MessageHandler {
 
-    private enum State {INITIALIZING, RUNNING, STOPPED}
+    private enum State { INITIALIZING, RUNNING, STOPPED }
     private final static Logger log = Logger.getLogger(MbusServer.class.getName());
     private final AtomicReference<State> runState = new AtomicReference<>(State.INITIALIZING);
     private final CurrentContainer container;
@@ -48,8 +48,8 @@ public final class MbusServer extends AbstractResource implements ServerProvider
     @Override
     public void start() {
         log.log(Level.FINE, "Starting message bus server.");
-        session.connect();
         runState.set(State.RUNNING);
+        session.connect();
     }
 
     @Override
@@ -66,7 +66,9 @@ public final class MbusServer extends AbstractResource implements ServerProvider
 
     @Override
     protected void destroy() {
-        log.log(Level.FINE, "Destroying message bus server.");
+        log.log(Level.INFO, "Destroying message bus server: " + session.name());
+        if (runState.get() == State.RUNNING)
+            log.log(Level.WARNING, "Message bus server destroyed before being disconnected: " + session.name());
         runState.set(State.STOPPED);
         sessionReference.close();
     }
@@ -79,6 +81,7 @@ public final class MbusServer extends AbstractResource implements ServerProvider
             return;
         }
         if (state == State.STOPPED) {
+            log.log(Level.WARNING, "Message bus server received message after being stopped: " + session.name());
             dispatchErrorReply(msg, ErrorCode.NETWORK_SHUTDOWN, "MBusServer has been closed.");
             return;
         }
@@ -88,7 +91,10 @@ public final class MbusServer extends AbstractResource implements ServerProvider
         Request request = null;
         ContentChannel content = null;
         try {
-            request = new MbusRequest(container, uri, msg);
+            request = new MbusRequest(container, uri, msg) {
+                final ResourceReference sessionReference = session.refer();
+                @Override protected void destroy() { try (sessionReference) { super.destroy(); } }
+            };
             content = request.connect(new ServerResponseHandler(msg));
         } catch (RuntimeException e) {
             dispatchErrorReply(msg, ErrorCode.APP_FATAL_ERROR, e.toString());
@@ -149,4 +155,5 @@ public final class MbusServer extends AbstractResource implements ServerProvider
             return null;
         }
     }
+
 }

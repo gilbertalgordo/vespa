@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 // vespa deploy command
 // Author: bratseth
 
@@ -51,7 +51,7 @@ $ vespa deploy -t cloud -z perf.aws-us-east-1c`,
 		DisableAutoGenTag: true,
 		SilenceUsage:      true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			pkg, err := cli.applicationPackageFrom(args, true)
+			pkg, err := cli.applicationPackageFrom(args, vespa.PackageOptions{Compiled: true})
 			if err != nil {
 				return err
 			}
@@ -60,7 +60,7 @@ $ vespa deploy -t cloud -z perf.aws-us-east-1c`,
 				return err
 			}
 			timeout := time.Duration(waitSecs) * time.Second
-			opts := vespa.DeploymentOptions{ApplicationPackage: pkg, Target: target, Timeout: timeout}
+			opts := vespa.DeploymentOptions{ApplicationPackage: pkg, Target: target}
 			if versionArg != "" {
 				version, err := version.Parse(versionArg)
 				if err != nil {
@@ -73,7 +73,7 @@ $ vespa deploy -t cloud -z perf.aws-us-east-1c`,
 					return err
 				}
 			}
-			waiter := cli.waiter(false, timeout)
+			waiter := cli.waiter(timeout)
 			if _, err := waiter.DeployService(target); err != nil {
 				return err
 			}
@@ -86,9 +86,9 @@ $ vespa deploy -t cloud -z perf.aws-us-east-1c`,
 			}
 			log.Println()
 			if opts.Target.IsCloud() {
-				cli.printSuccess("Triggered deployment of ", color.CyanString(pkg.Path), " with run ID ", color.CyanString(strconv.FormatInt(result.ID, 10)))
+				cli.printSuccess("Triggered deployment of ", color.CyanString("'"+pkg.Path+"'"), " with run ID ", color.CyanString(strconv.FormatInt(result.ID, 10)))
 			} else {
-				cli.printSuccess("Deployed ", color.CyanString(pkg.Path), " with session ID ", color.CyanString(strconv.FormatInt(result.ID, 10)))
+				cli.printSuccess("Deployed ", color.CyanString("'"+pkg.Path+"'"), " with session ID ", color.CyanString(strconv.FormatInt(result.ID, 10)))
 				printPrepareLog(cli.Stderr, result)
 			}
 			if opts.Target.IsCloud() {
@@ -113,11 +113,11 @@ func newPrepareCmd(cli *CLI) *cobra.Command {
 		DisableAutoGenTag: true,
 		SilenceUsage:      true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			pkg, err := cli.applicationPackageFrom(args, true)
+			pkg, err := cli.applicationPackageFrom(args, vespa.PackageOptions{Compiled: true})
 			if err != nil {
 				return fmt.Errorf("could not find application package: %w", err)
 			}
-			target, err := cli.target(targetOptions{})
+			target, err := cli.target(targetOptions{supportedType: localTargetOnly})
 			if err != nil {
 				return err
 			}
@@ -133,7 +133,7 @@ func newPrepareCmd(cli *CLI) *cobra.Command {
 			if err := cli.config.writeSessionID(vespa.DefaultApplication, result.ID); err != nil {
 				return fmt.Errorf("could not write session id: %w", err)
 			}
-			cli.printSuccess("Prepared ", color.CyanString(pkg.Path), " with session ", result.ID)
+			cli.printSuccess("Prepared ", color.CyanString("'"+pkg.Path+"'"), " with session ", result.ID)
 			printPrepareLog(cli.Stderr, result)
 			return nil
 		},
@@ -153,16 +153,16 @@ func newActivateCmd(cli *CLI) *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("could not read session id: %w", err)
 			}
-			target, err := cli.target(targetOptions{})
+			target, err := cli.target(targetOptions{supportedType: localTargetOnly})
 			if err != nil {
 				return err
 			}
 			timeout := time.Duration(waitSecs) * time.Second
-			waiter := cli.waiter(false, timeout)
+			waiter := cli.waiter(timeout)
 			if _, err := waiter.DeployService(target); err != nil {
 				return err
 			}
-			opts := vespa.DeploymentOptions{Target: target, Timeout: timeout}
+			opts := vespa.DeploymentOptions{Target: target}
 			err = vespa.Activate(sessionID, opts)
 			if err != nil {
 				return err
@@ -179,7 +179,7 @@ func waitForDeploymentReady(cli *CLI, target vespa.Target, sessionOrRunID int64,
 	if timeout == 0 {
 		return nil
 	}
-	waiter := cli.waiter(false, timeout)
+	waiter := cli.waiter(timeout)
 	if _, err := waiter.Deployment(target, sessionOrRunID); err != nil {
 		return err
 	}

@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.model.content;
 
 import com.yahoo.documentapi.messagebus.protocol.DocumentrouteselectorpolicyConfig;
@@ -50,7 +50,7 @@ public class StorageContentTest extends ContentBaseTest {
         return new VespaModelCreatorWithMockPkg(getHosts(), createStorageVespaServices(cluster1docs, cluster2docs), sds).create();
     }
 
-    public void doTestRouting(String cluster1docs, String cluster2docs, String expectedRoutes) throws Exception {
+    public void doTestRouting(String cluster1docs, String cluster2docs, String expectedRoutes) {
         VespaModel model = getStorageVespaModel(cluster1docs, cluster2docs);
 
         if (expectedRoutes == null) {
@@ -65,15 +65,18 @@ public class StorageContentTest extends ContentBaseTest {
         DocumentProtocol protocol = (DocumentProtocol) routing.getProtocols().get(0);
 
         RoutingTableSpec spec = protocol.getRoutingTableSpec();
-        assertEquals(1, spec.getNumHops());
-        assertEquals("indexing", spec.getHop(0).getName());
-        assertEquals("[DocumentRouteSelector]", spec.getHop(0).getSelector());
+        assertEquals(3, spec.getNumHops());
+        assertEquals("docproc/cluster.bar.indexing/chain.indexing", spec.getHop(0).getName());
+        assertEquals("[LoadBalancer:cluster=docproc/cluster.bar.indexing;session=chain.indexing]", spec.getHop(0).getSelector());
+        assertEquals("docproc/cluster.zoo.indexing/chain.indexing", spec.getHop(1).getName());
+        assertEquals("[LoadBalancer:cluster=docproc/cluster.zoo.indexing;session=chain.indexing]", spec.getHop(1).getSelector());
+        assertEquals("indexing", spec.getHop(2).getName());
+        assertEquals("[DocumentRouteSelector]", spec.getHop(2).getSelector());
 
         Map<String, RouteSpec> routes = new TreeMap<>();
 
         for (int i = 0; i < spec.getNumRoutes(); ++i) {
             RouteSpec r = spec.getRoute(i);
-
             routes.put(r.getName(), r);
         }
 

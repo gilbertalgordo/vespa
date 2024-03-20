@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.hosted.provision.os;
 
 import com.yahoo.config.provision.NodeType;
@@ -35,10 +35,10 @@ public class DelegatingOsUpgrader extends OsUpgrader {
                                              // This upgrader cannot downgrade nodes. We therefore consider only nodes
                                              // on a lower version than the target
                                              .osVersionIsBefore(target.version())
-                                             .matching(node -> canUpgradeAt(now, node))
+                                             .matching(node -> canUpgradeTo(target.version(), now, node))
                                              .byIncreasingOsVersion()
                                              .first(upgradeSlots(target, activeNodes));
-        if (nodesToUpgrade.size() == 0) return;
+        if (nodesToUpgrade.isEmpty()) return;
         LOG.info("Upgrading " + nodesToUpgrade.size() + " nodes of type " + target.nodeType() + " to OS version " +
                  target.version().toFullString());
         nodeRepository.nodes().upgradeOs(NodeListFilter.from(nodesToUpgrade.asList()), Optional.of(target.version()));
@@ -49,7 +49,7 @@ public class DelegatingOsUpgrader extends OsUpgrader {
         NodeList nodesUpgrading = nodeRepository.nodes().list()
                                                 .nodeType(type)
                                                 .changingOsVersion();
-        if (nodesUpgrading.size() == 0) return;
+        if (nodesUpgrading.isEmpty()) return;
         LOG.info("Disabling OS upgrade of all " + type + " nodes");
         nodeRepository.nodes().upgradeOs(NodeListFilter.from(nodesUpgrading.asList()), Optional.empty());
     }

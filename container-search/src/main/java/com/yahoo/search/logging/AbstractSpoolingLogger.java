@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.search.logging;
 
 import com.yahoo.concurrent.DaemonThreadFactory;
@@ -8,11 +8,13 @@ import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.logging.Level;
 
 /**
  * Abstract class that deals with storing event entries on disk and making sure all stored
- * entries are eventually sent
+ * entries are eventually sent. Note that the {@link #start()} method needs to be called by subclasses as
+ * the last statement in their constructor.
  *
  * @author hmusum
  */
@@ -21,8 +23,10 @@ public abstract class AbstractSpoolingLogger extends AbstractThreadedLogger impl
     protected static final java.util.logging.Logger log = java.util.logging.Logger.getLogger(Spooler.class.getName());
 
     private final ScheduledExecutorService executorService;
+    private final AtomicBoolean executorStarted = new AtomicBoolean(false);
     protected final Spooler spooler;
 
+    @SuppressWarnings("unused") // Used by subclasses
     public AbstractSpoolingLogger() {
         this(new Spooler(Clock.systemUTC()));
     }
@@ -30,7 +34,16 @@ public abstract class AbstractSpoolingLogger extends AbstractThreadedLogger impl
     public AbstractSpoolingLogger(Spooler spooler) {
         this.spooler = spooler;
         this.executorService = new ScheduledThreadPoolExecutor(1, new DaemonThreadFactory("AbstractSpoolingLogger-send-"));
-        executorService.scheduleWithFixedDelay(this, 0, 1L, TimeUnit.SECONDS);
+        start();
+    }
+
+    /** Start processing files, must be called by subclasses */
+    public void start() {
+        // TODO: Remove guard and always start executor when we are sure all subclasses call this method (also reduce initialDelay)
+        if ( ! executorStarted.get()) {
+            this.executorService.scheduleWithFixedDelay(this, 10, 1L, TimeUnit.SECONDS);
+            executorStarted.set(true);
+        }
     }
 
     public void run() {

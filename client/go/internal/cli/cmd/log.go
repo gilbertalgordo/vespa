@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package cmd
 
 import (
@@ -34,7 +34,7 @@ $ vespa log --follow`,
 		SilenceUsage:      true,
 		Args:              cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			target, err := cli.target(targetOptions{logLevel: levelArg, cloudExclusive: true})
+			target, err := cli.target(targetOptions{logLevel: levelArg, supportedType: cloudTargetOnly})
 			if err != nil {
 				return err
 			}

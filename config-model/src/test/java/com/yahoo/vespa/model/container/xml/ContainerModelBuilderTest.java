@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.model.container.xml;
 
 import com.yahoo.cloud.config.CuratorConfig;
@@ -36,7 +36,6 @@ import com.yahoo.container.handler.metrics.MetricsV2Handler;
 import com.yahoo.container.handler.observability.ApplicationStatusHandler;
 import com.yahoo.container.jdisc.JdiscBindingsConfig;
 import com.yahoo.container.usability.BindingsOverviewHandler;
-import com.yahoo.net.HostName;
 import com.yahoo.prelude.cluster.QrMonitorConfig;
 import com.yahoo.search.config.QrStartConfig;
 import com.yahoo.vespa.model.AbstractService;
@@ -338,6 +337,7 @@ public class ContainerModelBuilderTest extends ContainerModelBuilderTestBase {
                 .modelHostProvisioner(provisioner)
                 .provisioned(provisioner.startProvisionedRecording())
                 .applicationPackage(applicationPackage)
+                .endpoints(Set.of(new ContainerEndpoint("default", ApplicationClusterEndpoint.Scope.zone, List.of("default.example.com"))))
                 .properties(new TestProperties().setMultitenant(true)
                                                 .setHostedVespa(true)
                                                 .setZone(new Zone(environment, RegionName.from(region))))
@@ -548,7 +548,8 @@ public class ContainerModelBuilderTest extends ContainerModelBuilderTestBase {
         final var deployState = new DeployState.Builder()
                 .applicationPackage(applicationPackage)
                 .zone(new Zone(Environment.prod, RegionName.from("us-east-1")))
-                .endpoints(Set.of(new ContainerEndpoint("comics-search", ApplicationClusterEndpoint.Scope.global, List.of("nalle", "balle"))))
+                .endpoints(Set.of(new ContainerEndpoint("comics-search", ApplicationClusterEndpoint.Scope.global, List.of("nalle", "balle")),
+                                  new ContainerEndpoint("comics-search", ApplicationClusterEndpoint.Scope.zone, List.of("nalle", "balle"))))
                 .properties(new TestProperties().setHostedVespa(true))
                 .build();
 
@@ -573,6 +574,7 @@ public class ContainerModelBuilderTest extends ContainerModelBuilderTestBase {
         VespaModel model = new VespaModel(new NullConfigModelRegistry(), new DeployState.Builder()
                 .modelHostProvisioner(new InMemoryProvisioner(true, false, "host1.yahoo.com", "host2.yahoo.com"))
                 .applicationPackage(applicationPackage)
+                .endpoints(Set.of(new ContainerEndpoint("default", ApplicationClusterEndpoint.Scope.zone, List.of("default.example.com"))))
                 .properties(new TestProperties()
                         .setMultitenant(true)
                         .setHostedVespa(true))
@@ -590,6 +592,7 @@ public class ContainerModelBuilderTest extends ContainerModelBuilderTestBase {
                 .modelHostProvisioner(provisioner)
                 .provisioned(provisioner.startProvisionedRecording())
                 .applicationPackage(applicationPackage)
+                .endpoints(Set.of(new ContainerEndpoint("default", ApplicationClusterEndpoint.Scope.zone, List.of("default.example.com"))))
                 .properties(new TestProperties().setMultitenant(true)
                                                 .setHostedVespa(true)
                                                 .setCloudAccount(cloudAccount))
@@ -632,6 +635,7 @@ public class ContainerModelBuilderTest extends ContainerModelBuilderTestBase {
         VespaModel model = new VespaModel(new NullConfigModelRegistry(), new DeployState.Builder()
                 .applicationPackage(applicationPackage)
                 .properties(new TestProperties().setHostedVespa(true))
+                .endpoints(Set.of(new ContainerEndpoint("container", ApplicationClusterEndpoint.Scope.zone, List.of("c.example.com"))))
                 .build());
 
         AbstractConfigProducerRoot modelRoot = model.getRoot();
@@ -643,14 +647,13 @@ public class ContainerModelBuilderTest extends ContainerModelBuilderTestBase {
     @Test
     void qrconfig_is_produced() throws IOException, SAXException {
         QrConfig qr = getQrConfig(new TestProperties());
-        String hostname = HostName.getLocalhost();  // Using the same way of getting hostname as filedistribution model
         assertEquals("default.container.0", qr.discriminator());
         assertEquals(19102, qr.rpc().port());
         assertEquals("vespa/service/default/container.0", qr.rpc().slobrokId());
         assertTrue(qr.rpc().enabled());
         assertEquals("", qr.rpc().host());
         assertFalse(qr.restartOnDeploy());
-        assertEquals("filedistribution/" + hostname, qr.filedistributor().configid());
+        assertEquals("", qr.filedistributor().configid()); // Not used, will be removed in Vespa 9
         assertEquals(50.0, qr.shutdown().timeout(), 0.00000000000001);
         assertFalse(qr.shutdown().dumpHeapOnTimeout());
     }

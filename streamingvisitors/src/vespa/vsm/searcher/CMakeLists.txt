@@ -1,4 +1,4 @@
-# Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+# Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 if(CMAKE_SYSTEM_PROCESSOR STREQUAL "x86_64")
   set(SSE2_FILES "fold.cpp")
@@ -17,6 +17,7 @@ vespa_add_library(vsm_vsmsearcher OBJECT
     intfieldsearcher.cpp
     nearest_neighbor_field_searcher.cpp
     strchrfieldsearcher.cpp
+    tokenizereader.cpp
     utf8flexiblestringfieldsearcher.cpp
     utf8strchrfieldsearcher.cpp
     utf8stringfieldsearcherbase.cpp

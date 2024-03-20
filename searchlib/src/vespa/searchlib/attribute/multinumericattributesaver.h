@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #pragma once
 
@@ -26,12 +26,12 @@ class MultiValueNumericAttributeSaver : public MultiValueAttributeSaver
 
     const MultiValueMapping &_mvMapping;
 public:
-    virtual bool onSave(IAttributeSaveTarget &saveTarget) override;
+    bool onSave(IAttributeSaveTarget &saveTarget) override;
     MultiValueNumericAttributeSaver(GenerationHandler::Guard &&guard,
                                     const attribute::AttributeHeader &header,
                                     const MultiValueMapping &mvMapping);
 
-    virtual ~MultiValueNumericAttributeSaver();
+    ~MultiValueNumericAttributeSaver() override;
 };
 
 

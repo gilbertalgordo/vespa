@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #pragma once
 
@@ -7,6 +7,7 @@
 #include "querynodemixin.h"
 #include "range.h"
 #include "term.h"
+#include "term_vector.h"
 #include "const_bool_nodes.h"
 
 namespace search::query {
@@ -177,19 +178,8 @@ public:
 class MultiTerm : public Node {
 public:
     enum class Type {STRING, INTEGER, UNKNOWN};
-    using StringAndWeight = std::pair<vespalib::stringref, Weight>;
-    using IntegerAndWeight = std::pair<int64_t, Weight>;
-    struct TermVector {
-        using StringAndWeight = MultiTerm::StringAndWeight;
-        using IntegerAndWeight = MultiTerm::IntegerAndWeight;
-        virtual ~TermVector() = default;
-        virtual void addTerm(vespalib::stringref term, Weight weight) = 0;
-        virtual void addTerm(int64_t term, Weight weight) = 0;
-        virtual StringAndWeight getAsString(uint32_t index) const = 0;
-        virtual IntegerAndWeight getAsInteger(uint32_t index) const = 0;
-        virtual Weight getWeight(uint32_t index) const = 0;
-        virtual uint32_t size() const = 0;
-    };
+    using StringAndWeight = TermVector::StringAndWeight;
+    using IntegerAndWeight = TermVector::IntegerAndWeight;
     ~MultiTerm() override;
     void addTerm(vespalib::stringref term, Weight weight);
     void addTerm(int64_t term, Weight weight);
@@ -201,7 +191,8 @@ public:
     uint32_t getNumTerms() const { return _num_terms; }
     Type getType() const { return _type; }
 protected:
-    MultiTerm(uint32_t num_terms);
+    explicit MultiTerm(uint32_t num_terms);
+    MultiTerm(std::unique_ptr<TermVector> terms, Type type);
 private:
     VESPA_DLL_LOCAL std::unique_ptr<TermVector> downgrade() __attribute__((noinline));
     std::unique_ptr<TermVector> _terms;
@@ -245,6 +236,16 @@ public:
     uint32_t getTargetNumHits() const { return _targetNumHits; }
     int64_t getScoreThreshold() const { return _scoreThreshold; }
     double getThresholdBoostFactor() const { return _thresholdBoostFactor; }
+};
+
+class InTerm : public QueryNodeMixin<InTerm, MultiTerm>, public Term {
+public:
+    InTerm(std::unique_ptr<TermVector> terms, MultiTerm::Type type, const vespalib::string& view, int32_t id, Weight weight)
+        : QueryNodeMixinType(std::move(terms), type),
+          Term(view, id, weight)
+    {
+    }
+    virtual ~InTerm() = 0;
 };
 
 }

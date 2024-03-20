@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 #include "check_condition.h"
 #include "getoperation.h"
 #include "intermediate_message_sender.h"
@@ -7,6 +7,7 @@
 #include <vespa/storage/distributor/distributor_node_context.h>
 #include <vespa/storage/distributor/distributor_stripe_operation_context.h>
 #include <vespa/storage/distributor/node_supported_features_repo.h>
+#include <vespa/storage/config/distributorconfiguration.h>
 #include <vespa/vdslib/state/clusterstate.h>
 #include <vespa/storageapi/message/persistence.h>
 #include <cassert>
@@ -245,10 +246,6 @@ CheckCondition::create_if_inconsistent_replicas(const document::Bucket& bucket,
                                                 PersistenceOperationMetricSet& condition_probe_metrics,
                                                 uint32_t trace_level)
 {
-    // TODO move this check to the caller?
-    if (!op_ctx.distributor_config().enable_condition_probing()) {
-        return {};
-    }
     auto entries = get_bucket_database_entries(bucket_space, bucket.getBucketId());
     if (entries.empty()) {
         return {}; // Not found

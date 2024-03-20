@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package ai.vespa.util.http.hc5;
 
 import com.yahoo.security.tls.MixedMode;
@@ -49,7 +49,7 @@ public class VespaAsyncHttpClientBuilder {
             SSLParameters vespaTlsParameters = vespaTlsContext.parameters();
             tlsStrategy = ClientTlsStrategyBuilder.create()
                     .setHostnameVerifier(hostnameVerifier)
-                    .setSslContext(vespaTlsContext.context())
+                    .setSslContext(vespaTlsContext.sslContext().context())
                     .setTlsVersions(vespaTlsParameters.getProtocols())
                     .setCiphers(vespaTlsParameters.getCipherSuites())
                     .build();

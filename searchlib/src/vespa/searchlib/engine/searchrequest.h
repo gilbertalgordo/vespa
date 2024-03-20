@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #pragma once
 
@@ -19,7 +19,6 @@ public:
     uint32_t          maxhits;
     vespalib::string  sortSpec;
     std::vector<char> groupSpec;
-    std::vector<char> sessionId;
 
     SearchRequest();
     explicit SearchRequest(RelativeTime relativeTime);

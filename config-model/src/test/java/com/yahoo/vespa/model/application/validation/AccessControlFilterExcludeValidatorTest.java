@@ -1,8 +1,10 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.model.application.validation;
 
 import com.yahoo.config.application.api.DeployLogger;
 import com.yahoo.config.model.MapConfigModelRegistry;
+import com.yahoo.config.model.api.ApplicationClusterEndpoint;
+import com.yahoo.config.model.api.ContainerEndpoint;
 import com.yahoo.config.model.deploy.DeployState;
 import com.yahoo.config.model.deploy.TestProperties;
 import com.yahoo.config.model.test.MockApplicationPackage;
@@ -20,9 +22,12 @@ import org.junit.jupiter.api.Test;
 import org.xml.sax.SAXException;
 
 import java.io.IOException;
+import java.util.List;
+import java.util.Set;
 
-import static org.junit.jupiter.api.Assertions.assertThrows;
+import static com.yahoo.vespa.model.application.validation.ValidationTester.expect;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -52,9 +57,8 @@ public class AccessControlFilterExcludeValidatorTest {
                 MapConfigModelRegistry.createFromList(new ModelBuilderAddingAccessControlFilter()),
                 deployState);
 
-        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () -> new AccessControlFilterExcludeValidator().validate(model, deployState));
-        String expectedMessage = "Application cluster container-cluster-with-access-control excludes paths from access control, this is not allowed and should be removed.";
-        assertEquals(expectedMessage, exception.getMessage());
+        expect(new AccessControlFilterExcludeValidator(), model, deployState,
+               "Application cluster container-cluster-with-access-control excludes paths from access control, this is not allowed and should be removed.");
     }
 
     @Test
@@ -65,9 +69,8 @@ public class AccessControlFilterExcludeValidatorTest {
                 MapConfigModelRegistry.createFromList(new ModelBuilderAddingAccessControlFilter()),
                 deployState);
 
-        new AccessControlFilterExcludeValidator().validate(model, deployState);
-        String expectedMessage = "Application cluster container-cluster-with-access-control excludes paths from access control, this is not allowed and should be removed.";
-        assertTrue(logOutput.toString().contains(expectedMessage));
+        ValidationTester.validate(new AccessControlFilterExcludeValidator(), model, deployState);
+        assertTrue(logOutput.toString().contains("Application cluster container-cluster-with-access-control excludes paths from access control, this is not allowed and should be removed."));
     }
 
     @Test
@@ -76,7 +79,7 @@ public class AccessControlFilterExcludeValidatorTest {
         VespaModel model = new VespaModel(
                 MapConfigModelRegistry.createFromList(new ModelBuilderAddingAccessControlFilter()),
                 deployState);
-        new AccessControlFilterExcludeValidator().validate(model, deployState);
+        ValidationTester.validate(new AccessControlFilterExcludeValidator(), model, deployState);
     }
 
     @Test
@@ -86,7 +89,7 @@ public class AccessControlFilterExcludeValidatorTest {
                 MapConfigModelRegistry.createFromList(new ModelBuilderAddingAccessControlFilter()),
                 deployState);
 
-        new AccessControlFilterExcludeValidator().validate(model, deployState);
+        ValidationTester.validate(new AccessControlFilterExcludeValidator(), model, deployState);
     }
 
     private static DeployState createDeployState(Zone zone, StringBuffer buffer, boolean allowExcludes) {
@@ -98,6 +101,7 @@ public class AccessControlFilterExcludeValidatorTest {
                                 .setHostedVespa(true)
                                 .setAthenzDomain(AthenzDomain.from("foo.bar"))
                                 .allowDisableMtls(allowExcludes))
+                .endpoints(Set.of(new ContainerEndpoint("container-cluster-with-access-control", ApplicationClusterEndpoint.Scope.zone, List.of("example.com"))))
                 .deployLogger(logger)
                 .zone(zone)
                 .build();
@@ -107,6 +111,6 @@ public class AccessControlFilterExcludeValidatorTest {
         Cloud.Builder cloudBuilder = Cloud.builder().name(cloudName);
         if (cloudName == CloudName.AWS) cloudBuilder.account(CloudAccount.from("123456789012"));
         return new Zone(cloudBuilder.build(), systemName, Environment.prod, RegionName.defaultName());
-
     }
+
 }

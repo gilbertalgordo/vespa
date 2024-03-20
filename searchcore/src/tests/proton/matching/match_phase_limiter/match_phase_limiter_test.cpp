@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 #include <vespa/vespalib/testkit/test_kit.h>
 #include <vespa/searchcore/proton/matching/match_phase_limiter.h>
 #include <vespa/searchcore/proton/matching/rangequerylocator.h>
@@ -69,16 +69,19 @@ struct MockBlueprint : SimpleLeafBlueprint {
     FieldSpec spec;
     vespalib::string term;
     bool postings_fetched = false;
-    search::queryeval::ExecuteInfo postings_strict = search::queryeval::ExecuteInfo::FALSE;
+    bool postings_strict = false;
     MockBlueprint(const FieldSpec &spec_in, const vespalib::string &term_in)
         : SimpleLeafBlueprint(spec_in), spec(spec_in), term(term_in)
     {
         setEstimate(HitEstimate(756, false));
     }    
+    search::queryeval::FlowStats calculate_flow_stats(uint32_t docid_limit) const override {
+        return default_flow_stats(docid_limit, 756, 0);
+    }
     SearchIterator::UP createLeafSearch(const TermFieldMatchDataArray &tfmda, bool strict) const override
     {
         if (postings_fetched) {
-            EXPECT_EQUAL(postings_strict.isStrict(), strict);
+            EXPECT_EQUAL(postings_strict, strict);
         }
         return std::make_unique<MockSearch>(spec, term, strict, tfmda, postings_fetched);
     }
@@ -86,7 +89,7 @@ struct MockBlueprint : SimpleLeafBlueprint {
         return create_default_filter(strict, constraint);
     }
     void fetchPostings(const search::queryeval::ExecuteInfo &execInfo) override {
-        postings_strict = execInfo;
+        postings_strict = execInfo.is_strict();
         postings_fetched = true;
     }
 };
@@ -181,6 +184,7 @@ TEST("require that max group size is calculated correctly") {
 TEST("require that the attribute limiter works correctly") {
     FakeRequestContext requestContext;
     MockRangeLocator rangeLocator;
+    constexpr double HIT_RATE = 0.1;
     for (int i = 0; i <= 7; ++i) {
         bool descending = (i & 1) != 0;
         bool strict     = (i & 2) != 0;
@@ -190,10 +194,10 @@ TEST("require that the attribute limiter works correctly") {
                                  "category", 10.0, AttributeLimiter::LOOSE);
         EXPECT_EQUAL(0u, searchable.create_cnt);
         EXPECT_FALSE(limiter.was_used());
-        SearchIterator::UP s1 = limiter.create_search(42, diverse ? 3 : 42, strict);
+        SearchIterator::UP s1 = limiter.create_search(42, diverse ? 3 : 42, HIT_RATE, strict);
         EXPECT_TRUE(limiter.was_used());
         EXPECT_EQUAL(1u, searchable.create_cnt);
-        SearchIterator::UP s2 = limiter.create_search(42, diverse ? 3 : 42, strict);
+        SearchIterator::UP s2 = limiter.create_search(42, diverse ? 3 : 42, HIT_RATE, strict);
         EXPECT_EQUAL(1u, searchable.create_cnt);
         auto *ms = dynamic_cast<MockSearch*>(s1.get());
         ASSERT_TRUE(ms != nullptr);
@@ -351,6 +355,7 @@ TEST("require that the match phase limiter is able to pre-limit the query") {
         "            hit_rate: 0.1,"
         "            num_docs: 100000,"
         "            max_filter_docs: 100000,"
+        "            upper_limited_corpus_size: 100000,"
         "            wanted_docs: 5000,"
         "            action: 'Will limit with prefix filter',"
         "            max_group_size: 5000,"

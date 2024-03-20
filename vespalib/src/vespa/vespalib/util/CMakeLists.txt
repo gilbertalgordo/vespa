@@ -1,4 +1,4 @@
-# Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+# Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 vespa_add_library(vespalib_vespalib_util OBJECT
     SOURCES
     adaptive_sequenced_executor.cpp
@@ -17,7 +17,6 @@ vespa_add_library(vespalib_vespalib_util OBJECT
     box.cpp
     cgroup_resource_limits.cpp
     classname.cpp
-    clock.cpp
     compress.cpp
     compressor.cpp
     count_down_latch.cpp
@@ -58,6 +57,7 @@ vespa_add_library(vespalib_vespalib_util OBJECT
     mmap_file_allocator.cpp
     mmap_file_allocator_factory.cpp
     monitored_refcount.cpp
+    normalize_class_name.cpp
     nice.cpp
     printable.cpp
     priority_queue.cpp

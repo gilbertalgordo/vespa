@@ -1,20 +1,23 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
-#include <vespa/storageapi/message/bucket.h>
-#include <vespa/storageapi/message/state.h>
-#include <vespa/storageapi/message/stat.h>
+#include <tests/common/dummystoragelink.h>
+#include <tests/common/testhelper.h>
+#include <tests/common/teststorageapp.h>
+#include <vespa/config/common/exceptions.h>
+#include <memory>
+#include <vespa/config/helper/configgetter.hpp>
+#include <vespa/document/bucket/fixed_bucket_spaces.h>
+#include <vespa/document/fieldset/fieldsets.h>
+#include <vespa/document/test/make_document_bucket.h>
+#include <vespa/persistence/spi/bucket_limits.h>
+#include <vespa/storage/config/config-stor-bouncer.h>
 #include <vespa/storage/storageserver/bouncer.h>
 #include <vespa/storage/storageserver/bouncer_metrics.h>
-#include <tests/common/teststorageapp.h>
-#include <tests/common/testhelper.h>
-#include <tests/common/dummystoragelink.h>
-#include <vespa/document/bucket/fixed_bucket_spaces.h>
-#include <vespa/document/test/make_document_bucket.h>
-#include <vespa/document/fieldset/fieldsets.h>
+#include <vespa/storageapi/message/bucket.h>
 #include <vespa/storageapi/message/persistence.h>
-#include <vespa/persistence/spi/bucket_limits.h>
+#include <vespa/storageapi/message/stat.h>
+#include <vespa/storageapi/message/state.h>
 #include <vespa/vdslib/state/clusterstate.h>
-#include <vespa/config/common/exceptions.h>
 #include <vespa/vespalib/gtest/gtest.h>
 
 using document::test::makeDocumentBucket;
@@ -39,21 +42,10 @@ struct BouncerTest : public Test {
 
     static constexpr int RejectionDisabledConfigValue = -1;
 
-    // Note: newThreshold is intentionally int (rather than Priority) in order
-    // to be able to test out of bounds values.
-    void configureRejectionThreshold(int newThreshold);
-
-    std::shared_ptr<api::StorageCommand> createDummyFeedMessage(
-            api::Timestamp timestamp,
-            Priority priority = 0);
-
-    std::shared_ptr<api::StorageCommand> createDummyFeedMessage(
-            api::Timestamp timestamp,
-            document::BucketSpace bucketSpace);
-
-    void expectMessageBouncedWithRejection();
-    void expectMessageBouncedWithAbort();
-    void expectMessageNotBounced();
+    void expectMessageBouncedWithRejection() const;
+    void expect_message_bounced_with_node_down_abort() const;
+    void expect_message_bounced_with_shutdown_abort() const;
+    void expectMessageNotBounced() const;
 };
 
 BouncerTest::BouncerTest()
@@ -67,12 +59,15 @@ BouncerTest::BouncerTest()
 void BouncerTest::setUpAsNode(const lib::NodeType& type) {
     vdstestlib::DirConfig config(getStandardConfig(type == lib::NodeType::STORAGE));
     if (type == lib::NodeType::STORAGE) {
-        _node.reset(new TestServiceLayerApp(NodeIndex(2), config.getConfigId()));
+        _node = std::make_unique<TestServiceLayerApp>(NodeIndex(2), config.getConfigId());
     } else {
-        _node.reset(new TestDistributorApp(NodeIndex(2), config.getConfigId()));
+        _node = std::make_unique<TestDistributorApp>(NodeIndex(2), config.getConfigId());
     }
-    _upper.reset(new DummyStorageLink());
-    _manager = new Bouncer(_node->getComponentRegister(), config::ConfigUri(config.getConfigId()));
+    _upper = std::make_unique<DummyStorageLink>();
+    using StorBouncerConfig = vespa::config::content::core::StorBouncerConfig;
+    auto cfg_uri = config::ConfigUri(config.getConfigId());
+    auto cfg = config::ConfigGetter<StorBouncerConfig>::getConfig(cfg_uri.getConfigId(), cfg_uri.getContext());
+    _manager = new Bouncer(_node->getComponentRegister(), *cfg);
     _lower = new DummyStorageLink();
     _upper->push_back(std::unique_ptr<StorageLink>(_manager));
     _upper->push_back(std::unique_ptr<StorageLink>(_lower));
@@ -98,8 +93,8 @@ BouncerTest::TearDown() {
 }
 
 std::shared_ptr<api::StorageCommand>
-BouncerTest::createDummyFeedMessage(api::Timestamp timestamp,
-                                    api::StorageMessage::Priority priority)
+createDummyFeedMessage(api::Timestamp timestamp,
+                       api::StorageMessage::Priority priority = 0)
 {
     auto cmd = std::make_shared<api::RemoveCommand>(
             makeDocumentBucket(document::BucketId(0)),
@@ -110,14 +105,14 @@ BouncerTest::createDummyFeedMessage(api::Timestamp timestamp,
 }
 
 std::shared_ptr<api::StorageCommand>
-BouncerTest::createDummyFeedMessage(api::Timestamp timestamp,
-                                    document::BucketSpace bucketSpace)
+createDummyFeedMessage(api::Timestamp timestamp,
+                       document::BucketSpace bucketSpace)
 {
     auto cmd = std::make_shared<api::RemoveCommand>(
             document::Bucket(bucketSpace, document::BucketId(0)),
             document::DocumentId("id:ns:foo::bar"),
             timestamp);
-    cmd->setPriority(Priority(0));
+    cmd->setPriority(BouncerTest::Priority(0));
     return cmd;
 }
 
@@ -181,7 +176,7 @@ TEST_F(BouncerTest, allow_notify_bucket_change_even_when_distributor_down) {
 }
 
 void
-BouncerTest::expectMessageBouncedWithRejection()
+BouncerTest::expectMessageBouncedWithRejection() const
 {
     ASSERT_EQ(1, _upper->getNumReplies());
     EXPECT_EQ(0, _upper->getNumCommands());
@@ -191,7 +186,7 @@ BouncerTest::expectMessageBouncedWithRejection()
 }
 
 void
-BouncerTest::expectMessageBouncedWithAbort()
+BouncerTest::expect_message_bounced_with_node_down_abort() const
 {
     ASSERT_EQ(1, _upper->getNumReplies());
     EXPECT_EQ(0, _upper->getNumCommands());
@@ -204,44 +199,20 @@ BouncerTest::expectMessageBouncedWithAbort()
 }
 
 void
-BouncerTest::expectMessageNotBounced()
+BouncerTest::expect_message_bounced_with_shutdown_abort() const
 {
-    EXPECT_EQ(size_t(0), _upper->getNumReplies());
-    EXPECT_EQ(size_t(1), _lower->getNumCommands());
+    ASSERT_EQ(1, _upper->getNumReplies());
+    EXPECT_EQ(0, _upper->getNumCommands());
+    auto& reply = dynamic_cast<api::StorageReply&>(*_upper->getReply(0));
+    EXPECT_EQ(api::ReturnCode(api::ReturnCode::ABORTED, "Node is shutting down"), reply.getResult());
+    EXPECT_EQ(0, _lower->getNumCommands());
 }
 
 void
-BouncerTest::configureRejectionThreshold(int newThreshold)
+BouncerTest::expectMessageNotBounced() const
 {
-    using Builder = vespa::config::content::core::StorBouncerConfigBuilder;
-    auto config = std::make_unique<Builder>();
-    config->feedRejectionPriorityThreshold = newThreshold;
-    _manager->configure(std::move(config));
-}
-
-TEST_F(BouncerTest, reject_lower_prioritized_feed_messages_when_configured) {
-    configureRejectionThreshold(Priority(120));
-    _upper->sendDown(createDummyFeedMessage(11 * 1000000, Priority(121)));
-    expectMessageBouncedWithRejection();
-}
-
-TEST_F(BouncerTest, do_not_reject_higher_prioritized_feed_messages_than_configured) {
-    configureRejectionThreshold(Priority(120));
-    _upper->sendDown(createDummyFeedMessage(11 * 1000000, Priority(119)));
-    expectMessageNotBounced();
-}
-
-TEST_F(BouncerTest, priority_rejection_threshold_is_exclusive) {
-    configureRejectionThreshold(Priority(120));
-    _upper->sendDown(createDummyFeedMessage(11 * 1000000, Priority(120)));
-    expectMessageNotBounced();
-}
-
-TEST_F(BouncerTest, only_priority_reject_feed_messages_when_configured) {
-    configureRejectionThreshold(RejectionDisabledConfigValue);
-    // A message with even the lowest priority should not be rejected.
-    _upper->sendDown(createDummyFeedMessage(11 * 1000000, Priority(255)));
-    expectMessageNotBounced();
+    EXPECT_EQ(size_t(0), _upper->getNumReplies());
+    EXPECT_EQ(size_t(1), _lower->getNumCommands());
 }
 
 TEST_F(BouncerTest, priority_rejection_is_disabled_by_default_in_config) {
@@ -249,19 +220,16 @@ TEST_F(BouncerTest, priority_rejection_is_disabled_by_default_in_config) {
     expectMessageNotBounced();
 }
 
-TEST_F(BouncerTest, read_only_operations_are_not_priority_rejected) {
-    configureRejectionThreshold(Priority(1));
+TEST_F(BouncerTest, read_only_operations_are_not_rejected) {
     // StatBucket is an external operation, but it's not a mutating operation
     // and should therefore not be blocked.
-    auto cmd = std::make_shared<api::StatBucketCommand>(
-            makeDocumentBucket(document::BucketId(16, 5)), "");
+    auto cmd = std::make_shared<api::StatBucketCommand>(makeDocumentBucket(document::BucketId(16, 5)), "");
     cmd->setPriority(Priority(2));
     _upper->sendDown(cmd);
     expectMessageNotBounced();
 }
 
 TEST_F(BouncerTest, internal_operations_are_not_rejected) {
-    configureRejectionThreshold(Priority(1));
     document::BucketId bucket(16, 1234);
     api::BucketInfo info(0x1, 0x2, 0x3);
     auto cmd = std::make_shared<api::NotifyBucketChangeCommand>(makeDocumentBucket(bucket), info);
@@ -269,12 +237,6 @@ TEST_F(BouncerTest, internal_operations_are_not_rejected) {
     _upper->sendDown(cmd);
     expectMessageNotBounced();
 }
-
-TEST_F(BouncerTest, out_of_bounds_config_values_throw_exception) {
-    EXPECT_THROW(configureRejectionThreshold(256), config::InvalidConfigException);
-    EXPECT_THROW(configureRejectionThreshold(-2), config::InvalidConfigException);
-}
-
 
 namespace {
 
@@ -296,7 +258,7 @@ TEST_F(BouncerTest, abort_request_when_derived_bucket_space_node_state_is_marked
     auto state = makeClusterStateBundle("distributor:3 storage:3", {{ document::FixedBucketSpaces::default_space(), "distributor:3 storage:3 .2.s:d" }});
     _node->getNodeStateUpdater().setClusterStateBundle(state);
     _upper->sendDown(createDummyFeedMessage(11 * 1000000, document::FixedBucketSpaces::default_space()));
-    expectMessageBouncedWithAbort();
+    expect_message_bounced_with_node_down_abort();
     EXPECT_EQ(1, _manager->metrics().unavailable_node_aborts.getValue());
 
     _upper->reset();
@@ -360,6 +322,24 @@ TEST_F(BouncerTest, operation_with_sufficient_bucket_bits_is_not_rejected) {
     auto cmd = make_remove_with_used_bits(spi::BucketLimits::MinUsedBits);
     _upper->sendDown(std::move(cmd));
     expectMessageNotBounced();
+}
+
+TEST_F(BouncerTest, requests_are_rejected_after_close) {
+    _manager->close();
+    _upper->sendDown(createDummyFeedMessage(11 * 1000000, document::FixedBucketSpaces::default_space()));
+    expect_message_bounced_with_shutdown_abort();
+}
+
+TEST_F(BouncerTest, replies_are_swallowed_after_close) {
+    _manager->close();
+    auto req = createDummyFeedMessage(11 * 1000000, document::FixedBucketSpaces::default_space());
+    auto reply = req->makeReply();
+    _upper->sendDown(std::move(reply));
+
+    EXPECT_EQ(0, _upper->getNumCommands());
+    EXPECT_EQ(0, _upper->getNumReplies());
+    EXPECT_EQ(0, _lower->getNumCommands());
+    EXPECT_EQ(0, _lower->getNumReplies());
 }
 
 } // storage

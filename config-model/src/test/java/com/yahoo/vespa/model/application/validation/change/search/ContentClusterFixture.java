@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.model.application.validation.change.search;
 
 import com.yahoo.documentmodel.NewDocumentType;
@@ -44,7 +44,7 @@ public abstract class ContentClusterFixture {
     }
 
     protected DocumentDatabase currentDb() {
-        return currentCluster.getSearch().getIndexed().getDocumentDbs().get(0);
+        return currentCluster.getSearch().getSearchCluster().getDocumentDbs().get(0);
     }
 
     protected NewDocumentType currentDocType() {
@@ -52,7 +52,7 @@ public abstract class ContentClusterFixture {
     }
 
     protected DocumentDatabase nextDb() {
-        return nextCluster.getSearch().getIndexed().getDocumentDbs().get(0);
+        return nextCluster.getSearch().getSearchCluster().getDocumentDbs().get(0);
     }
 
     protected NewDocumentType nextDocType() {

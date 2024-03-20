@@ -1,12 +1,9 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include "simple_phrase_blueprint.h"
 #include "simple_phrase_search.h"
-#include "emptysearch.h"
 #include "field_spec.hpp"
-#include <vespa/searchlib/fef/termfieldmatchdata.h>
 #include <vespa/vespalib/objects/visit.hpp>
-#include <algorithm>
 #include <map>
 
 namespace search::queryeval {
@@ -28,7 +25,7 @@ SimplePhraseBlueprint::~SimplePhraseBlueprint() = default;
 FieldSpec
 SimplePhraseBlueprint::getNextChildField(const FieldSpec &outer)
 {
-    return FieldSpec(outer.getName(), outer.getFieldId(), _layout.allocTermField(outer.getFieldId()), false);
+    return {outer.getName(), outer.getFieldId(), _layout.allocTermField(outer.getFieldId()), false};
 }
 
 void
@@ -46,6 +43,18 @@ SimplePhraseBlueprint::addTerm(Blueprint::UP term)
     }
     setEstimate(_estimate);
     _terms.push_back(std::move(term));
+}
+
+FlowStats
+SimplePhraseBlueprint::calculate_flow_stats(uint32_t docid_limit) const
+{
+    for (auto &term: _terms) {
+        term->update_flow_stats(docid_limit);
+    }
+    double est = AndFlow::estimate_of(_terms);
+    return {est,
+            AndFlow::cost_of(_terms, false) + est * _terms.size(),
+            AndFlow::cost_of(_terms, true) + est * _terms.size()};
 }
 
 SearchIterator::UP

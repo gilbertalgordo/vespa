@@ -1,10 +1,11 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 /**
  * When this file is changed, do "mvn generate-sources" to rebuild the parser.
  *
  * @author  bratseth
  */
 options {
+    UNICODE_INPUT = true;
     CACHE_TOKENS       = true;
     DEBUG_PARSER       = false;
     USER_TOKEN_MANAGER = false;
@@ -16,6 +17,7 @@ PARSER_BEGIN(RankingExpressionParser)
 
 package com.yahoo.searchlib.rankingexpression.parser;
 
+import com.yahoo.searchlib.rankingexpression.Reference;
 import com.yahoo.searchlib.rankingexpression.rule.*;
 import com.yahoo.searchlib.rankingexpression.evaluation.Value;
 import com.yahoo.searchlib.rankingexpression.evaluation.StringValue;
@@ -127,6 +129,8 @@ TOKEN :
     <HAMMING: "hamming"> |
 
     <MAP: "map"> |
+    <MAP_SUBSPACES: "map_subspaces"> |
+    <UNPACK_BITS: "unpack_bits"> |
     <REDUCE: "reduce"> |
     <JOIN: "join"> |
     <MERGE: "merge"> |
@@ -173,7 +177,7 @@ List<ReferenceNode> featureList() :
     ReferenceNode exp;
 }
 {
-    ( ( exp = feature() { ret.add(exp); } )+ <EOF> )
+    ( ( exp = feature() { ret.add(exp); } )* <EOF> )
     { return ret; }
 }
 
@@ -299,7 +303,7 @@ ReferenceNode legacyQueryFeature() :
 {
     ( <DOLLAR> name = identifier() )
     {
-        return new ReferenceNode("query", Arrays.asList((ExpressionNode)new NameNode(name)), null);
+        return new ReferenceNode(Reference.simple("query", name));
     }
 }
 
@@ -342,7 +346,7 @@ ExpressionNode function() :
     ExpressionNode function;
 }
 {
-    ( LOOKAHEAD(2) function = scalarOrTensorFunction() | function = tensorFunction() )
+    ( LOOKAHEAD(2) function = scalarOrTensorFunction() | function = tensorFunction() | function = tensorMacro() )
     { return function; }
 }
 
@@ -369,6 +373,7 @@ TensorFunctionNode tensorFunction() :
 {
     (
         tensorExpression = tensorMap() |
+        tensorExpression = tensorMapSubspaces() |
         tensorExpression = tensorReduce() |
         tensorExpression = tensorReduceComposites() |
         tensorExpression = tensorJoin() |
@@ -403,6 +408,22 @@ TensorFunctionNode tensorMap() :
     <MAP> <LBRACE> tensor = expression() <COMMA> doubleMapper = lambdaFunction() <RBRACE>
     { return new TensorFunctionNode(new Map(TensorFunctionNode.wrap(tensor),
                                             doubleMapper.asDoubleUnaryOperator())); }
+}
+
+TensorFunctionNode tensorMapSubspaces() :
+{
+    ExpressionNode tensor;
+    LambdaFunctionNode denseMapper;
+}
+{
+    <MAP_SUBSPACES> <LBRACE> tensor = expression() <COMMA> denseMapper = lambdaFunction() <RBRACE>
+    {
+        return new TensorFunctionNode(
+               new MapSubspaces(
+                      TensorFunctionNode.wrap(tensor),
+                      denseMapper.singleArgumentName(),
+                      TensorFunctionNode.wrap(denseMapper.children().get(0))));
+     }
 }
 
 TensorFunctionNode tensorReduce() :
@@ -648,6 +669,32 @@ TensorFunctionNode tensorCellCast() :
 {
     <CELL_CAST> <LBRACE> tensor = expression() <COMMA> valueType = identifier() <RBRACE>
     { return new TensorFunctionNode(new CellCast(TensorFunctionNode.wrap(tensor), TensorType.Value.fromId(valueType)));}
+}
+
+ExpressionNode tensorMacro() :
+{
+    ExpressionNode tensorExpression;
+}
+{
+    (
+        tensorExpression = tensorUnpackBits()
+    )
+    { return tensorExpression; }
+}
+
+ExpressionNode tensorUnpackBits() :
+{
+    ExpressionNode tensor;
+    String targetCellType = "float";
+    String endianNess = "big";
+}
+{
+    <UNPACK_BITS> <LBRACE> tensor = expression() (
+      <COMMA> targetCellType = identifier() (
+        <COMMA> endianNess = identifier() )? )? <RBRACE>
+    {
+        return new UnpackBitsNode(tensor, TensorType.Value.fromId(targetCellType), endianNess);
+    }
 }
 
 LambdaFunctionNode lambdaFunction() :

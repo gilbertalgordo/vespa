@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include "lid_space_compaction_job.h"
 #include "i_document_scan_iterator.h"
@@ -34,11 +34,11 @@ namespace {
 
 bool
 isSameDocument(const search::DocumentMetaData &a, const search::DocumentMetaData &b) {
+    //TODO Timestamp check can be removed once logic has proved itself in large scale.
     return (a.lid == b.lid) &&
            (a.bucketId == b.bucketId) &&
            (a.gid == b.gid) &&
-           (a.timestamp ==
-            b.timestamp); // Timestamp check can be removed once logic has proved itself in large scale.
+           (a.timestamp == b.timestamp);
 }
 
 }
@@ -111,7 +111,6 @@ CompactionJob::completeMove(const search::DocumentMetaData & metaThen, std::uniq
     // Reread meta data as document might have been altered after move was initiated
     // If so it will fail the timestamp sanity check later on.
     search::DocumentMetaData metaNow = _handler->getMetaData(metaThen.lid);
-    // This should be impossible and should probably be an assert
     if ( ! isSameDocument(metaThen, metaNow)) return;
     if (metaNow.gid != moveOp->getDocument()->getId().getGlobalId()) return;
 
@@ -131,7 +130,7 @@ CompactionJob::CompactionJob(const DocumentDBLidSpaceCompactionConfig &config,
                              IDiskMemUsageNotifier &diskMemUsageNotifier,
                              const BlockableMaintenanceJobConfig &blockableConfig,
                              IClusterStateChangedNotifier &clusterStateChangedNotifier,
-                             bool nodeRetired,
+                             bool node_retired_or_maintenance,
                              document::BucketSpace bucketSpace)
     : BlockableMaintenanceJob("lid_space_compaction." + handler->getName(),
                               config.getDelay(), config.getInterval(), blockableConfig),
@@ -155,7 +154,7 @@ CompactionJob::CompactionJob(const DocumentDBLidSpaceCompactionConfig &config,
 {
     _diskMemUsageNotifier.addDiskMemUsageListener(this);
     _clusterStateChangedNotifier.addClusterStateChangedHandler(this);
-    if (nodeRetired) {
+    if (node_retired_or_maintenance) {
         setBlocked(BlockedReason::CLUSTER_STATE);
     }
     _handler->set_operation_listener(_ops_rate_tracker);
@@ -176,12 +175,12 @@ CompactionJob::create(const DocumentDBLidSpaceCompactionConfig &config,
                       IDiskMemUsageNotifier &diskMemUsageNotifier,
                       const BlockableMaintenanceJobConfig &blockableConfig,
                       IClusterStateChangedNotifier &clusterStateChangedNotifier,
-                      bool nodeRetired,
+                      bool node_retired_or_maintenance,
                       document::BucketSpace bucketSpace)
 {
     return std::shared_ptr<CompactionJob>(
             new CompactionJob(config, std::move(dbRetainer), std::move(handler), opStorer, master, bucketExecutor,
-                              diskMemUsageNotifier, blockableConfig, clusterStateChangedNotifier, nodeRetired, bucketSpace),
+                              diskMemUsageNotifier, blockableConfig, clusterStateChangedNotifier, node_retired_or_maintenance, bucketSpace),
             [&master](auto job) {
                 auto failed = master.execute(makeLambdaTask([job]() { delete job; }));
                 assert(!failed);
@@ -234,7 +233,7 @@ CompactionJob::run()
         if (shouldRestartScanDocuments(stats)) {
             _scanItr = _handler->getIterator();
         } else {
-            _scanItr = IDocumentScanIterator::UP();
+            _scanItr.reset();
             _shouldCompactLidSpace = true;
             return false;
         }
@@ -304,16 +303,16 @@ void
 CompactionJob::notifyClusterStateChanged(const std::shared_ptr<IBucketStateCalculator> &newCalc)
 {
     // Called by master write thread
-    bool nodeRetired = newCalc->nodeRetired();
-    if (!nodeRetired) {
+    bool node_retired_or_maintenance = newCalc->node_retired_or_maintenance();
+    if (!node_retired_or_maintenance) {
         if (isBlocked(BlockedReason::CLUSTER_STATE)) {
-            LOG(info, "%s: Lid space compaction is un-blocked as node is no longer retired", _handler->getName().c_str());
+            LOG(info, "%s: Lid space compaction is un-blocked as node is no longer retired or in maintenance", _handler->getName().c_str());
             unBlock(BlockedReason::CLUSTER_STATE);
         }
     } else if (!isBlocked(BlockedReason::CLUSTER_STATE)) {
-        LOG(info, "%s: Lid space compaction is blocked as node is retired", _handler->getName().c_str());
+        LOG(info, "%s: Lid space compaction is blocked as node is retired or in maintenance", _handler->getName().c_str());
         setBlocked(BlockedReason::CLUSTER_STATE);
     }
 }
 
-} // namespace proton
+}

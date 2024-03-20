@@ -1,9 +1,10 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 // Unit tests for predicate_index.
 
 #include <vespa/searchlib/predicate/predicate_index.h>
 #include <vespa/searchlib/predicate/simple_index.hpp>
 #include <vespa/searchlib/predicate/predicate_tree_annotator.h>
+#include <vespa/searchlib/util/data_buffer_writer.h>
 #include <vespa/vespalib/testkit/testapp.h>
 #include <vespa/searchlib/attribute/predicate_attribute.h>
 #include <vespa/vespalib/util/stringfmt.h>
@@ -19,6 +20,7 @@ using namespace search::predicate;
 using std::make_pair;
 using std::pair;
 using std::vector;
+using vespalib::DataBuffer;
 
 namespace {
 
@@ -31,6 +33,52 @@ vespalib::GenerationHandler generation_handler;
 vespalib::GenerationHolder generation_holder;
 DummyDocIdLimitProvider dummy_provider;
 SimpleIndexConfig simple_index_config;
+
+void
+save_predicate_index(PredicateIndex& index, DataBuffer& buffer)
+{
+    index.commit();
+    DataBufferWriter writer(buffer);
+    index.make_saver()->save(writer);
+    writer.flush();
+}
+
+class GuardedSaver {
+    vespalib::GenerationHandler::Guard _guard;
+    std::unique_ptr<ISaver>            _saver;
+public:
+    GuardedSaver(vespalib::GenerationHandler::Guard guard, std::unique_ptr<ISaver> saver)
+        : _guard(std::move(guard)),
+          _saver(std::move(saver))
+    {
+    }
+    ~GuardedSaver();
+    DataBuffer save() const {
+        DataBuffer buffer;
+        DataBufferWriter writer(buffer);
+        _saver->save(writer);
+        writer.flush();
+        return buffer;
+    }
+};
+
+GuardedSaver::~GuardedSaver() = default;
+
+GuardedSaver
+make_guarded_saver(PredicateIndex& index)
+{
+    index.commit();
+    auto guard = generation_handler.takeGuard();
+    auto saver = index.make_saver();
+    return { std::move(guard), std::move(saver) };
+}
+
+bool
+equal_buffers(const DataBuffer& lhs, const DataBuffer& rhs)
+{
+    return (lhs.getDataLen() ==  rhs.getDataLen()) &&
+        (memcmp(lhs.getData(), rhs.getData(), lhs.getDataLen()) == 0);
+}
 
 TEST("require that PredicateIndex can index empty documents") {
     PredicateIndex index(generation_holder, dummy_provider, simple_index_config, 10);
@@ -291,8 +339,8 @@ TEST("require that PredicateIndex can be (de)serialized") {
     }
     index.commit();
 
-    vespalib::DataBuffer buffer;
-    index.serialize(buffer);
+    DataBuffer buffer;
+    save_predicate_index(index, buffer);
     uint32_t doc_id_limit;
     DocIdLimitFinder finder(doc_id_limit);
     PredicateIndex index2(generation_holder, dummy_provider, simple_index_config,
@@ -335,8 +383,8 @@ TEST("require that DocumentFeaturesStore is restored on deserialization") {
     PredicateIndex index(generation_holder, dummy_provider, simple_index_config, 10);
     EXPECT_FALSE(index.getIntervalIndex().lookup(hash).valid());
     indexFeature(index, doc_id, min_feature, {{hash, interval}}, {{hash2, bounds}});
-    vespalib::DataBuffer buffer;
-    index.serialize(buffer);
+    DataBuffer buffer;
+    save_predicate_index(index, buffer);
     uint32_t doc_id_limit;
     DocIdLimitFinder finder(doc_id_limit);
     PredicateIndex index2(generation_holder, dummy_provider, simple_index_config,
@@ -369,6 +417,42 @@ TEST("require that hold lists are attempted emptied on destruction") {
     }
     // No assert on index destruction.
 }
+
+void verify_snapshot_property(uint32_t num_docs)
+{
+    PredicateIndex index(generation_holder, dummy_provider, simple_index_config, 10);
+    for (uint32_t i = 0; i < num_docs; ++i) {
+        indexFeature(index, doc_id + i, min_feature, {{hash, interval}}, {{hash2, bounds}});
+    }
+    auto saver1 = make_guarded_saver(index);
+    auto buf1 = saver1.save();
+    for (uint32_t i = 0; i < num_docs; ++i) {
+        index.removeDocument(doc_id + i);
+    }
+    index.commit();
+    auto saver2 = make_guarded_saver(index);
+    EXPECT_TRUE(equal_buffers(buf1, saver1.save()));
+    EXPECT_FALSE(equal_buffers(buf1, saver2.save()));
+}
+
+TEST("require that predicate index saver protected by a generation guard observes a snapshot of the predicate index")
+{
+    /*
+     * short array in simple index btree posting list
+     */
+    TEST_DO(verify_snapshot_property(1));
+    /*
+     * short array in simple index btree posting list
+     */
+    TEST_DO(verify_snapshot_property(8));
+    /*
+     * BTree in simple index btree posting list.
+     * Needs copy of frozen roots in simple index saver to observe snapshot
+     * of predicate index.
+     */
+    TEST_DO(verify_snapshot_property(9));
+}
+
 }  // namespace
 
 TEST_MAIN() { TEST_RUN_ALL(); }

@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #pragma once
 
@@ -16,6 +16,7 @@ struct IBucketStateCalculator
     virtual bool nodeInitializing() const = 0;
     virtual bool nodeRetired() const = 0;
     virtual bool nodeMaintenance() const noexcept = 0;
+    virtual bool node_retired_or_maintenance() const noexcept = 0;
     virtual ~IBucketStateCalculator() = default;
 };
 

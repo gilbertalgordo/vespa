@@ -1,4 +1,4 @@
-# Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+# Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 vespa_add_library(vespadefaults
     SOURCES
     defaults.cpp
@@ -12,11 +12,13 @@ function(vespa_configure_config_h)
   set(VESPA_USE_UNDEFINED_SANITIZER False)
   set(VESPA_HAS_IO_URING False)
   set(VESPA_HAS_EPOLL False)
-  if(VESPA_USE_SANITIZER STREQUAL "address")
+  if(VESPA_USE_SANITIZER MATCHES "address")
     set(VESPA_USE_ADDRESS_SANITIZER True)
-  elseif(VESPA_USE_SANITIZER STREQUAL "thread")
+  endif()
+  if(VESPA_USE_SANITIZER STREQUAL "thread")
     set(VESPA_USE_THREAD_SANITIZER True)
-  elseif(VESPA_USE_SANITIZER STREQUAL "undefined")
+  endif()
+  if(VESPA_USE_SANITIZER MATCHES "undefined")
     set(VESPA_USE_UNDEFINED_SANITIZER True)
   endif()
   if(NOT APPLE)

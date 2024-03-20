@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.config.model.producer;
 
 import com.yahoo.api.annotations.Beta;
@@ -23,7 +23,6 @@ import java.util.Map;
 public abstract class TreeConfigProducer<CHILD extends AnyConfigProducer>
     extends AnyConfigProducer
 {
-    private static final long serialVersionUID = 1L;
     private final List<Service> descendantServices = new ArrayList<>();
     private final FreezableMap<String, CHILD> childrenBySubId = new FreezableMap<>(LinkedHashMap.class);
 

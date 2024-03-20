@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.tensor.functions;
 
 import com.yahoo.api.annotations.Beta;
@@ -52,7 +52,7 @@ public class Slice<NAMETYPE extends Name> extends PrimitiveTensorFunction<NAMETY
     public List<TensorFunction<NAMETYPE>> selectorFunctions() {
         var result = new ArrayList<TensorFunction<NAMETYPE>>();
         for (var dimVal : subspaceAddress) {
-            dimVal.index().ifPresent(fun -> fun.asTensorFunction().ifPresent(tf -> result.add(tf)));
+            dimVal.index().flatMap(ScalarFunction::asTensorFunction).ifPresent(result::add);
         }
         return result;
     }
@@ -131,7 +131,7 @@ public class Slice<NAMETYPE extends Name> extends PrimitiveTensorFunction<NAMETY
         for (int i = 0; i < address.size(); i++) {
             String dimension = type.dimensions().get(i).name();
             if (subspaceType.dimension(type.dimensions().get(i).name()).isPresent())
-                b.add(dimension, address.label(i));
+                b.add(dimension, address.numericLabel(i));
         }
         return b.build();
     }
@@ -278,10 +278,11 @@ public class Slice<NAMETYPE extends Name> extends PrimitiveTensorFunction<NAMETY
         }
 
         private String valueToString(ToStringContext<NAMETYPE> context) {
-            if (label != null)
-                return label;
-            else
+            if (label != null) {
+                return TensorAddress.labelToString(label);
+            } else {
                 return index.toString(context);
+            }
         }
 
         @Override

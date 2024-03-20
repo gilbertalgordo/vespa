@@ -1,9 +1,10 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include "weighted_set_term_blueprint.h"
 #include "weighted_set_term_search.h"
 #include "orsearch.h"
 #include "matching_elements_search.h"
+#include "flow_tuning.h"
 #include <vespa/searchlib/common/matching_elements.h>
 #include <vespa/searchlib/common/matching_elements_fields.h>
 #include <vespa/vespalib/objects/visit.hpp>
@@ -92,12 +93,23 @@ WeightedSetTermBlueprint::addTerm(Blueprint::UP term, int32_t weight, HitEstimat
     _terms.push_back(std::move(term));
 }
 
+FlowStats
+WeightedSetTermBlueprint::calculate_flow_stats(uint32_t docid_limit) const
+{
+    for (auto &term: _terms) {
+        term->update_flow_stats(docid_limit);
+    }
+    double est = OrFlow::estimate_of(_terms);
+    return {est, OrFlow::cost_of(_terms, false),
+            OrFlow::cost_of(_terms, true) + flow::heap_cost(est, _terms.size())};
+}
+
 SearchIterator::UP
 WeightedSetTermBlueprint::createLeafSearch(const fef::TermFieldMatchDataArray &tfmda, bool) const
 {
     assert(tfmda.size() == 1);
     if ((_terms.size() == 1) && tfmda[0]->isNotNeeded()) {
-        if (LeafBlueprint * leaf = _terms[0]->asLeaf(); leaf != nullptr) {
+        if (const LeafBlueprint * leaf = _terms[0]->asLeaf(); leaf != nullptr) {
             // Always returnin a strict iterator independently of what was required,
             // as that is what we do with all the children when there are more.
             return leaf->createLeafSearch(tfmda, true);

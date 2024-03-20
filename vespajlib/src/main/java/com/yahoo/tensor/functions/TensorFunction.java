@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.tensor.functions;
 
 import com.yahoo.tensor.Tensor;
@@ -44,7 +44,7 @@ public abstract class TensorFunction<NAMETYPE extends Name> {
      *
      * @param context a context which must be passed to all nested functions when evaluating
      */
-    public abstract Tensor evaluate(EvaluationContext<NAMETYPE>  context);
+    public abstract Tensor evaluate(EvaluationContext<NAMETYPE> context);
 
     /**
      * Returns the type of the tensor this produces given the input types in the context

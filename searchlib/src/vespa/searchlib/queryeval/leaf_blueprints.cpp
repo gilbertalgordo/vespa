@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include "leaf_blueprints.h"
 #include "emptysearch.h"
@@ -9,6 +9,12 @@
 namespace search::queryeval {
 
 //-----------------------------------------------------------------------------
+
+FlowStats
+EmptyBlueprint::calculate_flow_stats(uint32_t docid_limit) const
+{
+    return default_flow_stats(docid_limit, 0, 0);
+}
 
 SearchIterator::UP
 EmptyBlueprint::createLeafSearch(const search::fef::TermFieldMatchDataArray &, bool) const
@@ -25,6 +31,12 @@ EmptyBlueprint::createFilterSearch(bool /*strict*/, FilterConstraint /* constrai
 EmptyBlueprint::EmptyBlueprint(FieldSpecBaseList fields)
     : SimpleLeafBlueprint(std::move(fields))
 {
+}
+
+FlowStats
+AlwaysTrueBlueprint::calculate_flow_stats(uint32_t docid_limit) const
+{
+    return default_flow_stats(docid_limit, docid_limit, 0);
 }
 
 SearchIterator::UP
@@ -45,6 +57,12 @@ AlwaysTrueBlueprint::AlwaysTrueBlueprint() : SimpleLeafBlueprint()
 }
 
 //-----------------------------------------------------------------------------
+
+FlowStats
+SimpleBlueprint::calculate_flow_stats(uint32_t docid_limit) const
+{
+    return default_flow_stats(docid_limit, _result.getHitCount(), 0);
+}
 
 SearchIterator::UP
 SimpleBlueprint::createLeafSearch(const search::fef::TermFieldMatchDataArray &, bool strict) const
@@ -107,7 +125,7 @@ struct FakeContext : attribute::ISearchContext {
         int32_t ignore_weight;
         return onFind(docid, elem, ignore_weight);
     }
-    unsigned int approximateHits() const override { return 0; }
+    attribute::HitEstimate calc_hit_estimate() const override { return attribute::HitEstimate(0); }
     std::unique_ptr<SearchIterator> createIterator(fef::TermFieldMatchData *, bool) override { abort(); }
     void fetchPostings(const ExecuteInfo &) override { }
     bool valid() const override { return true; }

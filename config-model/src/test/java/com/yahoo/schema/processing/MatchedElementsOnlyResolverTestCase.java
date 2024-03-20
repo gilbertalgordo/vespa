@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.schema.processing;
 
 import com.yahoo.schema.RankProfileRegistry;
@@ -72,7 +72,7 @@ public class MatchedElementsOnlyResolverTestCase {
     @Test
     void explicit_complex_summary_field_can_use_filter_transform_with_reference_to_source_field() throws ParseException {
         String documentSummary = joinLines("document-summary my_summary {",
-                "  summary my_filter_field type map<string, string> {",
+                "  summary my_filter_field {",
                 "    source: my_field",
                 "    matched-elements-only",
                 "  }",
@@ -123,7 +123,7 @@ public class MatchedElementsOnlyResolverTestCase {
     @Test
     void explicit_summary_field_can_use_filter_transform_with_reference_to_attribute_source_field() throws ParseException {
         String documentSummary = joinLines("document-summary my_summary {",
-                "  summary my_filter_field type array<string> {",
+                "  summary my_filter_field {",
                 "    source: my_field",
                 "    matched-elements-only",
                 "  }",
@@ -148,7 +148,7 @@ public class MatchedElementsOnlyResolverTestCase {
                     "  summary: matched-elements-only",
                     "}"));
         });
-        assertTrue(exception.getMessage().contains("For schema 'test', document summary 'default', summary field 'my_field': " +
+        assertTrue(exception.getMessage().contains("For schema 'test', document-summary 'default', summary field 'my_field': " +
                 "'matched-elements-only' is not supported for this field type. " +
                 "Supported field types are: array of primitive, weighted set of primitive, " +
                 "array of simple struct, map of primitive type to simple struct, " +

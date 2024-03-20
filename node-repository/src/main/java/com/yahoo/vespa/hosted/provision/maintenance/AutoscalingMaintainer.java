@@ -1,6 +1,7 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.hosted.provision.maintenance;
 
+import ai.vespa.metrics.ConfigServerMetrics;
 import com.yahoo.config.provision.ApplicationId;
 import com.yahoo.config.provision.ApplicationLockException;
 import com.yahoo.config.provision.ClusterResources;
@@ -8,7 +9,7 @@ import com.yahoo.config.provision.ClusterSpec;
 import com.yahoo.config.provision.Deployer;
 import com.yahoo.jdisc.Metric;
 import com.yahoo.vespa.flags.BooleanFlag;
-import com.yahoo.vespa.flags.FetchVector;
+import com.yahoo.vespa.flags.Dimension;
 import com.yahoo.vespa.flags.PermanentFlags;
 import com.yahoo.vespa.hosted.provision.Node;
 import com.yahoo.vespa.hosted.provision.NodeList;
@@ -59,7 +60,7 @@ public class AutoscalingMaintainer extends NodeRepositoryMaintainer {
         int failures = 0;
         outer:
         for (var applicationNodes : activeNodesByApplication().entrySet()) {
-            boolean enabled = enabledFlag.with(FetchVector.Dimension.INSTANCE_ID,
+            boolean enabled = enabledFlag.with(Dimension.INSTANCE_ID,
                                                applicationNodes.getKey().serializedForm()).value();
             if (!enabled) continue;
             for (var clusterNodes : nodesByCluster(applicationNodes.getValue()).entrySet()) {
@@ -156,6 +157,16 @@ public class AutoscalingMaintainer extends NodeRepositoryMaintainer {
     private void logAutoscaling(ClusterResources from, ClusterResources to, ApplicationId application, NodeList clusterNodes) {
         log.info("Autoscaling " + application + " " + clusterNodes.clusterSpec() + ":" +
                  "\nfrom " + toString(from) + "\nto   " + toString(to));
+        metric.add(ConfigServerMetrics.CLUSTER_AUTOSCALED.baseName(), 1,
+                   metric.createContext(dimensions(application, clusterNodes.clusterSpec())));
+    }
+
+    private static Map<String, String> dimensions(ApplicationId application, ClusterSpec clusterSpec) {
+        return Map.of("tenantName", application.tenant().value(),
+                      "applicationId", application.serializedForm().replace(':', '.'),
+                      "app", application.application().value() + "." + application.instance().value(),
+                      "clusterid", clusterSpec.id().value(),
+                      "clustertype", clusterSpec.type().name());
     }
 
     static String toString(ClusterResources r) {

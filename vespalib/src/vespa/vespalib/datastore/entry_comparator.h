@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #pragma once
 
@@ -14,14 +14,14 @@ namespace vespalib::datastore {
  */
 class EntryComparator {
 public:
-    virtual ~EntryComparator() {}
+    virtual ~EntryComparator() = default;
 
     /**
      * Returns true if the value represented by lhs ref is less than the value represented by rhs ref.
      */
-    virtual bool less(const EntryRef lhs, const EntryRef rhs) const = 0;
-    virtual bool equal(const EntryRef lhs, const EntryRef rhs) const = 0;
-    virtual size_t hash(const EntryRef rhs) const = 0;
+    virtual bool less(const EntryRef lhs, const EntryRef rhs) const noexcept = 0;
+    virtual bool equal(const EntryRef lhs, const EntryRef rhs) const noexcept = 0;
+    virtual size_t hash(const EntryRef rhs) const noexcept = 0;
 };
 
 }

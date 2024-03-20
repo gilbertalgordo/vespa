@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.search.federation.sourceref;
 
 import com.yahoo.component.ComponentId;
@@ -56,12 +56,8 @@ public class SearchChainResolver {
             }
         };
 
-        public Builder addSearchChain(ComponentId searchChainId) {
-            return addSearchChain(searchChainId, Collections.<String>emptyList());
-        }
-
         public Builder addSearchChain(ComponentId searchChainId, FederationOptions federationOptions) {
-            return addSearchChain(searchChainId, federationOptions, Collections.<String>emptyList());
+            return addSearchChain(searchChainId, federationOptions, List.of());
         }
 
         public Builder addSearchChain(ComponentId searchChainId, List<String> documentTypes) {

@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.tensor.functions;
 
 import com.yahoo.tensor.Tensor;
@@ -133,6 +133,15 @@ public class SliceTestCase {
                      new Slice<>(new ConstantTensor<>(input),
                                  List.of(new Slice.DimensionValue<>(2)))
                      .toString());
+    }
+
+    @Test
+    public void testLabelsWithSpaceToString() {
+        Tensor input = Tensor.from("tensor(key{}):{a:1, 'b c':2}");
+        assertEquals("tensor(key{}):{a:1.0, 'b c':2.0}{key:'b c'}",
+                new Slice<>(new ConstantTensor<>(input),
+                        List.of(new Slice.DimensionValue<>("key", "b c")))
+                        .toString());
     }
 
 }

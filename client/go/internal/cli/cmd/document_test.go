@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 // document command tests
 // Author: bratseth
 
@@ -12,8 +12,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/vespa-engine/vespa/client/go/internal/ioutil"
 	"github.com/vespa-engine/vespa/client/go/internal/mock"
-	"github.com/vespa-engine/vespa/client/go/internal/util"
 	"github.com/vespa-engine/vespa/client/go/internal/vespa"
 )
 
@@ -129,7 +129,7 @@ func assertDocumentSend(args []string, expectedOperation string, expectedMethod 
 		}
 	}
 	if verbose {
-		expectedCurl := "curl -X " + expectedMethod + " -H 'Content-Type: application/json; charset=utf-8'"
+		expectedCurl := "curl -X " + expectedMethod + " -m 66 -H 'Content-Type: application/json; charset=utf-8'"
 		if expectedPayloadFile != "" {
 			expectedCurl += " --data-binary @" + expectedPayloadFile
 		}
@@ -148,7 +148,7 @@ func assertDocumentSend(args []string, expectedOperation string, expectedMethod 
 			Fields json.RawMessage `json:"fields"`
 		}
 		assert.Nil(t, json.Unmarshal(data, &expectedPayload))
-		assert.Equal(t, `{"fields":`+string(expectedPayload.Fields)+"}", util.ReaderToString(client.LastRequest.Body))
+		assert.Equal(t, `{"fields":`+string(expectedPayload.Fields)+"}", ioutil.ReaderToString(client.LastRequest.Body))
 	} else {
 		assert.Nil(t, client.LastRequest.Body)
 	}

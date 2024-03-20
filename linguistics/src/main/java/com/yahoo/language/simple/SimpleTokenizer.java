@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.language.simple;
 
 import com.yahoo.language.Language;
@@ -106,7 +106,7 @@ public class SimpleTokenizer implements Tokenizer {
             String oldToken = token;
             token = stemmer.stem(token);
             String newToken = token;
-            log.log(Level.FINEST, () -> "stem '" + oldToken+"' to '" + newToken+"'");
+            log.log(Level.FINEST, () -> "stem '" + oldToken + "' to '" + newToken + "'");
         }
         String result = token;
         log.log(Level.FINEST, () -> "processed token is: " + result);

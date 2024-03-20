@@ -1,6 +1,8 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.restapi;
 
+import ai.vespa.json.InvalidJsonException;
+import ai.vespa.json.Json;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.yahoo.container.jdisc.HttpResponse;
@@ -13,6 +15,7 @@ import com.yahoo.yolean.Exceptions;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.util.List;
 import java.util.Optional;
 import java.util.logging.Level;
@@ -31,6 +34,7 @@ public class RestApiMappers {
 
     static List<RequestMapperHolder<?>> DEFAULT_REQUEST_MAPPERS = List.of(
             new RequestMapperHolder<>(Slime.class, RestApiMappers::toSlime),
+            new RequestMapperHolder<>(Json.class, ctx -> toSlime(ctx).map(Json::of)),
             new RequestMapperHolder<>(JsonNode.class, ctx -> toJsonNode(ctx, ctx.jacksonJsonMapper())),
             new RequestMapperHolder<>(String.class, RestApiMappers::toString),
             new RequestMapperHolder<>(byte[].class, RestApiMappers::toByteArray),
@@ -41,10 +45,15 @@ public class RestApiMappers {
             new ResponseMapperHolder<>(HttpResponse.class, (context, entity) -> entity),
             new ResponseMapperHolder<>(String.class, (context, entity) -> new MessageResponse(entity)),
             new ResponseMapperHolder<>(Slime.class, (context, entity) -> new SlimeJsonResponse(entity)),
+            new ResponseMapperHolder<>(Json.class, (ctx, entity) -> new HttpResponse(200) {
+                @Override public void render(OutputStream out) throws IOException { out.write(entity.toJson(true).getBytes(UTF_8)); }
+                @Override public String getContentType() { return "application/json"; }
+            }),
             new ResponseMapperHolder<>(JsonNode.class,
                     (context, entity) -> new JacksonJsonResponse<>(200, entity, context.jacksonJsonMapper(), true)));
 
     static List<ExceptionMapperHolder<?>> DEFAULT_EXCEPTION_MAPPERS = List.of(
+            new ExceptionMapperHolder<>(InvalidJsonException.class, (ctx, e) -> ErrorResponse.badRequest(e.getMessage())),
             new ExceptionMapperHolder<>(RestApiException.class, (context, exception) -> exception.response()));
 
     private RestApiMappers() {}

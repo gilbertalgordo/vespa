@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #pragma once
 
@@ -39,7 +39,7 @@ public:
     }
 
     static std::shared_ptr<GlobalFilter> create();
-    static std::shared_ptr<GlobalFilter> create(std::vector<uint32_t> docids, uint32_t size);
+    static std::shared_ptr<GlobalFilter> create(const std::vector<uint32_t> & docids, uint32_t size);
     static std::shared_ptr<GlobalFilter> create(std::unique_ptr<BitVector> vector);
     static std::shared_ptr<GlobalFilter> create(std::vector<std::unique_ptr<BitVector>> vectors);
     static std::shared_ptr<GlobalFilter> create(Blueprint &blueprint, uint32_t docid_limit, vespalib::ThreadBundle &thread_bundle, Trace *trace);

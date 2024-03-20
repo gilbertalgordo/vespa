@@ -1,8 +1,7 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.search.grouping;
 
 import com.yahoo.vespa.config.search.AttributesConfig;
-import com.yahoo.container.QrSearchersConfig;
 import com.yahoo.search.Query;
 import com.yahoo.search.config.ClusterConfig;
 import com.yahoo.search.grouping.request.GroupingOperation;
@@ -191,17 +190,11 @@ public class GroupingValidatorTestCase {
     }
 
     private static void validateGrouping(String clusterName, AttributesConfig attributesConfig, Query query) {
-        QrSearchersConfig.Builder qrsConfig = new QrSearchersConfig.Builder().searchcluster(
-                new QrSearchersConfig.Searchcluster.Builder()
-                        .indexingmode(QrSearchersConfig.Searchcluster.Indexingmode.Enum.REALTIME)
-                        .name(clusterName));
-        ClusterConfig.Builder clusterConfig = new ClusterConfig.Builder().
-                clusterId(0).
-                clusterName("test");
-        new Execution(
-                new GroupingValidator(new QrSearchersConfig(qrsConfig),
-                        new ClusterConfig(clusterConfig),
-                        attributesConfig),
-                Execution.Context.createContextStub()).search(query);
+        ClusterConfig.Builder clusterConfig = new ClusterConfig.Builder()
+                .clusterName(clusterName)
+                .indexMode(ClusterConfig.IndexMode.Enum.INDEX);
+        new Execution(new GroupingValidator(clusterConfig.build(), attributesConfig),
+                      Execution.Context.createContextStub())
+                .search(query);
     }
 }

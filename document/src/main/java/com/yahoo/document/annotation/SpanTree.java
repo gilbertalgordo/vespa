@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.document.annotation;
 
 import com.google.common.collect.ImmutableMultiset;
@@ -19,10 +19,11 @@ import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * A SpanTree holds a root node of a tree of SpanNodes, and a List of Annotations pointing to these nodes
- * or each other.&nbsp;It also has a name.
+ * or each other. It also has a name.
  *
  * @author Einar M R Rosenvinge
  * @see com.yahoo.document.annotation.SpanNode
@@ -36,7 +37,7 @@ public class SpanTree implements Iterable<Annotation>, SpanNodeParent, Comparabl
     private StringFieldValue stringFieldValue;
 
     /**
-     * WARNING!&nbsp;Only to be used by deserializers!&nbsp;Creates an empty SpanTree instance.
+     * WARNING! Only to be used by deserializers! Creates an empty SpanTree instance.
      */
     public SpanTree() { }
 
@@ -65,8 +66,8 @@ public class SpanTree implements Iterable<Annotation>, SpanNodeParent, Comparabl
     public SpanTree(SpanTree otherToCopy) {
         name = otherToCopy.name;
         setRoot(copySpan(otherToCopy.root));
-        List<Annotation> annotationsToCopy = new ArrayList<Annotation>(otherToCopy.getAnnotations());
-        List<Annotation> newAnnotations = new ArrayList<Annotation>(annotationsToCopy.size());
+        List<Annotation> annotationsToCopy = new ArrayList<>(otherToCopy.getAnnotations());
+        List<Annotation> newAnnotations = new ArrayList<>(annotationsToCopy.size());
 
         for (Annotation otherAnnotationToCopy : annotationsToCopy) {
             newAnnotations.add(new Annotation(otherAnnotationToCopy));
@@ -153,7 +154,7 @@ public class SpanTree implements Iterable<Annotation>, SpanNodeParent, Comparabl
     }
 
     private IdentityHashMap<Annotation, Integer> getAnnotations(List<Annotation> annotationsToCopy) {
-        IdentityHashMap<Annotation, Integer> map = new IdentityHashMap<Annotation, Integer>();
+        IdentityHashMap<Annotation, Integer> map = new IdentityHashMap<>();
         for (int i = 0; i < annotationsToCopy.size(); i++) {
             map.put(annotationsToCopy.get(i), i);
         }
@@ -162,7 +163,7 @@ public class SpanTree implements Iterable<Annotation>, SpanNodeParent, Comparabl
 
 
     private List<SpanNode> getSpanNodes() {
-        ArrayList<SpanNode> nodes = new ArrayList<SpanNode>();
+        ArrayList<SpanNode> nodes = new ArrayList<>();
         nodes.add(root);
         Iterator<SpanNode> it = root.childIteratorRecursive();
         while (it.hasNext()) {
@@ -172,7 +173,7 @@ public class SpanTree implements Iterable<Annotation>, SpanNodeParent, Comparabl
     }
 
     private static IdentityHashMap<SpanNode, Integer> getSpanNodes(SpanTree otherToCopy) {
-        IdentityHashMap<SpanNode, Integer> map = new IdentityHashMap<SpanNode, Integer>();
+        IdentityHashMap<SpanNode, Integer> map = new IdentityHashMap<>();
         int spanNodeCounter = 0;
         map.put(otherToCopy.getRoot(), spanNodeCounter++);
         Iterator<SpanNode> it = otherToCopy.getRoot().childIteratorRecursive();
@@ -431,7 +432,7 @@ public class SpanTree implements Iterable<Annotation>, SpanNodeParent, Comparabl
     }
 
     /**
-     * Adds an Annotation to the internal list of annotations for this SpanTree.&nbsp;Use this when
+     * Adds an Annotation to the internal list of annotations for this SpanTree. Use this when
      * adding an Annotation that shall annotate a SpanNode. Upon return, Annotation.getSpanNode()
      * returns the given node.
      *
@@ -446,7 +447,7 @@ public class SpanTree implements Iterable<Annotation>, SpanNodeParent, Comparabl
     }
 
     /**
-     * Adds an Annotation to the internal list of annotations for this SpanTree.&nbsp;Use this when
+     * Adds an Annotation to the internal list of annotations for this SpanTree. Use this when
      * adding an Annotation that shall annotate a SpanNode. Upon return, Annotation.getSpanNode()
      * returns the given node. This one is unchecked and assumes that the SpanNode is valid and has
      * already been attached to the Annotation.
@@ -538,10 +539,7 @@ public class SpanTree implements Iterable<Annotation>, SpanNodeParent, Comparabl
         }
     }
 
-    /**
-     * Returns an Iterator over all annotations in this tree.&nbsp;Note that the iteration order is non-deterministic.
-     * @return an Iterator over all annotations in this tree.
-     */
+    /** Returns an Iterator over all annotations in this tree. Note that the iteration order is non-deterministic. */
     public Iterator<Annotation> iterator() {
         return annotations.annotations().iterator();
     }
@@ -641,7 +639,9 @@ public class SpanTree implements Iterable<Annotation>, SpanNodeParent, Comparabl
 
     @Override
     public String toString() {
-        return "SpanTree '" + name + "'";
+        return "SpanTree '" + name + "' with root: " + root +
+               ( annotations.annotations().size() > 5 ? "" :
+                 ", annotations: " + annotations.annotations().stream().map(Annotation::toString).collect(Collectors.joining(", ")));
     }
 
     @Override

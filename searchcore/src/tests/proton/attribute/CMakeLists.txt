@@ -1,4 +1,4 @@
-# Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+# Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 vespa_add_executable(searchcore_attribute_test_app TEST
     SOURCES
     attribute_test.cpp
@@ -21,6 +21,7 @@ vespa_add_executable(searchcore_attributeflush_test_app TEST
     searchcore_attribute
     searchcore_flushengine
     searchcore_pcommon
+    GTest::gtest
 )
 vespa_add_test(NAME searchcore_attributeflush_test_app COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/attributeflush_test.sh
                DEPENDS searchcore_attributeflush_test_app)

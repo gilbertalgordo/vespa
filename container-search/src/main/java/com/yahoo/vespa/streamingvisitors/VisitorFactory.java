@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.streamingvisitors;
 
 import com.yahoo.messagebus.routing.Route;
@@ -11,6 +11,6 @@ import com.yahoo.search.Query;
  */
 interface VisitorFactory {
 
-    Visitor createVisitor(Query query, String searchCluster, Route route, String documentType, int traceLevelOverride);
+    Visitor createVisitor(Query query, String searchCluster, Route route, String schema, int traceLevelOverride);
 
 }

@@ -1,15 +1,14 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.search.dispatch.rpc;
 
 import com.yahoo.compress.Compressor;
-import com.yahoo.prelude.fastsearch.VespaBackEndSearcher;
+import com.yahoo.prelude.fastsearch.VespaBackend;
 import com.yahoo.search.Query;
 import com.yahoo.search.dispatch.InvokerResult;
 import com.yahoo.search.dispatch.SearchInvoker;
 import com.yahoo.search.dispatch.rpc.Client.ProtobufResponse;
 import com.yahoo.search.dispatch.searchcluster.Node;
 import com.yahoo.search.result.ErrorMessage;
-import com.yahoo.search.searchchain.Execution;
 
 import java.io.IOException;
 import java.util.Optional;
@@ -26,7 +25,7 @@ public class RpcSearchInvoker extends SearchInvoker implements Client.ResponseRe
 
     private static final String RPC_METHOD = "vespa.searchprotocol.search";
 
-    private final VespaBackEndSearcher searcher;
+    private final VespaBackend searcher;
     private final Node node;
     private final RpcConnectionPool resourcePool;
     private final BlockingQueue<Client.ResponseOrError<ProtobufResponse>> responses;
@@ -35,7 +34,7 @@ public class RpcSearchInvoker extends SearchInvoker implements Client.ResponseRe
 
     private Query query;
 
-    RpcSearchInvoker(VespaBackEndSearcher searcher, CompressPayload compressor, Node node, RpcConnectionPool resourcePool, int maxHits) {
+    RpcSearchInvoker(VespaBackend searcher, CompressPayload compressor, Node node, RpcConnectionPool resourcePool, int maxHits) {
         super(Optional.of(node));
         this.searcher = searcher;
         this.node = node;
@@ -86,7 +85,7 @@ public class RpcSearchInvoker extends SearchInvoker implements Client.ResponseRe
     }
 
     @Override
-    protected InvokerResult getSearchResult(Execution execution) throws IOException {
+    protected InvokerResult getSearchResult() throws IOException {
         long timeLeftMs = query.getTimeLeft();
         if (timeLeftMs <= 0) {
             return errorResult(query, ErrorMessage.createTimeout("Timeout while waiting for " + getName()));

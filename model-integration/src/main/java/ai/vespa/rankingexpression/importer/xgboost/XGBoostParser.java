@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package ai.vespa.rankingexpression.importer.xgboost;
 
 import java.io.File;
@@ -6,9 +6,9 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
+import com.yahoo.json.Jackson;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 
 /**
  * @author grace-lam
@@ -26,7 +26,7 @@ class XGBoostParser {
      */
     XGBoostParser(String filePath) throws JsonProcessingException, IOException {
         this.xgboostTrees = new ArrayList<>();
-        ObjectMapper mapper = new ObjectMapper();
+        var mapper = Jackson.mapper();
         JsonNode forestNode = mapper.readTree(new File(filePath));
         for (JsonNode treeNode : forestNode) {
             this.xgboostTrees.add(mapper.treeToValue(treeNode, XGBoostTree.class));

@@ -1,6 +1,8 @@
 {
   "url" : "http://localhost:8080/nodes/v2/applications/tenant1.application1.instance1",
   "id" : "tenant1.application1.instance1",
+  "cloudAccount": "aws:111222333444",
+  "version": "5.104.142",
   "clusters" : {
     "id1" : {
       "type": "container",
@@ -43,39 +45,45 @@
           "architecture":"x86_64"
         }
       },
-      "suggested" : {
-        "status" : "unavailable",
-        "description" : "",
-        "resources" : {
-          "nodes": 6,
-          "groups": 2,
+      "suggestions": [
+        {
+          "at": 123,
+          "description": "",
+          "ideal": {
+            "cpu": 0.0,
+            "disk": 0.0,
+            "gpu": 0.0,
+            "gpuMemory": 0.0,
+            "memory": 0.0
+          },
+          "metrics": {
+            "cpuCostPerQuery": 0.0,
+            "growthRateHeadroom": 0.0,
+            "queryRate": 0.0
+          },
+          "peak": {
+            "cpu": 0.0,
+            "disk": 0.0,
+            "gpu": 0.0,
+            "gpuMemory": 0.0,
+            "memory": 0.0
+          },
           "resources": {
-            "vcpu": 3.0,
-            "memoryGb": 20.0,
-            "diskGb": 100.0,
-            "bandwidthGbps": 1.0,
-            "diskSpeed": "fast",
-            "storageType": "any",
-            "architecture": "any"
-          }
-        },
-        "at" : 123,
-        "peak" : {
-          "cpu" : 0.0,
-          "memory" : 0.0,
-          "disk" : 0.0
-        },
-        "ideal" : {
-          "cpu" : 0.0,
-          "memory" : 0.0,
-          "disk" : 0.0
-        },
-        "metrics" : {
-          "queryRate" : 0.0,
-          "growthRateHeadroom" : 0.0,
-          "cpuCostPerQuery" : 0.0
+            "groups": 2,
+            "nodes": 6,
+            "resources": {
+              "architecture": "any",
+              "bandwidthGbps": 1.0,
+              "diskGb": 100.0,
+              "diskSpeed": "fast",
+              "memoryGb": 20.0,
+              "storageType": "any",
+              "vcpu": 3.0
+            }
+          },
+          "status": "unavailable"
         }
-      },
+      ],
       "target" : {
         "status" : "unavailable",
         "description" : "",
@@ -96,12 +104,16 @@
         "peak" : {
           "cpu" : 0.1,
           "memory" : 0.2,
-          "disk" : 0.3
+          "disk" : 0.3,
+          "gpu": 0.0,
+          "gpuMemory": 0.0
         },
         "ideal" : {
           "cpu" : 0.4,
           "memory" : 0.5,
-          "disk" : 0.6
+          "disk" : 0.6,
+          "gpu": 0.0,
+          "gpuMemory": 0.0
         },
         "metrics" : {
           "queryRate" : 0.7,

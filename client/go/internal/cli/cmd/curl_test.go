@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package cmd
 
 import (
@@ -24,13 +24,5 @@ func TestCurl(t *testing.T) {
 	expected := fmt.Sprintf("curl --key %s --cert %s -v --data-urlencode 'arg=with space' http://127.0.0.1:8080/search\n",
 		filepath.Join(cli.config.homeDir, "t1.a1.i1", "data-plane-private-key.pem"),
 		filepath.Join(cli.config.homeDir, "t1.a1.i1", "data-plane-public-cert.pem"))
-	assert.Equal(t, expected, stdout.String())
-
-	assert.Nil(t, cli.Run("config", "set", "target", "local"))
-
-	stdout.Reset()
-	err = cli.Run("curl", "-a", "t1.a1.i1", "-s", "deploy", "-n", "/application/v4/tenant/foo")
-	assert.Nil(t, err)
-	expected = "curl http://127.0.0.1:19071/application/v4/tenant/foo\n"
 	assert.Equal(t, expected, stdout.String())
 }

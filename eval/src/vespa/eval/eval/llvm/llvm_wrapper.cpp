@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include <cmath>
 #include "llvm_wrapper.h"
@@ -454,6 +454,9 @@ struct FunctionBuilder : public NodeVisitor, public NodeTraverser {
     // tensor nodes (not supported in compiled expressions)
 
     void visit(const TensorMap &node) override {
+        make_error(node.num_children());
+    }
+    void visit(const TensorMapSubspaces &node) override {
         make_error(node.num_children());
     }
     void visit(const TensorJoin &node) override {

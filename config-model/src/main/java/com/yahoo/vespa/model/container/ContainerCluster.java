@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.model.container;
 
 import com.yahoo.cloud.config.ClusterInfoConfig;
@@ -166,7 +166,7 @@ public abstract class ContainerCluster<CONTAINER extends Container>
     private String hostClusterId = null;
     private String jvmGCOptions = null;
 
-    private boolean deferChangesUntilRestart = false;
+    private volatile boolean deferChangesUntilRestart = false;
     private boolean clientsLegacyMode;
     private List<Client> clients = List.of();
 

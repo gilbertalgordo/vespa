@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.indexinglanguage.expressions;
 
 import com.yahoo.document.DataType;
@@ -12,7 +12,6 @@ import com.yahoo.vespa.indexinglanguage.parser.IndexingInput;
 import com.yahoo.vespa.indexinglanguage.parser.ParseException;
 
 import java.util.Arrays;
-import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
@@ -49,7 +48,7 @@ public final class StatementExpression extends ExpressionList<Expression> {
     @Override
     public StatementExpression convertChildren(ExpressionConverter converter) {
         return new StatementExpression(asList().stream()
-                                               .map(child -> converter.convert(child))
+                                               .map(converter::convert)
                                                .filter(Objects::nonNull)
                                                .toList());
     }

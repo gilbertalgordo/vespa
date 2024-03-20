@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.jdisc.handler;
 
 import com.yahoo.jdisc.References;
@@ -27,7 +27,7 @@ import java.util.concurrent.TimeoutException;
  *
  * <p>The following is a simple example on how to use this class:</p>
  * <pre>
- * public void handleRequest(final Request parent, final ResponseHandler handler) {
+ * public void handleRequest(Request parent, ResponseHandler handler) {
  *     new RequestDispatch() {
  *         &#64;Override
  *         protected Request newRequest() {
@@ -80,8 +80,8 @@ public abstract class RequestDispatch implements Future<Response>, ResponseHandl
      * @return The ContentChannel to write the Request's content to.
      */
     public final ContentChannel connect() {
-        final Request request = newRequest();
-        try (final ResourceReference ref = References.fromResource(request)) {
+        Request request = newRequest();
+        try (ResourceReference ref = References.fromResource(request)) {
             return request.connect(futureResponse);
         }
     }
@@ -119,7 +119,7 @@ public abstract class RequestDispatch implements Future<Response>, ResponseHandl
                     try {
                         return futureResponse.get();
                     } catch (InterruptedException | ExecutionException e) {
-                        throw new IllegalStateException(e); // Should not happens since both futures are complete
+                        throw new IllegalStateException(e); // Should not happen since both futures are complete
                     }
                 });
     }

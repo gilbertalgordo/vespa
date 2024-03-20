@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #pragma once
 
@@ -46,6 +46,7 @@ public:
     bool dumpFeatures() const { return _dumpFeatures; }
 
     const fef::Properties &highlightTerms() const { return _highlightTerms; }
+    void highlightTerms(fef::Properties & terms) { _highlightTerms = terms; }
     void set_fields(const FieldSet& fields_in) { _fields = fields_in; }
     const FieldSet& get_fields() const { return _fields; }
     bool need_field(vespalib::stringref field) const;

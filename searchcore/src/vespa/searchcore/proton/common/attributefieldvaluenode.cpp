@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include "attributefieldvaluenode.h"
 #include "selectcontext.h"
@@ -7,9 +7,6 @@
 #include <vespa/searchlib/attribute/attribute_read_guard.h>
 #include <vespa/vespalib/util/exceptions.h>
 #include <cassert>
-
-#include <vespa/log/log.h>
-LOG_SETUP(".proton.common.attribute_field_value_node");
 
 namespace proton {
 
@@ -43,7 +40,7 @@ std::unique_ptr<document::select::Value>
 AttributeFieldValueNode::
 getValue(const Context &context) const
 {
-    const auto &sc(static_cast<const SelectContext &>(context));
+    const auto &sc(dynamic_cast<const SelectContext &>(context));
     uint32_t docId(sc._docId); 
     assert(docId != 0u);
     const auto& v = sc.guarded_attribute_at_index(_attr_guard_index);
@@ -57,7 +54,7 @@ getValue(const Context &context) const
                 content.fill(v, docId);
                 assert(content.size() == 1u);
                 return std::make_unique<StringValue>(content[0]);
-            };
+            }
         case BasicType::BOOL:
         case BasicType::UINT2:
         case BasicType::UINT4:
@@ -78,7 +75,7 @@ getValue(const Context &context) const
                 content.fill(v, docId);
                 assert(content.size() == 1u);
                 return std::make_unique<FloatValue>(content[0]);
-            };
+            }
         case BasicType::NONE:
         case BasicType::PREDICATE:
         case BasicType::TENSOR:
@@ -89,7 +86,7 @@ getValue(const Context &context) const
         case BasicType::MAX_TYPE:
             throw IllegalStateException(make_string("Attribute '%s' has illegal type '%d'", v.getName().c_str(), v.getBasicType()));
     }
-    return std::make_unique<NullValue>();;
+    return std::make_unique<NullValue>();
 
 }
 

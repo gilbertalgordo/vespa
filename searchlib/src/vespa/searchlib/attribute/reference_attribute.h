@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #pragma once
 
@@ -33,11 +33,12 @@ public:
     using ReferenceStore = vespalib::datastore::UniqueStore<Reference>;
     using ReferenceStoreIndices = vespalib::RcuVectorBase<AtomicEntryRef>;
     // Class used to map from target lid to source lids
-    using ReverseMapping = vespalib::btree::BTreeStore<uint32_t, vespalib::btree::BTreeNoLeafData,
-                                             vespalib::btree::NoAggregated,
-                                             std::less<uint32_t>,
-                                             vespalib::btree::BTreeDefaultTraits,
-                                             vespalib::btree::NoAggrCalc>;
+    using ReverseMapping = vespalib::btree::BTreeStore<uint32_t,
+                                                       vespalib::btree::BTreeNoLeafData,
+                                                       vespalib::btree::NoAggregated,
+                                                       std::less<uint32_t>,
+                                                       vespalib::btree::BTreeDefaultTraits,
+                                                       vespalib::btree::NoAggrCalc>;
     using TargetLids = ReferenceMappings::TargetLids;
     // Class used to map from target lid to source lids
     using ReverseMappingRefs = ReferenceMappings::ReverseMappingRefs;

@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.messagebus.network.local;
 
 import com.yahoo.component.Vtag;
@@ -87,19 +87,15 @@ public class LocalNetwork implements Network {
 
     private void receiveLater(MessageEnvelope envelope) {
         byte[] payload = envelope.sender.encode(envelope.msg.getProtocol(), envelope.msg);
-        executor.execute(new Runnable() {
-
-            @Override
-            public void run() {
-                Message msg = decode(envelope.msg.getProtocol(), payload, Message.class);
-                msg.getTrace().setLevel(envelope.msg.getTrace().getLevel());
-                msg.setRoute(envelope.msg.getRoute()).getRoute().removeHop(0);
-                msg.setRetryEnabled(envelope.msg.getRetryEnabled());
-                msg.setRetry(envelope.msg.getRetry());
-                msg.setTimeRemaining(envelope.msg.getTimeRemainingNow());
-                msg.pushHandler(reply -> new ReplyEnvelope(LocalNetwork.this, envelope, reply).send());
-                owner.deliverMessage(msg, ((LocalServiceAddress) envelope.recipient.getServiceAddress()).getSessionName());
-            }
+        executor.execute(() -> {
+            Message msg = decode(envelope.msg.getProtocol(), payload, Message.class);
+            msg.getTrace().setLevel(envelope.msg.getTrace().getLevel());
+            msg.setRoute(envelope.msg.getRoute()).getRoute().removeHop(0);
+            msg.setRetryEnabled(envelope.msg.getRetryEnabled());
+            msg.setRetry(envelope.msg.getRetry());
+            msg.setTimeRemaining(envelope.msg.getTimeRemainingNow());
+            msg.pushHandler(reply -> new ReplyEnvelope(LocalNetwork.this, envelope, reply).send());
+            owner.deliverMessage(msg, ((LocalServiceAddress) envelope.recipient.getServiceAddress()).getSessionName());
         });
     }
 

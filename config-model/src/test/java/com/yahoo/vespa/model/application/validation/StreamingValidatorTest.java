@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.model.application.validation;
 
 import com.yahoo.config.application.api.DeployLogger;
@@ -29,8 +29,12 @@ public class StreamingValidatorTest {
             new VespaModelCreatorWithFilePkg("src/test/cfg/application/validation/document_references_validation/")
                     .create();
         });
-        assertTrue(exception.getMessage().contains("For streaming search cluster 'content.ad': Attribute 'campaign_ref' has type 'Reference<campaign>'. " +
+        assertTrue(exception.getMessage().contains("For search cluster 'content', streaming schema 'ad': Attribute 'campaign_ref' has type 'Reference<campaign>'. " +
                 "Document references and imported fields are not allowed in streaming search."));
+    }
+
+    private static List<String> filter(List<String> warnings) {
+        return warnings.stream().filter(x -> x.indexOf("Cannot run program") == -1).toList();
     }
 
     @Test
@@ -38,7 +42,7 @@ public class StreamingValidatorTest {
         var logger = new TestableDeployLogger();
         var model = createModel(logger, "field nn type tensor(x[2]) { indexing: attribute | summary\n" +
                     "attribute { distance-metric: euclidean } }");
-        assertTrue(logger.warnings.isEmpty());
+        assertTrue(filter(logger.warnings).isEmpty());
     }
 
     @Test
@@ -46,9 +50,10 @@ public class StreamingValidatorTest {
         var logger = new TestableDeployLogger();
         var model = createModel(logger, "field nn type tensor(x[2]) { indexing: attribute | index | summary\n" +
                     "attribute { distance-metric: euclidean } }");
-        assertEquals(1, logger.warnings.size());
-        assertEquals("For streaming search cluster 'content.test', SD field 'nn': hnsw index is not relevant and not supported, ignoring setting",
-                logger.warnings.get(0));
+        var warnings = filter(logger.warnings);
+        assertEquals(1, warnings.size());
+        assertEquals("For search cluster 'content', streaming schema 'test', SD field 'nn': hnsw index is not relevant and not supported, ignoring setting",
+                     warnings.get(0));
     }
 
     private static VespaModel createModel(DeployLogger logger, String sdContent) {

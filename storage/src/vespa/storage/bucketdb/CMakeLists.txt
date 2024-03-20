@@ -1,4 +1,4 @@
-# Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+# Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 vespa_add_library(storage_bucketdb OBJECT
     SOURCES
     btree_bucket_database.cpp
@@ -13,5 +13,3 @@ vespa_add_library(storage_bucketdb OBJECT
     striped_btree_lockable_map.cpp
     DEPENDS
 )
-vespa_generate_config(storage_bucketdb stor-bucketdb.def)
-install_config_definition(stor-bucketdb.def vespa.config.content.core.stor-bucketdb.def)

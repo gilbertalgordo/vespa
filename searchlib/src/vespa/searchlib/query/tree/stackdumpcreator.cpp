@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include "stackdumpcreator.h"
 
@@ -9,6 +9,7 @@
 #include <vespa/vespalib/util/size_literals.h>
 #include <vespa/searchlib/parsequery/parse.h>
 #include <vespa/searchlib/util/rawbuf.h>
+#include <cassert>
 
 using vespalib::string;
 using std::vector;
@@ -50,6 +51,17 @@ class QueryNodeConverter : public QueryVisitor {
         _buf.append(&i, sizeof(uint8_t));
     }
 
+    void append_type_and_features(ParseItem::ItemType type, uint8_t item_features) {
+        uint32_t type_code = static_cast<uint32_t>(type);
+        assert(type_code < ParseItem::item_type_extension_mark + 0x80);
+        if (type_code >= ParseItem::item_type_extension_mark) {
+            appendByte(ParseItem::item_type_extension_mark | item_features);
+            appendByte(type - ParseItem::item_type_extension_mark);
+        } else {
+            appendByte(type_code | item_features);
+        }
+    }
+
     void appendDouble(double i) {
         _buf.preAlloc(sizeof(double));
         double nboVal = vespalib::nbo::n2h(i);
@@ -61,7 +73,7 @@ class QueryNodeConverter : public QueryVisitor {
     template <typename V>
     void appendPredicateQueryTermVector(const V& v);
 
-    void createComplexIntermediate(const Term &node, const std::vector<Node *> & children, size_t type) {
+    void createComplexIntermediate(const Term &node, const std::vector<Node *> & children, ParseItem::ItemType type, uint8_t features) {
         uint8_t flags = 0;
         if (!node.isRanked()) {
             flags |= ParseItem::IFLAG_NORANK;
@@ -70,11 +82,11 @@ class QueryNodeConverter : public QueryVisitor {
             flags |= ParseItem::IFLAG_NOPOSITIONDATA;
         }
         if (flags != 0) {
-            type |= ParseItem::IF_FLAGS;
+            features |= ParseItem::IF_FLAGS;
         }
-        appendByte(type);
+        append_type_and_features(type, features);
         appendCompressedNumber(node.getWeight().percent());
-        if (type & ParseItem::IF_FLAGS) {
+        if ((features & ParseItem::IF_FLAGS) != 0) {
             appendByte(flags);
         }
         appendCompressedPositiveNumber(children.size());
@@ -82,30 +94,30 @@ class QueryNodeConverter : public QueryVisitor {
         visitNodes(children);
     }
 
-    void createIntermediate(const Intermediate &node, size_t type) {
-        appendByte(type);
+    void createIntermediate(const Intermediate &node, ParseItem::ItemType type) {
+        append_type_and_features(type, 0);
         appendCompressedPositiveNumber(node.getChildren().size());
         visitNodes(node.getChildren());
     }
 
-    void createIntermediate(const Intermediate &node, size_t type, size_t distance) {
-        appendByte(type);
+    void createIntermediate(const Intermediate &node, ParseItem::ItemType type, size_t distance) {
+        append_type_and_features(type, 0);
         appendCompressedPositiveNumber(node.getChildren().size());
         appendCompressedPositiveNumber(distance);
         visitNodes(node.getChildren());
     }
 
-    void createIntermediate(const Intermediate &node, size_t type, const vespalib::string & view) {
-        appendByte(type);
+    void createIntermediate(const Intermediate &node, ParseItem::ItemType type, const vespalib::string & view) {
+        append_type_and_features(type, 0);
         appendCompressedPositiveNumber(node.getChildren().size());
         appendString(view);
         visitNodes(node.getChildren());
     }
 
-    void createIntermediate(const Intermediate &node, size_t type, size_t distance, const vespalib::string & view) {
-        appendByte(type);
+    void createIntermediateX(const Intermediate &node, ParseItem::ItemType type, size_t target_num_hits, const vespalib::string & view) {
+        append_type_and_features(type, 0);
         appendCompressedPositiveNumber(node.getChildren().size());
-        appendCompressedPositiveNumber(distance);
+        appendCompressedPositiveNumber(target_num_hits);
         appendString(view);
         visitNodes(node.getChildren());
     }
@@ -131,7 +143,7 @@ class QueryNodeConverter : public QueryVisitor {
     }
 
     void visit(WeakAnd &node) override {
-        createIntermediate(node, ParseItem::ITEM_WEAK_AND, node.getMinHits(), node.getView());
+        createIntermediateX(node, ParseItem::ITEM_WEAK_AND, node.getTargetNumHits(), node.getView());
     }
 
     void visit(Equiv &node) override {
@@ -143,11 +155,11 @@ class QueryNodeConverter : public QueryVisitor {
     }
 
     void visit(Phrase &node) override {
-        createComplexIntermediate(node, node.getChildren(), (static_cast<uint8_t>(ParseItem::ITEM_PHRASE) | static_cast<uint8_t>(ParseItem::IF_WEIGHT)));
+        createComplexIntermediate(node, node.getChildren(), ParseItem::ITEM_PHRASE, static_cast<uint8_t>(ParseItem::IF_WEIGHT));
     }
 
     template <typename NODE>
-    void createWeightedSet(NODE &node, uint8_t typefield) {
+    void createWeightedSet(NODE &node, ParseItem::ItemType type, uint8_t features) {
         uint8_t flags = 0;
         if (!node.isRanked()) {
             flags |= ParseItem::IFLAG_NORANK;
@@ -158,11 +170,13 @@ class QueryNodeConverter : public QueryVisitor {
             flags |= ParseItem::IFLAG_NOPOSITIONDATA;
         }
         if (flags != 0) {
-            typefield |= ParseItem::IF_FLAGS;
+            features |= ParseItem::IF_FLAGS;
         }
-        appendByte(typefield);
-        appendCompressedNumber(node.getWeight().percent());
-        if (typefield & ParseItem::IF_FLAGS) {
+        append_type_and_features(type, features);
+        if ((features & ParseItem::IF_WEIGHT) != 0) {
+            appendCompressedNumber(node.getWeight().percent());
+        }
+        if ((features & ParseItem::IF_FLAGS) != 0) {
             appendByte(flags);
         }
         appendCompressedPositiveNumber(node.getNumTerms());
@@ -172,25 +186,24 @@ class QueryNodeConverter : public QueryVisitor {
     void createMultiTermNodes(const MultiTerm & mt) {
         for (size_t i = 0; i < mt.getNumTerms(); ++i) {
             auto term = mt.getAsString(i);
-            uint8_t typeField = static_cast<uint8_t>(ParseItem::ITEM_PURE_WEIGHTED_STRING) | static_cast<uint8_t>(ParseItem::IF_WEIGHT);
-            appendByte(typeField);
+            append_type_and_features(ParseItem::ITEM_PURE_WEIGHTED_STRING, static_cast<uint8_t>(ParseItem::IF_WEIGHT));
             appendCompressedNumber(term.second.percent());
             appendString(term.first);
         }
     }
 
     void visit(WeightedSetTerm &node) override {
-        createWeightedSet(node, static_cast<uint8_t>(ParseItem::ITEM_WEIGHTED_SET) | static_cast<uint8_t>(ParseItem::IF_WEIGHT));
+        createWeightedSet(node, ParseItem::ITEM_WEIGHTED_SET, static_cast<uint8_t>(ParseItem::IF_WEIGHT));
         createMultiTermNodes(node);
     }
 
     void visit(DotProduct &node) override {
-        createWeightedSet(node, static_cast<uint8_t>(ParseItem::ITEM_DOT_PRODUCT) | static_cast<uint8_t>(ParseItem::IF_WEIGHT));
+        createWeightedSet(node, ParseItem::ITEM_DOT_PRODUCT, static_cast<uint8_t>(ParseItem::IF_WEIGHT));
         createMultiTermNodes(node);
     }
 
     void visit(WandTerm &node) override {
-        createWeightedSet(node, static_cast<uint8_t>(ParseItem::ITEM_WAND) | static_cast<uint8_t>(ParseItem::IF_WEIGHT));
+        createWeightedSet(node, ParseItem::ITEM_WAND, static_cast<uint8_t>(ParseItem::IF_WEIGHT));
         appendCompressedPositiveNumber(node.getTargetNumHits());
         appendDouble(node.getScoreThreshold());
         appendDouble(node.getThresholdBoostFactor());
@@ -203,8 +216,8 @@ class QueryNodeConverter : public QueryVisitor {
 
     template <typename T> void appendTerm(const TermBase<T> &node);
 
-    void createTermNode(const TermNode &node, size_t type) {
-        uint8_t typefield = type | ParseItem::IF_WEIGHT | ParseItem::IF_UNIQUEID;
+    void createTermNode(const TermNode &node, ParseItem::ItemType type) {
+        uint8_t features = ParseItem::IF_WEIGHT | ParseItem::IF_UNIQUEID;
         uint8_t flags = 0;
         if (!node.isRanked()) {
             flags |= ParseItem::IFLAG_NORANK;
@@ -213,19 +226,19 @@ class QueryNodeConverter : public QueryVisitor {
             flags |= ParseItem::IFLAG_NOPOSITIONDATA;
         }
         if (flags != 0) {
-            typefield |= ParseItem::IF_FLAGS;
+            features |= ParseItem::IF_FLAGS;
         }
-        appendByte(typefield);
+        append_type_and_features(type, features);
         appendCompressedNumber(node.getWeight().percent());
         appendCompressedPositiveNumber(node.getId());
-        if (typefield & ParseItem::IF_FLAGS) {
+        if ((features & ParseItem::IF_FLAGS) != 0) {
             appendByte(flags);
         }
         appendString(node.getView());
     }
 
     template <class Term>
-    void createTerm(const Term &node, size_t type) {
+    void createTerm(const Term &node, ParseItem::ItemType type) {
         createTermNode(node, type);
         appendTerm(node);
     }
@@ -239,11 +252,11 @@ class QueryNodeConverter : public QueryVisitor {
     }
 
     void visit(TrueQueryNode &) override {
-        appendByte(ParseItem::ITEM_TRUE);
+        append_type_and_features(ParseItem::ITEM_TRUE, 0);
     }
 
     void visit(FalseQueryNode &) override {
-        appendByte(ParseItem::ITEM_FALSE);
+        append_type_and_features(ParseItem::ITEM_FALSE, 0);
     }
 
     void visit(PrefixTerm &node) override {
@@ -287,6 +300,22 @@ class QueryNodeConverter : public QueryVisitor {
         appendCompressedPositiveNumber(node.get_allow_approximate() ? 0x1 : 0x0);
         appendCompressedPositiveNumber(node.get_explore_additional_hits());
         appendDouble(node.get_distance_threshold());
+    }
+
+    void visit(InTerm& node) override {
+        bool is_string = (node.getType() == MultiTerm::Type::STRING);
+        auto item_type = is_string  ? ParseItem::ITEM_STRING_IN : ParseItem::ITEM_NUMERIC_IN;
+        createWeightedSet(node, item_type, 0);
+        auto num_terms = node.getNumTerms();
+        if (is_string) {
+            for (size_t i = 0; i < num_terms; ++i) {
+                appendString(node.getAsString(i).first);
+            }
+        } else {
+            for (size_t i = 0; i < num_terms; ++i) {
+                appendLong(node.getAsInteger(i).first);
+            }
+        }
     }
 
 public:

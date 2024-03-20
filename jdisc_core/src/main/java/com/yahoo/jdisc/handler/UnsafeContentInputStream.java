@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.jdisc.handler;
 
 import java.io.IOException;
@@ -109,9 +109,10 @@ public class UnsafeContentInputStream extends InputStream {
         if (marked == null) {
             throw new IOException("mark has not been called, or too much has been read since marked.");
         }
-        ByteBuffer newBuf = ByteBuffer.allocate(readSinceMarked + currBuf.remaining());
+        var remainingInCurrent = currBuf == null ? 0 : currBuf.remaining();
+        ByteBuffer newBuf = ByteBuffer.allocate(readSinceMarked + remainingInCurrent);
         newBuf.put(marked, 0, readSinceMarked);
-        newBuf.put(currBuf);
+        if (remainingInCurrent > 0) newBuf.put(currBuf);
         newBuf.flip();
         currBuf = newBuf;
         marked = null;

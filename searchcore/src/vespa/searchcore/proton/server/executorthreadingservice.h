@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 #pragma once
 
 #include "executor_thread_service.h"
@@ -22,7 +22,6 @@ private:
     using Registration = std::unique_ptr<vespalib::IDestructorCallback>;
     vespalib::Executor                                 & _sharedExecutor;
     FNET_Transport                                     & _transport;
-    const vespalib::Clock                              & _clock;
     vespalib::ThreadStackExecutor                        _masterExecutor;
     std::atomic<uint32_t>                                _master_task_limit;
     std::unique_ptr<vespalib::SyncableThreadExecutor>    _indexExecutor;
@@ -39,12 +38,10 @@ public:
      */
     ExecutorThreadingService(vespalib::Executor& sharedExecutor,
                              FNET_Transport& transport,
-                             const vespalib::Clock& clock,
                              vespalib::ISequencedTaskExecutor& field_writer);
 
     ExecutorThreadingService(vespalib::Executor& sharedExecutor,
                              FNET_Transport & transport,
-                             const vespalib::Clock & clock,
                              vespalib::ISequencedTaskExecutor& field_writer,
                              vespalib::InvokeService * invokeService,
                              const ThreadingServiceConfig& cfg);
@@ -77,7 +74,6 @@ public:
 
     vespalib::ISequencedTaskExecutor &field_writer() override;
     FNET_Transport &transport() override { return _transport; }
-    const vespalib::Clock &clock() const override { return _clock; }
     ExecutorThreadingServiceStats getStats();
 };
 

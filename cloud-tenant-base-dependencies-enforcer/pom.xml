@@ -1,5 +1,5 @@
 <?xml version="1.0"?>
-<!-- Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root. -->
+<!-- Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root. -->
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
@@ -58,7 +58,6 @@
                                         <include>com.sun.activation:javax.activation:[1.2.0, 2):provided</include>
                                         <include>com.sun.xml.bind:jaxb-core:${jaxb-core.vespa.version}:provided</include>
                                         <include>com.sun.xml.bind:jaxb-impl:${jaxb-impl.vespa.version}:provided</include>
-                                        <include>commons-logging:commons-logging:${commons-logging.vespa.version}:provided</include>
                                         <include>javax.inject:javax.inject:${javax.inject.vespa.version}:provided</include>
                                         <include>javax.servlet:javax.servlet-api:${javax.servlet-api.vespa.version}:provided</include>
                                         <include>javax.ws.rs:javax.ws.rs-api:${javax.ws.rs-api.vespa.version}:provided</include>
@@ -110,7 +109,6 @@
                                         <include>com.yahoo.vespa:vespalog:*:provided</include>
 
                                         <!-- Vespa test dependencies -->
-                                        <include>com.yahoo.vespa:airlift-zstd:*:test</include>
                                         <include>com.yahoo.vespa:application:*:test</include>
                                         <include>com.yahoo.vespa:cloud-tenant-cd:*:test</include>
                                         <include>com.yahoo.vespa:config-application-package:*:test</include>
@@ -143,6 +141,7 @@
                                         <include>com.microsoft.onnxruntime:onnxruntime:jar:${onnxruntime.vespa.version}:test</include>
                                         <include>com.thaiopensource:jing:20091111:test</include>
                                         <include>commons-codec:commons-codec:${commons-codec.vespa.version}:test</include>
+                                        <include>io.airlift:aircompressor:${aircompressor.vespa.version}:test</include>
                                         <include>io.airlift:airline:${airline.vespa.version}:test</include>
                                         <include>io.prometheus:simpleclient:${prometheus.client.vespa.version}:test</include>
                                         <include>io.prometheus:simpleclient_common:${prometheus.client.vespa.version}:test</include>
@@ -155,7 +154,6 @@
                                         <include>net.openhft:zero-allocation-hashing:jar:${zero-allocation-hashing.vespa.version}:test</include>
                                         <include>org.antlr:antlr-runtime:${antlr.vespa.version}:test</include>
                                         <include>org.antlr:antlr4-runtime:${antlr4.vespa.version}:test</include>
-                                        <include>org.apache.commons:commons-exec:${commons-exec.vespa.version}:test</include>
                                         <include>org.apache.commons:commons-math3:${commons.math3.vespa.version}:test</include>
                                         <include>org.apache.felix:org.apache.felix.framework:${felix.vespa.version}:test</include>
                                         <include>org.apache.felix:org.apache.felix.log:${felix.log.vespa.version}:test</include>

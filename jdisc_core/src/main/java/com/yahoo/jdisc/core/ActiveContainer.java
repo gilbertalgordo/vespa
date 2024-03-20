@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.jdisc.core;
 
 import com.google.inject.AbstractModule;
@@ -37,12 +37,12 @@ public class ActiveContainer extends AbstractResource implements CurrentContaine
         serverProviders = builder.serverProviders().activate();
         serverProviders.forEach(resourceReferences::retain);
         serverBindings = builder.activateServerBindings();
-        serverBindings.forEach(
-                (ignoredName, bindingSet) -> bindingSet.forEach(
+        serverBindings.values().forEach(
+                bindingSet -> bindingSet.forEach(
                         binding -> resourceReferences.retain(binding.getValue())));
         clientBindings = builder.activateClientBindings();
-        clientBindings.forEach(
-                (ignoredName, bindingSet) -> bindingSet.forEach(
+        clientBindings.values().forEach(
+                bindingSet -> bindingSet.forEach(
                         binding -> resourceReferences.retain(binding.getValue())));
         bindingSetSelector = builder.getInstance(BindingSetSelector.class);
         timeoutMgr = builder.getInstance(TimeoutManagerImpl.class);
@@ -55,7 +55,7 @@ public class ActiveContainer extends AbstractResource implements CurrentContaine
             }
         });
         guiceInjector = builder.guiceModules().activate();
-        termination = new ContainerTermination(builder.appContext());
+        termination = new ContainerTermination(builder.appContext(), refer());
     }
 
     @Override

@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 // status command tests
 // Author: bratseth
 
@@ -38,12 +38,18 @@ func TestStatusCommandMultiCluster(t *testing.T) {
 	mockServiceStatus(client)
 	assert.NotNil(t, cli.Run("status"))
 	assert.Equal(t, "Error: no services exist\nHint: Deployment may not be ready yet\nHint: Try 'vespa status deployment'\n", stderr.String())
+	stderr.Reset()
 
 	mockServiceStatus(client, "foo", "bar")
-	assert.Nil(t, cli.Run("status"))
+	client.NextStatus(200)
+	client.NextStatus(400) // One cluster is unavilable
+	assert.NotNil(t, cli.Run("status"))
 	assert.Equal(t, `Container bar at http://127.0.0.1:8080 is ready
-Container foo at http://127.0.0.1:8080 is ready
+Container foo at http://127.0.0.1:8080 is not ready: unhealthy container foo: status 400 at http://127.0.0.1:8080/status.html: aborting wait: got status 400
 `, stdout.String())
+	assert.Equal(t,
+		"Error: services not ready: foo\n",
+		stderr.String())
 
 	stdout.Reset()
 	mockServiceStatus(client, "foo", "bar")
@@ -60,7 +66,7 @@ func TestStatusCommandMultiClusterWait(t *testing.T) {
 	client.NextStatus(400)
 	assert.NotNil(t, cli.Run("status", "--cluster", "foo", "--wait", "10"))
 	assert.Equal(t, "Waiting up to 10s for cluster discovery...\nWaiting up to 10s for container foo...\n"+
-		"Error: unhealthy container foo after waiting up to 10s: status 400 at http://127.0.0.1:8080/ApplicationStatus: aborting wait: got status 400\n", stderr.String())
+		"Error: unhealthy container foo after waiting up to 10s: status 400 at http://127.0.0.1:8080/status.html: aborting wait: got status 400\n", stderr.String())
 }
 
 func TestStatusCommandWithUrlTarget(t *testing.T) {
@@ -75,18 +81,25 @@ func TestStatusError(t *testing.T) {
 	client := &mock.HTTPClient{}
 	mockServiceStatus(client, "default")
 	client.NextStatus(500)
-	cli, _, stderr := newTestCLI(t)
+	cli, stdout, stderr := newTestCLI(t)
 	cli.httpClient = client
 	assert.NotNil(t, cli.Run("status", "container"))
 	assert.Equal(t,
-		"Error: unhealthy container default: status 500 at http://127.0.0.1:8080/ApplicationStatus: wait timed out\n",
+		"Container default at http://127.0.0.1:8080 is not ready: unhealthy container default: status 500 at http://127.0.0.1:8080/status.html: giving up\n",
+		stdout.String())
+	assert.Equal(t,
+		"Error: services not ready: default\n",
 		stderr.String())
 
+	stdout.Reset()
 	stderr.Reset()
 	client.NextResponseError(io.EOF)
 	assert.NotNil(t, cli.Run("status", "container", "-t", "http://example.com"))
 	assert.Equal(t,
-		"Error: unhealthy container at http://example.com/ApplicationStatus: EOF\n",
+		"Container at http://example.com is not ready: unhealthy container at http://example.com/status.html: EOF\n",
+		stdout.String())
+	assert.Equal(t,
+		"Error: services not ready: http://example.com\n",
 		stderr.String())
 }
 
@@ -109,13 +122,13 @@ func TestStatusLocalDeployment(t *testing.T) {
 	resp.Body = []byte(`{"currentGeneration": 42, "converged": false}`)
 	client.NextResponse(resp)
 	assert.NotNil(t, cli.Run("status", "deployment"))
-	assert.Equal(t, "Error: deployment not converged on latest generation: wait timed out\n", stderr.String())
+	assert.Equal(t, "Warning: deployment not converged on latest generation: giving up\nHint: Consider using the --wait flag to wait for completion\n", stderr.String())
 
 	// Explicit generation
 	stderr.Reset()
 	client.NextResponse(resp)
 	assert.NotNil(t, cli.Run("status", "deployment", "41"))
-	assert.Equal(t, "Error: deployment not converged on generation 41: wait timed out\n", stderr.String())
+	assert.Equal(t, "Warning: deployment not converged on generation 41: giving up\nHint: Consider using the --wait flag to wait for completion\n", stderr.String())
 }
 
 func TestStatusCloudDeployment(t *testing.T) {
@@ -151,7 +164,7 @@ func TestStatusCloudDeployment(t *testing.T) {
 		Body:   []byte(`{"active": false, "status": "failure"}`),
 	})
 	assert.NotNil(t, cli.Run("status", "deployment", "42", "-w", "10"))
-	assert.Equal(t, "Waiting up to 10s for deployment to converge...\nError: deployment run 42 incomplete after waiting up to 10s: aborting wait: run 42 ended with unsuccessful status: failure\n", stderr.String())
+	assert.Equal(t, "Waiting up to 10s for deployment to converge...\nWarning: deployment run 42 incomplete after waiting up to 10s: aborting wait: run 42 ended with unsuccessful status: failure\n", stderr.String())
 }
 
 func isLocalTarget(args []string) bool {
@@ -184,12 +197,12 @@ func assertStatus(expectedTarget string, args []string, t *testing.T) {
 	t.Helper()
 	client := &mock.HTTPClient{}
 	clusterName := ""
-	for i := 0; i < 2; i++ {
+	for i := 0; i < 3; i++ {
 		if isLocalTarget(args) {
 			clusterName = "foo"
 			mockServiceStatus(client, clusterName)
 		}
-		client.NextResponse(mock.HTTPResponse{URI: "/ApplicationStatus", Status: 200})
+		client.NextResponse(mock.HTTPResponse{URI: "/status.html", Status: 200})
 	}
 	cli, stdout, _ := newTestCLI(t)
 	cli.httpClient = client
@@ -200,28 +213,18 @@ func assertStatus(expectedTarget string, args []string, t *testing.T) {
 		prefix += " " + clusterName
 	}
 	assert.Equal(t, prefix+" at "+expectedTarget+" is ready\n", stdout.String())
-	assert.Equal(t, expectedTarget+"/ApplicationStatus", client.LastRequest.URL.String())
+	assert.Equal(t, expectedTarget+"/status.html", client.LastRequest.URL.String())
 
 	// Test legacy command
-	statusArgs = []string{"status query"}
+	statusArgs = []string{"status", "query"}
 	stdout.Reset()
 	assert.Nil(t, cli.Run(append(statusArgs, args...)...))
 	assert.Equal(t, prefix+" at "+expectedTarget+" is ready\n", stdout.String())
-	assert.Equal(t, expectedTarget+"/ApplicationStatus", client.LastRequest.URL.String())
-}
+	assert.Equal(t, expectedTarget+"/status.html", client.LastRequest.URL.String())
 
-func assertDocumentStatus(target string, args []string, t *testing.T) {
-	t.Helper()
-	client := &mock.HTTPClient{}
-	if isLocalTarget(args) {
-		mockServiceStatus(client, "default")
-	}
-	cli, stdout, _ := newTestCLI(t)
-	cli.httpClient = client
-	assert.Nil(t, cli.Run("status", "document"))
-	assert.Equal(t,
-		"Container (document API) at "+target+" is ready\n",
-		stdout.String(),
-		"vespa status container")
-	assert.Equal(t, target+"/ApplicationStatus", client.LastRequest.URL.String())
+	// Plain format
+	statusArgs = []string{"status", "--format=plain"}
+	stdout.Reset()
+	assert.Nil(t, cli.Run(append(statusArgs, args...)...))
+	assert.Equal(t, expectedTarget+"\n", stdout.String())
 }

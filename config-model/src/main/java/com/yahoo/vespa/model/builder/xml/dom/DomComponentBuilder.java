@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.model.builder.xml.dom;
 
 import com.yahoo.component.ComponentId;
@@ -10,6 +10,7 @@ import com.yahoo.text.XML;
 import com.yahoo.vespa.model.container.ApplicationContainerCluster;
 import com.yahoo.vespa.model.container.component.BertEmbedder;
 import com.yahoo.vespa.model.container.component.ColBertEmbedder;
+import com.yahoo.vespa.model.container.component.SpladeEmbedder;
 import com.yahoo.vespa.model.container.component.Component;
 import com.yahoo.vespa.model.container.component.HuggingFaceEmbedder;
 import com.yahoo.vespa.model.container.component.HuggingFaceTokenizer;
@@ -50,6 +51,7 @@ public class DomComponentBuilder extends VespaDomBuilder.DomConfigProducerBuilde
                 case "hugging-face-tokenizer" -> new HuggingFaceTokenizer(spec, state);
                 case "colbert-embedder" -> new ColBertEmbedder((ApplicationContainerCluster)ancestor, spec, state);
                 case "bert-embedder" -> new BertEmbedder((ApplicationContainerCluster)ancestor, spec, state);
+                case "splade-embedder" -> new SpladeEmbedder((ApplicationContainerCluster)ancestor, spec, state);
                 default -> throw new IllegalArgumentException("Unknown component type '%s'".formatted(type));
             };
         } else {

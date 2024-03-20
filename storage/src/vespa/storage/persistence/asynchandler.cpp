@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include "asynchandler.h"
 #include "persistenceutil.h"
@@ -7,6 +7,7 @@
 #include "bucketprocessor.h"
 #include <vespa/persistence/spi/persistenceprovider.h>
 #include <vespa/persistence/spi/docentry.h>
+#include <vespa/persistence/spi/doctype_gid_and_timestamp.h>
 #include <vespa/persistence/spi/catchresult.h>
 #include <vespa/storageapi/message/bucket.h>
 #include <vespa/document/update/documentupdate.h>
@@ -71,7 +72,7 @@ private:
 
 template<class FunctionType>
 std::unique_ptr<ResultTask>
-makeResultTask(FunctionType &&function) {
+makeResultTask(FunctionType&& function) {
     return std::make_unique<LambdaResultTask<std::decay_t<FunctionType>>>
             (std::forward<FunctionType>(function));
 }
@@ -119,8 +120,8 @@ public:
         : _to_remove(to_remove)
     {}
 
-    void process(spi::DocEntry& entry) override {
-        _to_remove.emplace_back(*entry.getDocumentId(), entry.getTimestamp());
+    void process(std::unique_ptr<spi::DocEntry> entry) override {
+        _to_remove.emplace_back(*entry->getDocumentId(), entry->getTimestamp());
     }
 private:
     DocumentIdsAndTimeStamps & _to_remove;
@@ -202,44 +203,105 @@ AsyncHandler::handleCreateBucket(api::CreateBucketCommand& cmd, MessageTracker::
     return tracker;
 }
 
+void
+AsyncHandler::on_delete_bucket_complete(const document::Bucket& bucket) const {
+    StorBucketDatabase& db(_env.getBucketDatabase(bucket.getBucketSpace()));
+    StorBucketDatabase::WrappedEntry entry = db.get(bucket.getBucketId(), "onDeleteBucket");
+    if (entry.exists() && entry->getMetaCount() > 0) {
+        LOG(debug, "onDeleteBucket(%s): Bucket DB entry existed. Likely "
+                   "active operation when delete bucket was queued. "
+                   "Updating bucket database to keep it in sync with file. "
+                   "Cannot delete bucket from bucket database at this "
+                   "point, as it can have been intentionally recreated "
+                   "after delete bucket had been sent",
+            bucket.getBucketId().toString().c_str());
+        api::BucketInfo info(0, 0, 0);
+        // Only set document counts/size; retain ready/active state.
+        info.setReady(entry->getBucketInfo().isReady());
+        info.setActive(entry->getBucketInfo().isActive());
+
+        entry->setBucketInfo(info);
+        entry.write();
+    }
+}
+
+namespace {
+
+class GatherBucketMetadata : public BucketProcessor::EntryProcessor {
+    std::vector<std::unique_ptr<spi::DocEntry>>& _entries;
+public:
+    explicit GatherBucketMetadata(std::vector<std::unique_ptr<spi::DocEntry>>& entries) noexcept
+        : _entries(entries)
+    {
+    }
+    ~GatherBucketMetadata() override = default;
+
+    void process(std::unique_ptr<spi::DocEntry> entry) override {
+        _entries.emplace_back(std::move(entry));
+    }
+};
+
+}
+
 MessageTracker::UP
-AsyncHandler::handleDeleteBucket(api::DeleteBucketCommand& cmd, MessageTracker::UP tracker) const
+AsyncHandler::handle_delete_bucket_throttling(api::DeleteBucketCommand& cmd, MessageTracker::UP tracker) const
 {
     tracker->setMetric(_env._metrics.deleteBuckets);
-    LOG(debug, "DeletingBucket(%s)", cmd.getBucketId().toString().c_str());
+    LOG(debug, "DeleteBucket(%s) (with throttling)", cmd.getBucketId().toString().c_str());
     if (_env._fileStorHandler.isMerging(cmd.getBucket())) {
         _env._fileStorHandler.clearMergeStatus(cmd.getBucket(),
                                                api::ReturnCode(api::ReturnCode::ABORTED, "Bucket was deleted during the merge"));
     }
-    spi::Bucket bucket(cmd.getBucket());
-    if (!checkProviderBucketInfoMatches(bucket, cmd.getBucketInfo())) {
+    spi::Bucket spi_bucket(cmd.getBucket());
+    if (!checkProviderBucketInfoMatches(spi_bucket, cmd.getBucketInfo())) {
         return tracker;
     }
 
-    auto task = makeResultTask([this, tracker = std::move(tracker), bucket=cmd.getBucket()](spi::Result::UP ignored) {
-        // TODO Even if an non OK response can not be handled sanely we might probably log a message, or increment a metric
-        (void) ignored;
-        StorBucketDatabase &db(_env.getBucketDatabase(bucket.getBucketSpace()));
-        StorBucketDatabase::WrappedEntry entry = db.get(bucket.getBucketId(), "onDeleteBucket");
-        if (entry.exists() && entry->getMetaCount() > 0) {
-            LOG(debug, "onDeleteBucket(%s): Bucket DB entry existed. Likely "
-                       "active operation when delete bucket was queued. "
-                       "Updating bucket database to keep it in sync with file. "
-                       "Cannot delete bucket from bucket database at this "
-                       "point, as it can have been intentionally recreated "
-                       "after delete bucket had been sent",
-                bucket.getBucketId().toString().c_str());
-            api::BucketInfo info(0, 0, 0);
-            // Only set document counts/size; retain ready/active state.
-            info.setReady(entry->getBucketInfo().isReady());
-            info.setActive(entry->getBucketInfo().isActive());
-
-            entry->setBucketInfo(info);
-            entry.write();
-        }
-        tracker->sendReply();
+    std::vector<std::unique_ptr<spi::DocEntry>> meta_entries;
+    {
+        GatherBucketMetadata meta_proc(meta_entries);
+        auto usage = vespalib::CpuUsage::use(CpuUsage::Category::READ);
+        // Note: we only explicitly remove Put entries; tombstones are expected to be
+        // cheap and will be purged as part of the subsequent DeleteBucket operation.
+        // (Additionally, the SPI does not expose a way to remove a remove...)
+        BucketProcessor::iterateAll(_spi, spi_bucket, "true",
+                                    std::make_shared<document::NoFields>(),
+                                    meta_proc, spi::NEWEST_DOCUMENT_ONLY, tracker->context());
+    }
+    auto invoke_delete_on_zero_refs = vespalib::makeSharedLambdaCallback([this, spi_bucket, bucket = cmd.getBucket(), tracker = std::move(tracker)]() mutable {
+        LOG(debug, "%s: about to invoke deleteBucketAsync", bucket.toString().c_str());
+        auto task = makeResultTask([this, tracker = std::move(tracker), bucket]([[maybe_unused]] spi::Result::UP ignored) {
+            LOG(debug, "%s: deleteBucket callback invoked; sending reply", bucket.toString().c_str());
+            on_delete_bucket_complete(bucket);
+            tracker->sendReply();
+        });
+        _spi.deleteBucketAsync(spi_bucket, std::make_unique<ResultTaskOperationDone>(_sequencedExecutor, bucket.getBucketId(), std::move(task)));
     });
-    _spi.deleteBucketAsync(bucket, std::make_unique<ResultTaskOperationDone>(_sequencedExecutor, cmd.getBucketId(), std::move(task)));
+
+    auto& throttler = _env._fileStorHandler.operation_throttler();
+    auto* remove_by_gid_metric = &_env._metrics.remove_by_gid;
+
+    for (auto& meta : meta_entries) {
+        auto token = throttler.blocking_acquire_one();
+        remove_by_gid_metric->count.inc();
+        std::vector<spi::DocTypeGidAndTimestamp> to_remove = {{meta->getDocumentType(), meta->getGid(), meta->getTimestamp()}};
+        auto task = makeResultTask([bucket = cmd.getBucket(), token = std::move(token),
+                                    invoke_delete_on_zero_refs, remove_by_gid_metric,
+                                    op_timer = framework::MilliSecTimer(_env._component.getClock())]
+            (spi::Result::UP result) {
+                if (result->hasError()) {
+                    remove_by_gid_metric->failed.inc();
+                }
+                remove_by_gid_metric->latency.addValue(op_timer.getElapsedTimeAsDouble());
+                LOG(spam, "%s: completed removeByGidAsync operation", bucket.toString().c_str());
+                // Nothing else clever to do here. Throttle token and deleteBucket dispatch refs dropped implicitly.
+            });
+        LOG(spam, "%s: about to invoke removeByGidAsync(%s, %s, %" PRIu64 ")", cmd.getBucket().toString().c_str(),
+            vespalib::string(meta->getDocumentType()).c_str(), meta->getGid().toString().c_str(), meta->getTimestamp().getValue());
+        _spi.removeByGidAsync(spi_bucket, std::move(to_remove), std::make_unique<ResultTaskOperationDone>(_sequencedExecutor, cmd.getBucketId(), std::move(task)));
+    }
+    // Actual bucket deletion happens when all remove ops have ACKed and dropped their refs to the destructor-invoked
+    // deleteBucket dispatcher. Note: this works transparently when the bucket is empty (no refs; happens immediately).
     return tracker;
 }
 
@@ -287,9 +349,17 @@ AsyncHandler::handleUpdate(api::UpdateCommand& cmd, MessageTracker::UP trackerUP
         metrics.test_and_set_failed.inc();
         return trackerUP;
     }
-
     spi::Bucket bucket = _env.getBucket(cmd.getDocumentId(), cmd.getBucket());
 
+    if ((cmd.getOldTimestamp() != 0) &&
+        (fetch_existing_document_timestamp(cmd.getDocumentId(), bucket, tracker.context()) != cmd.getOldTimestamp()))
+    {
+        metrics.notFound.inc();
+        // It's debatable if this should be OK or a TaS failure, but OK is the legacy behavior, i.e. what
+        // the distributor already does as part of a multiphase update where the expected timestamp is set.
+        tracker.fail(api::ReturnCode::OK, "No document with requested timestamp found");
+        return trackerUP;
+    }
     // Note that the &cmd capture is OK since its lifetime is guaranteed by the tracker
     auto task = makeResultTask([&cmd, tracker = std::move(trackerUP)](spi::Result::UP responseUP) {
         auto & response = dynamic_cast<const spi::UpdateResult &>(*responseUP);
@@ -334,6 +404,12 @@ AsyncHandler::handleRemove(api::RemoveCommand& cmd, MessageTracker::UP trackerUP
     _spi.removeIfFoundAsync(bucket, spi::Timestamp(cmd.getTimestamp()), cmd.getDocumentId(),
                             std::make_unique<ResultTaskOperationDone>(_sequencedExecutor, cmd.getBucketId(), std::move(task)));
     return trackerUP;
+}
+
+api::Timestamp
+AsyncHandler::fetch_existing_document_timestamp(const document::DocumentId& id, const spi::Bucket& bucket, spi::Context& ctx) const
+{
+    return _spi.get(bucket, document::NoFields(), id, ctx).getTimestamp();
 }
 
 bool

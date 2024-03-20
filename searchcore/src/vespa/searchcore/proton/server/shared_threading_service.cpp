@@ -1,8 +1,7 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include "shared_threading_service.h"
 #include <vespa/vespalib/util/blockingthreadstackexecutor.h>
-#include <vespa/vespalib/util/threadstackexecutor.h>
 #include <vespa/vespalib/util/cpu_usage.h>
 #include <vespa/vespalib/util/sequencedtaskexecutor.h>
 #include <vespa/vespalib/util/invokeserviceimpl.h>
@@ -21,17 +20,13 @@ SharedThreadingService::SharedThreadingService(const SharedThreadingServiceConfi
                                                FNET_Transport& transport,
                                                storage::spi::BucketExecutor& bucket_executor)
     : _transport(transport),
-      _warmup(std::make_unique<vespalib::ThreadStackExecutor>(cfg.warmup_threads(),
-                                                              CpuUsage::wrap(proton_warmup_executor, CpuUsage::Category::COMPACT),
-                                                              cfg.shared_task_limit())),
       _shared(std::make_shared<vespalib::BlockingThreadStackExecutor>(cfg.shared_threads(),
                                                                       cfg.shared_task_limit(), vespalib::be_nice(proton_shared_executor, cfg.feeding_niceness()))),
       _field_writer(),
       _invokeService(std::make_unique<vespalib::InvokeServiceImpl>(std::max(vespalib::adjustTimeoutByDetectedHz(1ms),
                                                                             cfg.field_writer_config().reactionTime()))),
       _invokeRegistrations(),
-      _bucket_executor(bucket_executor),
-      _clock(dynamic_cast<const vespalib::InvokeServiceImpl &>(*_invokeService).nowRef())
+      _bucket_executor(bucket_executor)
 {
     const auto& fw_cfg = cfg.field_writer_config();
     _field_writer = vespalib::SequencedTaskExecutor::create(vespalib::be_nice(CpuUsage::wrap(proton_field_writer_executor, CpuUsage::Category::WRITE), cfg.feeding_niceness()),
@@ -51,11 +46,15 @@ SharedThreadingService::~SharedThreadingService() = default;
 
 void
 SharedThreadingService::sync_all_executors() {
-    _warmup->sync();
     _shared->sync();
     if (_field_writer) {
         _field_writer->sync_all();
     }
+}
+
+const std::atomic<vespalib::steady_time> &
+SharedThreadingService::nowRef() const {
+    return dynamic_cast<const vespalib::InvokeServiceImpl &>(*_invokeService).nowRef();
 }
 
 }

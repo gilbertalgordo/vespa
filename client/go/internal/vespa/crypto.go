@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package vespa
 
 import (
@@ -13,6 +13,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"io"
 	"math/big"
@@ -20,7 +21,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/vespa-engine/vespa/client/go/internal/util"
+	"github.com/vespa-engine/vespa/client/go/internal/ioutil"
 )
 
 const (
@@ -36,18 +37,18 @@ type PemKeyPair struct {
 
 // WriteCertificateFile writes the certificate contained in this key pair to certificateFile.
 func (kp *PemKeyPair) WriteCertificateFile(certificateFile string, overwrite bool) error {
-	if util.PathExists(certificateFile) && !overwrite {
+	if ioutil.Exists(certificateFile) && !overwrite {
 		return fmt.Errorf("cannot overwrite existing file: %s", certificateFile)
 	}
-	return util.AtomicWriteFile(certificateFile, kp.Certificate)
+	return ioutil.AtomicWriteFile(certificateFile, kp.Certificate)
 }
 
 // WritePrivateKeyFile writes the private key contained in this key pair to privateKeyFile.
 func (kp *PemKeyPair) WritePrivateKeyFile(privateKeyFile string, overwrite bool) error {
-	if util.PathExists(privateKeyFile) && !overwrite {
+	if ioutil.Exists(privateKeyFile) && !overwrite {
 		return fmt.Errorf("cannot overwrite existing file: %s", privateKeyFile)
 	}
-	return util.AtomicWriteFile(privateKeyFile, kp.PrivateKey)
+	return ioutil.AtomicWriteFile(privateKeyFile, kp.PrivateKey)
 }
 
 // CreateKeyPair creates a key pair containing a private key and self-signed X509 certificate.
@@ -219,4 +220,16 @@ func contentHash(r io.Reader) (string, io.Reader, error) {
 func randomSerialNumber() (*big.Int, error) {
 	serialNumberLimit := new(big.Int).Lsh(big.NewInt(1), 128)
 	return rand.Int(rand.Reader, serialNumberLimit)
+}
+
+// isTLSAlert returns whether err contains a TLS alert error.
+func isTLSAlert(err error) bool {
+	for ; err != nil; err = errors.Unwrap(err) {
+		// This is ugly, but alert types are currently not exposed:
+		// https://github.com/golang/go/issues/35234
+		if fmt.Sprintf("%T", err) == "tls.alert" {
+			return true
+		}
+	}
+	return false
 }

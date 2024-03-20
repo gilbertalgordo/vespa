@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.model.application.validation;
 
 import com.yahoo.tensor.TensorType;
@@ -208,7 +208,7 @@ public class ConstantTensorJsonValidatorTest {
                             "   ]",
                             "}"));
             });
-        assertTrue(exception.getMessage().contains("Inside 'value': cell value is not a number (VALUE_STRING)"));
+        assertTrue(exception.getMessage().contains("Inside 'value': cell value 'fruit' is not a number"));
     }
 
     @Test
@@ -292,6 +292,13 @@ public class ConstantTensorJsonValidatorTest {
         validateTensorJson(
                 TensorType.fromSpec("tensor(x[5])"),
                 inputJsonToReader("{'values':[5,4.0,3.1,-2,-1.0]}"));
+    }
+
+    @Test
+    void ensure_that_values_can_contain_special_values() {
+        validateTensorJson(
+                TensorType.fromSpec("tensor(x[5])"),
+                inputJsonToReader("['Infinity','+inf','NaN','-infinity','-nan']"));
     }
 
     @Test

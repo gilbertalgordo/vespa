@@ -1,4 +1,4 @@
-# Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+# Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 vespa_define_module(
     DEPENDS
     vespalog
@@ -76,8 +76,8 @@ vespa_define_module(
     src/tests/attribute/changevector
     src/tests/attribute/compaction
     src/tests/attribute/dfa_fuzzy_matcher
-    src/tests/attribute/document_weight_iterator
-    src/tests/attribute/document_weight_or_filter_search
+    src/tests/attribute/direct_multi_term_blueprint
+    src/tests/attribute/direct_posting_store
     src/tests/attribute/enum_attribute_compaction
     src/tests/attribute/enum_comparator
     src/tests/attribute/enumeratedsave
@@ -86,12 +86,14 @@ vespa_define_module(
     src/tests/attribute/guard
     src/tests/attribute/imported_attribute_vector
     src/tests/attribute/imported_search_context
+    src/tests/attribute/multi_term_or_filter_search
     src/tests/attribute/multi_value_mapping
     src/tests/attribute/multi_value_read_view
     src/tests/attribute/posting_list_merger
     src/tests/attribute/posting_store
     src/tests/attribute/postinglist
     src/tests/attribute/postinglistattribute
+    src/tests/attribute/predicate_attribute
     src/tests/attribute/raw_attribute
     src/tests/attribute/reference_attribute
     src/tests/attribute/save_target
@@ -129,6 +131,7 @@ vespa_define_module(
     src/tests/engine/proto_rpc_adapter
     src/tests/expression/attributenode
     src/tests/expression/current_index_setup
+    src/tests/expression/interpolated_document_field_lookup_node
     src/tests/features
     src/tests/features/beta
     src/tests/features/bm25
@@ -189,18 +192,22 @@ vespa_define_module(
     src/tests/postinglistbm
     src/tests/predicate
     src/tests/query
+    src/tests/query/streaming
     src/tests/queryeval
     src/tests/queryeval/blueprint
     src/tests/queryeval/dot_product
     src/tests/queryeval/equiv
     src/tests/queryeval/fake_searchable
     src/tests/queryeval/filter_search
+    src/tests/queryeval/flow
     src/tests/queryeval/getnodeweight
     src/tests/queryeval/global_filter
+    src/tests/queryeval/iterator_benchmark
     src/tests/queryeval/matching_elements_search
     src/tests/queryeval/monitoring_search_iterator
     src/tests/queryeval/multibitvectoriterator
     src/tests/queryeval/nearest_neighbor
+    src/tests/queryeval/or_speed
     src/tests/queryeval/parallel_weak_and
     src/tests/queryeval/predicate
     src/tests/queryeval/profiled_iterator
@@ -244,6 +251,7 @@ vespa_define_module(
     src/tests/util/folded_string_compare
     src/tests/util/searchable_stats
     src/tests/util/slime_output_raw_buf_adapter
+    src/tests/util/token_extractor
     src/tests/vespa-fileheader-inspect
 )
 

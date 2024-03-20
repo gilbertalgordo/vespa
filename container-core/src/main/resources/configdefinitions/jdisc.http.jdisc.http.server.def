@@ -1,4 +1,4 @@
-# Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+# Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 namespace=jdisc.http
 
 # Whether to enable developer mode, where stack traces etc are visible in response bodies.
@@ -51,6 +51,9 @@ metric.searchHandlerPaths[]           string
 
 # User-agent names to ignore wrt statistics (crawlers etc)
 metric.ignoredUserAgents[]            string
+
+# Whether to enable scheduled metric reporter. Disabled for unit testing to stop metric counters from being reset.
+metric.reporterEnabled                bool   default = true
 
 # Whether to enable jdisc connection log
 connectionLog.enabled                 bool default=false

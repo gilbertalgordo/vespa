@@ -1,11 +1,13 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include "distributor_bucket_space_repo.h"
 #include "distributor_bucket_space.h"
 #include <vespa/vdslib/state/cluster_state_bundle.h>
 #include <vespa/vdslib/state/clusterstate.h>
 #include <vespa/document/bucket/fixed_bucket_spaces.h>
+#include <vespa/vespalib/util/backtrace.h>
 #include <cassert>
+#include <cinttypes>
 
 #include <vespa/log/log.h>
 LOG_SETUP(".distributor.distributor_bucket_space_repo");
@@ -34,7 +36,10 @@ DistributorBucketSpace &
 DistributorBucketSpaceRepo::get(BucketSpace bucketSpace)
 {
     auto itr = _map.find(bucketSpace);
-    assert(itr != _map.end());
+    if (itr == _map.end()) [[unlikely]] {
+        LOG(error, "Bucket space %" PRIu64 " does not have a valid mapping. %s", bucketSpace.getId(), vespalib::getStackTrace(0).c_str());
+        abort();
+    }
     return *itr->second;
 }
 
@@ -42,7 +47,10 @@ const DistributorBucketSpace &
 DistributorBucketSpaceRepo::get(BucketSpace bucketSpace) const
 {
     auto itr = _map.find(bucketSpace);
-    assert(itr != _map.end());
+    if (itr == _map.end()) [[unlikely]] {
+        LOG(error, "Bucket space %" PRIu64 " does not have a valid mapping. %s", bucketSpace.getId(), vespalib::getStackTrace(0).c_str());
+        abort();
+    }
     return *itr->second;
 }
 

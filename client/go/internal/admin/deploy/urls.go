@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 // vespa-deploy command
 // Author: arnej
 
@@ -9,7 +9,7 @@ import (
 	"strings"
 
 	"github.com/vespa-engine/vespa/client/go/internal/admin/trace"
-	"github.com/vespa-engine/vespa/client/go/internal/util"
+	"github.com/vespa-engine/vespa/client/go/internal/osutil"
 	"github.com/vespa-engine/vespa/client/go/internal/vespa"
 )
 
@@ -28,7 +28,7 @@ func makeConfigsourceUrls(opts *Options) []string {
 	var results = make([]string, 0, 3)
 	if opts.ServerHost == "" {
 		home := vespa.FindHome()
-		backticks := util.BackTicksForwardStderr
+		backticks := osutil.BackTicksForwardStderr
 		configsources, _ := backticks.Run(home+"/bin/vespa-print-default", "configservers_http")
 		for _, src := range strings.Split(configsources, "\n") {
 			colonParts := strings.Split(src, ":")

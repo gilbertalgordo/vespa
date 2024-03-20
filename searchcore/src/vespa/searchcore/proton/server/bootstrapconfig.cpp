@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include "bootstrapconfig.h"
 #include <vespa/config-bucketspaces.h>
@@ -30,7 +30,7 @@ BootstrapConfig::BootstrapConfig(
                const FiledistributorrpcConfigSP &filedistRpcConfSP,
                const BucketspacesConfigSP &bucketspaces,
                const search::TuneFileDocumentDB::SP &tuneFileDocumentDB,
-               const HwInfo & hwInfo)
+               const vespalib::HwInfo & hwInfo)
     : _documenttypes(documenttypes),
       _repo(repo),
       _proton(protonConfig),

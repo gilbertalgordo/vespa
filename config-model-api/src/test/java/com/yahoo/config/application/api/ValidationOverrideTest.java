@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.config.application.api;
 
 import com.yahoo.test.ManualClock;
@@ -60,7 +60,7 @@ public class ValidationOverrideTest {
         try {
             ValidationOverrides overrides = ValidationOverrides.fromXml(new StringReader(validationOverrides));
             Instant now = ManualClock.at("2000-01-01T23:59:00");
-            overrides.allows("indexing-change", now);
+            overrides.allows(ValidationId.indexingChange, now);
             overrides.validate(now);
             Assert.fail("Expected validation interval override validation validation failure");
         }
@@ -80,7 +80,7 @@ public class ValidationOverrideTest {
         try {
             ValidationOverrides overrides = ValidationOverrides.fromXml(new StringReader(validationOverrides));
             Instant now = ManualClock.at("2000-01-01T23:59:00");
-            overrides.allows("indexing-change", now);
+            overrides.allows(ValidationId.indexingChange, now);
             overrides.validate(now);
             Assert.fail("Expected validation interval override validation validation failure");
         }

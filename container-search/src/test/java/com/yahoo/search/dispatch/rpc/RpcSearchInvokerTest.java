@@ -1,15 +1,15 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 package com.yahoo.search.dispatch.rpc;
 
 import ai.vespa.searchlib.searchprotocol.protobuf.SearchProtocol;
 import com.google.common.collect.ImmutableMap;
 import com.yahoo.compress.CompressionType;
-import com.yahoo.prelude.fastsearch.VespaBackEndSearcher;
+import com.yahoo.prelude.fastsearch.ClusterParams;
+import com.yahoo.prelude.fastsearch.VespaBackend;
 import com.yahoo.search.Query;
 import com.yahoo.search.Result;
 import com.yahoo.search.dispatch.searchcluster.Node;
-import com.yahoo.search.searchchain.Execution;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
@@ -45,7 +45,7 @@ public class RpcSearchInvokerTest {
 
         assertEquals(10, request.getHits());
         assertEquals(3, request.getOffset());
-        assertTrue(request.getQueryTreeBlob().size() > 0);
+        assertFalse(request.getQueryTreeBlob().isEmpty());
 
         var invoker2 = new RpcSearchInvoker(mockSearcher(), compressor, new Node("test", 8, "eight", 1), mockPool, 1000);
         RpcSearchInvoker.RpcContext context2 = (RpcSearchInvoker.RpcContext) invoker2.sendSearchRequest(q, context);
@@ -118,10 +118,10 @@ public class RpcSearchInvokerTest {
         };
     }
 
-    private VespaBackEndSearcher mockSearcher() {
-        return new VespaBackEndSearcher() {
+    private VespaBackend mockSearcher() {
+        return new VespaBackend(new ClusterParams("container.0")) {
             @Override
-            protected Result doSearch2(Query query, Execution execution) {
+            protected Result doSearch2(String schema, Query query) {
                 fail("Unexpected call");
                 return null;
             }

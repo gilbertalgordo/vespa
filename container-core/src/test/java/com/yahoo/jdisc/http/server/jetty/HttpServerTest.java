@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.jdisc.http.server.jetty;
 
 import com.google.inject.AbstractModule;
@@ -160,11 +160,25 @@ public class HttpServerTest {
     }
 
     @Test
+    void requireThatTooLargePayloadFailsWith413() throws Exception {
+        final JettyTestDriver driver = JettyTestDriver.newConfiguredInstance(
+                new EchoRequestHandler(),
+                new ServerConfig.Builder(),
+                new ConnectorConfig.Builder()
+                        .maxContentSize(100));
+        driver.client().newPost("/status.html")
+                .setBinaryContent(new byte[200])
+                .execute()
+                .expectStatusCode(is(REQUEST_TOO_LONG));
+        assertTrue(driver.close());
+    }
+
+    @Test
     void requireThatMultipleHostHeadersReturns400() throws Exception {
         var metricConsumer = new MetricConsumerMock();
         JettyTestDriver driver = JettyTestDriver.newConfiguredInstance(
                 mockRequestHandler(),
-                new ServerConfig.Builder(),
+                new ServerConfig.Builder().metric(new ServerConfig.Metric.Builder().reporterEnabled(false)),
                 new ConnectorConfig.Builder(),
                 binder -> binder.bind(MetricConsumer.class).toInstance(metricConsumer.mockitoMock()));
         driver.client()
@@ -270,6 +284,19 @@ public class HttpServerTest {
                         .execute();
         response.expectStatusCode(is(OK))
                 .expectContent(is("{foo=[bar]}"));
+        assertTrue(driver.close());
+    }
+
+    @Test
+    void requireThatFormPostWithInvalidDataFailsWith400() throws Exception {
+        final JettyTestDriver driver = newDriverWithFormPostContentRemoved(new ParameterPrinterRequestHandler(), true);
+        final ResponseValidator response =
+                driver.client().newPost("/status.html")
+                        .addHeader(CONTENT_TYPE, APPLICATION_X_WWW_FORM_URLENCODED)
+                        .setContent("%!Foo=bar")
+                        .execute();
+        response.expectStatusCode(is(BAD_REQUEST))
+                .expectContent(containsString("Failed to parse form parameters"));
         assertTrue(driver.close());
     }
 
@@ -600,7 +627,8 @@ public class HttpServerTest {
     @Test
     void requireThatResponseStatsAreCollected() throws Exception {
         RequestTypeHandler handler = new RequestTypeHandler();
-        JettyTestDriver driver = JettyTestDriver.newInstance(handler);
+        var cfg = new ServerConfig.Builder().metric(new ServerConfig.Metric.Builder().reporterEnabled(false));
+        JettyTestDriver driver = JettyTestDriver.newConfiguredInstance(handler, cfg, new ConnectorConfig.Builder());
         var statisticsCollector = ResponseMetricAggregator.getBean(driver.server());;
         {
             List<ResponseMetricAggregator.StatisticsEntry> stats = statisticsCollector.takeStatistics();
@@ -641,7 +669,8 @@ public class HttpServerTest {
                                                                                       statisticsCollector) {
         List<ResponseMetricAggregator.StatisticsEntry> entries = Collections.emptyList();
         int tries = 0;
-        while (entries.isEmpty() && tries < 10000) {
+        // Wait up to 30 seconds before giving up
+        while (entries.isEmpty() && tries < 300) {
             entries = statisticsCollector.takeStatistics();
             if (entries.isEmpty())
                 try {Thread.sleep(100); } catch (InterruptedException e) {}

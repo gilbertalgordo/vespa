@@ -1,10 +1,11 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include "distributor_stripe_component.h"
 #include "distributor_bucket_space_repo.h"
 #include "distributor_bucket_space.h"
 #include "pendingmessagetracker.h"
 #include "storage_node_up_states.h"
+#include <vespa/storage/config/distributorconfiguration.h>
 #include <vespa/storage/storageutil/utils.h>
 #include <vespa/storageframework/generic/clock/clock.h>
 #include <vespa/document/select/parser.h>

@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include <vespa/document/fieldvalue/boolfieldvalue.h>
 #include <vespa/document/fieldvalue/bytefieldvalue.h>
@@ -20,14 +20,12 @@
 #include <vespa/document/update/addvalueupdate.h>
 #include <vespa/document/update/mapvalueupdate.h>
 #include <vespa/document/update/assignvalueupdate.h>
-
 #include <vespa/document/update/tensor_remove_update.h>
 #include <vespa/document/update/tensor_modify_update.h>
 #include <vespa/document/update/tensor_add_update.h>
 #include <vespa/document/update/tensor_partial_update.h>
 #include <vespa/document/util/feed_reject_helper.h>
-
-#include <gtest/gtest.h>
+#include <vespa/vespalib/gtest/gtest.h>
 #include <gmock/gmock.h>
 
 

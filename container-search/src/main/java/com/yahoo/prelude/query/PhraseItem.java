@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.prelude.query;
 
 import com.yahoo.prelude.query.textualrepresentation.Discloser;
@@ -153,12 +153,27 @@ public class PhraseItem extends CompositeIndexedItem {
 
     private void addIndexedItem(int index, IndexedItem word) {
         word.setIndexName(this.getIndexName());
+        if (word instanceof Item item) {
+            item.setWeight(this.getWeight());
+        }
         super.addItem(index, (Item) word);
     }
 
     private Item setIndexedItem(int index, IndexedItem word) {
         word.setIndexName(this.getIndexName());
+        if (word instanceof Item item) {
+            item.setWeight(this.getWeight());
+        }
         return super.setItem(index, (Item) word);
+    }
+
+    @Override
+    public void setWeight(int weight) {
+        super.setWeight(weight);
+        for (Iterator<Item> i = getItemIterator(); i.hasNext();) {
+            Item word = i.next();
+            word.setWeight(weight);
+        }
     }
 
     /**

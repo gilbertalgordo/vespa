@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include <tests/distributor/distributor_stripe_test_util.h>
 #include <vespa/document/fieldset/fieldsets.h>
@@ -15,6 +15,7 @@
 #include <vespa/storage/distributor/externaloperationhandler.h>
 #include <vespa/storage/distributor/operations/external/getoperation.h>
 #include <vespa/storage/distributor/operations/external/read_for_write_visitor_operation.h>
+#include <vespa/storage/config/distributorconfiguration.h>
 #include <vespa/storageapi/message/persistence.h>
 #include <vespa/storageapi/message/visitor.h>
 #include <vespa/vespalib/gtest/gtest.h>
@@ -480,21 +481,6 @@ TEST_F(ExternalOperationHandlerTest, sequencing_works_across_mutation_types) {
     ASSERT_NO_FATAL_FAILURE(start_operation_verify_not_rejected(makePutCommand("testdoctype1", _dummy_id), generated));
     ASSERT_NO_FATAL_FAILURE(start_operation_verify_rejected(makeRemoveCommand(_dummy_id)));
     ASSERT_NO_FATAL_FAILURE(start_operation_verify_rejected(makeUpdateCommand("testdoctype1", _dummy_id)));
-}
-
-TEST_F(ExternalOperationHandlerTest, sequencing_can_be_explicitly_config_disabled) {
-    set_up_distributor_for_sequencing_test();
-
-    // Should be able to modify config after links have been created, i.e. this is a live config.
-    auto cfg = make_config();
-    cfg->setSequenceMutatingOperations(false);
-    configure_stripe(cfg);
-
-    Operation::SP generated1;
-    ASSERT_NO_FATAL_FAILURE(start_operation_verify_not_rejected(makeRemoveCommand(_dummy_id), generated1));
-    // Sequencing is disabled, so concurrent op is not rejected.
-    Operation::SP generated2;
-    ASSERT_NO_FATAL_FAILURE(start_operation_verify_not_rejected(makeRemoveCommand(_dummy_id), generated2));
 }
 
 TEST_F(ExternalOperationHandlerTest, gets_are_started_with_mutable_db_outside_transition_period) {

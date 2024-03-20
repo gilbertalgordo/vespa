@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include "emptybucketsmessage.h"
 
@@ -14,13 +14,12 @@ EmptyBucketsMessage::EmptyBucketsMessage(const std::vector<document::BucketId> &
 {
 }
 
-EmptyBucketsMessage::~EmptyBucketsMessage() {
-}
+EmptyBucketsMessage::~EmptyBucketsMessage() = default;
 
 void
-EmptyBucketsMessage::setBucketIds(const std::vector<document::BucketId> &bucketIds)
+EmptyBucketsMessage::setBucketIds(std::vector<document::BucketId> bucketIds)
 {
-    _bucketIds = bucketIds;
+    _bucketIds = std::move(bucketIds);
 }
 
 void

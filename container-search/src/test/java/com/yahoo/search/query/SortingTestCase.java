@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.search.query;
 
 import com.ibm.icu.lang.UScript;
@@ -81,8 +81,8 @@ public class SortingTestCase {
 
     private void requireThatChineseHasCorrectRules(Collator col) {
         final int reorderCodes [] = {UScript.HAN};
-        assertEquals("15.0.0.0", col.getUCAVersion().toString());
-        assertEquals("153.120.43.8", col.getVersion().toString());
+        assertEquals("15.1.0.0", col.getUCAVersion().toString());
+        assertEquals("153.121.44.8", col.getVersion().toString());
         assertEquals(Arrays.toString(reorderCodes), Arrays.toString(col.getReorderCodes()));
 
         assertNotEquals("", ((RuleBasedCollator) col).getRules());

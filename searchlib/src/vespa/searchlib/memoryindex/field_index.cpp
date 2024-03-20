@@ -1,12 +1,13 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include "field_index.h"
 #include "ordered_field_index_inserter.h"
 #include "posting_iterator.h"
 #include <vespa/searchlib/bitcompression/posocccompression.h>
-#include <vespa/searchlib/queryeval/booleanmatchiteratorwrapper.h>
 #include <vespa/searchlib/queryeval/blueprint.h>
+#include <vespa/searchlib/queryeval/booleanmatchiteratorwrapper.h>
 #include <vespa/searchlib/queryeval/filter_wrapper.h>
+#include <vespa/searchlib/queryeval/flow_tuning.h>
 #include <vespa/searchlib/queryeval/searchiterator.h>
 #include <vespa/vespalib/btree/btree.hpp>
 #include <vespa/vespalib/btree/btreeiterator.hpp>
@@ -30,6 +31,8 @@ using search::queryeval::BooleanMatchIteratorWrapper;
 using search::queryeval::FieldSpecBase;
 using search::queryeval::SearchIterator;
 using search::queryeval::SimpleLeafBlueprint;
+using search::queryeval::flow::btree_cost;
+using search::queryeval::flow::btree_strict_cost;
 using vespalib::GenerationHandler;
 
 namespace search::memoryindex {
@@ -149,7 +152,7 @@ FieldIndex<interleaved_features>::compactFeatures()
 
 template <bool interleaved_features>
 void
-FieldIndex<interleaved_features>::dump(search::index::IndexBuilder & indexBuilder)
+FieldIndex<interleaved_features>::dump(search::index::FieldIndexBuilder & indexBuilder)
 {
     vespalib::stringref word;
     FeatureStore::DecodeContextCooked decoder(nullptr);
@@ -256,6 +259,11 @@ public:
         setEstimate(estimate);
     }
 
+    queryeval::FlowStats calculate_flow_stats(uint32_t docid_limit) const override {
+        double rel_est = abs_to_rel_est(_posting_itr.size(), docid_limit);
+        return {rel_est, btree_cost(), btree_strict_cost(rel_est)};
+    }
+    
     SearchIterator::UP createLeafSearch(const TermFieldMatchDataArray& tfmda, bool) const override {
         auto result = make_search_iterator<interleaved_features>(_posting_itr, _feature_store, _field_id, tfmda);
         if (_use_bit_vector) {

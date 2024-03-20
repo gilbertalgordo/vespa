@@ -1,8 +1,9 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.search.query.ranking;
 
 import com.yahoo.fs4.GetDocSumsPacket;
 import com.yahoo.fs4.MapEncoder;
+import com.yahoo.tensor.Tensor;
 import com.yahoo.text.JSON;
 
 import java.nio.ByteBuffer;
@@ -11,6 +12,7 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 /**
  * Contains the properties of a query.
@@ -36,16 +38,12 @@ public class RankProperties implements Cloneable {
 
     /** Adds a property by full name to a value */
     public void put(String name, Object value) {
-        List<Object> list = properties.get(name);
-        if (list == null) {
-            list = new ArrayList<>();
-            properties.put(name, list);
-        }
+        List<Object> list = properties.computeIfAbsent(name, k -> new ArrayList<>());
         list.add(value);
     }
 
     /**
-     * Returns a read-only list of properties properties by full name.
+     * Returns a read-only list of properties by full name.
      * If this is not set, null is returned. If this is explicitly set to
      * have no values, and empty list is returned.
      */
@@ -59,6 +57,26 @@ public class RankProperties implements Cloneable {
         for (Object value : values)
             stringValues.add(value.toString());
         return Collections.unmodifiableList(stringValues);
+    }
+
+    /**
+     * Returns a tensor (as moved from RankFeatures by prepare step) if present
+     *
+     * @throws IllegalArgumentException if the value is there but wrong type
+     */
+    public Optional<Tensor> getAsTensor(String name) {
+        List<Object> values = properties.get(name);
+        if (values == null || values.isEmpty()) return Optional.empty();
+        if (values.size() != 1) {
+            throw new IllegalArgumentException("unexpected multiple [" + values.size() + "] values for property '" + name + "'");
+        }
+        Object feature = values.get(0);
+        if (feature == null) return Optional.empty();
+        if (feature instanceof Tensor t) return Optional.of(t);
+        if (feature instanceof Double d) return Optional.of(Tensor.from(d));
+        throw new IllegalArgumentException("Expected '" + name + "' to be a tensor or double, but it is '" + feature +
+                "', this usually means that '" + name + "' is not defined in the schema. " +
+                "See https://docs.vespa.ai/en/tensor-user-guide.html#querying-with-tensors");
     }
 
     /** Removes all properties for a given name */

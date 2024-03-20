@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 #include "intfieldsearcher.h"
 
 using search::streaming::QueryTerm;
@@ -29,10 +29,8 @@ void IntFieldSearcher::prepare(search::streaming::QueryTermList& qtl,
     for (auto qt : qtl) {
         size_t sz(qt->termLen());
         if (sz) {
-            int64_t low;
-            int64_t high;
-            bool valid = qt->getAsIntegerTerm(low, high);
-            _intTerm.push_back(IntInfo(low, high, valid));
+            auto range = qt->getRange<int64_t>();
+            _intTerm.emplace_back(range.low, range.high, range.valid);
         }
     }
 }
@@ -45,7 +43,7 @@ void IntFieldSearcher::onValue(const document::FieldValue & fv)
             addHit(*_qtl[j], 0);
         }
     }
-    ++_words;
+    set_element_length(1);
 }
 
 }

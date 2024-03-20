@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.schema.derived;
 
 import com.yahoo.schema.Schema;
@@ -6,7 +6,9 @@ import com.yahoo.schema.document.GeoPos;
 import com.yahoo.schema.document.ImmutableSDField;
 import com.yahoo.vespa.configdefinition.IlscriptsConfig;
 import com.yahoo.vespa.configdefinition.IlscriptsConfig.Ilscript.Builder;
+import com.yahoo.vespa.indexinglanguage.ExpressionConverter;
 import com.yahoo.vespa.indexinglanguage.ExpressionVisitor;
+import com.yahoo.vespa.indexinglanguage.expressions.AttributeExpression;
 import com.yahoo.vespa.indexinglanguage.expressions.ClearStateExpression;
 import com.yahoo.vespa.indexinglanguage.expressions.Expression;
 import com.yahoo.vespa.indexinglanguage.expressions.GuardExpression;
@@ -16,8 +18,10 @@ import com.yahoo.vespa.indexinglanguage.expressions.PassthroughExpression;
 import com.yahoo.vespa.indexinglanguage.expressions.ScriptExpression;
 import com.yahoo.vespa.indexinglanguage.expressions.SetLanguageExpression;
 import com.yahoo.vespa.indexinglanguage.expressions.StatementExpression;
+import com.yahoo.vespa.indexinglanguage.expressions.TokenizeExpression;
 import com.yahoo.vespa.indexinglanguage.expressions.ZCurveExpression;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -31,13 +35,15 @@ import java.util.Set;
  *
  * @author bratseth
  */
-public final class IndexingScript extends Derived implements IlscriptsConfig.Producer {
+public final class IndexingScript extends Derived {
 
     private final List<String> docFields = new ArrayList<>();
     private final List<Expression> expressions = new ArrayList<>();
     private List<ImmutableSDField> fieldsSettingLanguage;
+    private final boolean isStreaming;
 
-    public IndexingScript(Schema schema) {
+    public IndexingScript(Schema schema, boolean isStreaming) {
+        this.isStreaming = isStreaming;
         derive(schema);
     }
 
@@ -87,8 +93,8 @@ public final class IndexingScript extends Derived implements IlscriptsConfig.Pro
         return "ilscripts";
     }
 
-    @Override
     public void getConfig(IlscriptsConfig.Builder configBuilder) {
+        // Append
         IlscriptsConfig.Ilscript.Builder ilscriptBuilder = new IlscriptsConfig.Ilscript.Builder();
         ilscriptBuilder.doctype(getName());
         ilscriptBuilder.docfield(docFields);
@@ -96,21 +102,81 @@ public final class IndexingScript extends Derived implements IlscriptsConfig.Pro
         configBuilder.ilscript(ilscriptBuilder);
     }
 
+    public void export(String toDirectory) throws IOException {
+        var builder = new IlscriptsConfig.Builder();
+        getConfig(builder);
+        export(toDirectory, builder.build());
+    }
+
+    private static class DropTokenize extends ExpressionConverter {
+        @Override
+        protected boolean shouldConvert(Expression exp) {
+            return exp instanceof TokenizeExpression;
+        }
+
+        @Override
+        protected Expression doConvert(Expression exp) {
+            return null;
+        }
+    }
+
+    // for streaming, drop zcurve conversion to attribute with suffix
+    private static class DropZcurve extends ExpressionConverter {
+        private static final String zSuffix = "_zcurve";
+        private static final int zSuffixLen = zSuffix.length();
+        private boolean seenZcurve = false;
+
+        @Override
+        protected boolean shouldConvert(Expression exp) {
+            if (exp instanceof ZCurveExpression) {
+                seenZcurve = true;
+                return true;
+            }
+            if (seenZcurve && exp instanceof AttributeExpression attrExp) {
+                return attrExp.getFieldName().endsWith(zSuffix);
+            }
+            return false;
+        }
+
+        @Override
+        protected Expression doConvert(Expression exp) {
+            if (exp instanceof ZCurveExpression) {
+                return null;
+            }
+            if (exp instanceof AttributeExpression attrExp) {
+                String orig = attrExp.getFieldName();
+                int len = orig.length();
+                if (len > zSuffixLen && orig.endsWith(zSuffix)) {
+                    String fieldName = orig.substring(0, len - zSuffixLen);
+                    var result = new AttributeExpression(fieldName);
+                    return result;
+                }
+            }
+            return exp;
+        }
+    }
+
     private void addContentInOrder(IlscriptsConfig.Ilscript.Builder ilscriptBuilder) {
         ArrayList<Expression> later = new ArrayList<>();
         Set<String> touchedFields = new HashSet<>();
         for (Expression expression : expressions) {
-            if (modifiesSelf(expression) && ! setsLanguage(expression))
+            if (isStreaming) {
+                expression = expression.convertChildren(new DropTokenize());
+                expression = expression.convertChildren(new DropZcurve());
+            }
+            if (modifiesSelf(expression) && ! setsLanguage(expression)) {
                 later.add(expression);
-            else
+            } else {
                 ilscriptBuilder.content(expression.toString());
+            }
 
             FieldScanVisitor fieldFetcher = new FieldScanVisitor();
             fieldFetcher.visit(expression);
             touchedFields.addAll(fieldFetcher.touchedFields());
         }
-        for (Expression exp : later)
+        for (Expression exp : later) {
             ilscriptBuilder.content(exp.toString());
+        }
         generateSyntheticStatementsForUntouchedFields(ilscriptBuilder, touchedFields);
     }
 
@@ -171,8 +237,8 @@ public final class IndexingScript extends Derived implements IlscriptsConfig.Pro
     }
 
     private static class FieldScanVisitor extends ExpressionVisitor {
-        List<String> touchedFields = new ArrayList<String>();
-        List<String> candidates = new ArrayList<String>();
+        List<String> touchedFields = new ArrayList<>();
+        List<String> candidates = new ArrayList<>();
 
         @Override
         protected void doVisit(Expression exp) {

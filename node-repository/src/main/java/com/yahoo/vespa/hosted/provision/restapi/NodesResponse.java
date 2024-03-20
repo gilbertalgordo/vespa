@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.hosted.provision.restapi;
 
 import com.yahoo.component.Version;
@@ -13,7 +13,7 @@ import com.yahoo.config.provision.serialization.NetworkPortsSerializer;
 import com.yahoo.container.jdisc.HttpRequest;
 import com.yahoo.restapi.SlimeJsonResponse;
 import com.yahoo.slime.Cursor;
-import com.yahoo.vespa.flags.FetchVector;
+import com.yahoo.vespa.flags.Dimension;
 import com.yahoo.vespa.flags.PermanentFlags;
 import com.yahoo.vespa.flags.StringFlag;
 import com.yahoo.vespa.hosted.provision.Node;
@@ -134,6 +134,7 @@ class NodesResponse extends SlimeJsonResponse {
         object.setString("flavor", node.flavor().name());
         node.reservedTo().ifPresent(reservedTo -> object.setString("reservedTo", reservedTo.value()));
         node.exclusiveToApplicationId().ifPresent(applicationId -> object.setString("exclusiveTo", applicationId.serializedForm()));
+        node.provisionedForApplicationId().ifPresent(applicationId -> object.setString("provisionedFor", applicationId.serializedForm()));
         node.hostTTL().ifPresent(ttl -> object.setLong("hostTTL", ttl.toMillis()));
         node.hostEmptyAt().ifPresent(emptyAt -> object.setLong("hostEmptyAt", emptyAt.toEpochMilli()));
         node.exclusiveToClusterType().ifPresent(clusterType -> object.setString("exclusiveToClusterType", clusterType.name()));
@@ -166,7 +167,7 @@ class NodesResponse extends SlimeJsonResponse {
         node.status().osVersion().current().ifPresent(version -> object.setString("currentOsVersion", version.toFullString()));
         node.status().osVersion().wanted().ifPresent(version -> object.setString("wantedOsVersion", version.toFullString()));
         if (node.type().isHost()) {
-            object.setBool("deferOsUpgrade", !nodeRepository.osVersions().canUpgrade(node));
+            object.setBool("deferOsUpgrade", nodeRepository.osVersions().deferringUpgrade(node));
         }
         node.status().firmwareVerifiedAt().ifPresent(instant -> object.setLong("currentFirmwareCheck", instant.toEpochMilli()));
         if (node.type().isHost())
@@ -179,7 +180,7 @@ class NodesResponse extends SlimeJsonResponse {
         object.setBool("wantToDeprovision", node.status().wantToDeprovision());
         object.setBool("wantToRebuild", node.status().wantToRebuild());
         object.setBool("wantToUpgradeFlavor", node.status().wantToUpgradeFlavor());
-        object.setBool("down", node.isDown());
+        object.setBool("down", node.history().isDown());
         toSlime(node.history().events(), object.setArray("history"));
         toSlime(node.history().log(), object.setArray("log"));
         ipAddressesToSlime(node.ipConfig().primary(), object.setArray("ipAddresses"));
@@ -194,23 +195,17 @@ class NodesResponse extends SlimeJsonResponse {
             object.setString("cloudAccount", node.cloudAccount().value());
         }
         node.wireguardPubKey().ifPresent(key -> toSlime(key, object.setObject("wireguard")));
-
-        // TODO wg: remove when all nodes have upgraded to new key+timestamp format
-        node.wireguardPubKey().ifPresent(key -> {
-            object.setString("wireguardPubkey", key.key().value());
-            object.setLong("wireguardKeyTimestamp", key.timestamp().toEpochMilli());
-        });
     }
 
     private Version resolveVersionFlag(StringFlag flag, Node node, Allocation allocation) {
         String value = flag
-                .with(FetchVector.Dimension.HOSTNAME, node.hostname())
-                .with(FetchVector.Dimension.NODE_TYPE, node.type().name())
-                .with(FetchVector.Dimension.TENANT_ID, allocation.owner().tenant().value())
-                .with(FetchVector.Dimension.INSTANCE_ID, allocation.owner().serializedForm())
-                .with(FetchVector.Dimension.CLUSTER_TYPE, allocation.membership().cluster().type().name())
-                .with(FetchVector.Dimension.CLUSTER_ID, allocation.membership().cluster().id().value())
-                .with(FetchVector.Dimension.VESPA_VERSION, allocation.membership().cluster().vespaVersion().toFullString())
+                .with(Dimension.HOSTNAME, node.hostname())
+                .with(Dimension.NODE_TYPE, node.type().name())
+                .with(Dimension.TENANT_ID, allocation.owner().tenant().value())
+                .with(Dimension.INSTANCE_ID, allocation.owner().serializedForm())
+                .with(Dimension.CLUSTER_TYPE, allocation.membership().cluster().type().name())
+                .with(Dimension.CLUSTER_ID, allocation.membership().cluster().id().value())
+                .with(Dimension.VESPA_VERSION, allocation.membership().cluster().vespaVersion().toFullString())
                 .value();
 
         return value.isEmpty() ?

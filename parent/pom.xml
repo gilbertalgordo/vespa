@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root. -->
+<!-- Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root. -->
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
     <modelVersion>4.0.0</modelVersion>
     <artifactId>parent</artifactId>
@@ -232,12 +232,12 @@
                 <plugin>
                     <groupId>org.codehaus.mojo</groupId>
                     <artifactId>build-helper-maven-plugin</artifactId>
-                    <version>3.4.0</version>
+                    <version>3.5.0</version>
                 </plugin>
                 <plugin>
                     <groupId>org.codehaus.mojo</groupId>
                     <artifactId>exec-maven-plugin</artifactId>
-                    <version>3.1.0</version>
+                    <version>3.2.0</version>
                 </plugin>
                 <plugin>
                     <groupId>org.codehaus.mojo</groupId>
@@ -317,7 +317,7 @@
                     -->
                     <groupId>org.openrewrite.maven</groupId>
                     <artifactId>rewrite-maven-plugin</artifactId>
-                    <version>5.8.1</version>
+                    <version>5.25.0</version>
                     <configuration>
                         <activeRecipes>
                             <recipe>org.openrewrite.java.testing.junit5.JUnit5BestPractices</recipe>
@@ -327,7 +327,7 @@
                         <dependency>
                             <groupId>org.openrewrite.recipe</groupId>
                             <artifactId>rewrite-testing-frameworks</artifactId>
-                            <version>2.0.12</version>
+                            <version>2.5.0</version>
                         </dependency>
                     </dependencies>
                 </plugin>
@@ -494,6 +494,14 @@
                 <artifactId>zookeeper</artifactId>
                 <version>${zookeeper.client.vespa.version}</version>
                 <exclusions>
+                    <!--
+                      Container provides wiring for all common log libraries
+                      Duplicate embedding results in various warnings being printed to stderr
+                     -->
+                    <exclusion>
+                        <groupId>ch.qos.logback</groupId>
+                        <artifactId>*</artifactId>
+                    </exclusion>
                     <exclusion>
                         <groupId>org.slf4j</groupId>
                         <artifactId>slf4j-log4j12</artifactId>
@@ -511,11 +519,16 @@
             </dependency>
             <dependency>
                 <!-- Needed by zookeeper, which has an optional dependency.
-                     Version must be the same as the one zk uses - check the zk pom file.  -->
+                     Version must be the same as the one zk uses - check the zk pom file.
+                     https://github.com/apache/zookeeper/blob/master/pom.xml -->
                 <groupId>com.github.spotbugs</groupId>
                 <artifactId>spotbugs-annotations</artifactId>
-                <!-- No version property, as we don't want maven-dependency-plugin to alert about newer versions. -->
-                <version>3.1.9</version>
+                <version>${spotbugs.vespa.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.vafer</groupId>
+                <artifactId>jdependency</artifactId>
+                <version>${vafer.jdependency.vespa.version}</version>
             </dependency>
             <dependency>
                 <groupId>org.wiremock</groupId>
@@ -526,6 +539,11 @@
                 <groupId>com.google.code.findbugs</groupId>
                 <artifactId>jsr305</artifactId>
                 <version>${findbugs.vespa.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.google.guava</groupId>
+                <artifactId>failureaccess</artifactId>
+                <version>${failureaccess.vespa.version}</version>
             </dependency>
             <dependency>
                 <groupId>com.google.guava</groupId>
@@ -584,6 +602,10 @@
                         <groupId>org.bouncycastle</groupId>
                         <artifactId>bcpkix-jdk15on</artifactId>
                     </exclusion>
+                    <exclusion>
+                        <groupId>org.kohsuke</groupId>
+                        <artifactId>libpam4j</artifactId>
+                    </exclusion>
                 </exclusions>
             </dependency>
             <dependency>
@@ -594,6 +616,10 @@
                     <exclusion>
                         <groupId>org.bouncycastle</groupId>
                         <artifactId>bcpkix-jdk15on</artifactId>
+                    </exclusion>
+                    <exclusion>
+                        <groupId>org.kohsuke</groupId>
+                        <artifactId>libpam4j</artifactId>
                     </exclusion>
                 </exclusions>
             </dependency>
@@ -610,6 +636,10 @@
                     <exclusion>
                         <groupId>org.bouncycastle</groupId>
                         <artifactId>bcpkix-jdk15on</artifactId>
+                    </exclusion>
+                    <exclusion>
+                        <groupId>org.kohsuke</groupId>
+                        <artifactId>libpam4j</artifactId>
                     </exclusion>
                 </exclusions>
             </dependency>
@@ -666,12 +696,22 @@
             <dependency>
                 <groupId>commons-cli</groupId>
                 <artifactId>commons-cli</artifactId>
-                <version>1.5.0</version>
+                <version>${commons-cli.vespa.version}</version>
             </dependency>
             <dependency>
                 <groupId>commons-codec</groupId>
                 <artifactId>commons-codec</artifactId>
                 <version>${commons-codec.vespa.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>commons-logging</groupId>
+                <artifactId>commons-logging</artifactId>
+                <version>${commons-logging.vespa.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.airlift</groupId>
+                <artifactId>aircompressor</artifactId>
+                <version>${aircompressor.vespa.version}</version>
             </dependency>
             <dependency>
                 <groupId>io.airlift</groupId>
@@ -692,10 +732,21 @@
                 <groupId>io.netty</groupId>
                 <artifactId>netty-transport-native-epoll</artifactId>
                 <version>${netty.vespa.version}</version>
+                <classifier>linux-x86_64</classifier>
+            </dependency>
+            <dependency>
+                <groupId>io.netty</groupId>
+                <artifactId>netty-transport-native-epoll</artifactId>
+                <version>${netty.vespa.version}</version>
             </dependency>
             <dependency>
                 <groupId>io.netty</groupId>
                 <artifactId>netty-tcnative</artifactId>
+                <version>${netty-tcnative.vespa.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.netty</groupId>
+                <artifactId>netty-tcnative-boringssl-static</artifactId>
                 <version>${netty-tcnative.vespa.version}</version>
             </dependency>
             <dependency>
@@ -737,11 +788,6 @@
                 <groupId>org.apache.commons</groupId>
                 <artifactId>commons-compress</artifactId>
                 <version>${commons-compress.vespa.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>org.apache.commons</groupId>
-                <artifactId>commons-exec</artifactId>
-                <version>${commons-exec.vespa.version}</version>
             </dependency>
             <dependency>
                 <groupId>org.apache.curator</groupId>
@@ -933,7 +979,12 @@
             <dependency>
                 <groupId>org.apache.velocity</groupId>
                 <artifactId>velocity-engine-core</artifactId>
-                <version>2.3</version>
+                <version>${velocity.vespa.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.velocity.tools</groupId>
+                <artifactId>velocity-tools-generic</artifactId>
+                <version>${velocity.tools.vespa.version}</version>
             </dependency>
             <dependency>
                 <groupId>org.apiguardian</groupId>
@@ -948,7 +999,17 @@
             <dependency>
                 <groupId>org.codehaus.plexus</groupId>
                 <artifactId>plexus-interpolation</artifactId>
-                <version>1.26</version>
+                <version>${plexus-interpolation.vespa.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.codehaus.plexus</groupId>
+                <artifactId>plexus-utils</artifactId>
+                <version>${plexus-utils.vespa.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.codehaus.plexus</groupId>
+                <artifactId>plexus-xml</artifactId>
+                <version>${plexus-xml.vespa.version}</version>
             </dependency>
             <dependency>
                 <groupId>org.bouncycastle</groupId>
@@ -969,6 +1030,16 @@
                 <groupId>org.eclipse.collections</groupId>
                 <artifactId>eclipse-collections</artifactId>
                 <version>${eclipse-collections.vespa.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.eclipse.sisu</groupId>
+                <artifactId>org.eclipse.sisu.inject</artifactId>
+                <version>${eclipse-sisu.vespa.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.eclipse.sisu</groupId>
+                <artifactId>org.eclipse.sisu.plexus</artifactId>
+                <version>${eclipse-sisu.vespa.version}</version>
             </dependency>
             <dependency>
                 <groupId>org.eclipse.collections</groupId>
@@ -1116,7 +1187,7 @@
                      See pluginManagement of rewrite-maven-plugin for more details -->
                 <groupId>org.openrewrite.recipe</groupId>
                 <artifactId>rewrite-recipe-bom</artifactId>
-                <version>2.3.1</version>
+                <version>2.8.0</version>
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>

@@ -1,14 +1,17 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include "predicate_index.h"
+#include "document_features_store_saver.h"
 #include "predicate_hash.h"
+#include "predicate_index_saver.h"
+#include "simple_index_saver.h"
+#include <vespa/searchlib/util/data_buffer_writer.h>
 #include <vespa/vespalib/datastore/buffer_type.hpp>
 #include <vespa/vespalib/btree/btree.hpp>
 #include <vespa/vespalib/btree/btreeroot.hpp>
 #include <vespa/vespalib/btree/btreeiterator.hpp>
 #include <vespa/vespalib/btree/btreestore.hpp>
 #include <vespa/vespalib/btree/btreenodeallocator.hpp>
-
 
 using vespalib::datastore::EntryRef;
 using vespalib::DataBuffer;
@@ -42,20 +45,20 @@ PredicateIndex::indexDocumentFeatures(uint32_t doc_id, const PredicateIndex::Fea
 namespace {
 constexpr double THRESHOLD_USE_BIT_VECTOR_CACHE = 0.1;
 
-// PostingSerializer that writes intervals from interval store based
-// on the EntryRef that is to be serialized.
+// PostingSaver that writes intervals from interval store based
+// on the EntryRef that is to be saved.
 template <typename IntervalT>
-class IntervalSerializer : public PostingSerializer<EntryRef> {
+class IntervalSaver : public PostingSaver<EntryRef> {
     const PredicateIntervalStore &_store;
 public:
-    IntervalSerializer(const PredicateIntervalStore &store) : _store(store) {}
-    void serialize(const EntryRef &ref, DataBuffer &buffer) const override {
+    IntervalSaver(const PredicateIntervalStore &store) : _store(store) {}
+    void save(const EntryRef &ref, BufferWriter& writer) const override {
         uint32_t size;
         IntervalT single_buf;
         const IntervalT *interval = _store.get(ref, size, &single_buf);
-        buffer.writeInt16(size);
+        nbo_write<uint16_t>(writer, size);
         for (uint32_t i = 0; i < size; ++i) {
-            interval[i].serialize(buffer);
+            interval[i].save(writer);
         }
     }
 };
@@ -125,18 +128,14 @@ PredicateIndex::PredicateIndex(GenerationHolder &genHolder,
 
 PredicateIndex::~PredicateIndex() = default;
 
-void
-PredicateIndex::serialize(DataBuffer &buffer) const {
-    _features_store.serialize(buffer);
-    buffer.writeInt16(_arity);
-    buffer.writeInt32(_zero_constraint_docs.size());
-    for (auto it = _zero_constraint_docs.begin(); it.valid(); ++it) {
-        buffer.writeInt32(it.getKey());
-    }
-    IntervalSerializer<Interval> interval_serializer(_interval_store);
-    _interval_index.serialize(buffer, interval_serializer);
-    IntervalSerializer<IntervalWithBounds> bounds_serializer(_interval_store);
-    _bounds_index.serialize(buffer, bounds_serializer);
+std::unique_ptr<ISaver>
+PredicateIndex::make_saver() const
+{
+    return std::make_unique<PredicateIndexSaver>(_features_store.make_saver(),
+                                                 _arity,
+                                                 _zero_constraint_docs.getFrozenView(),
+                                                 _interval_index.make_saver(std::make_unique<IntervalSaver<Interval>>(_interval_store)),
+                                                 _bounds_index.make_saver(std::make_unique<IntervalSaver<IntervalWithBounds>>(_interval_store)));
 }
 
 void
@@ -210,6 +209,7 @@ PredicateIndex::commit() {
     _interval_index.commit();
     _bounds_index.commit();
     _zero_constraint_docs.getAllocator().freeze();
+    _features_store.commit();
 }
 
 void
@@ -218,6 +218,7 @@ PredicateIndex::reclaim_memory(generation_t oldest_used_gen) {
     _bounds_index.reclaim_memory(oldest_used_gen);
     _interval_store.reclaim_memory(oldest_used_gen);
     _zero_constraint_docs.getAllocator().reclaim_memory(oldest_used_gen);
+    _features_store.reclaim_memory(oldest_used_gen);
 }
 
 void
@@ -226,6 +227,7 @@ PredicateIndex::assign_generation(generation_t current_gen) {
     _bounds_index.assign_generation(current_gen);
     _interval_store.assign_generation(current_gen);
     _zero_constraint_docs.getAllocator().assign_generation(current_gen);
+    _features_store.assign_generation(current_gen);
 }
 
 vespalib::MemoryUsage

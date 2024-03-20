@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.schema.processing;
 
 import com.yahoo.config.application.api.DeployLogger;
@@ -13,6 +13,9 @@ import com.yahoo.vespa.documentmodel.SummaryField;
 import com.yahoo.vespa.documentmodel.SummaryTransform;
 import com.yahoo.vespa.model.container.search.QueryProfiles;
 
+import java.util.LinkedHashSet;
+import java.util.Set;
+
 /**
  * This processor creates a {@link com.yahoo.schema.document.SDDocumentType} for each {@link Schema}
  * object which holds all the data that search
@@ -20,6 +23,8 @@ import com.yahoo.vespa.model.container.search.QueryProfiles;
  * implicit fields. All non-indexed and non-summary fields are discarded.
  */
 public class AddExtraFieldsToDocument extends Processor {
+
+    Set<String> extraSummaryFields = new LinkedHashSet<String>();
 
     AddExtraFieldsToDocument(Schema schema, DeployLogger deployLogger, RankProfileRegistry rankProfileRegistry, QueryProfiles queryProfiles) {
         super(schema, deployLogger, rankProfileRegistry, queryProfiles);
@@ -48,11 +53,24 @@ public class AddExtraFieldsToDocument extends Processor {
                     }
                 }
             }
+            /*
+             * Don't use extra summary fields when generating summaries. They will not be created nor populated by
+             * future vespa versions. When vespa version 'X' stops using these fields and vespa version 'Y' stops
+             * populating the fields, rollback from vespa version >= 'Y' to vespa version < 'X' will break (missing
+             * summary fields).
+             */
+            for (var docsum : schema.getSummaries().values()) {
+                for (var summaryField : docsum.getSummaryFields().values()) {
+                    if (extraSummaryFields.contains(summaryField.getName())) {
+                        considerCopyTransformForExtraSummaryField(schema, summaryField);
+                    }
+                }
+            }
         }
     }
 
     private void addSdField(Schema schema, SDDocumentType document, SDField field, boolean validate) {
-        if (! field.hasIndex() && field.getAttributes().isEmpty()) {
+        if (! field.hasIndex() && field.getAttributes().isEmpty() && !field.doesSummarying()) {
             return;
         }
         for (Attribute atr : field.getAttributes().values()) {
@@ -70,6 +88,7 @@ public class AddExtraFieldsToDocument extends Processor {
             if (existingField == null) {
                 SDField newField = new SDField(document, field.getName(), field.getDataType());
                 newField.setIsExtraField(true);
+                extraSummaryFields.add(field.getName());
                 document.addField(newField);
             } else if (!existingField.isImportedField()) {
                 document.addField(existingField.asField());
@@ -86,5 +105,17 @@ public class AddExtraFieldsToDocument extends Processor {
                 throw newProcessException(schema, field, "Field shadows another.");
         }
         document.addField(field);
+    }
+
+    private void considerCopyTransformForExtraSummaryField(Schema schema, SummaryField field) {
+        if (field.getTransform() == SummaryTransform.NONE && field.hasExplicitSingleSource() &&
+                fieldIsExtraSummaryField(schema, field.getName())) {
+            field.setTransform(SummaryTransform.COPY);
+        }
+    }
+
+    private boolean fieldIsExtraSummaryField(Schema schema, String name) {
+        var field = schema.getConcreteField(name);
+        return field == null || extraSummaryFields.contains(name);
     }
 }

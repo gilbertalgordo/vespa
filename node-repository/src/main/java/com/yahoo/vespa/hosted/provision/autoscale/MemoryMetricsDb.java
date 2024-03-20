@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.hosted.provision.autoscale;
 
 import com.yahoo.collections.Pair;
@@ -14,7 +14,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.stream.Collectors;
 
 /**
  * An in-memory implementation of the metrics Db.
@@ -56,12 +55,6 @@ public class MemoryMetricsDb implements MetricsDb {
             for (var value : clusterMetrics.entrySet()) {
                 add(application, value.getKey(), value.getValue());
             }
-        }
-    }
-
-    public void clearClusterMetrics(ApplicationId application, ClusterSpec.Id cluster) {
-        synchronized (lock) {
-            clusterTimeseries.remove(new Pair<>(application, cluster));
         }
     }
 

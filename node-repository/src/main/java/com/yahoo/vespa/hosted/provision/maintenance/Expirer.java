@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.hosted.provision.maintenance;
 
 import com.yahoo.jdisc.Metric;
@@ -47,7 +47,7 @@ public abstract class Expirer extends NodeRepositoryMaintainer {
             expire(expired.asList());
         }
 
-        metric.add("expired." + fromState, expired.size(), null);
+        metric.add("nodes.expired." + fromState, expired.size(), null);
         return 1.0;
     }
 

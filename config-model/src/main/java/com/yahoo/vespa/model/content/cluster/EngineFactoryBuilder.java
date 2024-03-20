@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.model.content.cluster;
 
 import com.yahoo.vespa.model.builder.xml.dom.ModelElement;
@@ -13,7 +13,7 @@ public class EngineFactoryBuilder {
     public PersistenceEngine.PersistenceFactory build(ModelElement clusterElem, ContentCluster c) {
         ModelElement persistence = clusterElem.child("engine");
         if (persistence != null) {
-            if (c.getSearch().hasIndexedCluster() && persistence.child("proton") == null) {
+            if (c.getSearch().hasIndexed() && persistence.child("proton") == null) {
                 throw new IllegalArgumentException("Persistence engine does not allow for indexed search. Please use <proton> as your engine.");
             }
 

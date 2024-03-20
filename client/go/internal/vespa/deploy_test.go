@@ -1,7 +1,8 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package vespa
 
 import (
+	"archive/zip"
 	"io"
 	"mime"
 	"mime/multipart"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/vespa-engine/vespa/client/go/internal/ioutil"
 	"github.com/vespa-engine/vespa/client/go/internal/mock"
 	"github.com/vespa-engine/vespa/client/go/internal/version"
 )
@@ -80,8 +82,10 @@ func TestSubmit(t *testing.T) {
 		Target:             target,
 		ApplicationPackage: ApplicationPackage{Path: appDir},
 	}
-	httpClient.NextResponseString(200, "ok")
-	require.Nil(t, Submit(opts, Submission{}))
+	httpClient.NextResponseString(200, `{"build": 42}`)
+	build, err := Submit(opts, Submission{})
+	require.Nil(t, err)
+	require.Equal(t, int64(42), build)
 	require.Nil(t, httpClient.LastRequest.ParseMultipartForm(1<<20))
 	assert.Equal(t, "{}", httpClient.LastRequest.FormValue("submitOptions"))
 	f, err := httpClient.LastRequest.MultipartForm.File["applicationZip"][0].Open()
@@ -91,13 +95,16 @@ func TestSubmit(t *testing.T) {
 	f.Read(contents)
 	assert.Equal(t, "PK\x03\x04\x14", string(contents))
 
-	require.Nil(t, Submit(opts, Submission{
+	httpClient.NextResponseString(200, `{"build": 43}`)
+	build, err = Submit(opts, Submission{
 		Risk:        1,
 		Commit:      "sha",
 		Description: "broken garbage",
 		AuthorEmail: "foo@example.com",
 		SourceURL:   "https://github.com/foo/repo",
-	}))
+	})
+	require.Nil(t, err)
+	require.Equal(t, int64(43), build)
 	require.Nil(t, httpClient.LastRequest.ParseMultipartForm(1<<20))
 	assert.Equal(t, "https://api-ctl.vespa-cloud.com:4443/application/v4/tenant/t1/application/a1/submit", httpClient.LastRequest.URL.String())
 	assert.Equal(t,
@@ -146,9 +153,9 @@ func TestFindApplicationPackage(t *testing.T) {
 		existingFiles:    []string{filepath.Join(dir, "pom.xml"), filepath.Join(dir, "src/test/application/tests/foo.json")},
 	})
 	assertFindApplicationPackage(t, dir, pkgFixture{
-		existingFile:     filepath.Join(dir, "pom.xml"),
-		requirePackaging: true,
-		fail:             true,
+		existingFile: filepath.Join(dir, "pom.xml"),
+		compiled:     true,
+		fail:         true,
 	})
 	assertFindApplicationPackage(t, dir, pkgFixture{
 		expectedPath:  filepath.Join(dir, "target", "application"),
@@ -158,6 +165,12 @@ func TestFindApplicationPackage(t *testing.T) {
 		expectedPath:     filepath.Join(dir, "target", "application"),
 		expectedTestPath: filepath.Join(dir, "target", "application-test"),
 		existingFiles:    []string{filepath.Join(dir, "target", "application"), filepath.Join(dir, "target", "application-test")},
+	})
+	assertFindApplicationPackage(t, dir, pkgFixture{
+		expectedPath:     filepath.Join(dir, "src", "main", "application"),
+		expectedTestPath: filepath.Join(dir, "src", "test", "application"),
+		existingFiles:    []string{filepath.Join(dir, "target", "application"), filepath.Join(dir, "target", "application-test")},
+		sourceOnly:       true,
 	})
 	zip := filepath.Join(dir, "myapp.zip")
 	assertFindApplicationPackage(t, zip, pkgFixture{
@@ -190,12 +203,77 @@ func TestDeactivateCloud(t *testing.T) {
 	assert.Equal(t, "https://api-ctl.vespa-cloud.com:4443/application/v4/tenant/t1/application/a1/instance/i1/environment/dev/region/us-north-1", req.URL.String())
 }
 
+func TestFetch(t *testing.T) {
+	httpClient := mock.HTTPClient{}
+	target := LocalTarget(&httpClient, TLSOptions{}, 0)
+	opts := DeploymentOptions{Target: target}
+	httpClient.NextResponse(mock.HTTPResponse{
+		URI:    "/application/v2/tenant/default/application/default/environment/prod/region/default/instance/default/content",
+		Status: 200,
+		Body: []byte(`[
+"/application/v2/tenant/default/application/default/environment/prod/region/default/instance/default/content/schemas/",
+"/application/v2/tenant/default/application/default/environment/prod/region/default/instance/default/content/services.xml"
+]`),
+	})
+	httpClient.NextResponse(mock.HTTPResponse{
+		URI:    "/application/v2/tenant/default/application/default/environment/prod/region/default/instance/default/content/schemas/",
+		Status: 200,
+		Body: []byte(`[
+"/application/v2/tenant/default/application/default/environment/prod/region/default/instance/default/content/schemas/music.sd"
+]`),
+	})
+	httpClient.NextResponse(mock.HTTPResponse{
+		URI:    "/application/v2/tenant/default/application/default/environment/prod/region/default/instance/default/content/schemas/music.sd",
+		Status: 200,
+		Body:   []byte(`music.sd contents`),
+	})
+	httpClient.NextResponse(mock.HTTPResponse{
+		URI:    "/application/v2/tenant/default/application/default/environment/prod/region/default/instance/default/content/services.xml",
+		Status: 200,
+		Body:   []byte(`services.xml contents`),
+	})
+	dir := t.TempDir()
+	dst, err := Fetch(opts, dir)
+	require.Nil(t, err)
+	assert.True(t, ioutil.Exists(dst))
+
+	f, err := os.Open(dst)
+	require.Nil(t, err)
+	defer f.Close()
+	zr, err := zip.NewReader(f, 1000)
+	require.Nil(t, err)
+	schema, err := zr.Open("schemas/music.sd")
+	require.Nil(t, err)
+	data, err := io.ReadAll(schema)
+	require.Nil(t, err)
+	assert.Equal(t, `music.sd contents`, string(data))
+}
+
+func TestFetchCloud(t *testing.T) {
+	httpClient := mock.HTTPClient{}
+	target, _ := createCloudTarget(t, io.Discard)
+	cloudTarget, ok := target.(*cloudTarget)
+	require.True(t, ok)
+	cloudTarget.httpClient = &httpClient
+	opts := DeploymentOptions{Target: target}
+	httpClient.NextResponse(mock.HTTPResponse{
+		URI:    "/application/v4/tenant/t1/application/a1/instance/i1/job/dev-us-north-1/package",
+		Status: 200,
+		Body:   []byte(`application zip`),
+	})
+	dir := t.TempDir()
+	dst, err := Fetch(opts, dir)
+	require.Nil(t, err)
+	assert.True(t, ioutil.Exists(dst))
+}
+
 type pkgFixture struct {
 	expectedPath     string
 	expectedTestPath string
 	existingFile     string
 	existingFiles    []string
-	requirePackaging bool
+	compiled         bool
+	sourceOnly       bool
 	fail             bool
 }
 
@@ -207,7 +285,7 @@ func assertFindApplicationPackage(t *testing.T, zipOrDir string, fixture pkgFixt
 	for _, f := range fixture.existingFiles {
 		writeFile(t, f)
 	}
-	pkg, err := FindApplicationPackage(zipOrDir, fixture.requirePackaging)
+	pkg, err := FindApplicationPackage(zipOrDir, PackageOptions{Compiled: fixture.compiled, SourceOnly: fixture.sourceOnly})
 	assert.Equal(t, err != nil, fixture.fail, "Expected error for "+zipOrDir)
 	assert.Equal(t, fixture.expectedPath, pkg.Path)
 	assert.Equal(t, fixture.expectedTestPath, pkg.TestPath)

@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 #include "mergeoperation.h"
 #include <vespa/document/bucket/fixed_bucket_spaces.h>
 #include <vespa/storage/distributor/idealstatemanager.h>
@@ -6,9 +6,11 @@
 #include <vespa/storage/distributor/distributor_bucket_space.h>
 #include <vespa/storage/distributor/node_supported_features_repo.h>
 #include <vespa/storage/distributor/pendingmessagetracker.h>
+#include <vespa/storage/config/distributorconfiguration.h>
 #include <vespa/storageframework/generic/clock/clock.h>
 #include <vespa/vdslib/distribution/distribution.h>
 #include <vespa/vdslib/state/clusterstate.h>
+#include <vespa/vespalib/stllike/hash_set.h>
 #include <array>
 
 #include <vespa/log/bufferedlogger.h>
@@ -121,7 +123,7 @@ MergeOperation::onStart(DistributorStripeMessageSender& sender)
     }
 
     const lib::ClusterState& clusterState(_bucketSpace->getClusterState());
-    std::vector<std::unique_ptr<BucketCopy> > newCopies;
+    std::vector<std::unique_ptr<BucketCopy>> newCopies;
     std::vector<MergeMetaData> nodes;
 
     for (uint16_t node : getNodes()) {
@@ -139,12 +141,13 @@ MergeOperation::onStart(DistributorStripeMessageSender& sender)
         _mnodes.emplace_back(node._nodeIndex, node._sourceOnly);
     }
 
+    const auto estimated_memory_footprint = estimate_merge_memory_footprint_upper_bound(nodes);
+
     if (_mnodes.size() > 1) {
         auto msg = std::make_shared<api::MergeBucketCommand>(getBucket(), _mnodes,
                                                              _manager->operation_context().generate_unique_timestamp(),
                                                              clusterState.getVersion());
-        const bool may_send_unordered = (_manager->operation_context().distributor_config().use_unordered_merge_chaining()
-                                         && all_involved_nodes_support_unordered_merge_chaining());
+        const bool may_send_unordered = all_involved_nodes_support_unordered_merge_chaining();
         if (!may_send_unordered) {
             // Due to merge forwarding/chaining semantics, we must always send
             // the merge command to the lowest indexed storage node involved in
@@ -153,6 +156,7 @@ MergeOperation::onStart(DistributorStripeMessageSender& sender)
         } else {
             msg->set_use_unordered_forwarding(true);
         }
+        msg->set_estimated_memory_footprint(estimated_memory_footprint);
 
         LOG(debug, "Sending %s to storage node %u", msg->toString().c_str(), _mnodes[0].index);
 
@@ -359,12 +363,44 @@ bool MergeOperation::is_global_bucket_merge() const noexcept {
 
 bool MergeOperation::all_involved_nodes_support_unordered_merge_chaining() const noexcept {
     const auto& features_repo = _manager->operation_context().node_supported_features_repo();
-    for (uint16_t node : getNodes()) {
-        if (!features_repo.node_supported_features(node).unordered_merge_chaining) {
-            return false;
+    const auto & nodes = getNodes();
+    return std::all_of(nodes.begin(), nodes.end(), [&features_repo](uint16_t node) {
+        return features_repo.node_supported_features(node).unordered_merge_chaining;
+    });
+}
+
+uint32_t MergeOperation::estimate_merge_memory_footprint_upper_bound(const std::vector<MergeMetaData>& nodes) const noexcept {
+    vespalib::hash_set<uint32_t> seen_checksums;
+    uint32_t worst_case_footprint_across_nodes = 0;
+    uint32_t largest_single_doc_contribution   = 0;
+    for (const auto& node : nodes) {
+        if (!seen_checksums.contains(node.checksum())) {
+            seen_checksums.insert(node.checksum());
+            const uint32_t replica_size = node._copy->getUsedFileSize();
+            // We don't know the overlap of document sets across replicas, so we have to assume the
+            // worst and treat the replicas as entirely disjoint. In this case, the _sum_ of all disjoint
+            // replica group footprints gives us the upper bound.
+            // Note: saturate-on-overflow check requires all types to be _unsigned_ to work.
+            if (worst_case_footprint_across_nodes + replica_size >= worst_case_footprint_across_nodes) {
+                worst_case_footprint_across_nodes += replica_size;
+            } else {
+                worst_case_footprint_across_nodes = UINT32_MAX;
+            }
+            // Special case for not bounding single massive doc replica to that of the max
+            // configured bucket size.
+            if (node._copy->getDocumentCount() == 1) {
+                largest_single_doc_contribution = std::max(replica_size, largest_single_doc_contribution);
+            }
         }
     }
-    return true;
+    // We know that simply adding up replica sizes is likely to massively over-count in the common
+    // case (due to the intersection set between replicas rarely being empty), so we cap it by the
+    // max expected merge chunk size (which is expected to be configured equal to the split limit).
+    // _Except_ if we have single-doc replicas, as these are known not to overlap, and we know that
+    // the worst case must be the max of the chunk size and the biggest single doc size.
+    const uint32_t expected_max_merge_chunk_size = _manager->operation_context().distributor_config().getSplitSize();
+    return std::max(std::min(worst_case_footprint_across_nodes, expected_max_merge_chunk_size),
+                    largest_single_doc_contribution);
 }
 
 MergeBucketMetricSet*

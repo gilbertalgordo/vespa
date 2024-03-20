@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #pragma once
 
@@ -239,7 +239,7 @@ public:
     void performOperation(FeedToken token, FeedOperationUP op);
     void handleOperation(FeedToken token, FeedOperationUP op);
 
-    void handleMove(MoveOperation &op, std::shared_ptr<vespalib::IDestructorCallback> moveDoneCtx) override;
+    MoveResult handleMove(MoveOperation &op, std::shared_ptr<vespalib::IDestructorCallback> moveDoneCtx) override;
     void heartBeat() override;
 
     RPC::Result receive(const Packet &packet) override;

@@ -1,16 +1,16 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.jdisc.http.filter.util;
 
+import com.yahoo.jdisc.http.filter.DiscFilterRequest;
+import com.yahoo.jdisc.http.server.jetty.RequestUtils;
+import com.yahoo.json.Jackson;
 import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.fasterxml.jackson.databind.node.TextNode;
 import com.yahoo.jdisc.Response;
 import com.yahoo.jdisc.handler.ContentChannel;
 import com.yahoo.jdisc.handler.ResponseHandler;
 import com.yahoo.jdisc.http.Cookie;
-import com.yahoo.jdisc.http.filter.DiscFilterRequest;
-import com.yahoo.jdisc.http.server.jetty.RequestUtils;
 
 import java.io.UncheckedIOException;
 import java.net.URI;
@@ -25,8 +25,6 @@ import java.util.Optional;
  * @author valerijf
  */
 public class FilterUtils {
-
-    private static final ObjectMapper mapper = new ObjectMapper();
 
     public static boolean isDifferentOrigin(DiscFilterRequest request) {
         try {
@@ -43,10 +41,23 @@ public class FilterUtils {
         handler.handleResponse(response).close(null);
     }
 
+    public static URI createUriFromRequest(DiscFilterRequest request, String path, Optional<String> hostOverride) {
+        try {
+            // Prefer local port as observed by client over local listen port
+            int port = Optional.ofNullable((Integer)request.getAttribute(RequestUtils.JDICS_REQUEST_PORT))
+                    .orElse(request.getUri().getPort());
+            String host = hostOverride.orElse(request.getServerName());
+            return new URI(request.getScheme(), null, host, port, path, null, null);
+        } catch (URISyntaxException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
     public static void sendMessageResponse(ResponseHandler handler, List<Cookie> cookies, int code, String message) {
         Response response = createResponse(code, cookies);
         ContentChannel contentChannel = handler.handleResponse(response);
         try {
+            var mapper = Jackson.mapper();
             ObjectNode jsonNode = mapper.createObjectNode();
             jsonNode.set("message", TextNode.valueOf(message));
             byte[] jsonBytes = mapper.writerWithDefaultPrettyPrinter().writeValueAsBytes(jsonNode);
@@ -64,15 +75,4 @@ public class FilterUtils {
         return response;
     }
 
-    public static URI createUriFromRequest(DiscFilterRequest request, String path, Optional<String> hostOverride) {
-        try {
-            // Prefer local port as observed by client over local listen port
-            int port = Optional.ofNullable((Integer)request.getAttribute(RequestUtils.JDICS_REQUEST_PORT))
-                    .orElse(request.getUri().getPort());
-            String host = hostOverride.orElse(request.getServerName());
-            return new URI(request.getScheme(), null, host, port, path, null, null);
-        } catch (URISyntaxException e) {
-            throw new RuntimeException(e);
-        }
-    }
 }

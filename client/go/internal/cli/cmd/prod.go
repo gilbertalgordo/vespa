@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package cmd
 
 import (
@@ -10,11 +10,12 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
-	"github.com/vespa-engine/vespa/client/go/internal/util"
+	"github.com/vespa-engine/vespa/client/go/internal/ioutil"
 	"github.com/vespa-engine/vespa/client/go/internal/vespa"
 	"github.com/vespa-engine/vespa/client/go/internal/vespa/xml"
 )
@@ -53,16 +54,16 @@ https://cloud.vespa.ai/en/reference/deployment`,
 		DisableAutoGenTag: true,
 		SilenceUsage:      true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			target, err := cli.target(targetOptions{noCertificate: true, cloudExclusive: true})
+			target, err := cli.target(targetOptions{noCertificate: true, supportedType: cloudTargetOnly})
 			if err != nil {
 				return err
 			}
-			pkg, err := cli.applicationPackageFrom(args, false)
+			pkg, err := cli.applicationPackageFrom(args, vespa.PackageOptions{SourceOnly: true})
 			if err != nil {
 				return err
 			}
 			if pkg.IsZip() {
-				return errHint(fmt.Errorf("cannot modify compressed application package %s", pkg.Path),
+				return errHint(fmt.Errorf("cannot modify compressed application package '%s'", pkg.Path),
 					"Try running 'mvn clean' and run this command again")
 			}
 
@@ -135,7 +136,7 @@ https://cloud.vespa.ai/en/reference/vespa-cloud-api#submission-properties
 		Example: `$ mvn package # when adding custom Java components
 $ vespa prod deploy`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			target, err := cli.target(targetOptions{noCertificate: true, cloudExclusive: true})
+			target, err := cli.target(targetOptions{noCertificate: true, supportedType: cloudTargetOnly})
 			if err != nil {
 				return err
 			}
@@ -143,7 +144,7 @@ $ vespa prod deploy`,
 				// TODO: Add support for hosted
 				return fmt.Errorf("prod deploy does not support %s target", target.Type())
 			}
-			pkg, err := cli.applicationPackageFrom(args, true)
+			pkg, err := cli.applicationPackageFrom(args, vespa.PackageOptions{Compiled: true})
 			if err != nil {
 				return err
 			}
@@ -164,10 +165,11 @@ $ vespa prod deploy`,
 				AuthorEmail: options.authorEmail,
 				SourceURL:   options.sourceURL,
 			}
-			if err := vespa.Submit(deployment, submission); err != nil {
+			build, err := vespa.Submit(deployment, submission)
+			if err != nil {
 				return fmt.Errorf("could not deploy application: %w", err)
 			} else {
-				cli.printSuccess("Deployed ", color.CyanString(pkg.Path))
+				cli.printSuccess(fmt.Sprintf("Deployed '%s' with build number %s", color.CyanString(pkg.Path), color.CyanString(strconv.FormatInt(build, 10))))
 				log.Printf("See %s for deployment progress\n", color.CyanString(fmt.Sprintf("%s/tenant/%s/application/%s/prod/deployment",
 					deployment.Target.Deployment().System.ConsoleURL, deployment.Target.Deployment().Application.Tenant, deployment.Target.Deployment().Application.Application)))
 			}
@@ -185,7 +187,7 @@ $ vespa prod deploy`,
 
 func writeWithBackup(stdout io.Writer, pkg vespa.ApplicationPackage, filename, contents string) error {
 	dst := filepath.Join(pkg.Path, filename)
-	if util.PathExists(dst) {
+	if ioutil.Exists(dst) {
 		data, err := os.ReadFile(dst)
 		if err != nil {
 			return err
@@ -197,7 +199,7 @@ func writeWithBackup(stdout io.Writer, pkg vespa.ApplicationPackage, filename, c
 		renamed := false
 		for i := 1; i <= 1000; i++ {
 			bak := fmt.Sprintf("%s.%d.bak", dst, i)
-			if !util.PathExists(bak) {
+			if !ioutil.Exists(bak) {
 				fmt.Fprintf(stdout, "Backing up existing %s to %s\n", color.YellowString(filename), color.YellowString(bak))
 				if err := os.Rename(dst, bak); err != nil {
 					return err
@@ -313,7 +315,10 @@ func promptNodeCount(cli *CLI, stdin *bufio.Reader, clusterID string, nodeCount 
 	fmt.Fprintf(cli.Stdout, "Documentation: %s\n", color.GreenString("https://cloud.vespa.ai/en/reference/services"))
 	fmt.Fprintf(cli.Stdout, "Example: %s\nExample: %s\n\n", color.YellowString("4"), color.YellowString("[2,8]"))
 	validator := func(input string) error {
-		_, _, err := xml.ParseNodeCount(input)
+		min, _, err := xml.ParseNodeCount(input)
+		if min < 2 {
+			return errHint(fmt.Errorf("at least 2 nodes are required for all clusters in a production environment, got %d", min), "See https://cloud.vespa.ai/en/production-deployment")
+		}
 		return err
 	}
 	return prompt(cli, stdin, fmt.Sprintf("How many nodes should the %s cluster have?", color.CyanString(clusterID)), nodeCount, validator)

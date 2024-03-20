@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.config.model.test;
 
 import com.yahoo.config.ConfigInstance;
@@ -11,10 +11,8 @@ import com.yahoo.config.model.producer.AbstractConfigProducerRoot;
 import com.yahoo.vespa.model.ConfigProducer;
 import com.yahoo.vespa.model.HostSystem;
 import com.yahoo.vespa.model.admin.Admin;
-import com.yahoo.vespa.model.filedistribution.FileDistributionConfigProducer;
 import java.util.Collections;
 import java.util.Set;
-
 
 /**
  * Use for testing. Use as parent for the config producer(s) you want to test, to test
@@ -42,10 +40,6 @@ public class MockRoot extends AbstractConfigProducerRoot {
         super(rootConfigId);
         hostSystem = new HostSystem(this, "hostsystem", deployState.getProvisioner(), deployState.getDeployLogger(), deployState.isHosted());
         this.deployState = deployState;
-    }
-
-    public FileDistributionConfigProducer getFileDistributionConfigProducer() {
-        return null;
     }
 
     @Override

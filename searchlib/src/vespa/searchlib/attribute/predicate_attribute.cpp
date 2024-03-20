@@ -1,15 +1,19 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include "predicate_attribute.h"
 #include "attribute_header.h"
 #include "iattributesavetarget.h"
 #include "load_utils.h"
+#include "predicate_attribute_saver.h"
 #include <vespa/document/fieldvalue/predicatefieldvalue.h>
 #include <vespa/document/predicate/predicate.h>
+#include <vespa/searchlib/predicate/i_saver.h>
 #include <vespa/searchlib/predicate/predicate_index.h>
+#include <vespa/searchlib/util/data_buffer_writer.h>
 #include <vespa/searchlib/util/fileutil.h>
 #include <vespa/searchcommon/attribute/config.h>
 #include <vespa/vespalib/data/slime/slime.h>
+#include <vespa/vespalib/util/exceptions.h>
 #include <vespa/vespalib/util/size_literals.h>
 
 #include <vespa/log/log.h>
@@ -18,6 +22,8 @@ LOG_SETUP(".searchlib.attribute.predicate_attribute");
 using document::Predicate;
 using document::PredicateFieldValue;
 using vespalib::DataBuffer;
+using vespalib::IllegalStateException;
+using vespalib::make_string;
 using namespace search::predicate;
 
 namespace search {
@@ -138,23 +144,22 @@ PredicateAttribute::before_inc_generation(generation_t current_gen)
     _index->assign_generation(current_gen);
 }
 
-void
-PredicateAttribute::onSave(IAttributeSaveTarget &saveTarget) {
-    LOG(info, "Saving predicate attribute version %d", getVersion());
-    IAttributeSaveTarget::Buffer buffer(saveTarget.datWriter().allocBuf(4_Ki));
-    _index->serialize(*buffer);
-    uint32_t  highest_doc_id = static_cast<uint32_t>(_min_feature.size() - 1);
-    buffer->writeInt32(highest_doc_id);
-    for (size_t i = 1; i <= highest_doc_id; ++i) {
-        buffer->writeInt8(_min_feature[i]);
-    }
-    for (size_t i = 1; i <= highest_doc_id; ++i) {
-        buffer->writeInt16(_interval_range_vector[i]);
-    }
-    buffer->writeInt16(_max_interval_range);
-    saveTarget.datWriter().writeBuf(std::move(buffer));
+std::unique_ptr<AttributeSaver>
+PredicateAttribute::onInitSave(vespalib::stringref fileName)
+{
+    auto guard(getGenerationHandler().takeGuard());
+    auto header = this->createAttributeHeader(fileName);
+    auto min_feature_view = _min_feature.make_read_view(_min_feature.size());
+    auto interval_range_vector_view = _interval_range_vector.make_read_view(_interval_range_vector.size());
+    return std::make_unique<PredicateAttributeSaver>
+        (std::move(guard),
+         std::move(header),
+         getVersion(),
+         _index->make_saver(),
+         PredicateAttributeSaver::MinFeatureVector{ min_feature_view.begin(), min_feature_view.end() },
+         PredicateAttributeSaver::IntervalRangeVector{ interval_range_vector_view.begin(), interval_range_vector_view.end() },
+         _max_interval_range);
 }
-
 
 uint32_t
 PredicateAttribute::getVersion() const {
@@ -229,6 +234,9 @@ PredicateAttribute::onLoad(vespalib::Executor *)
         _interval_range_vector[docId] = version < 2 ? MAX_INTERVAL_RANGE : buffer.readInt16();
     }
     _max_interval_range = version < 2 ? MAX_INTERVAL_RANGE : buffer.readInt16();
+    if (buffer.getDataLen() != 0) {
+        throw IllegalStateException(make_string("Deserialize error when loading predicate attribute '%s', %" PRId64 " bytes remaining in buffer", getName().c_str(), (int64_t) buffer.getDataLen()));
+    }
     _index->adjustDocIdLimit(highest_doc_id);
     setNumDocs(highest_doc_id + 1);
     setCommittedDocIdLimit(highest_doc_id + 1);

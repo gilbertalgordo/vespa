@@ -1,3 +1,4 @@
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package document
 
 import (
@@ -37,7 +38,7 @@ func (f *mockFeeder) Send(doc Document) Result {
 	failRequest := (f.failAfterNDocs > 0 && len(f.documents) >= f.failAfterNDocs) ||
 		(f.failCount > 0 && f.sendCount <= f.failCount)
 	if failRequest {
-		result.HTTPStatus = 500
+		result.HTTPStatus = 503
 		result.Status = StatusVespaFailure
 	} else {
 		f.documents = append(f.documents, doc)

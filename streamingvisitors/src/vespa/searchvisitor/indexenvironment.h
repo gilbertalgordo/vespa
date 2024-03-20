@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #pragma once
 
@@ -77,6 +77,8 @@ public:
     bool addField(const vespalib::string& name,
                   bool isAttribute,
                   search::fef::FieldInfo::DataType data_type);
+
+    void fixup_fields();
 
     search::fef::Properties & getProperties() { return _properties; }
 

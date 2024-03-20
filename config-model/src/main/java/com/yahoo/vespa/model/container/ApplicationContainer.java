@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.model.container;
 
 import com.yahoo.cloud.config.ZookeeperServerConfig;
@@ -66,9 +66,9 @@ public final class ApplicationContainer extends Container implements
         StringBuilder b = new StringBuilder();
         if (isHostedVespa) {
             b.append("-Djdk.tls.server.enableStatusRequestExtension=true ")
-                    .append("-Djdk.tls.stapling.responseTimeout=2000 ")
-                    .append("-Djdk.tls.stapling.cacheSize=256 ")
-                    .append("-Djdk.tls.stapling.cacheLifetime=3600 ");
+             .append("-Djdk.tls.stapling.responseTimeout=2000 ")
+             .append("-Djdk.tls.stapling.cacheSize=256 ")
+             .append("-Djdk.tls.stapling.cacheLifetime=3600 ");
         }
         String jvmArgs = super.getJvmOptions();
         if (!jvmArgs.isBlank()) {

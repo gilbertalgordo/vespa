@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.athenz.client.zms;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -204,6 +204,7 @@ public class DefaultZmsClient extends ClientBase implements ZmsClient {
                 .build();
         return execute(request, response -> {
             DomainListResponseEntity result = readEntity(response, DomainListResponseEntity.class);
+            if (result.domains == null) return List.of();
             return result.domains.stream().map(AthenzDomain::new).toList();
         });
     }
@@ -216,6 +217,7 @@ public class DefaultZmsClient extends ClientBase implements ZmsClient {
                 .build();
         return execute(request, response -> {
             DomainListResponseEntity result = readEntity(response, DomainListResponseEntity.class);
+            if (result.domains == null) return List.of();
             return result.domains.stream().map(AthenzDomain::new).toList();
         });
     }

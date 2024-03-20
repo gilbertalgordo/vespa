@@ -1,7 +1,8 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.model.builder.xml.dom;
 
 import ai.vespa.validation.Validation;
+import com.yahoo.component.Version;
 import com.yahoo.config.model.ApplicationConfigProducerRoot;
 import com.yahoo.config.model.ConfigModelRepo;
 import com.yahoo.config.model.builder.xml.XmlHelper;
@@ -20,8 +21,6 @@ import com.yahoo.vespa.model.builder.VespaModelBuilder;
 import com.yahoo.vespa.model.container.ContainerCluster;
 import com.yahoo.vespa.model.container.ContainerModel;
 import com.yahoo.vespa.model.container.docproc.ContainerDocproc;
-import com.yahoo.vespa.model.content.Content;
-import com.yahoo.vespa.model.search.SearchCluster;
 import org.w3c.dom.Element;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -62,6 +61,8 @@ public class VespaDomBuilder extends VespaModelBuilder {
             return new DomRootBuilder(name).
                     build(deployState, parent, XmlHelper.getDocument(deployState.getApplicationPackage().getServices(), "services.xml")
                                                         .getDocumentElement());
+        } catch (IllegalArgumentException e) {
+            throw e;
         } catch (Exception e) {
             throw new IllegalArgumentException(e);
         }
@@ -204,6 +205,7 @@ public class VespaDomBuilder extends VespaModelBuilder {
 
         @Override
         protected ApplicationConfigProducerRoot doBuild(DeployState deployState, TreeConfigProducer<AnyConfigProducer> parent, Element producerSpec) {
+            verifyMinimumRequiredVespaVersion(deployState.getVespaVersion(), producerSpec);
             ApplicationConfigProducerRoot root = new ApplicationConfigProducerRoot(parent,
                                                                                    name,
                                                                                    deployState.getDocumentModel(),
@@ -215,6 +217,17 @@ public class VespaDomBuilder extends VespaModelBuilder {
             new Client(root);
             return root;
         }
+
+        private static void verifyMinimumRequiredVespaVersion(Version thisVersion, Element producerSpec) {
+            var minimumRequiredVespaVersion = producerSpec.getAttribute("minimum-required-vespa-version");
+            if (minimumRequiredVespaVersion.isEmpty()) return;
+            if (Version.fromString(minimumRequiredVespaVersion).compareTo(thisVersion) > 0)
+                throw new IllegalArgumentException(
+                        ("Cannot deploy application, minimum required Vespa version is specified as %s in services.xml" +
+                        ", this Vespa version is %s.")
+                        .formatted(minimumRequiredVespaVersion, thisVersion.toFullString()));
+        }
+
     }
 
     /**
@@ -226,7 +239,7 @@ public class VespaDomBuilder extends VespaModelBuilder {
      */
     private static int getXmlIntegerAttribute(Element spec, String attributeName) {
         String value = (spec == null) ? null : spec.getAttribute(attributeName);
-        if (value == null || value.equals("")) {
+        if (value == null || value.isEmpty()) {
             return 0;
         } else {
             try {
@@ -246,7 +259,6 @@ public class VespaDomBuilder extends VespaModelBuilder {
      * @param configModelRepo a {@link ConfigModelRepo}
      */
     public void postProc(DeployState deployState, TreeConfigProducer<AnyConfigProducer> root, ConfigModelRepo configModelRepo) {
-        setContentSearchClusterIndexes(configModelRepo);
         createDocprocMBusServersAndClients(configModelRepo);
         if (deployState.isHosted()) validateContainerClusterIds(configModelRepo);
     }
@@ -272,17 +284,6 @@ public class VespaDomBuilder extends VespaModelBuilder {
             if (clashing != null) throw new IllegalArgumentException("container clusters '" + clashing + "' and '" + name +
                                                                      "' have clashing endpoint names, when '_' is replaced " +
                                                                      "with '-' to form valid domain names");
-        }
-    }
-
-    /**
-     * For some reason, search clusters need to be enumerated.
-     * @param configModelRepo a {@link ConfigModelRepo}
-     */
-    private void setContentSearchClusterIndexes(ConfigModelRepo configModelRepo) {
-        int index = 0;
-        for (SearchCluster sc : Content.getSearchClusters(configModelRepo)) {
-            sc.setClusterIndex(index++);
         }
     }
 

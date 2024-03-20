@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include "garbagecollectionoperation.h"
 #include <vespa/storage/distributor/cancelled_replicas_pruner.h>
@@ -7,6 +7,7 @@
 #include <vespa/storage/distributor/top_level_distributor.h>
 #include <vespa/storage/distributor/distributor_bucket_space.h>
 #include <vespa/storage/distributor/node_supported_features_repo.h>
+#include <vespa/storage/config/distributorconfiguration.h>
 #include <vespa/storageapi/message/removelocation.h>
 #include <vespa/vespalib/stllike/hash_map.hpp>
 #include <algorithm>
@@ -94,9 +95,7 @@ void GarbageCollectionOperation::send_current_phase_remove_locations(Distributor
 }
 
 void GarbageCollectionOperation::onStart(DistributorStripeMessageSender& sender) {
-    if (_manager->operation_context().distributor_config().enable_two_phase_garbage_collection() &&
-        all_involved_nodes_support_two_phase_gc())
-    {
+    if (all_involved_nodes_support_two_phase_gc()) {
         _cluster_state_version_at_phase1_start_time = _bucketSpace->getClusterState().getVersion();
         LOG(debug, "Starting first phase of two-phase GC for %s at cluster state version %u",
             getBucket().toString().c_str(), _cluster_state_version_at_phase1_start_time);

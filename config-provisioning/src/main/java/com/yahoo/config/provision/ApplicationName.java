@@ -1,7 +1,9 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.config.provision;
 
 import ai.vespa.validation.PatternedStringWrapper;
+
+import java.util.regex.Pattern;
 
 /**
  * Represents an applications name, which may be any kind of string or default. This type is defined
@@ -12,10 +14,11 @@ import ai.vespa.validation.PatternedStringWrapper;
  */
 public class ApplicationName extends PatternedStringWrapper<ApplicationName> {
 
+    private static final Pattern namePattern = Pattern.compile("[a-zA-Z0-9_-]{1,256}");
     private static final ApplicationName defaultName = new ApplicationName("default");
 
     private ApplicationName(String name) {
-        super(name, ApplicationId.namePattern, "application name");
+        super(name, namePattern, "application name");
     }
 
     public static ApplicationName from(String name) {

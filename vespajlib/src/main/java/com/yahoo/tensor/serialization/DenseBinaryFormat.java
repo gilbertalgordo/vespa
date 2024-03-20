@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.tensor.serialization;
 
 import com.yahoo.io.GrowableByteBuffer;
@@ -56,22 +56,22 @@ public class DenseBinaryFormat implements BinaryFormat {
     }
 
     private void encodeDoubleCells(IndexedTensor tensor, GrowableByteBuffer buffer) {
-        for (int i = 0; i < tensor.size(); i++)
+        for (int i = 0; i < tensor.sizeAsInt(); i++)
             buffer.putDouble(tensor.get(i));
     }
 
     private void encodeFloatCells(IndexedTensor tensor, GrowableByteBuffer buffer) {
-        for (int i = 0; i < tensor.size(); i++)
+        for (int i = 0; i < tensor.sizeAsInt(); i++)
             buffer.putFloat(tensor.getFloat(i));
     }
 
     private void encodeBFloat16Cells(IndexedTensor tensor, GrowableByteBuffer buffer) {
-        for (int i = 0; i < tensor.size(); i++)
+        for (int i = 0; i < tensor.sizeAsInt(); i++)
             buffer.putShort(TypedBinaryFormat.bFloat16BitsFromFloat(tensor.getFloat(i)));
     }
 
     private void encodeInt8Cells(IndexedTensor tensor, GrowableByteBuffer buffer) {
-        for (int i = 0; i < tensor.size(); i++)
+        for (int i = 0; i < tensor.sizeAsInt(); i++)
             buffer.put((byte) tensor.getFloat(i));
     }
 

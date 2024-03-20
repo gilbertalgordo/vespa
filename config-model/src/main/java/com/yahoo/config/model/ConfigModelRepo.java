@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.config.model;
 
 import com.yahoo.config.application.api.ApplicationPackage;
@@ -21,7 +21,6 @@ import org.w3c.dom.Document;
 import org.w3c.dom.Element;
 import java.io.IOException;
 import java.io.Reader;
-import java.io.Serializable;
 import java.io.StringReader;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -39,9 +38,7 @@ import java.util.logging.Logger;
  *
  * @author gjoranv
  */
-public class ConfigModelRepo implements ConfigModelRepoAdder, Serializable, Iterable<ConfigModel> {
-
-    private static final long serialVersionUID = 1L;
+public class ConfigModelRepo implements ConfigModelRepoAdder, Iterable<ConfigModel> {
 
     private static final Logger log = Logger.getLogger(ConfigModelRepo.class.getPackage().toString());
 
@@ -252,8 +249,10 @@ public class ConfigModelRepo implements ConfigModelRepoAdder, Serializable, Iter
     }
 
     private static String getImplicitAdminV4() {
-        return "<admin version='4.0'>\n" +
-                "  <nodes count='1' />\n" +
-                "</admin>\n";
+        return """
+                <admin version='4.0'>
+                  <nodes count='1' />
+                </admin>
+                """;
     }
 }

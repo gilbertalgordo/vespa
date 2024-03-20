@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.container.jdisc;
 
 import com.google.inject.AbstractModule;
@@ -29,6 +29,7 @@ import com.yahoo.jdisc.application.DeactivatedContainer;
 import com.yahoo.jdisc.application.GuiceRepository;
 import com.yahoo.jdisc.application.OsgiFramework;
 import com.yahoo.jdisc.handler.RequestHandler;
+import com.yahoo.jdisc.http.server.jetty.JettyHttpServer;
 import com.yahoo.jdisc.service.ClientProvider;
 import com.yahoo.jdisc.service.ServerProvider;
 import com.yahoo.jrt.Acceptor;
@@ -41,6 +42,7 @@ import com.yahoo.jrt.Supervisor;
 import com.yahoo.jrt.Transport;
 import com.yahoo.jrt.slobrok.api.Register;
 import com.yahoo.jrt.slobrok.api.SlobrokList;
+import com.yahoo.messagebus.jdisc.MbusServer;
 import com.yahoo.messagebus.network.rpc.SlobrokConfigSubscriber;
 import com.yahoo.net.HostName;
 import com.yahoo.security.tls.Capability;
@@ -53,11 +55,14 @@ import java.security.Provider;
 import java.security.Security;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.Phaser;
 import java.util.logging.Level;
@@ -164,7 +169,7 @@ public final class ConfiguredApplication implements Application {
     public void start() {
         qrConfig = getConfig(QrConfig.class);
         reconfigure(qrConfig.shutdown());
-        hackToInitializeServer(qrConfig);
+        hackToInitializeServer();
 
         ContainerBuilder builder = createBuilderWithGuiceBindings();
         configurer = createConfigurer(builder.guiceModules().activate());
@@ -238,9 +243,9 @@ public final class ConfiguredApplication implements Application {
         }
     }
 
-    private static void hackToInitializeServer(QrConfig config) {
+    private static void hackToInitializeServer() {
         try {
-            Container.get().setupFileAcquirer(config.filedistributor());
+            Container.get().setupFileAcquirer();
             Container.get().setupUrlDownloader();
         } catch (Exception e) {
             log.log(Level.SEVERE, "Caught exception when initializing server. Exiting.", e);
@@ -268,8 +273,25 @@ public final class ConfiguredApplication implements Application {
                 if (first(subscriber.config().values()) instanceof QrConfig newConfig) {
                     reconfigure(newConfig.shutdown());
                     synchronized (this) {
-                        if (qrConfig.rpc().port() != newConfig.rpc().port()) {
-                            log.log(Level.INFO, "Rpc port changed from " + qrConfig.rpc().port() + " to " + newConfig.rpc().port());
+                        var currRpc = qrConfig.rpc();
+                        var newRpc = newConfig.rpc();
+                        boolean reListen = (currRpc.port() != newRpc.port()) ||
+                                           (currRpc.enabled() != newRpc.enabled()) ||
+                                           ! Objects.equals(currRpc.host(), newRpc.host()) ||
+                                           ! Objects.equals(currRpc.slobrokId(), newRpc.slobrokId());
+                        if (reListen) {
+                            if (currRpc.port() != newRpc.port()) {
+                                log.log(Level.INFO, "Rpc port changed from " + currRpc.port() + " to " + newRpc.port());
+                            }
+                            if (currRpc.enabled() != newRpc.enabled()) {
+                                log.log(Level.INFO, "Rpc server " + (newRpc.enabled() ? "enabled" : "disabled"));
+                            }
+                            if ( ! Objects.equals(currRpc.host(), newRpc.host())) {
+                                log.log(Level.INFO, "Rpc host changed from " + currRpc.host() + " to " + newRpc.host());
+                            }
+                            if ( ! Objects.equals(currRpc.slobrokId(), newRpc.slobrokId())) {
+                                log.log(Level.INFO, "Rpc slobrokid changed from " + currRpc.slobrokId() + " to " + newRpc.slobrokId());
+                            }
                             try {
                                 reListenRpc(newConfig);
                             } catch (Throwable e) {
@@ -300,14 +322,14 @@ public final class ConfiguredApplication implements Application {
         for (ServerProvider server : currentServers) {
             builder.serverProviders().install(server);
         }
-        activateContainer(builder, cleanupTask);
-        startAndStopServers(currentServers);
-
-        startAndRemoveClients(Container.get().getClientProviderRegistry().allComponents());
-        signalActivation();
+        try (DeactivatedContainer deactivating = activateContainer(builder, cleanupTask)) {
+            startAndStopServers(currentServers);
+            startAndRemoveClients(Container.get().getClientProviderRegistry().allComponents());
+            signalActivation();
+        }
     }
 
-    private void activateContainer(ContainerBuilder builder, Runnable onPreviousContainerTermination) {
+    private DeactivatedContainer activateContainer(ContainerBuilder builder, Runnable onPreviousContainerTermination) {
         DeactivatedContainer deactivated = activator.activateContainer(builder);
         if (deactivated != null) {
             nonTerminatedContainerTracker.register();
@@ -319,6 +341,7 @@ public final class ConfiguredApplication implements Application {
                 }
             });
         }
+        return deactivated;
     }
 
     private void signalActivation() {
@@ -377,20 +400,20 @@ public final class ConfiguredApplication implements Application {
         synchronized (monitor) {
             Set<ServerProvider> serversToClose = createIdentityHashSet(startedServers);
             serversToClose.removeAll(currentServers);
-            for (ServerProvider server : currentServers) {
+            for (ServerProvider server : ordered(currentServers, MbusServer.class, JettyHttpServer.class)) {
                 if ( ! startedServers.contains(server) && server.isMultiplexed()) {
                     server.start();
                     startedServers.add(server);
                 }
             }
-            if (serversToClose.size() > 0) {
+            if ( ! serversToClose.isEmpty()) {
                 log.info(String.format("Closing %d server instances", serversToClose.size()));
-                for (ServerProvider server : serversToClose) {
+                for (ServerProvider server : ordered(serversToClose, JettyHttpServer.class, MbusServer.class)) {
                     server.close();
                     startedServers.remove(server);
                 }
             }
-            for (ServerProvider server : currentServers) {
+            for (ServerProvider server : ordered(currentServers, MbusServer.class, JettyHttpServer.class)) {
                 if ( ! startedServers.contains(server)) {
                     server.start();
                     startedServers.add(server);
@@ -462,7 +485,7 @@ public final class ConfiguredApplication implements Application {
         shutdownReconfigurer();
         startAndStopServers(List.of());
         startAndRemoveClients(List.of());
-        activateContainer(null, () -> log.info("Last active container generation has terminated"));
+        try (DeactivatedContainer deactivated = activateContainer(null, () -> log.info("Last active container generation has terminated"))) { }
         subscriberFactory.close();
         nonTerminatedContainerTracker.arriveAndAwaitAdvance();
     }
@@ -523,6 +546,22 @@ public final class ConfiguredApplication implements Application {
         for (String uri : uriPatterns) {
             bindings.bind(uri, target);
         }
+    }
+
+    /** Returns a list with the given elements, ordered by the enumerated classes, ordering more specific matches first. */
+    @SafeVarargs
+    static <T> List<T> ordered(Collection<T> items, Class<? extends T>... order) {
+        List<T> ordered = new ArrayList<>(items);
+        ordered.sort(Comparator.comparingInt(item -> {
+            int best = order.length;
+            for (int i = 0; i < order.length; i++) {
+                if (   order[i].isInstance(item)
+                    && (   best == order.length
+                        || order[best].isAssignableFrom(order[i]))) best = i;
+            }
+            return  best;
+        }));
+        return ordered;
     }
 
     private static <E> Set<E> createIdentityHashSet() {

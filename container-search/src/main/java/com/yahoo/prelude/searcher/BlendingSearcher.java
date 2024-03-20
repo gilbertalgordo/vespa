@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.prelude.searcher;
 
 
@@ -8,7 +8,7 @@ import com.yahoo.component.chain.dependencies.After;
 import com.yahoo.component.chain.dependencies.Before;
 import com.yahoo.component.chain.dependencies.Provides;
 import com.yahoo.container.QrSearchersConfig;
-import com.yahoo.prelude.fastsearch.VespaBackEndSearcher;
+import com.yahoo.prelude.fastsearch.VespaBackend;
 import com.yahoo.search.Query;
 import com.yahoo.search.Result;
 import com.yahoo.search.Searcher;
@@ -115,7 +115,7 @@ public class BlendingSearcher extends Searcher {
     private Result sortAndTrimResults(Result result, Query q, int offset, int hits, Execution execution) {
         if (q.getRanking().getSorting() != null) {
             // TODO: remove or rename this internal summary class for Vespa 9
-            execution.fill(result, VespaBackEndSearcher.SORTABLE_ATTRIBUTES_SUMMARY_CLASS);
+            execution.fill(result, VespaBackend.SORTABLE_ATTRIBUTES_SUMMARY_CLASS);
             result.hits().sort();
         }
         result.hits().trim(offset, hits);

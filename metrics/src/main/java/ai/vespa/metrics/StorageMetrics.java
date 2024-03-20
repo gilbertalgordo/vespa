@@ -1,3 +1,4 @@
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package ai.vespa.metrics;
 
 /**
@@ -88,6 +89,9 @@ public enum StorageMetrics implements VespaMetrics {
     VDS_FILESTOR_ALLTHREADS_DELETEBUCKETS_COUNT("vds.filestor.allthreads.deletebuckets.count", Unit.REQUEST, "Number of requests processed."),
     VDS_FILESTOR_ALLTHREADS_DELETEBUCKETS_FAILED("vds.filestor.allthreads.deletebuckets.failed", Unit.REQUEST, "Number of failed requests."),
     VDS_FILESTOR_ALLTHREADS_DELETEBUCKETS_LATENCY("vds.filestor.allthreads.deletebuckets.latency", Unit.MILLISECOND, "Latency of successful requests."),
+    VDS_FILESTOR_ALLTHREADS_REMOVE_BY_GID_COUNT("vds.filestor.allthreads.remove_by_gid.count", Unit.REQUEST, "Number of requests processed."),
+    VDS_FILESTOR_ALLTHREADS_REMOVE_BY_GID_FAILED("vds.filestor.allthreads.remove_by_gid.failed", Unit.REQUEST, "Number of failed requests."),
+    VDS_FILESTOR_ALLTHREADS_REMOVE_BY_GID_LATENCY("vds.filestor.allthreads.remove_by_gid.latency", Unit.MILLISECOND, "Latency of successful requests."),
     VDS_FILESTOR_ALLTHREADS_SETBUCKETSTATES_COUNT("vds.filestor.allthreads.setbucketstates.count", Unit.REQUEST, "Number of requests processed."),
     VDS_FILESTOR_ALLTHREADS_SETBUCKETSTATES_FAILED("vds.filestor.allthreads.setbucketstates.failed", Unit.REQUEST, "Number of failed requests."),
     VDS_FILESTOR_ALLTHREADS_SETBUCKETSTATES_LATENCY("vds.filestor.allthreads.setbucketstates.latency", Unit.MILLISECOND, "Latency of successful requests."),
@@ -95,6 +99,7 @@ public enum StorageMetrics implements VespaMetrics {
     VDS_MERGETHROTTLER_AVERAGEQUEUEWAITINGTIME("vds.mergethrottler.averagequeuewaitingtime", Unit.MILLISECOND, "Time merges spent in the throttler queue"),
     VDS_MERGETHROTTLER_QUEUESIZE("vds.mergethrottler.queuesize", Unit.INSTANCE, "Length of merge queue"),
     VDS_MERGETHROTTLER_ACTIVE_WINDOW_SIZE("vds.mergethrottler.active_window_size", Unit.INSTANCE, "Number of merges active within the pending window size"),
+    VDS_MERGETHROTTLER_ESTIMATED_MERGE_MEMORY_USAGE("vds.mergethrottler.estimated_merge_memory_usage", Unit.BYTE, "An estimated upper bound of the  memory usage (in bytes) of the merges currently in the active window"),
     VDS_MERGETHROTTLER_BOUNCED_DUE_TO_BACK_PRESSURE("vds.mergethrottler.bounced_due_to_back_pressure", Unit.INSTANCE, "Number of merges bounced due to resource exhaustion back-pressure"),
     VDS_MERGETHROTTLER_LOCALLYEXECUTEDMERGES_OK("vds.mergethrottler.locallyexecutedmerges.ok", Unit.INSTANCE, "The number of successful merges for 'locallyexecutedmerges'"),
     VDS_MERGETHROTTLER_LOCALLYEXECUTEDMERGES_FAILURES_ABORTED("vds.mergethrottler.locallyexecutedmerges.failures.aborted", Unit.OPERATION, "The number of merges that failed because the storage node was (most likely) shutting down"),
@@ -147,6 +152,7 @@ public enum StorageMetrics implements VespaMetrics {
     VDS_DATASTORED_BUCKET_SPACE_BUCKET_DB_MEMORY_USAGE_ONHOLD_BYTES("vds.datastored.bucket_space.bucket_db.memory_usage.onhold_bytes", Unit.BYTE, "The number of bytes on hold"),
     VDS_DATASTORED_BUCKET_SPACE_BUCKET_DB_MEMORY_USAGE_USED_BYTES("vds.datastored.bucket_space.bucket_db.memory_usage.used_bytes", Unit.BYTE, "The number of used bytes (<= allocated_bytes)"),
     VDS_DATASTORED_BUCKET_SPACE_BUCKETS_TOTAL("vds.datastored.bucket_space.buckets_total", Unit.BUCKET, "Total number buckets present in the bucket space (ready + not ready)"),
+    VDS_DATASTORED_BUCKET_SPACE_ENTRIES("vds.datastored.bucket_space.entries", Unit.DOCUMENT, "Number of entries (documents + tombstones) stored in the bucket space"),
     VDS_DATASTORED_BUCKET_SPACE_BYTES("vds.datastored.bucket_space.bytes", Unit.BYTE, "Bytes stored across all documents in the bucket space"),
     VDS_DATASTORED_BUCKET_SPACE_DOCS("vds.datastored.bucket_space.docs", Unit.DOCUMENT, "Documents stored in the bucket space"),
     VDS_DATASTORED_BUCKET_SPACE_READY_BUCKETS("vds.datastored.bucket_space.ready_buckets", Unit.BUCKET, "Number of ready buckets in the bucket space"),

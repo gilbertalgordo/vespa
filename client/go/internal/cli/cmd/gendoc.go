@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package cmd
 
 import (
@@ -11,7 +11,7 @@ import (
 func newGendocCmd(cli *CLI) *cobra.Command {
 	return &cobra.Command{
 		Use:               "gendoc directory",
-		Short:             "Generate documentation from '--help' pages and write as markdown files to a given directory",
+		Short:             "Generate documentation from '--help' pages and write as Markdown files to a given directory",
 		Args:              cobra.ExactArgs(1),
 		Hidden:            true, // Not intended to be called by users
 		DisableAutoGenTag: true,

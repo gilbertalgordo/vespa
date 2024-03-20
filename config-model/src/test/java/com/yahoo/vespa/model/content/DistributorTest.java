@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.model.content;
 
 import com.yahoo.vespa.config.content.core.StorCommunicationmanagerConfig;
@@ -49,20 +49,6 @@ public class DistributorTest {
         StorServerConfig config = new StorServerConfig(builder);
         assertTrue(config.is_distributor());
         assertEquals("foofighters", config.cluster_name());
-    }
-
-    @Test
-    void testRevertDefaultOffForSearch() {
-        StorDistributormanagerConfig.Builder builder = new StorDistributormanagerConfig.Builder();
-        parse("<cluster id=\"storage\">\n" +
-                "  <redundancy>3</redundancy>" +
-                "  <documents/>" +
-                "  <group>" +
-                "     <node distribution-key=\"0\" hostalias=\"mockhost\"/>" +
-                "  </group>" +
-                "</cluster>").getConfig(builder);
-        StorDistributormanagerConfig conf = new StorDistributormanagerConfig(builder);
-        assertFalse(conf.enable_revert());
     }
 
     @Test

@@ -1,14 +1,14 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include <vespa/document/bucket/bucketselector.h>
 
 #include <vespa/document/bucket/bucketid.h>
 #include <vespa/document/select/parser.h>
 #include <vespa/document/base/testdocrepo.h>
+#include <vespa/vespalib/gtest/gtest.h>
 #include <vespa/vespalib/test/insertion_operators.h>
 #include <algorithm>
 #include <iostream>
-#include <gtest/gtest.h>
 
 using document::select::Node;
 using document::select::Parser;

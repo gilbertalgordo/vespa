@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package ai.vespa.http;
 
 import ai.vespa.validation.PatternedStringWrapper;
@@ -30,6 +30,11 @@ public class DomainName extends PatternedStringWrapper<DomainName> {
 
     public static String requireLabel(String label) {
         return requireMatch(label, "domain name label", labelPattern);
+    }
+
+    public String leafLabel() {
+        int offset = value().lastIndexOf('.');
+        return offset == -1 ? value() : value().substring(0, offset);
     }
 
 }

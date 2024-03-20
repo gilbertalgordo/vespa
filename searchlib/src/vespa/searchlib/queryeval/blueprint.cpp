@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include "blueprint.h"
 #include "leaf_blueprints.h"
@@ -36,8 +36,8 @@ void maybe_eliminate_self(Blueprint* &self, Blueprint::UP replacement) {
         self->setSourceId(discard->getSourceId());
         discard->setParent(nullptr);
     }
-    // replace with empty blueprint if empty
-    if (self->getState().estimate().empty) {
+    // replace with empty blueprint if empty, skip if already empty blueprint
+    if ((self->as_empty() == nullptr) && self->getState().estimate().empty) {
         Blueprint::UP discard(self);
         self = new EmptyBlueprint(discard->getState().fields());
         self->setParent(discard->getParent());
@@ -117,7 +117,8 @@ Blueprint::State::State(FieldSpecBaseList fields_in) noexcept
 Blueprint::State::~State() = default;
 
 Blueprint::Blueprint() noexcept
-    : _parent(0),
+    : _parent(nullptr),
+      _flow_stats(0.0, 0.0, 0.0),
       _sourceId(0xffffffff),
       _docid_limit(0),
       _frozen(false)
@@ -129,19 +130,20 @@ Blueprint::~Blueprint() = default;
 Blueprint::UP
 Blueprint::optimize(Blueprint::UP bp) {
     Blueprint *root = bp.release();
-    root->optimize(root);
+    root->optimize(root, OptimizePass::FIRST);
+    root->optimize(root, OptimizePass::LAST);
     return Blueprint::UP(root);
 }
 
 void
-Blueprint::optimize_self()
+Blueprint::optimize_self(OptimizePass)
 {
 }
 
 Blueprint::UP
 Blueprint::get_replacement()
 {
-    return Blueprint::UP();
+    return {};
 }
 
 void
@@ -159,12 +161,26 @@ Blueprint::root() const
     return *bp;
 }
 
+FlowStats
+Blueprint::default_flow_stats(uint32_t docid_limit, uint32_t abs_est, size_t child_cnt)
+{
+    double rel_est = abs_to_rel_est(abs_est, docid_limit);
+    double seek_cost = (child_cnt == 0) ? rel_est : (rel_est * 2.0);
+    return {rel_est, 1.0 + child_cnt, seek_cost};
+}
+
+FlowStats
+Blueprint::default_flow_stats(size_t child_cnt)
+{
+    return {0.5, 1.0 + child_cnt, 1.0 + child_cnt};
+}
+
 std::unique_ptr<MatchingElementsSearch>
 Blueprint::create_matching_elements_search(const MatchingElementsFields &fields) const
 {
     (void) fields;
-    return std::unique_ptr<MatchingElementsSearch>();
-};
+    return {};
+}
 
 namespace {
 
@@ -196,7 +212,7 @@ template <typename Op>
 std::unique_ptr<SearchIterator>
 create_op_filter(const Blueprint::Children &children, bool strict, Blueprint::FilterConstraint constraint)
 {
-    REQUIRE(children.size() > 0);
+    REQUIRE( ! children.empty());
     MultiSearch::Children list;
     std::unique_ptr<SearchIterator> spare;
     list.reserve(children.size());
@@ -261,7 +277,7 @@ Blueprint::create_atmost_or_filter(const Children &children, bool strict, Bluepr
 std::unique_ptr<SearchIterator>
 Blueprint::create_andnot_filter(const Children &children, bool strict, Blueprint::FilterConstraint constraint)
 {
-    REQUIRE(children.size() > 0);
+    REQUIRE( ! children.empty() );
     MultiSearch::Children list;
     list.reserve(children.size());
     {
@@ -291,7 +307,7 @@ Blueprint::create_andnot_filter(const Children &children, bool strict, Blueprint
 std::unique_ptr<SearchIterator>
 Blueprint::create_first_child_filter(const Children &children, bool strict, Blueprint::FilterConstraint constraint)
 {
-    REQUIRE(children.size() > 0);
+    REQUIRE(!children.empty());
     return children[0]->createFilterSearch(strict, constraint);
 }
 
@@ -353,6 +369,9 @@ Blueprint::visitMembers(vespalib::ObjectVisitor &visitor) const
     visitor.visitInt("tree_size", state.tree_size());
     visitor.visitBool("allow_termwise_eval", state.allow_termwise_eval());
     visitor.closeStruct();
+    visitor.visitFloat("relative_estimate", estimate());
+    visitor.visitFloat("cost", cost());
+    visitor.visitFloat("strict_cost", strict_cost());
     visitor.visitInt("sourceId", _sourceId);
     visitor.visitInt("docid_limit", _docid_limit);
 }
@@ -372,8 +391,10 @@ StateCache::updateState() const
 void
 StateCache::notifyChange() {
     assert(!frozen());
-    Blueprint::notifyChange();
-    _stale = true;
+    if (!_stale) {
+        Blueprint::notifyChange();
+        _stale = true;
+    }
 }
 
 } // namespace blueprint
@@ -434,7 +455,7 @@ IntermediateBlueprint::infer_allow_termwise_eval() const
         }
     }
     return true;
-};
+}
 
 bool
 IntermediateBlueprint::infer_want_global_filter() const
@@ -517,13 +538,6 @@ IntermediateBlueprint::calculateState() const
     return state;
 }
 
-double
-IntermediateBlueprint::computeNextHitRate(const Blueprint & child, double hitRate) const
-{
-    (void) child;
-    return hitRate;
-}
-
 bool
 IntermediateBlueprint::should_do_termwise_eval(const UnpackInfo &unpack, double match_limit) const
 {
@@ -539,19 +553,32 @@ IntermediateBlueprint::should_do_termwise_eval(const UnpackInfo &unpack, double 
 }
 
 void
-IntermediateBlueprint::optimize(Blueprint* &self)
+IntermediateBlueprint::optimize(Blueprint* &self, OptimizePass pass)
 {
     assert(self == this);
-    if (should_optimize_children()) {
-        for (auto &child : _children) {
-            auto *child_ptr = child.release();
-            child_ptr->optimize(child_ptr);
-            child.reset(child_ptr);
-        }
+    for (auto &child : _children) {
+        auto *child_ptr = child.release();
+        child_ptr->optimize(child_ptr, pass);
+        child.reset(child_ptr);
     }
-    optimize_self();
-    sort(_children);
+    optimize_self(pass);
+    if (pass == OptimizePass::LAST) {
+        update_flow_stats(get_docid_limit());
+    }
     maybe_eliminate_self(self, get_replacement());
+}
+
+double
+IntermediateBlueprint::sort(InFlow in_flow, const Options &opts)
+{
+    sort(_children, in_flow.strict(), opts.sort_by_cost());
+    auto flow = my_flow(in_flow);
+    for (size_t i = 0; i < _children.size(); ++i) {
+        _children[i]->sort(InFlow(flow.strict(), flow.flow()), opts);
+        flow.add(_children[i]->estimate());
+    }
+    // TODO: better cost estimate (due to known in-flow and eagerness)
+    return in_flow.strict() ? strict_cost() : in_flow.rate() * cost();
 }
 
 void
@@ -618,11 +645,12 @@ IntermediateBlueprint::visitMembers(vespalib::ObjectVisitor &visitor) const
 void
 IntermediateBlueprint::fetchPostings(const ExecuteInfo &execInfo)
 {
-    double nextHitRate = execInfo.hitRate();
+    auto flow = my_flow(InFlow(execInfo.is_strict(), execInfo.hit_rate()));
     for (size_t i = 0; i < _children.size(); ++i) {
+        double nextHitRate = flow.flow();
         Blueprint & child = *_children[i];
-        child.fetchPostings(ExecuteInfo::create(execInfo.isStrict() && inheritStrict(i), nextHitRate, execInfo.getDoom()));
-        nextHitRate = computeNextHitRate(child, nextHitRate);
+        child.fetchPostings(ExecuteInfo::create(execInfo.is_strict() && inheritStrict(i), nextHitRate, execInfo));
+        flow.add(child.estimate());
     }
 }
 
@@ -638,25 +666,23 @@ IntermediateBlueprint::freeze()
 namespace {
 
 bool
-areAnyParentsEquiv(const Blueprint * node)
-{
-    return (node == nullptr)
-           ? false
-           : node->isEquiv()
-             ? true
-             : areAnyParentsEquiv(node->getParent());
+areAnyParentsEquiv(const Blueprint * node) {
+    return (node != nullptr) && (node->isEquiv() || areAnyParentsEquiv(node->getParent()));
 }
 
 bool
-canBlueprintSkipUnpack(const Blueprint & bp, const fef::MatchData & md)
-{
+emptyUnpackInfo(const IntermediateBlueprint * intermediate, const fef::MatchData & md) {
+    return intermediate != nullptr && intermediate->calculateUnpackInfo(md).empty();
+}
+
+bool
+canBlueprintSkipUnpack(const Blueprint & bp, const fef::MatchData & md) {
     if (bp.always_needs_unpack()) {
         return false;
     }
-    return (bp.isWhiteList() ||
-            (bp.getState().numFields() != 0) ||
-            (bp.isIntermediate() &&
-             static_cast<const IntermediateBlueprint &>(bp).calculateUnpackInfo(md).empty()));
+    return bp.isWhiteList() ||
+           (bp.getState().numFields() != 0) ||
+           emptyUnpackInfo(bp.asIntermediate(), md);
 }
 
 }
@@ -729,11 +755,21 @@ LeafBlueprint::getRange(vespalib::string &, vespalib::string &) const {
 }
 
 void
-LeafBlueprint::optimize(Blueprint* &self)
+LeafBlueprint::optimize(Blueprint* &self, OptimizePass pass)
 {
     assert(self == this);
-    optimize_self();
+    optimize_self(pass);
+    if (pass == OptimizePass::LAST) {
+        update_flow_stats(get_docid_limit());
+    }
     maybe_eliminate_self(self, get_replacement());
+}
+
+double
+LeafBlueprint::sort(InFlow in_flow, const Options &)
+{
+    // TODO: better cost estimate (due to known in-flow and eagerness)
+    return in_flow.strict() ? strict_cost() : in_flow.rate() * cost();
 }
 
 void
@@ -762,12 +798,10 @@ LeafBlueprint::set_tree_size(uint32_t value)
 
 }
 
-//-----------------------------------------------------------------------------
-
 void visit(vespalib::ObjectVisitor &self, const vespalib::string &name,
            const search::queryeval::Blueprint *obj)
 {
-    if (obj != 0) {
+    if (obj != nullptr) {
         self.openStruct(name, obj->getClassName());
         obj->visitMembers(self);
         self.closeStruct();

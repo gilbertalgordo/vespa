@@ -1,5 +1,8 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 #pragma once
+
+#include <atomic>
+#include <vespa/vespalib/util/time.h>
 
 class FNET_Transport;
 
@@ -9,7 +12,6 @@ namespace vespalib {
 class ISequencedTaskExecutor;
 class ThreadExecutor;
 class InvokeService;
-class Clock;
 }
 
 namespace proton {
@@ -20,11 +22,6 @@ namespace proton {
 class ISharedThreadingService {
 public:
     virtual ~ISharedThreadingService() = default;
-
-    /**
-     * Returns the executor used for warmup (e.g. index warmup).
-     */
-    virtual vespalib::ThreadExecutor& warmup() = 0;
 
     /**
      * Returns the shared executor used for various assisting tasks in a document db.
@@ -61,7 +58,7 @@ public:
     /**
      * Return a very cheap clock.
      */
-    virtual const vespalib::Clock & clock() const = 0;
+    virtual const std::atomic<vespalib::steady_time> & nowRef() const = 0;
 };
 
 }

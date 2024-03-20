@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #pragma once
 
@@ -22,12 +22,14 @@ public:
     // used by create visitor
     EquivBlueprint& addTerm(Blueprint::UP term, double exactness);
 
+    FlowStats calculate_flow_stats(uint32_t docid_limit) const override;
+
     SearchIteratorUP createLeafSearch(const fef::TermFieldMatchDataArray &tfmda, bool strict) const override;
     SearchIteratorUP createFilterSearch(bool strict, FilterConstraint constraint) const override;
 
     void visitMembers(vespalib::ObjectVisitor &visitor) const override;
     void fetchPostings(const ExecuteInfo &execInfo) override;
-    bool isEquiv() const override { return true; }
+    bool isEquiv() const noexcept final { return true; }
 };
 
 }

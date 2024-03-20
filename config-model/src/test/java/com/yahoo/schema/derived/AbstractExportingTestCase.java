@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.schema.derived;
 
 import com.yahoo.config.application.api.DeployLogger;
@@ -47,12 +47,12 @@ public abstract class AbstractExportingTestCase extends AbstractSchemaTestCase {
                                         TestProperties properties,
                                         ApplicationBuilder builder,
                                         DeployLogger logger) throws IOException {
-        DerivedConfiguration config = new DerivedConfiguration(builder.getSchema(schemaName),
-                                                               new DeployState.Builder().properties(properties)
-                                                                                        .deployLogger(logger)
-                                                                                        .rankProfileRegistry(builder.getRankProfileRegistry())
-                                                                                        .queryProfiles(builder.getQueryProfileRegistry())
-                                                                                        .build());
+        DerivedConfiguration config = new DerivedConfiguration(new DeployState.Builder()
+                                                                              .properties(properties)
+                                                                              .deployLogger(logger)
+                                                                              .rankProfileRegistry(builder.getRankProfileRegistry())
+                                                                              .queryProfiles(builder.getQueryProfileRegistry())
+                                                                              .build(), builder.getSchema(schemaName), SchemaInfo.IndexMode.INDEX);
         return export(dirName, builder, config);
     }
 
@@ -70,6 +70,7 @@ public abstract class AbstractExportingTestCase extends AbstractSchemaTestCase {
         DerivedConfiguration.exportDocuments(new DocumentTypes().produce(builder.getModel(), new DocumenttypesConfig.Builder()), path);
         DerivedConfiguration.exportQueryProfiles(builder.getQueryProfileRegistry(), path);
         config.exportConstants(path);
+        config.exportOnnxModels(path);
         return config;
     }
 

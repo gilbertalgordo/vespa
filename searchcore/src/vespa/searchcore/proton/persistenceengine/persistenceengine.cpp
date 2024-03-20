@@ -1,9 +1,10 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include "persistenceengine.h"
 #include "ipersistenceengineowner.h"
 #include "transport_latch.h"
 #include <vespa/persistence/spi/bucketexecutor.h>
+#include <vespa/persistence/spi/doctype_gid_and_timestamp.h>
 #include <vespa/persistence/spi/catchresult.h>
 #include <vespa/document/fieldvalue/document.h>
 #include <vespa/document/datatype/documenttype.h>
@@ -431,6 +432,26 @@ PersistenceEngine::removeAsyncSingle(const Bucket& b, Timestamp t, const Documen
     handler->handleRemove(feedtoken::make(std::move(transportContext)), b, t, id);
 }
 
+void
+PersistenceEngine::removeByGidAsync(const Bucket& b, std::vector<storage::spi::DocTypeGidAndTimestamp> ids, std::unique_ptr<OperationComplete> onComplete)
+{
+    ReadGuard rguard(_rwMutex);
+    for (const auto & dt_gid_ts : ids) {
+        DocTypeName doc_type(dt_gid_ts.doc_type);
+        IPersistenceHandler *handler = getHandler(rguard, b.getBucketSpace(), doc_type);
+        if (!handler) {
+            return onComplete->onComplete(std::make_unique<RemoveResult>(Result::ErrorType::PERMANENT_ERROR,
+                                                                         fmt("No handler for document type '%s'",
+                                                                             doc_type.toString().c_str())));
+        }
+    }
+    auto transportContext = std::make_shared<AsyncRemoveTransportContext>(ids.size(), std::move(onComplete));
+    for (const auto & dt_gid_ts : ids) {
+        DocTypeName doc_type(dt_gid_ts.doc_type);
+        IPersistenceHandler *handler = getHandler(rguard, b.getBucketSpace(), doc_type);
+        handler->handleRemoveByGid(feedtoken::make(transportContext), b, dt_gid_ts.timestamp, dt_gid_ts.doc_type, dt_gid_ts.gid);
+    }
+}
 
 void
 PersistenceEngine::updateAsync(const Bucket& b, Timestamp t, DocumentUpdate::SP upd, OperationComplete::UP onComplete)
@@ -523,9 +544,10 @@ PersistenceEngine::createIterator(const Bucket &bucket, FieldSetSP fields, const
     auto entry = std::make_unique<IteratorEntry>(context.getReadConsistency(), bucket, std::move(fields), selection,
                                                  versions, _defaultSerializedSize, _ignoreMaxBytes);
     for (; snap.handlers().valid(); snap.handlers().next()) {
-        IPersistenceHandler::RetrieversSP retrievers = snap.handlers().get()->getDocumentRetrievers(context.getReadConsistency());
+        auto *handler = snap.handlers().get();
+        IPersistenceHandler::RetrieversSP retrievers = handler->getDocumentRetrievers(context.getReadConsistency());
         for (const auto & retriever : *retrievers) {
-            entry->it.add(retriever);
+            entry->it.add(handler->doc_type_name(), retriever);
         }
     }
     entry->handler_sequence = HandlerSnapshot::release(std::move(snap));

@@ -1,14 +1,20 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include "stackdumpiterator.h"
+#include <vespa/searchlib/query/tree/integer_term_vector.h>
+#include <vespa/searchlib/query/tree/predicate_query_term.h>
+#include <vespa/searchlib/query/tree/string_term_vector.h>
 #include <vespa/vespalib/util/compress.h>
 #include <vespa/vespalib/objects/nbo.h>
 #include <cassert>
-#include <charconv>
 
+using search::query::IntegerTermVector;
 using search::query::PredicateQueryTerm;
+using search::query::StringTermVector;
 
 namespace search {
+
+vespalib::stringref SimpleQueryStackDumpIterator::DEFAULT_INDEX = "default";
 
 SimpleQueryStackDumpIterator::SimpleQueryStackDumpIterator(vespalib::stringref buf)
     : _buf(buf.begin()),
@@ -28,7 +34,8 @@ SimpleQueryStackDumpIterator::SimpleQueryStackDumpIterator(vespalib::stringref b
       _extraIntArg3(0),
       _extraDoubleArg4(0),
       _extraDoubleArg5(0),
-      _predicate_query_term()
+      _predicate_query_term(),
+      _terms()
 {
 }
 
@@ -37,8 +44,7 @@ SimpleQueryStackDumpIterator::~SimpleQueryStackDumpIterator() = default;
 vespalib::stringref
 SimpleQueryStackDumpIterator::read_stringref(const char *&p)
 {
-    uint64_t len;
-    p += vespalib::compress::Integer::decompressPositive(len, p);
+    uint64_t len = readCompressedPositiveInt(p);
     if ((p + len) > _bufEnd) throw false;
     vespalib::stringref result(p, len);
     p += len;
@@ -46,30 +52,40 @@ SimpleQueryStackDumpIterator::read_stringref(const char *&p)
 }
 
 uint64_t
-SimpleQueryStackDumpIterator::readUint64(const char *&p)
-{
-    uint64_t value;
-    memcpy(&value, p, sizeof(value));
-    p += sizeof(value);
-    return vespalib::nbo::n2h(value);
-}
-
-double
-SimpleQueryStackDumpIterator::read_double(const char *&p)
-{
-    double value;
-    memcpy(&value, p, sizeof(value));
-    p += sizeof(value);
-    return vespalib::nbo::n2h(value);
-}
-
-uint64_t
 SimpleQueryStackDumpIterator::readCompressedPositiveInt(const char *&p)
 {
+    if (p > _bufEnd || !vespalib::compress::Integer::check_decompress_space(p, _bufEnd - p)) {
+        throw false;
+    }
     uint64_t tmp;
     p += vespalib::compress::Integer::decompressPositive(tmp, p);
-    if (p > _bufEnd) throw false;
+    assert(p <= _bufEnd);
     return tmp;
+}
+
+int64_t
+SimpleQueryStackDumpIterator::readCompressedInt(const char *&p)
+{
+    if (p > _bufEnd || !vespalib::compress::Integer::check_decompress_positive_space(p, _bufEnd - p)) {
+        throw false;
+    }
+    int64_t tmp;
+    p += vespalib::compress::Integer::decompress(tmp, p);
+    assert(p <= _bufEnd);
+    return tmp;
+}
+
+template <typename T>
+T
+SimpleQueryStackDumpIterator::read_value(const char *&p)
+{
+    T value;
+    if (p + sizeof(value) > _bufEnd) {
+        throw false;
+    }
+    memcpy(&value, p, sizeof(value));
+    p += sizeof(value);
+    return vespalib::nbo::n2h(value);
 }
 
 bool
@@ -92,14 +108,18 @@ bool SimpleQueryStackDumpIterator::readNext() {
     // Find an item at the current position
     const char *p = _buf + _currPos;
     uint8_t typefield = *p++;
-    _currType = ParseItem::GetType(typefield);
+    uint8_t type_code = typefield & ParseItem::item_type_mask;
+    if (type_code == ParseItem::item_type_extension_mark) {
+        if (p >= _bufEnd || ((uint8_t) *p) >= 0x80) {
+            return false;
+        }
+        type_code += (uint8_t) *p++;
+    }
+    _currType = static_cast<ParseItem::ItemType>(type_code);
 
     if (ParseItem::GetFeature_Weight(typefield)) {
-        int64_t tmpLong;
-        if (p >= _bufEnd) return false;
-        p += vespalib::compress::Integer::decompress(tmpLong, p);
+        int64_t tmpLong = readCompressedInt(p);
         _currWeight.setPercent(tmpLong);
-        if (p > _bufEnd) return false;
     } else {
         _currWeight.setPercent(100);
     }
@@ -152,13 +172,8 @@ bool SimpleQueryStackDumpIterator::readNext() {
         _currArity = 0;
         break;
     case ParseItem::ITEM_PURE_WEIGHTED_LONG:
-        {
-            if (p + sizeof(int64_t) > _bufEnd) {
-                return false;
-            }
-            _curr_integer_term = readUint64(p);
-            _currArity = 0;
-        }
+        _curr_integer_term = read_value<int64_t>(p);
+        _currArity = 0;
         break;
     case ParseItem::ITEM_WORD_ALTERNATIVES:
         _curr_index_name = read_stringref(p);
@@ -178,25 +193,31 @@ bool SimpleQueryStackDumpIterator::readNext() {
         _currArity = 0;
         break;
     case ParseItem::ITEM_PREDICATE_QUERY:
-        if ( ! readPredicate(p)) return false;
+        readPredicate(p);
         break;
 
     case ParseItem::ITEM_WEIGHTED_SET:
     case ParseItem::ITEM_DOT_PRODUCT:
     case ParseItem::ITEM_WAND:
     case ParseItem::ITEM_PHRASE:
-        if (!readComplexTerm(p)) return false;
+        readComplexTerm(p);
         break;
     case ParseItem::ITEM_NEAREST_NEIGHBOR:
-        if ( ! readNN(p)) return false;
+        readNN(p);
         break;
     case ParseItem::ITEM_FUZZY:
-        if (!readFuzzy(p)) return false;
+        readFuzzy(p);
         break;
     case ParseItem::ITEM_TRUE:
     case ParseItem::ITEM_FALSE:
         // no content
         _currArity = 0;
+        break;
+    case ParseItem::ITEM_STRING_IN:
+        read_string_in(p);
+        break;
+    case ParseItem::ITEM_NUMERIC_IN:
+        read_numeric_in(p);
         break;
     default:
         // Unknown item, so report that no more are available
@@ -208,7 +229,7 @@ bool SimpleQueryStackDumpIterator::readNext() {
     return (p <= _bufEnd);
 }
 
-bool
+void
 SimpleQueryStackDumpIterator::readPredicate(const char *&p) {
     _curr_index_name = read_stringref(p);
     _predicate_query_term = std::make_unique<PredicateQueryTerm>();
@@ -217,22 +238,19 @@ SimpleQueryStackDumpIterator::readPredicate(const char *&p) {
     for (size_t i = 0; i < count; ++i) {
         vespalib::stringref key = read_stringref(p);
         vespalib::stringref value = read_stringref(p);
-        if (p + sizeof(uint64_t) > _bufEnd) return false;
-        uint64_t sub_queries = readUint64(p);
+        uint64_t sub_queries = read_value<uint64_t>(p);
         _predicate_query_term->addFeature(key, value, sub_queries);
     }
     count = readCompressedPositiveInt(p);
     for (size_t i = 0; i < count; ++i) {
         vespalib::stringref key = read_stringref(p);
-        if (p + 2*sizeof(uint64_t) > _bufEnd) return false;
-        uint64_t value = readUint64(p);
-        uint64_t sub_queries = readUint64(p);
+        uint64_t value = read_value<uint64_t>(p);
+        uint64_t sub_queries = read_value<uint64_t>(p);
         _predicate_query_term->addRangeFeature(key, value, sub_queries);
     }
-    return true;
 }
 
-bool
+void
 SimpleQueryStackDumpIterator::readNN(const char *& p) {
     _curr_index_name = read_stringref(p);
     _curr_term = read_stringref(p); // query_tensor_name
@@ -242,34 +260,69 @@ SimpleQueryStackDumpIterator::readNN(const char *& p) {
     // XXX: remove later when QRS doesn't send this extra flag
     _extraIntArg2 &= ~0x40;
     // QRS always sends this now:
-    if ((p + sizeof(double))> _bufEnd) return false;
-    _extraDoubleArg4 = read_double(p); // distance threshold
+    _extraDoubleArg4 = read_value<double>(p); // distance threshold
     _currArity = 0;
-    return true;
 }
 
-bool
+void
 SimpleQueryStackDumpIterator::readComplexTerm(const char *& p) {
     _currArity = readCompressedPositiveInt(p);
     _curr_index_name = read_stringref(p);
     if (_currType == ParseItem::ITEM_WAND) {
         _extraIntArg1 = readCompressedPositiveInt(p); // targetNumHits
-        if ((p + 2*sizeof(double))> _bufEnd) return false;
-        _extraDoubleArg4 = read_double(p); // scoreThreshold
-        _extraDoubleArg5 = read_double(p); // thresholdBoostFactor
+        _extraDoubleArg4 = read_value<double>(p); // scoreThreshold
+        _extraDoubleArg5 = read_value<double>(p); // thresholdBoostFactor
     }
     _curr_term = vespalib::stringref();
-    return true;
 }
 
-bool
+void
 SimpleQueryStackDumpIterator::readFuzzy(const char *&p) {
     _curr_index_name = read_stringref(p);
     _curr_term = read_stringref(p); // fuzzy term
     _extraIntArg1 = readCompressedPositiveInt(p); // maxEditDistance
     _extraIntArg2 = readCompressedPositiveInt(p); // prefixLength
     _currArity = 0;
-    return true;
+}
+
+std::unique_ptr<query::PredicateQueryTerm>
+SimpleQueryStackDumpIterator::getPredicateQueryTerm()
+{
+    return std::move(_predicate_query_term);
+}
+
+void
+SimpleQueryStackDumpIterator::read_string_in(const char*& p)
+{
+    uint32_t num_terms = readCompressedPositiveInt(p);
+    _currArity = 0;
+    _curr_index_name = read_stringref(p);
+    _curr_term = vespalib::stringref();
+    auto terms = std::make_unique<StringTermVector>(num_terms);
+    for (uint32_t i = 0; i < num_terms; ++i) {
+        terms->addTerm(read_stringref(p));
+    }
+    _terms = std::move(terms);
+}
+
+void
+SimpleQueryStackDumpIterator::read_numeric_in(const char*& p)
+{
+    uint32_t num_terms = readCompressedPositiveInt(p);
+    _currArity = 0;
+    _curr_index_name = read_stringref(p);
+    _curr_term = vespalib::stringref();
+    auto terms = std::make_unique<IntegerTermVector>(num_terms);
+    for (uint32_t i = 0; i < num_terms; ++i) {
+        terms->addTerm(read_value<int64_t>(p));
+    }
+    _terms = std::move(terms);
+}
+
+std::unique_ptr<query::TermVector>
+SimpleQueryStackDumpIterator::get_terms()
+{
+    return std::move(_terms);
 }
 
 }

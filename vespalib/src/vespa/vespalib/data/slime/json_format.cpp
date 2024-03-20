@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include "json_format.h"
 #include "strfmt.h"
@@ -492,7 +492,7 @@ insertNumber(Inserter &inserter, bool isLong, const vespalib::string & value, ch
         inserter.insertLong(val);
     } else {
         double val = locale::c::strtod_au(value.c_str(), endp);
-        errorCode = errno;
+        errorCode = (errno == ERANGE ? 0 : errno);
         inserter.insertDouble(val);
     }
     assert(errorCode == 0 || errorCode == ERANGE || errorCode == EINVAL);

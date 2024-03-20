@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.container.jdisc;
 
 import com.yahoo.container.di.componentgraph.Provider;
@@ -67,6 +67,11 @@ public class AthenzIdentityProviderProvider implements Provider<AthenzIdentityPr
 
         @Override
         public String getAccessToken(String domain, List<String> roles) {
+            throw new UnsupportedOperationException(message);
+        }
+
+        @Override
+        public String getAccessToken(String domain, List<String> roles, List<String> proxyPrincipal) {
             throw new UnsupportedOperationException(message);
         }
 

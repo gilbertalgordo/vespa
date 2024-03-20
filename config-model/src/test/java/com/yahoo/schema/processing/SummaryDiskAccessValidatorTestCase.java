@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.schema.processing;
 
 import com.yahoo.schema.ApplicationBuilder;
@@ -25,7 +25,7 @@ public class SummaryDiskAccessValidatorTestCase {
                 "    }",
                 "  }",
                 "  document-summary my_sum {",
-                "    summary str_map type map<string, string> { source: str_map }",
+                "    summary str_map { source: str_map }",
                 "  }",
                 "}");
 
@@ -33,7 +33,7 @@ public class SummaryDiskAccessValidatorTestCase {
         ApplicationBuilder.createFromString(sd, logger);
         assertEquals(1, logger.warnings.size());
         assertThat(logger.warnings.get(0),
-                containsString("In schema 'test', document summary 'my_sum': " +
+                containsString("In schema 'test', document-summary 'my_sum': " +
                         "Fields [str_map] references non-attribute fields: Using this summary will cause disk accesses"));
     }
 
@@ -58,7 +58,7 @@ public class SummaryDiskAccessValidatorTestCase {
                 "  }",
                 "  import field ref.str_map as ref_str_map {}",
                 "  document-summary my_sum {",
-                "    summary ref_str_map type map<string, string> { source: ref_str_map }",
+                "    summary ref_str_map { source: ref_str_map }",
                 "  }",
                 "}");
         var logger = new TestableDeployLogger();

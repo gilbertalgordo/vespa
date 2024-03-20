@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 /*
  * This file defines a set of subclasses to the query nodes, and a
  * traits class to make them easy to use with the query builder. These
@@ -38,8 +38,8 @@ struct SimpleOr : Or
     ~SimpleOr() override;
 };
 struct SimpleWeakAnd : WeakAnd {
-    SimpleWeakAnd(uint32_t minHits, vespalib::stringref view) :
-        WeakAnd(minHits, view)
+    SimpleWeakAnd(uint32_t targetNumHits, vespalib::stringref view) :
+        WeakAnd(targetNumHits, view)
     {}
 };
 struct SimpleEquiv : Equiv {
@@ -73,6 +73,13 @@ struct SimpleWandTerm : WandTerm {
                    uint32_t targetNumHits, int64_t scoreThreshold, double thresholdBoostFactor)
         : WandTerm(num_terms, view, id, weight, targetNumHits, scoreThreshold, thresholdBoostFactor) {}
     ~SimpleWandTerm() override;
+};
+struct SimpleInTerm : InTerm {
+    SimpleInTerm(std::unique_ptr<TermVector> terms, MultiTerm::Type type, vespalib::stringref view, int32_t id, Weight weight)
+        : InTerm(std::move(terms), type, view, id, weight)
+    {
+    }
+    ~SimpleInTerm() override;
 };
 struct SimpleRank : Rank
 {
@@ -189,6 +196,7 @@ struct SimpleQueryNodeTypes {
     using RegExpTerm = SimpleRegExpTerm;
     using NearestNeighborTerm = SimpleNearestNeighborTerm;
     using FuzzyTerm = SimpleFuzzyTerm;
+    using InTerm = SimpleInTerm;
 };
 
 }

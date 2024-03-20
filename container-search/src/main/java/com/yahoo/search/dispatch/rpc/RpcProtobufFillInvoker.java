@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.search.dispatch.rpc;
 
 import ai.vespa.searchlib.searchprotocol.protobuf.SearchProtocol;
@@ -12,7 +12,6 @@ import com.yahoo.data.access.slime.SlimeAdapter;
 import com.yahoo.prelude.fastsearch.DocumentDatabase;
 import com.yahoo.prelude.fastsearch.FastHit;
 import com.yahoo.prelude.fastsearch.TimeoutException;
-import com.yahoo.processing.IllegalInputException;
 import com.yahoo.search.Query;
 import com.yahoo.search.Result;
 import com.yahoo.search.dispatch.FillInvoker;
@@ -23,7 +22,6 @@ import com.yahoo.slime.ArrayTraverser;
 import com.yahoo.slime.BinaryFormat;
 import com.yahoo.slime.BinaryView;
 
-import java.util.Iterator;
 import java.util.List;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -72,13 +70,6 @@ public class RpcProtobufFillInvoker extends FillInvoker {
 
     @Override
     protected void sendFillRequest(Result result, String summaryClass) {
-        if (summaryClass != null) {
-            if (summaryClass.equals("")) {
-                summaryClass = null;
-            } else if (! documentDb.getDocsumDefinitionSet().hasDocsum(summaryClass)) {
-                throw new IllegalInputException("invalid presentation.summary=" + summaryClass);
-            }
-        }
         ListMap<Integer, FastHit> hitsByNode = hitsByNode(result);
 
         result.getQuery().trace(false, 5, "Sending ", hitsByNode.size(), " summary fetch requests with jrt/protobuf");
@@ -126,13 +117,10 @@ public class RpcProtobufFillInvoker extends FillInvoker {
     /** Return a map of hits by their search node (partition) id */
     private static ListMap<Integer, FastHit> hitsByNode(Result result) {
         ListMap<Integer, FastHit> hitsByNode = new ListMap<>();
-        for (Iterator<Hit> i = result.hits().unorderedDeepIterator(); i.hasNext();) {
-            Hit h = i.next();
-            if (!(h instanceof FastHit hit))
-                continue;
+        for (Hit hit : (Iterable<Hit>) result.hits()::unorderedDeepIterator)
+            if (hit instanceof FastHit fastHit)
+                hitsByNode.put(fastHit.getDistributionKey(), fastHit);
 
-            hitsByNode.put(hit.getDistributionKey(), hit);
-        }
         return hitsByNode;
     }
 
@@ -144,7 +132,7 @@ public class RpcProtobufFillInvoker extends FillInvoker {
             String error = "Could not fill hits from unknown node " + nodeId;
             receive(Client.ResponseOrError.fromError(error), hits);
             result.hits().addError(ErrorMessage.createEmptyDocsums(error));
-            log.warning("Got hits with partid " + nodeId + ", which is not included in the current dispatch config");
+            log.warning("Got hits with node id " + nodeId + ", which is not included in the current dispatch config");
             return;
         }
 

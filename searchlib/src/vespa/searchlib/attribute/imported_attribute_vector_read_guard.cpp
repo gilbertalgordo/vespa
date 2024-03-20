@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include "imported_attribute_vector_read_guard.h"
 #include "imported_attribute_vector.h"
@@ -117,7 +117,11 @@ std::unique_ptr<ISearchContext> ImportedAttributeVectorReadGuard::createSearchCo
     return std::make_unique<ImportedSearchContext>(std::move(term), params, _imported_attribute, _target_attribute);
 }
 
-const IDocumentWeightAttribute *ImportedAttributeVectorReadGuard::asDocumentWeightAttribute() const {
+const IDocidPostingStore* ImportedAttributeVectorReadGuard::as_docid_posting_store() const {
+    return nullptr;
+}
+
+const IDocidWithWeightPostingStore *ImportedAttributeVectorReadGuard::as_docid_with_weight_posting_store() const {
     return nullptr;
 }
 

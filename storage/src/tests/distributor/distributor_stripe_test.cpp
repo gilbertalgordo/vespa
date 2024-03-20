@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include <tests/distributor/distributor_stripe_test_util.h>
 #include <vespa/document/fieldset/fieldsets.h>
@@ -8,6 +8,8 @@
 #include <vespa/storage/distributor/top_level_distributor.h>
 #include <vespa/storage/distributor/distributor_bucket_space.h>
 #include <vespa/storage/distributor/distributor_stripe.h>
+#include <vespa/storage/config/distributorconfiguration.h>
+#include <vespa/storage/config/config-stor-distributormanager.h>
 #include <vespa/storageapi/message/bucketsplitting.h>
 #include <vespa/storageapi/message/persistence.h>
 #include <vespa/storageapi/message/removelocation.h>
@@ -51,13 +53,13 @@ struct DistributorStripeTest : Test, DistributorStripeTestUtil {
     using NodeCount = uint16_t;
     using Redundancy = uint16_t;
 
-    using ConfigBuilder = vespa::config::content::core::StorDistributormanagerConfigBuilder;
+    using ConfigBuilder = DistributorManagerConfig;
 
     auto currentReplicaCountingMode() const noexcept {
         return _stripe->_bucketDBMetricUpdater.getMinimumReplicaCountingMode();
     }
 
-    std::string testOp(std::shared_ptr<api::StorageMessage> msg) {
+    std::string testOp(const std::shared_ptr<api::StorageMessage> & msg) {
         _stripe->handleMessage(msg);
 
         std::string tmp = _sender.getCommands();
@@ -83,8 +85,8 @@ struct DistributorStripeTest : Test, DistributorStripeTestUtil {
             std::vector<BucketCopy> changedNodes;
 
             vespalib::StringTokenizer tokenizer(states[i], ",");
-            for (uint32_t j = 0; j < tokenizer.size(); ++j) {
-                vespalib::StringTokenizer tokenizer2(tokenizer[j], ":");
+            for (auto token : tokenizer) {
+                vespalib::StringTokenizer tokenizer2(token, ":");
 
                 bool trusted = false;
                 if (tokenizer2.size() > 2) {
@@ -96,14 +98,7 @@ struct DistributorStripeTest : Test, DistributorStripeTestUtil {
                     removedNodes.push_back(node);
                 } else {
                     uint32_t checksum = atoi(tokenizer2[1].data());
-                    changedNodes.push_back(
-                            BucketCopy(
-                                    i + 1,
-                                    node,
-                                    api::BucketInfo(
-                                            checksum,
-                                            checksum / 2,
-                                            checksum / 4)).setTrusted(trusted));
+                    changedNodes.emplace_back(i + 1, node, api::BucketInfo(checksum, checksum / 2, checksum / 4)).setTrusted(trusted);
                 }
             }
 
@@ -112,9 +107,7 @@ struct DistributorStripeTest : Test, DistributorStripeTestUtil {
             uint32_t flags(DatabaseUpdate::CREATE_IF_NONEXISTING
                            | (resetTrusted ? DatabaseUpdate::RESET_TRUSTED : 0));
 
-            operation_context().update_bucket_database(makeDocumentBucket(document::BucketId(16, 1)),
-                                                       changedNodes,
-                                                       flags);
+            operation_context().update_bucket_database(makeDocumentBucket(document::BucketId(16, 1)), changedNodes, flags);
         }
 
         std::string retVal = dumpBucket(document::BucketId(16, 1));
@@ -122,8 +115,8 @@ struct DistributorStripeTest : Test, DistributorStripeTestUtil {
         return retVal;
     }
 
-    void assertBucketSpaceStats(size_t expBucketPending, size_t expBucketTotal, uint16_t node, const vespalib::string& bucketSpace,
-                                const BucketSpacesStatsProvider::PerNodeBucketSpacesStats& stats);
+    static void assertBucketSpaceStats(size_t expBucketPending, size_t expBucketTotal, uint16_t node, const vespalib::string& bucketSpace,
+                                       const BucketSpacesStatsProvider::PerNodeBucketSpacesStats& stats);
 
     SimpleMaintenanceScanner::PendingMaintenanceStats stripe_maintenance_stats() {
         return _stripe->pending_maintenance_stats();
@@ -151,12 +144,6 @@ struct DistributorStripeTest : Test, DistributorStripeTestUtil {
         });
     }
 
-    void configure_update_fast_path_restart_enabled(bool enabled) {
-        configure_stripe_with([&](auto& builder) {
-            builder.restartWithFastUpdatePathIfAllGetTimestampsAreConsistent = enabled;
-        });
-    }
-
     void configure_merge_operations_disabled(bool disabled) {
         configure_stripe_with([&](auto& builder) {
             builder.mergeOperationsDisabled = disabled;
@@ -169,45 +156,9 @@ struct DistributorStripeTest : Test, DistributorStripeTestUtil {
         });
     }
 
-    void configure_metadata_update_phase_enabled(bool enabled) {
-        configure_stripe_with([&](auto& builder) {
-            builder.enableMetadataOnlyFetchPhaseForInconsistentUpdates = enabled;
-        });
-    }
-
-    void configure_prioritize_global_bucket_merges(bool enabled) {
-        configure_stripe_with([&](auto& builder) {
-            builder.prioritizeGlobalBucketMerges = enabled;
-        });
-    }
-
     void configure_max_activation_inhibited_out_of_sync_groups(uint32_t n_groups) {
         configure_stripe_with([&](auto& builder) {
             builder.maxActivationInhibitedOutOfSyncGroups = n_groups;
-        });
-    }
-
-    void configure_implicitly_clear_priority_on_schedule(bool implicitly_clear) {
-        configure_stripe_with([&](auto& builder) {
-            builder.implicitlyClearBucketPriorityOnSchedule = implicitly_clear;
-        });
-    }
-
-    void configure_use_unordered_merge_chaining(bool use_unordered) {
-        configure_stripe_with([&](auto& builder) {
-            builder.useUnorderedMergeChaining = use_unordered;
-        });
-    }
-
-    void configure_enable_two_phase_garbage_collection(bool use_two_phase) {
-        configure_stripe_with([&](auto& builder) {
-            builder.enableTwoPhaseGarbageCollection = use_two_phase;
-        });
-    }
-
-    void configure_enable_condition_probing(bool enable_probing) {
-        configure_stripe_with([&](auto& builder) {
-            builder.enableConditionProbing = enable_probing;
         });
     }
 
@@ -217,17 +168,12 @@ struct DistributorStripeTest : Test, DistributorStripeTestUtil {
         });
     }
 
-    [[nodiscard]] bool scheduler_has_implicitly_clear_priority_on_schedule_set() const noexcept {
-        return _stripe->_scheduler->implicitly_clear_priority_on_schedule();
-    }
-
     [[nodiscard]] bool distributor_owns_bucket_in_current_and_pending_states(document::BucketId bucket_id) const {
         return (getDistributorBucketSpace().get_bucket_ownership_flags(bucket_id).owned_in_pending_state() &&
                 getDistributorBucketSpace().check_ownership_in_pending_and_current_state(bucket_id).isOwned());
     }
 
     void configureMaxClusterClockSkew(int seconds);
-    void configure_mutation_sequencing(bool enabled);
     void configure_merge_busy_inhibit_duration(int seconds);
 
     void set_up_and_start_get_op_with_stale_reads_enabled(bool enabled);
@@ -471,43 +417,6 @@ TEST_F(DistributorStripeTest, update_bucket_database)
               updateBucketDB("0:456", "2:333", ResetTrusted(true)));
 }
 
-TEST_F(DistributorStripeTest, priority_config_is_propagated_to_distributor_configuration)
-{
-    using namespace vespa::config::content::core;
-
-    setup_stripe(Redundancy(2), NodeCount(2), "storage:2 distributor:1");
-
-    ConfigBuilder builder;
-    builder.priorityMergeMoveToIdealNode = 1;
-    builder.priorityMergeOutOfSyncCopies = 2;
-    builder.priorityMergeTooFewCopies = 3;
-    builder.priorityActivateNoExistingActive = 4;
-    builder.priorityActivateWithExistingActive = 5;
-    builder.priorityDeleteBucketCopy = 6;
-    builder.priorityJoinBuckets = 7;
-    builder.prioritySplitDistributionBits = 8;
-    builder.prioritySplitLargeBucket = 9;
-    builder.prioritySplitInconsistentBucket = 10;
-    builder.priorityGarbageCollection = 11;
-    builder.priorityMergeGlobalBuckets = 12;
-
-    configure_stripe(builder);
-
-    const auto& mp = getConfig().getMaintenancePriorities();
-    EXPECT_EQ(1, static_cast<int>(mp.mergeMoveToIdealNode));
-    EXPECT_EQ(2, static_cast<int>(mp.mergeOutOfSyncCopies));
-    EXPECT_EQ(3, static_cast<int>(mp.mergeTooFewCopies));
-    EXPECT_EQ(4, static_cast<int>(mp.activateNoExistingActive));
-    EXPECT_EQ(5, static_cast<int>(mp.activateWithExistingActive));
-    EXPECT_EQ(6, static_cast<int>(mp.deleteBucketCopy));
-    EXPECT_EQ(7, static_cast<int>(mp.joinBuckets));
-    EXPECT_EQ(8, static_cast<int>(mp.splitDistributionBits));
-    EXPECT_EQ(9, static_cast<int>(mp.splitLargeBucket));
-    EXPECT_EQ(10, static_cast<int>(mp.splitInconsistentBucket));
-    EXPECT_EQ(11, static_cast<int>(mp.garbageCollection));
-    EXPECT_EQ(12, static_cast<int>(mp.mergeGlobalBuckets));
-}
-
 TEST_F(DistributorStripeTest, no_db_resurrection_for_bucket_not_owned_in_pending_state) {
     setup_stripe(Redundancy(1), NodeCount(10), "storage:2 distributor:2");
     // Force new state into being the pending state. According to the initial
@@ -645,7 +554,7 @@ TEST_F(DistributorStripeTest, stats_generated_for_preempted_operations)
 TEST_F(DistributorStripeTest, replica_counting_mode_is_configured_to_trusted_by_default)
 {
     setup_stripe(Redundancy(2), NodeCount(2), "storage:2 distributor:1");
-    EXPECT_EQ(ConfigBuilder::MinimumReplicaCountingMode::TRUSTED, currentReplicaCountingMode());
+    EXPECT_EQ(ReplicaCountingMode::TRUSTED, currentReplicaCountingMode());
 }
 
 TEST_F(DistributorStripeTest, replica_counting_mode_config_is_propagated_to_metric_updater)
@@ -654,7 +563,7 @@ TEST_F(DistributorStripeTest, replica_counting_mode_config_is_propagated_to_metr
     ConfigBuilder builder;
     builder.minimumReplicaCountingMode = ConfigBuilder::MinimumReplicaCountingMode::ANY;
     configure_stripe(builder);
-    EXPECT_EQ(ConfigBuilder::MinimumReplicaCountingMode::ANY, currentReplicaCountingMode());
+    EXPECT_EQ(ReplicaCountingMode::ANY, currentReplicaCountingMode());
 }
 
 TEST_F(DistributorStripeTest, max_consecutively_inhibited_maintenance_ticks_config_is_propagated_to_internal_config)
@@ -701,19 +610,6 @@ TEST_F(DistributorStripeTest, max_clock_skew_config_is_propagated_to_distributor
     EXPECT_EQ(getConfig().getMaxClusterClockSkew(), std::chrono::seconds(5));
 }
 
-TEST_F(DistributorStripeTest, inhibit_default_merge_if_global_merges_pending_config_is_propagated)
-{
-    setup_stripe(Redundancy(2), NodeCount(2), "storage:2 distributor:1");
-    ConfigBuilder builder;
-    builder.inhibitDefaultMergesWhenGlobalMergesPending = true;
-    configure_stripe(builder);
-    EXPECT_TRUE(getConfig().inhibit_default_merges_when_global_merges_pending());
-
-    builder.inhibitDefaultMergesWhenGlobalMergesPending = false;
-    configure_stripe(builder);
-    EXPECT_FALSE(getConfig().inhibit_default_merges_when_global_merges_pending());
-}
-
 namespace {
 
 auto makeDummyRemoveCommand() {
@@ -723,30 +619,6 @@ auto makeDummyRemoveCommand() {
             api::Timestamp(0));
 }
 
-}
-
-void
-DistributorStripeTest::configure_mutation_sequencing(bool enabled)
-{
-    ConfigBuilder builder;
-    builder.sequenceMutatingOperations = enabled;
-    configure_stripe(builder);
-}
-
-TEST_F(DistributorStripeTest, sequencing_config_is_propagated_to_distributor_config)
-{
-    setup_stripe(Redundancy(2), NodeCount(2), "storage:2 distributor:1");
-
-    // Should be enabled by default
-    EXPECT_TRUE(getConfig().getSequenceMutatingOperations());
-
-    // Explicitly disabled.
-    configure_mutation_sequencing(false);
-    EXPECT_FALSE(getConfig().getSequenceMutatingOperations());
-
-    // Explicitly enabled.
-    configure_mutation_sequencing(true);
-    EXPECT_TRUE(getConfig().getSequenceMutatingOperations());
 }
 
 void
@@ -926,12 +798,6 @@ TEST_F(DistributorStripeTest, fast_path_on_consistent_gets_config_is_propagated_
     setup_stripe(Redundancy(1), NodeCount(1), "distributor:1 storage:1");
 
     EXPECT_TRUE(getConfig().update_fast_path_restart_enabled()); // Enabled by default
-
-    configure_update_fast_path_restart_enabled(true);
-    EXPECT_TRUE(getConfig().update_fast_path_restart_enabled());
-
-    configure_update_fast_path_restart_enabled(false);
-    EXPECT_FALSE(getConfig().update_fast_path_restart_enabled());
 }
 
 TEST_F(DistributorStripeTest, merge_disabling_config_is_propagated_to_internal_config)
@@ -948,12 +814,7 @@ TEST_F(DistributorStripeTest, merge_disabling_config_is_propagated_to_internal_c
 TEST_F(DistributorStripeTest, metadata_update_phase_config_is_propagated_to_internal_config)
 {
     setup_stripe(Redundancy(1), NodeCount(1), "distributor:1 storage:1");
-
-    configure_metadata_update_phase_enabled(true);
     EXPECT_TRUE(getConfig().enable_metadata_only_fetch_phase_for_inconsistent_updates());
-
-    configure_metadata_update_phase_enabled(false);
-    EXPECT_FALSE(getConfig().enable_metadata_only_fetch_phase_for_inconsistent_updates());
 }
 
 TEST_F(DistributorStripeTest, weak_internal_read_consistency_config_is_propagated_to_internal_configs)
@@ -969,17 +830,6 @@ TEST_F(DistributorStripeTest, weak_internal_read_consistency_config_is_propagate
     EXPECT_FALSE(getExternalOperationHandler().use_weak_internal_read_consistency_for_gets());
 }
 
-TEST_F(DistributorStripeTest, prioritize_global_bucket_merges_config_is_propagated_to_internal_config)
-{
-    setup_stripe(Redundancy(1), NodeCount(1), "distributor:1 storage:1");
-
-    configure_prioritize_global_bucket_merges(true);
-    EXPECT_TRUE(getConfig().prioritize_global_bucket_merges());
-
-    configure_prioritize_global_bucket_merges(false);
-    EXPECT_FALSE(getConfig().prioritize_global_bucket_merges());
-}
-
 TEST_F(DistributorStripeTest, max_activation_inhibited_out_of_sync_groups_config_is_propagated_to_internal_config)
 {
     setup_stripe(Redundancy(1), NodeCount(1), "distributor:1 storage:1");
@@ -989,17 +839,6 @@ TEST_F(DistributorStripeTest, max_activation_inhibited_out_of_sync_groups_config
 
     configure_max_activation_inhibited_out_of_sync_groups(0);
     EXPECT_EQ(getConfig().max_activation_inhibited_out_of_sync_groups(), 0);
-}
-
-TEST_F(DistributorStripeTest, implicitly_clear_priority_on_schedule_config_is_propagated_to_scheduler)
-{
-    setup_stripe(Redundancy(1), NodeCount(1), "distributor:1 storage:1");
-
-    configure_implicitly_clear_priority_on_schedule(true);
-    EXPECT_TRUE(scheduler_has_implicitly_clear_priority_on_schedule_set());
-
-    configure_implicitly_clear_priority_on_schedule(false);
-    EXPECT_FALSE(scheduler_has_implicitly_clear_priority_on_schedule_set());
 }
 
 TEST_F(DistributorStripeTest, wanted_split_bit_count_is_lower_bounded)
@@ -1075,43 +914,6 @@ TEST_F(DistributorStripeTest, closing_aborts_gets_started_outside_stripe_thread)
     EXPECT_EQ(api::ReturnCode::ABORTED, _sender.reply(0)->getResult().getResult());
 }
 
-TEST_F(DistributorStripeTest, use_unordered_merge_chaining_config_is_propagated_to_internal_config)
-{
-    setup_stripe(Redundancy(1), NodeCount(1), "distributor:1 storage:1");
-
-    configure_use_unordered_merge_chaining(true);
-    EXPECT_TRUE(getConfig().use_unordered_merge_chaining());
-
-    configure_use_unordered_merge_chaining(false);
-    EXPECT_FALSE(getConfig().use_unordered_merge_chaining());
-}
-
-TEST_F(DistributorStripeTest, enable_two_phase_gc_config_is_propagated_to_internal_config)
-{
-    setup_stripe(Redundancy(1), NodeCount(1), "distributor:1 storage:1");
-
-    EXPECT_TRUE(getConfig().enable_two_phase_garbage_collection());
-
-    configure_enable_two_phase_garbage_collection(true);
-    EXPECT_TRUE(getConfig().enable_two_phase_garbage_collection());
-
-    configure_enable_two_phase_garbage_collection(false);
-    EXPECT_FALSE(getConfig().enable_two_phase_garbage_collection());
-}
-
-TEST_F(DistributorStripeTest, enable_condition_probing_config_is_propagated_to_internal_config)
-{
-    setup_stripe(Redundancy(1), NodeCount(1), "distributor:1 storage:1");
-
-    EXPECT_TRUE(getConfig().enable_condition_probing());
-
-    configure_enable_condition_probing(false);
-    EXPECT_FALSE(getConfig().enable_condition_probing());
-
-    configure_enable_condition_probing(true);
-    EXPECT_TRUE(getConfig().enable_condition_probing());
-}
-
 TEST_F(DistributorStripeTest, enable_operation_cancellation_config_is_propagated_to_internal_config) {
     setup_stripe(Redundancy(1), NodeCount(1), "distributor:1 storage:1");
 
@@ -1179,7 +981,6 @@ TEST_F(DistributorStripeTest, distribution_config_change_edge_cancels_pending_op
 void DistributorStripeTest::set_up_for_bucket_ownership_cancellation(uint32_t superbucket_idx) {
     setup_stripe(Redundancy(1), NodeCount(10), "version:1 distributor:2 storage:2");
     configure_stripe_with([](auto& builder) {
-        builder.enableConditionProbing = true;
         builder.enableOperationCancellation = true;
     });
 

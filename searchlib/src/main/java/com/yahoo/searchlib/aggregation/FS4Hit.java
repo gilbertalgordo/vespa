@@ -1,10 +1,13 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.searchlib.aggregation;
 
 import com.yahoo.document.GlobalId;
 import com.yahoo.vespa.objects.Deserializer;
 import com.yahoo.vespa.objects.ObjectVisitor;
 import com.yahoo.vespa.objects.Serializer;
+
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 /**
  * A single hit from a Vespa content cluster
@@ -13,7 +16,9 @@ import com.yahoo.vespa.objects.Serializer;
  */
 public class FS4Hit extends Hit {
 
-    public static final int classId = registerClass(0x4000 + 95, FS4Hit.class); // shared with c++
+    private static final Logger log = Logger.getLogger(FS4Hit.class.getName());
+
+    public static final int classId = registerClass(0x4000 + 95, FS4Hit.class, FS4Hit::new); // shared with c++
     private int path = 0;
     private GlobalId globalId = new GlobalId(new byte[GlobalId.LENGTH]);
     private int distributionKey = -1;
@@ -82,6 +87,8 @@ public class FS4Hit extends Hit {
         path = buf.getInt(null);
         globalId = new GlobalId(buf.getBytes(null, GlobalId.LENGTH));
         distributionKey = buf.getInt(null);
+        if (distributionKey < 0)
+            log.log(Level.WARNING, "Distribution key is negative: " + this);
     }
 
     @Override

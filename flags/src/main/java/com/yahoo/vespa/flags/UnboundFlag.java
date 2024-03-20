@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.flags;
 
 /**
@@ -18,7 +18,7 @@ public interface UnboundFlag<T, F extends Flag<T, F>, U extends UnboundFlag<T, F
     FlagSerializer<T> serializer();
 
     /** Returns a clone of the unbound flag, but with the dimension set accordingly. */
-    U with(FetchVector.Dimension dimension, String dimensionValue);
+    U with(Dimension dimension, String dimensionValue);
 
     /** Binds to a flag source, returning a (bound) flag. */
     F bindTo(FlagSource source);

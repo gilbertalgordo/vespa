@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include <vespa/searchcommon/attribute/search_context_params.h>
 #include <vespa/searchlib/attribute/imported_search_context.h>
@@ -76,15 +76,17 @@ bool is_strict_hit_with_weight(Iterator& iter, TermFieldMatchData& match,
             EXPECT_EQUAL(weight, match.getWeight()));
 }
 
-TEST_F("approximateHits() returns document count of reference attribute when not using fast-search target attribute", Fixture) {
+TEST_F("calc_hit_estimate() returns document count of reference attribute when not using fast-search target attribute", Fixture) {
     add_n_docs_with_undefined_values(*f.target_attr, 10);
     add_n_docs_with_undefined_values(*f.reference_attr, 101);
 
     auto ctx = f.create_context(word_term("foo"));
-    EXPECT_EQUAL(101u, ctx->approximateHits());
+    auto est = ctx->calc_hit_estimate();
+    EXPECT_EQUAL(101u, est.est_hits());
+    EXPECT_TRUE(est.is_unknown());
 }
 
-TEST_F("approximateHits() estimates hits when using fast-search target attribute", Fixture(false, FastSearchConfig::ExplicitlyEnabled))
+TEST_F("calc_hit_estimate() estimates hits when using fast-search target attribute", Fixture(false, FastSearchConfig::ExplicitlyEnabled))
 {
     constexpr uint32_t target_docs = 1000;
     constexpr uint32_t docs = 10000;
@@ -115,16 +117,22 @@ TEST_F("approximateHits() estimates hits when using fast-search target attribute
     f.reference_attr->commit();
     auto ctx = f.create_context(word_term("10"));
     // Exact count: 0 target hits => 0
-    EXPECT_EQUAL(0u, ctx->approximateHits());
+    auto est = ctx->calc_hit_estimate();
+    EXPECT_EQUAL(0u, est.est_hits());
+    EXPECT_FALSE(est.is_unknown());
     TermFieldMatchData match;
     auto iter = f.create_iterator(*ctx, match, false);
     EXPECT_TRUE(iter->matches_any() == Trinary::False);
     ctx = f.create_context(word_term("20"));
     // Exact count: 2 target hits, 2 docs / target doc => 2 * 2 = 4
-    EXPECT_EQUAL(4u, ctx->approximateHits());
+    est = ctx->calc_hit_estimate();
+    EXPECT_EQUAL(4u, est.est_hits());
+    EXPECT_FALSE(est.is_unknown());
     ctx = f.create_context(word_term("30"));
     // Approximation: 110 target hits => 110 * 10001 / 1001 = 1099
-    EXPECT_EQUAL(1099u, ctx->approximateHits());
+    est = ctx->calc_hit_estimate();
+    EXPECT_EQUAL(1099u, est.est_hits());
+    EXPECT_FALSE(est.is_unknown());
 }
 
 TEST_F("attributeName() returns imported attribute name", Fixture) {
@@ -272,7 +280,7 @@ TEST_F("Strict iterator is marked as strict", Fixture) {
 
 TEST_F("Non-strict blueprint with high hit rate is strict", Fixture(false, FastSearchConfig::ExplicitlyEnabled)) {
     auto ctx = f.create_context(word_term("5678"));
-    ctx->fetchPostings(queryeval::ExecuteInfo::create(false, 0.02));
+    ctx->fetchPostings(queryeval::ExecuteInfo::createForTest(false, 0.02));
     TermFieldMatchData match;
     auto iter = f.create_iterator(*ctx, match, false);
 
@@ -281,7 +289,7 @@ TEST_F("Non-strict blueprint with high hit rate is strict", Fixture(false, FastS
 
 TEST_F("Non-strict blueprint with low hit rate is non-strict", Fixture(false, FastSearchConfig::ExplicitlyEnabled)) {
     auto ctx = f.create_context(word_term("5678"));
-    ctx->fetchPostings(queryeval::ExecuteInfo::create(false, 0.01));
+    ctx->fetchPostings(queryeval::ExecuteInfo::createForTest(false, 0.01));
     TermFieldMatchData match;
     auto iter = f.create_iterator(*ctx, match, false);
 

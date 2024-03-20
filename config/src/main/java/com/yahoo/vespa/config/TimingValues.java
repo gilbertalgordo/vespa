@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.config;
 
 import java.util.Random;
@@ -20,6 +20,7 @@ public class TimingValues {
     private long fixedDelay = 5000;
     private final Random rand;
 
+    // TODO: Document rationale for these values
     public TimingValues() {
         successTimeout = 600000;
         errorTimeout = 20000;
@@ -27,7 +28,6 @@ public class TimingValues {
         this.rand = new Random(System.currentTimeMillis());
     }
 
-    // TODO Should add nextConfigTimeout in all constructors
     public TimingValues(long successTimeout,
                         long errorTimeout,
                         long initialTimeout,

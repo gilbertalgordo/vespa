@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 package com.yahoo.vespa.model.admin.metricsproxy;
 
@@ -9,11 +9,15 @@ import ai.vespa.metricsproxy.metric.dimensions.ApplicationDimensionsConfig;
 import ai.vespa.metricsproxy.metric.dimensions.NodeDimensionsConfig;
 import ai.vespa.metricsproxy.rpc.RpcConnectorConfig;
 import ai.vespa.metricsproxy.service.VespaServicesConfig;
+import com.yahoo.config.model.api.ApplicationClusterEndpoint;
+import com.yahoo.config.model.api.ContainerEndpoint;
 import com.yahoo.config.model.deploy.DeployState;
-import com.yahoo.search.config.QrStartConfig;
 import com.yahoo.vespa.model.VespaModel;
 import com.yahoo.vespa.model.admin.monitoring.MetricsConsumer;
 import com.yahoo.vespa.model.test.VespaModelTester;
+
+import java.util.List;
+import java.util.Set;
 
 import static com.yahoo.vespa.model.admin.metricsproxy.MetricsProxyModelTester.TestMode.hosted;
 import static com.yahoo.vespa.model.admin.metricsproxy.MetricsProxyModelTester.TestMode.self_hosted;
@@ -42,18 +46,19 @@ class MetricsProxyModelTester {
     }
 
     static VespaModel getModel(String servicesXml, TestMode testMode, DeployState.Builder builder) {
-        var numberOfHosts = testMode == hosted ? 4 : 1;
+        return getModel(servicesXml, testMode, builder, 4);
+    }
+
+    static VespaModel getModel(String servicesXml, TestMode testMode, DeployState.Builder builder, int hostCount) {
+        var numberOfHosts = testMode == hosted ? hostCount : 1;
         var tester = new VespaModelTester();
         tester.addHosts(numberOfHosts);
         tester.setHosted(testMode == hosted);
-        if (testMode == hosted) tester.setApplicationId(MY_TENANT, MY_APPLICATION, MY_INSTANCE);
+        if (testMode == hosted) {
+            tester.setApplicationId(MY_TENANT, MY_APPLICATION, MY_INSTANCE);
+            builder.endpoints(Set.of(new ContainerEndpoint("foo", ApplicationClusterEndpoint.Scope.zone, List.of("foo.example.com"))));
+        }
         return tester.createModel(servicesXml, true, builder);
-    }
-
-    static String containerConfigId(VespaModel model, MetricsProxyModelTester.TestMode mode) {
-        return (mode == hosted)
-                ? CLUSTER_CONFIG_ID + "/" + model.getHosts().iterator().next().getHostname()
-                : CONTAINER_CONFIG_ID;
     }
 
     static String servicesWithAdminOnly() {
@@ -98,10 +103,6 @@ class MetricsProxyModelTester {
 
     static ApplicationDimensionsConfig getApplicationDimensionsConfig(VespaModel model) {
         return model.getConfig(ApplicationDimensionsConfig.class, CLUSTER_CONFIG_ID);
-    }
-
-    static QrStartConfig getQrStartConfig(VespaModel model, String hostname) {
-        return model.getConfig(QrStartConfig.class, CLUSTER_CONFIG_ID + "/" + hostname);
     }
 
     static NodeDimensionsConfig getNodeDimensionsConfig(VespaModel model, String configId) {

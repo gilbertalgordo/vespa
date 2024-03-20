@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #pragma once
 
@@ -104,6 +104,32 @@ public:
            numbytes = 1;
         }
         return numbytes;
+    }
+
+    static bool check_decompress_space(const void* srcv, size_t len) {
+        if (len == 0u) {
+            return false;
+        }
+        const uint8_t * src = static_cast<const uint8_t *>(srcv);
+        const uint8_t c = src[0];
+        if ((c & 0x40) != 0) {
+            return (((c & 0x20) != 0) ? (len >= 4u) : (len >= 2u));
+        } else {
+            return true;
+        }
+    }
+
+    static bool check_decompress_positive_space(const void* srcv, size_t len) {
+        if (len == 0u) {
+            return false;
+        }
+        const uint8_t * src = static_cast<const uint8_t *>(srcv);
+        const uint8_t c = src[0];
+        if ((c & 0x80) != 0) {
+            return (((c & 0x40) != 0) ? (len >= 4u) : (len >= 2u));
+        } else {
+            return true;
+        }
     }
 private:
     [[ noreturn ]] static void throw_too_big(int64_t n);

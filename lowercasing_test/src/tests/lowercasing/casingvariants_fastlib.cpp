@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include <vespa/fastlib/text/normwordfolder.h>
 #include <cassert>
@@ -27,7 +27,7 @@ main(int argc, char ** argv)
         ref.getline(refBuf, 128);
         ucs4_t inputChar = getUCS4Char(inputBuf);
         ucs4_t refChar = getUCS4Char(refBuf);
-        ucs4_t lowerChar = wordFolder.ToFold(inputChar);
+        ucs4_t lowerChar = wordFolder.lowercase_and_fold(inputChar);
         Fast_UnicodeUtil::utf8ncopy(lowerBuf, &lowerChar, 128, 1);
         if (refChar != lowerChar) {
             printf("input(%s,%u,0x%X), lower(%s,%u,0x%X), ref(%s,%u,0x%X) \n",

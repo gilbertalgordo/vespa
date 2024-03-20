@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include <vespa/document/datatype/datatype.h>
 #include <vespa/document/fieldvalue/intfieldvalue.h>
@@ -6,7 +6,6 @@
 #include <vespa/searchcore/proton/attribute/imported_attributes_repo.h>
 #include <vespa/searchcore/proton/bucketdb/bucketdbhandler.h>
 #include <vespa/searchcore/proton/bucketdb/bucket_db_owner.h>
-#include <vespa/searchcore/proton/common/hw_info.h>
 #include <vespa/searchcore/proton/feedoperation/operations.h>
 #include <vespa/searchcore/proton/initializer/task_runner.h>
 #include <vespa/searchcore/proton/matching/querylimiter.h>
@@ -43,6 +42,7 @@
 #include <vespa/vespalib/testkit/test_kit.h>
 #include <vespa/vespalib/util/destructor_callbacks.h>
 #include <vespa/vespalib/util/idestructorcallback.h>
+#include <vespa/vespalib/util/hw_info.h>
 #include <vespa/vespalib/util/lambdatask.h>
 #include <vespa/vespalib/util/size_literals.h>
 #include <vespa/vespalib/util/testclock.h>
@@ -74,6 +74,7 @@ using storage::spi::Timestamp;
 using vespa::config::search::core::ProtonConfig;
 using vespa::config::content::core::BucketspacesConfig;
 using vespalib::datastore::CompactionStrategy;
+using vespalib::HwInfo;
 using proton::index::IndexConfig;
 
 using StoreOnlyConfig = StoreOnlyDocSubDB::Config;
@@ -255,7 +256,7 @@ MySearchableContext::MySearchableContext(IThreadingService &writeService,
                                          IBucketDBHandlerInitializer & bucketDBHandlerInitializer)
     : _fastUpdCtx(writeService, bucketDB, bucketDBHandlerInitializer),
       _queryLimiter(), _clock(),
-      _ctx(_fastUpdCtx._ctx, _queryLimiter, _clock.clock(), writeService.shared())
+      _ctx(_fastUpdCtx._ctx, _queryLimiter, _clock.nowRef(), writeService.shared())
 {}
 MySearchableContext::~MySearchableContext() = default;
 
@@ -619,30 +620,35 @@ TEST_F("require that attribute manager can be reconfigured", SearchableFixture)
     requireThatAttributeManagerCanBeReconfigured(f);
 }
 
-TEST_F("require that subdb reflect retirement", FastAccessFixture)
+TEST_F("require that subdb reflect retirement or maintenance", FastAccessFixture)
 {
     CompactionStrategy cfg(0.1, 0.3);
 
-    EXPECT_FALSE(f._subDb.isNodeRetired());
+    EXPECT_FALSE(f._subDb.is_node_retired_or_maintenance());
     auto unretired_cfg = f._subDb.computeCompactionStrategy(cfg);
     EXPECT_TRUE(cfg == unretired_cfg);
 
     auto calc = std::make_shared<proton::test::BucketStateCalculator>();
     calc->setNodeRetired(true);
     f.setBucketStateCalculator(calc);
-    EXPECT_TRUE(f._subDb.isNodeRetired());
+    EXPECT_TRUE(f._subDb.is_node_retired_or_maintenance());
     auto retired_cfg = f._subDb.computeCompactionStrategy(cfg);
     EXPECT_TRUE(cfg != retired_cfg);
     EXPECT_TRUE(CompactionStrategy(0.5, 0.5) == retired_cfg);
 
     calc->setNodeRetired(false);
+    calc->setNodeMaintenance(true);
     f.setBucketStateCalculator(calc);
-    EXPECT_FALSE(f._subDb.isNodeRetired());
+    EXPECT_TRUE(f._subDb.is_node_retired_or_maintenance());
+
+    calc->setNodeMaintenance(false);
+    f.setBucketStateCalculator(calc);
+    EXPECT_FALSE(f._subDb.is_node_retired_or_maintenance());
     unretired_cfg = f._subDb.computeCompactionStrategy(cfg);
     EXPECT_TRUE(cfg == unretired_cfg);
 }
 
-TEST_F("require that attribute compaction config reflect retirement", FastAccessFixture) {
+TEST_F("require that attribute compaction config reflect retirement or maintenance", FastAccessFixture) {
     CompactionStrategy default_cfg(0.05, 0.2);
     CompactionStrategy retired_cfg(0.5, 0.5);
 

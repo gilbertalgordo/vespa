@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 // vespa test command
 // Author: jonmv
 
@@ -21,7 +21,8 @@ import (
 
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
-	"github.com/vespa-engine/vespa/client/go/internal/util"
+	"github.com/vespa-engine/vespa/client/go/internal/httputil"
+	"github.com/vespa-engine/vespa/client/go/internal/ioutil"
 	"github.com/vespa-engine/vespa/client/go/internal/vespa"
 )
 
@@ -198,6 +199,14 @@ func verify(step step, defaultCluster string, defaultParameters map[string]strin
 		method = "GET"
 	}
 
+	header := http.Header{}
+	for k, v := range step.Request.Headers {
+		header.Set(k, v)
+	}
+	if header.Get("Content-Type") == "" { // Set default if not specified by test
+		header.Set("Content-Type", "application/json")
+	}
+
 	var service *vespa.Service
 	requestUri := step.Request.URI
 	if requestUri == "" {
@@ -220,7 +229,7 @@ func verify(step step, defaultCluster string, defaultParameters map[string]strin
 		service, ok = context.clusters[cluster]
 		if !ok {
 			// Cache service so we don't have to discover it for every step
-			waiter := context.cli.waiter(false, time.Duration(waitSecs)*time.Second)
+			waiter := context.cli.waiter(time.Duration(waitSecs) * time.Second)
 			service, err = waiter.Service(target, cluster)
 			if err != nil {
 				return "", "", err
@@ -237,9 +246,6 @@ func verify(step step, defaultCluster string, defaultParameters map[string]strin
 		query.Add(name, value)
 	}
 	requestUrl.RawQuery = query.Encode()
-
-	header := http.Header{}
-	header.Add("Content-Type", "application/json") // TODO: Not guaranteed to be true ...
 
 	request := &http.Request{
 		URL:    requestUrl,
@@ -272,7 +278,7 @@ func verify(step step, defaultCluster string, defaultParameters map[string]strin
 
 	var response *http.Response
 	if externalEndpoint {
-		util.ConfigureTLS(context.cli.httpClient, []tls.Certificate{}, nil, false)
+		httputil.ConfigureTLS(context.cli.httpClient, []tls.Certificate{}, nil, false)
 		response, err = context.cli.httpClient.Do(request, 60*time.Second)
 	} else {
 		response, err = service.Do(request, 600*time.Second) // Vespa should provide a response within the given request timeout
@@ -289,7 +295,7 @@ func verify(step step, defaultCluster string, defaultParameters map[string]strin
 				color.RedString(strconv.Itoa(response.StatusCode)),
 				color.CyanString(method),
 				color.CyanString(requestUrl.String()),
-				util.ReaderToJSON(response.Body)), nil
+				ioutil.ReaderToJSON(response.Body)), nil
 	}
 
 	if responseBodySpec == nil {
@@ -464,11 +470,12 @@ type step struct {
 }
 
 type request struct {
-	Cluster       string          `json:"cluster"`
-	Method        string          `json:"method"`
-	URI           string          `json:"uri"`
-	ParametersRaw json.RawMessage `json:"parameters"`
-	BodyRaw       json.RawMessage `json:"body"`
+	Cluster       string            `json:"cluster"`
+	Method        string            `json:"method"`
+	URI           string            `json:"uri"`
+	Headers       map[string]string `json:"headers"`
+	ParametersRaw json.RawMessage   `json:"parameters"`
+	BodyRaw       json.RawMessage   `json:"body"`
 }
 
 type response struct {

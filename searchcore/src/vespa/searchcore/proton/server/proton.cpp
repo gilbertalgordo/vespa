@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include "proton.h"
 #include "disk_mem_usage_sampler.h"
@@ -114,7 +114,7 @@ setFS4Compression(const ProtonConfig & proton)
 }
 
 DiskMemUsageSampler::Config
-diskMemUsageSamplerConfig(const ProtonConfig &proton, const HwInfo &hwInfo)
+diskMemUsageSamplerConfig(const ProtonConfig &proton, const vespalib::HwInfo &hwInfo)
 {
     return { proton.writefilter.memorylimit,
              proton.writefilter.disklimit,
@@ -123,7 +123,7 @@ diskMemUsageSamplerConfig(const ProtonConfig &proton, const HwInfo &hwInfo)
 }
 
 uint32_t
-computeRpcTransportThreads(const ProtonConfig & cfg, const HwInfo::Cpu &cpuInfo) {
+computeRpcTransportThreads(const ProtonConfig & cfg, const vespalib::HwInfo::Cpu &cpuInfo) {
     bool areSearchAndDocsumAsync = cfg.docsum.async && cfg.search.async;
     return (cfg.rpc.transportthreads > 0)
             ? cfg.rpc.transportthreads
@@ -291,7 +291,7 @@ Proton::init(const BootstrapConfig::SP & configSnapshot)
     assert( _initStarted && ! _initComplete );
     const ProtonConfig &protonConfig = configSnapshot->getProtonConfig();
     ensureWritableDir(protonConfig.basedir);
-    const HwInfo & hwInfo = configSnapshot->getHwInfo();
+    const vespalib::HwInfo & hwInfo = configSnapshot->getHwInfo();
     _hw_info = hwInfo;
     _numThreadsPerSearch = std::min(hwInfo.cpu().cores(), uint32_t(protonConfig.numthreadspersearch));
 
@@ -852,7 +852,6 @@ Proton::updateMetrics(const metrics::MetricLockGuard &)
         }
         if (_shared_service) {
             metrics.shared.update(_shared_service->shared().getStats());
-            metrics.warmup.update(_shared_service->warmup().getStats());
             metrics.field_writer.update(_shared_service->field_writer().getStats());
         }
     }
@@ -925,12 +924,13 @@ Proton::setClusterState(BucketSpace bucketSpace, const storage::spi::ClusterStat
     // about whether node is supposed to be up or not.  Match engine
     // needs to know this in order to stop serving queries.
     bool nodeUpInBucketSpace(calc.nodeUp()); // TODO rename calculator function to imply bucket space affinity
-    bool nodeRetired(calc.nodeRetired());
+    bool nodeRetired = calc.nodeRetired();
+    bool nodeMaintenance = calc.nodeMaintenance();
     bool nodeUp = updateNodeUp(bucketSpace, nodeUpInBucketSpace);
     _matchEngine->setNodeUp(nodeUp);
-    _matchEngine->setNodeMaintenance(calc.nodeMaintenance()); // Note: _all_ bucket spaces in maintenance
+    _matchEngine->setNodeMaintenance(nodeMaintenance); // Note: _all_ bucket spaces in maintenance
     if (_memoryFlushConfigUpdater) {
-        _memoryFlushConfigUpdater->setNodeRetired(nodeRetired);
+        _memoryFlushConfigUpdater->set_node_retired_or_maintenance(nodeRetired || nodeMaintenance);
     }
 }
 
@@ -1012,7 +1012,6 @@ Proton::get_child(vespalib::stringref name) const
                                                            (_summaryEngine) ? &_summaryEngine->get_executor() : nullptr,
                                                            (_flushEngine) ? &_flushEngine->get_executor() : nullptr,
                                                            &_executor,
-                                                           (_shared_service) ? &_shared_service->warmup() : nullptr,
                                                            (_shared_service) ? &_shared_service->field_writer() : nullptr);
 
     } else if (name == HW_INFO) {

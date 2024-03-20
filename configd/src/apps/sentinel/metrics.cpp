@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include "metrics.h"
 #include <vespa/vespalib/metrics/simple_metrics.h>
@@ -36,8 +36,7 @@ StartMetrics::maybeLog()
     using namespace std::chrono_literals;
     vespalib::steady_time curTime = vespalib::steady_clock::now();
     if (curTime - lastRestartTime > 2h) {
-        totalRestartsCounter = 0;
-        lastRestartTime = vespalib::steady_clock::now();
+        reset();
     }
     sentinel_totalRestarts.sample(totalRestartsCounter);
     sentinel_running.sample(currentlyRunningServices);
@@ -48,6 +47,11 @@ void
 StartMetrics::incRestartsCounter()
 {
     ++totalRestartsCounter;
+    lastRestartTime = vespalib::steady_clock::now();
+}
+
+void StartMetrics::reset() {
+    totalRestartsCounter = 0;
     lastRestartTime = vespalib::steady_clock::now();
 }
 

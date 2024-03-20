@@ -1,15 +1,12 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.search.schema;
 
 import com.yahoo.api.annotations.Beta;
 import com.yahoo.component.annotation.Inject;
 import com.yahoo.container.QrSearchersConfig;
 import com.yahoo.search.Query;
-import com.yahoo.search.config.IndexInfoConfig;
 import com.yahoo.search.config.SchemaInfoConfig;
-import com.yahoo.tensor.TensorType;
 
-import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashSet;
@@ -65,7 +62,7 @@ public class SchemaInfo {
     /** Returns all schemas configured in this application, indexed by schema name. */
     public Map<String, Schema> schemas() { return schemas; }
 
-    /** Returns information about all clusters available for searching in this applications, indexed by cluyster name. */
+    /** Returns information about all clusters available for searching in this application, indexed by cluster name. */
     public Map<String, Cluster> clusters() { return clusters; }
 
     public Session newSession(Query query) {
@@ -102,6 +99,8 @@ public class SchemaInfo {
 
         /** Returns true if this only searches streaming clusters. */
         public boolean isStreaming() { return isStreaming; }
+
+        public Collection<Schema> schemas() { return schemas; }
 
         /**
          * Looks up a field or field set by the given name or alias
@@ -184,16 +183,16 @@ public class SchemaInfo {
          *         feature is declared in this rank profile in multiple schemas
          *         of this session with conflicting types
          */
-        public TensorType rankProfileInput(String rankFeature, String rankProfile) {
+        public RankProfile.InputType rankProfileInput(String rankFeature, String rankProfile) {
             if (schemas.isEmpty()) return null; // no matching schemas - validated elsewhere
             List<RankProfile> profiles = profilesNamed(rankProfile);
             if (profiles.isEmpty())
                 throw new IllegalArgumentException("No profile named '" + rankProfile + "' exists in schemas [" +
                                                    schemas.stream().map(Schema::name).collect(Collectors.joining(", ")) + "]");
-            TensorType foundType = null;
+            RankProfile.InputType foundType = null;
             RankProfile declaringProfile = null;
             for (RankProfile profile : profiles) {
-                TensorType newlyFoundType = profile.inputs().get(rankFeature);
+                RankProfile.InputType newlyFoundType = profile.inputs().get(rankFeature);
                 if (newlyFoundType == null) continue;
                 if (foundType != null && ! newlyFoundType.equals(foundType))
                     throw new IllegalArgumentException("Conflicting input type declarations for '" + rankFeature + "': " +

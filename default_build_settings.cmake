@@ -1,4 +1,4 @@
-# Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+# Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 include(VespaExtendedDefaultBuildSettings OPTIONAL)
 
@@ -130,19 +130,19 @@ function(vespa_use_default_build_settings)
     message("-- CMAKE_SYSTEM_PROCESSOR = ${CMAKE_SYSTEM_PROCESSOR}")
     if(CMAKE_SYSTEM_PROCESSOR STREQUAL "x86_64")
       if(APPLE AND (("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang") OR ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "AppleClang")))
-      elseif("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
-        # Require haswell cpu or newer when compiling with clang on linux.
-        set(DEFAULT_VESPA_CPU_ARCH_FLAGS "-march=haswell -mtune=skylake")
-      else()
-        if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 13.0)
+      elseif(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+        set(DEFAULT_VESPA_CPU_ARCH_FLAGS "-march=haswell -mtune=skylake-avx512")
+      elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+        if(CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 12.0 AND NOT CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 12.3)
           # Temporary workaround for https://gcc.gnu.org/bugzilla/show_bug.cgi?id=108599
-          set(DEFAULT_VESPA_CPU_ARCH_FLAGS "-march=ivybridge")
+          set(DEFAULT_VESPA_CPU_ARCH_FLAGS "-march=haswell -mtune=skylake")
         else()
-          set(DEFAULT_VESPA_CPU_ARCH_FLAGS "-msse3 -mcx16 -mtune=intel")
-        endif()
+          # Default to haswell cpu or newer
+          set(DEFAULT_VESPA_CPU_ARCH_FLAGS "-march=haswell -mtune=skylake-avx512")
+	endif()
       endif()
     elseif(CMAKE_SYSTEM_PROCESSOR STREQUAL "aarch64")
-      set(DEFAULT_VESPA_CPU_ARCH_FLAGS "-march=armv8.2-a+fp16+rcpc+dotprod+crypto -mtune=neoverse-n1")
+      set(DEFAULT_VESPA_CPU_ARCH_FLAGS "-march=armv8.2-a+fp16+dotprod+crypto -mtune=neoverse-n1")
     endif()
   endif()
   if(DEFINED DEFAULT_EXTRA_LINK_DIRECTORY)

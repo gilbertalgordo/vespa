@@ -1,3 +1,4 @@
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.config.server.session;
 
 import com.yahoo.component.Version;
@@ -32,7 +33,7 @@ public class SessionSerializer {
                Instant created, Optional<FileReference> fileReference, Optional<DockerImage> dockerImageRepository,
                Version vespaVersion, Optional<AthenzDomain> athenzDomain, Optional<Quota> quota,
                List<TenantSecretStore> tenantSecretStores, List<X509Certificate> operatorCertificates,
-               Optional<CloudAccount> cloudAccount, List<DataplaneToken> dataplaneTokens,
+               Optional<CloudAccount> cloudAccount, List<DataplaneToken> dataplaneTokens, ActivationTriggers activationTriggers,
                BooleanFlag writeSessionData) {
         zooKeeperClient.writeApplicationId(applicationId);
         zooKeeperClient.writeApplicationPackageReference(fileReference);
@@ -44,6 +45,7 @@ public class SessionSerializer {
         zooKeeperClient.writeOperatorCertificates(operatorCertificates);
         zooKeeperClient.writeCloudAccount(cloudAccount);
         zooKeeperClient.writeDataplaneTokens(dataplaneTokens);
+        zooKeeperClient.writeActivationTriggers(activationTriggers);
         if (writeSessionData.value())
             zooKeeperClient.writeSessionData(new SessionData(applicationId,
                                                              fileReference,
@@ -55,7 +57,8 @@ public class SessionSerializer {
                                                              tenantSecretStores,
                                                              operatorCertificates,
                                                              cloudAccount,
-                                                             dataplaneTokens));
+                                                             dataplaneTokens,
+                                                             activationTriggers));
     }
 
     SessionData read(SessionZooKeeperClient zooKeeperClient, BooleanFlag readSessionData) {
@@ -81,7 +84,8 @@ public class SessionSerializer {
                                zooKeeperClient.readTenantSecretStores(),
                                zooKeeperClient.readOperatorCertificates(),
                                zooKeeperClient.readCloudAccount(),
-                               zooKeeperClient.readDataplaneTokens());
+                               zooKeeperClient.readDataplaneTokens(),
+                               zooKeeperClient.readActivationTriggers());
     }
 
 }

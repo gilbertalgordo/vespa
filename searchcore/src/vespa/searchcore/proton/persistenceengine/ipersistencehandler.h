@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 #pragma once
 
 #include "i_document_retriever.h"
@@ -13,6 +13,8 @@ namespace storage::spi { class ClusterState; }
 
 namespace proton {
 
+class DocTypeName;
+
 /**
  * This interface describes a sync persistence operation handler. It is implemented by
  * the DocumentDB and other classes, and used by the PersistenceEngine class to delegate
@@ -26,7 +28,7 @@ protected:
 public:
     using UP = std::unique_ptr<IPersistenceHandler>;
     using SP = std::shared_ptr<IPersistenceHandler>;
-    /// Note that you can not move awaythe handlers in the vector.
+    // Note that you can not move away the handlers in the vector.
     using RetrieversSP = std::shared_ptr<std::vector<IDocumentRetriever::SP> >;
     IPersistenceHandler(const IPersistenceHandler &) = delete;
     IPersistenceHandler & operator = (const IPersistenceHandler &) = delete;
@@ -47,6 +49,9 @@ public:
 
     virtual void handleRemove(FeedToken token, const storage::spi::Bucket &bucket,
                               storage::spi::Timestamp timestamp, const document::DocumentId &id) = 0;
+    virtual void handleRemoveByGid(FeedToken token, const storage::spi::Bucket &bucket,
+                                   storage::spi::Timestamp timestamp,
+                                   vespalib::stringref doc_type, const document::GlobalId& gid) = 0;
 
     virtual void handleListBuckets(IBucketIdListResultHandler &resultHandler) = 0;
     virtual void handleSetClusterState(const storage::spi::ClusterState &calc, IGenericResultHandler &resultHandler) = 0;
@@ -71,6 +76,8 @@ public:
     virtual void handleListActiveBuckets(IBucketIdListResultHandler &resultHandler) = 0;
 
     virtual void handlePopulateActiveBuckets(document::BucketId::List buckets, IGenericResultHandler &resultHandler) = 0;
+
+    [[nodiscard]] virtual const DocTypeName &doc_type_name() const noexcept = 0;
 };
 
 } // namespace proton

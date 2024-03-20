@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.config.server.filedistribution;
 
 import com.yahoo.cloud.config.ConfigserverConfig;
@@ -206,7 +206,7 @@ public class FileServerTest {
             super(FileDownloader.emptyConnectionPool(),
                   new Supervisor(new Transport("mock")).setDropEmptyBuffers(true),
                   downloadDirectory,
-                  Duration.ofMillis(100),
+                  Duration.ofMillis(1000),
                   Duration.ofMillis(100));
         }
 

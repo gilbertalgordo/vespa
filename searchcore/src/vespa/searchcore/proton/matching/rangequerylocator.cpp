@@ -1,4 +1,4 @@
-// Copyright 2016 Yahoo Inc. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include "rangequerylocator.h"
 #include <vespa/searchlib/queryeval/intermediate_blueprints.h>
@@ -25,15 +25,13 @@ namespace {
 
 RangeLimitMetaInfo
 locateFirst(uint32_t field_id, const Blueprint & blueprint) {
-    if (blueprint.isIntermediate()) {
-        const auto & intermediate = static_cast<const IntermediateBlueprint &>(blueprint);
-        if (intermediate.isAndNot()) {
-            return locateFirst(field_id, intermediate.getChild(0));
-        } else if (intermediate.isRank()) {
-            return locateFirst(field_id, intermediate.getChild(0));
-        } else if (intermediate.isAnd()) {
-            for (size_t i(0); i < intermediate.childCnt(); i++) {
-                RangeLimitMetaInfo childMeta = locateFirst(field_id, intermediate.getChild(i));
+    const auto * intermediate = blueprint.asIntermediate();
+    if (intermediate) {
+        if (intermediate->isAndNot() || intermediate->isRank()) {
+            return locateFirst(field_id, intermediate->getChild(0));
+        } else if (intermediate->isAnd()) {
+            for (size_t i(0); i < intermediate->childCnt(); i++) {
+                RangeLimitMetaInfo childMeta = locateFirst(field_id, intermediate->getChild(i));
                 if (childMeta.valid()) {
                     return childMeta;
                 }
@@ -42,9 +40,9 @@ locateFirst(uint32_t field_id, const Blueprint & blueprint) {
     } else {
         const Blueprint::State & state = blueprint.getState();
         if (state.isTermLike() && (state.numFields() == 1) && (state.field(0).getFieldId() == field_id)) {
-            const LeafBlueprint &leaf = static_cast<const LeafBlueprint &>(blueprint);
+            const LeafBlueprint * leaf = blueprint.asLeaf();
             vespalib::string from, too;
-            if (leaf.getRange(from, too)) {
+            if (leaf->getRange(from, too)) {
                 return {from, too, state.estimate().estHits};
             }
         }

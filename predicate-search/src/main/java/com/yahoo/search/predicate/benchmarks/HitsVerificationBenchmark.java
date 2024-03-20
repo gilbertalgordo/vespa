@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.search.predicate.benchmarks;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -45,7 +45,7 @@ public class HitsVerificationBenchmark {
 
     public static void main(String[] rawArgs) throws IOException {
         Optional<BenchmarkArguments> wrappedArgs = getArguments(rawArgs);
-        if (!wrappedArgs.isPresent()) return;
+        if (wrappedArgs.isEmpty()) return;
         BenchmarkArguments args = wrappedArgs.get();
         Map<String, Object> output = new TreeMap<>();
         addArgsToOutput(output, args);

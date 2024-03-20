@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include "feedhandler.h"
 #include "ddbstate.h"
@@ -253,7 +253,7 @@ FeedHandler::performRemove(FeedToken token, RemoveOperation &op) {
             token->setResult(make_unique<RemoveResult>(documentWasFound), documentWasFound);
         }
         _activeFeedView->handleRemove(std::move(token), op);
-    } else if (op.hasDocType()) {
+    } else if (op.hasDocType() && op.getValidDbdId()) {
         assert(op.getDocType() == _docTypeName.getName());
         appendOperation(op, token);
         if (token) {
@@ -288,7 +288,6 @@ FeedHandler::performDeleteBucket(FeedToken token, DeleteBucketOperation &op) {
     _activeFeedView->handleDeleteBucket(op, token);
     // Delete bucket itself, should no longer have documents.
     _bucketDBHandler->handleDeleteBucket(op.getBucketId());
-    initiateCommit(vespalib::steady_clock::now());
 }
 
 void
@@ -757,10 +756,12 @@ FeedHandler::handleOperation(FeedToken token, FeedOperation::UP op)
     }));
 }
 
-void
+IDocumentMoveHandler::MoveResult
 FeedHandler::handleMove(MoveOperation &op, vespalib::IDestructorCallback::SP moveDoneCtx)
 {
     assert(_writeService.master().isCurrentThread());
+    if ( ! _activeFeedView->isMoveStillValid(op)) return MoveResult::FAILURE;
+
     op.set_prepare_serial_num(inc_prepare_serial_num());
     _activeFeedView->prepareMove(op);
     assert(op.getValidDbdId());
@@ -768,6 +769,7 @@ FeedHandler::handleMove(MoveOperation &op, vespalib::IDestructorCallback::SP mov
     assert(op.getSubDbId() != op.getPrevSubDbId());
     appendOperation(op, moveDoneCtx);
     _activeFeedView->handleMove(op, std::move(moveDoneCtx));
+    return MoveResult::SUCCESS;
 }
 
 void

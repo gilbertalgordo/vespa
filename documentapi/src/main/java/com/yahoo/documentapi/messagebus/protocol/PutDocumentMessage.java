@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.documentapi.messagebus.protocol;
 
 import com.yahoo.api.annotations.Beta;
@@ -14,9 +14,10 @@ import java.util.Arrays;
  */
 public class PutDocumentMessage extends TestAndSetMessage {
 
-    private DocumentDeserializer buffer = null;
     private DocumentPut put = null;
     private long time = 0;
+    // TODO Vespa 9: remove. Inherently tied to legacy protocol version.
+    private DocumentDeserializer buffer = null;
     private LazyDecoder decoder = null;
 
     /**

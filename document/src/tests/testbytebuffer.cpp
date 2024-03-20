@@ -1,12 +1,12 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include <vespa/document/util/stringutil.h>
 #include <vespa/document/util/bytebuffer.h>
 #include <vespa/document/fieldvalue/serializablearray.h>
 #include <vespa/document/util/bufferexceptions.h>
+#include <vespa/vespalib/gtest/gtest.h>
 #include <vespa/vespalib/util/macro.h>
 #include <vespa/vespalib/util/growablebytebuffer.h>
-#include <gtest/gtest.h>
 
 
 using namespace document;

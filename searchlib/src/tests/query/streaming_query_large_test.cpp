@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 #include <vespa/searchlib/query/streaming/query.h>
 #include <vespa/searchlib/query/tree/querybuilder.h>
 #include <vespa/searchlib/query/tree/simplequery.h>
@@ -50,7 +50,7 @@ TEST("testveryLongQueryResultingInBug6850778") {
     Query q(factory, stackDump);
     QueryTermList terms;
     QueryNodeRefList phrases;
-    q.getLeafs(terms);
+    q.getLeaves(terms);
     ASSERT_EQUAL(NUMITEMS + 2, terms.size());
 }
 

@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #pragma once
 
@@ -31,7 +31,7 @@ private:
     UniqueStoreBufferType<WrappedEntryType> _typeHandler;
 
 public:
-    UniqueStoreAllocator(std::shared_ptr<alloc::MemoryAllocator> memory_allocator);
+    explicit UniqueStoreAllocator(std::shared_ptr<alloc::MemoryAllocator> memory_allocator);
     ~UniqueStoreAllocator() override;
     EntryRef allocate(const EntryType& value);
     void hold(EntryRef ref);

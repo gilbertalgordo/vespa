@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.jdisc.http.server.jetty;
 
 import com.google.inject.AbstractModule;
@@ -61,9 +61,8 @@ public class HttpServerConformanceTest extends ServerProviderConformanceTest {
 
     private static final String REQUEST_CONTENT = "myRequestContent";
     private static final String RESPONSE_CONTENT = "myResponseContent";
+    private static final Logger httpRequestDispatchLogger = Logger.getLogger(HttpRequestDispatch.class.getName());
 
-    @SuppressWarnings("LoggerInitializedWithForeignClass")
-    private static Logger httpRequestDispatchLogger = Logger.getLogger(HttpRequestDispatch.class.getName());
     private static Level httpRequestDispatchLoggerOriginalLevel;
     private static CloseableHttpClient httpClient;
     private static ExecutorService executorService;

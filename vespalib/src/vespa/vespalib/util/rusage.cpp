@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 #include "rusage.h"
 #include <stdexcept>
 #include <cerrno>
@@ -48,7 +48,7 @@ RUsage::createSelf(vespalib::steady_time since)
     RUsage r;
     r._time = vespalib::steady_clock::now() - since;
     if (getrusage(RUSAGE_SELF, &r) != 0) {
-        throw std::runtime_error(vespalib::make_string("getrusage failed with errno = %d", errno).c_str());
+        throw std::runtime_error(make_string("getrusage failed with errno = %d", errno).c_str());
     }
     return r;
 }
@@ -59,7 +59,7 @@ RUsage::createChildren(vespalib::steady_time since)
     RUsage r;
     r._time = vespalib::steady_clock::now() - since;
     if (getrusage(RUSAGE_CHILDREN, &r) != 0) {
-        throw std::runtime_error(vespalib::make_string("getrusage failed with errno = %d", errno).c_str());
+        throw std::runtime_error(make_string("getrusage failed with errno = %d", errno).c_str());
     }
     return r;
 }

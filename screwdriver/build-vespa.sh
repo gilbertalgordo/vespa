@@ -1,12 +1,12 @@
 #!/bin/bash
-# Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+# Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 set -e
 
 readonly SOURCE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd )"
 readonly NUM_THREADS=$(( $(nproc) + 2 ))
 
-source /etc/profile.d/enable-gcc-toolset-12.sh
+source /etc/profile.d/enable-gcc-toolset.sh
 
 export MALLOC_ARENA_MAX=1
 export MAVEN_OPTS="-Xss1m -Xms128m -Xmx2g"
@@ -24,8 +24,7 @@ fi
 build_cpp() {
     cat /proc/cpuinfo | grep "model name" | head -1
     cat /proc/cpuinfo | grep "flags" | head -1
-    # TODO This will only build for x86_64 architecture, and is used for pull request builds.
-    cmake3 -DVESPA_UNPRIVILEGED=no -DDEFAULT_VESPA_CPU_ARCH_FLAGS="-march=skylake" $1
+    cmake3 -DVESPA_UNPRIVILEGED=no $1
     time make -j ${NUM_THREADS}
     time ctest3 --output-on-failure -j ${NUM_THREADS}
     ccache --show-stats

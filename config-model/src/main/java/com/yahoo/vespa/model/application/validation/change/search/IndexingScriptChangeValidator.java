@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.model.application.validation.change.search;
 
 import com.yahoo.config.application.api.ValidationId;
@@ -40,7 +40,7 @@ public class IndexingScriptChangeValidator {
             String fieldName = nextField.getName();
             ImmutableSDField currentField = currentSchema.getConcreteField(fieldName);
             if (currentField != null) {
-                validateScripts(currentField, nextField).ifPresent(r -> result.add(r));
+                validateScripts(currentField, nextField).ifPresent(result::add);
             }
             else if (nextField.isExtraField()) {
                 result.add(VespaReindexAction.of(id,

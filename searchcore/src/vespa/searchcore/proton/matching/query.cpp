@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include "query.h"
 #include "blueprintbuilder.h"
@@ -140,24 +140,6 @@ void exchange_location_nodes(const string &location_str,
     }
 }
 
-IntermediateBlueprint *
-asRankOrAndNot(Blueprint * blueprint) {
-    return ((blueprint->isAndNot() || blueprint->isRank()))
-        ? static_cast<IntermediateBlueprint *>(blueprint)
-        : nullptr;
-}
-
-IntermediateBlueprint *
-lastConsequtiveRankOrAndNot(Blueprint * blueprint) {
-    IntermediateBlueprint * prev = nullptr;
-    IntermediateBlueprint * curr = asRankOrAndNot(blueprint);
-    while (curr != nullptr) {
-        prev =  curr;
-        curr = asRankOrAndNot(&curr->getChild(0));
-    }
-    return prev;
-}
-
 }  // namespace
 
 Query::Query() = default;
@@ -165,14 +147,8 @@ Query::~Query() = default;
 
 bool
 Query::buildTree(vespalib::stringref stack, const string &location,
-                 const ViewResolver &resolver, const IIndexEnvironment &indexEnv)
-{
-    return buildTree(stack, location, resolver, indexEnv, true);
-}
-bool
-Query::buildTree(vespalib::stringref stack, const string &location,
                  const ViewResolver &resolver, const IIndexEnvironment &indexEnv,
-                 bool split_unpacking_iterators)
+                 bool always_mark_phrase_expensive)
 {
     SimpleQueryStackDumpIterator stack_dump_iterator(stack);
     _query_tree = QueryTreeCreator<ProtonNodeTypes>::create(stack_dump_iterator);
@@ -180,8 +156,7 @@ Query::buildTree(vespalib::stringref stack, const string &location,
         SameElementModifier prefixSameElementSubIndexes;
         _query_tree->accept(prefixSameElementSubIndexes);
         exchange_location_nodes(location, _query_tree, _locations);
-        _query_tree = UnpackingIteratorsOptimizer::optimize(std::move(_query_tree),
-                bool(_whiteListBlueprint), split_unpacking_iterators);
+        _query_tree = UnpackingIteratorsOptimizer::optimize(std::move(_query_tree), bool(_whiteListBlueprint), always_mark_phrase_expensive);
         ResolveViewVisitor resolve_visitor(resolver, indexEnv);
         _query_tree->accept(resolve_visitor);
         return true;
@@ -218,54 +193,41 @@ Query::reserveHandles(const IRequestContext & requestContext, ISearchContext &co
     MatchDataReserveVisitor reserve_visitor(mdl);
     _query_tree->accept(reserve_visitor);
 
-    _blueprint = BlueprintBuilder::build(requestContext, *_query_tree, context);
+    _blueprint = BlueprintBuilder::build(requestContext, *_query_tree, std::move(_whiteListBlueprint), context);
     LOG(debug, "original blueprint:\n%s\n", _blueprint->asString().c_str());
-    if (_whiteListBlueprint) {
-        auto andBlueprint = std::make_unique<AndBlueprint>();
-        IntermediateBlueprint * rankOrAndNot = lastConsequtiveRankOrAndNot(_blueprint.get());
-        if (rankOrAndNot != nullptr) {
-            (*andBlueprint)
-                    .addChild(rankOrAndNot->removeChild(0))
-                    .addChild(std::move(_whiteListBlueprint));
-            rankOrAndNot->insertChild(0, std::move(andBlueprint));
-        } else {
-            (*andBlueprint)
-                    .addChild(std::move(_blueprint))
-                    .addChild(std::move(_whiteListBlueprint));
-            _blueprint = std::move(andBlueprint);
-        }
-        _blueprint->setDocIdLimit(context.getDocIdLimit());
-        LOG(debug, "blueprint after white listing:\n%s\n", _blueprint->asString().c_str());
-    }
 }
 
 void
-Query::optimize()
+Query::optimize(bool sort_by_cost)
 {
-    _blueprint = Blueprint::optimize(std::move(_blueprint));
+    auto opts = Blueprint::Options::all().sort_by_cost(sort_by_cost);
+    _blueprint = Blueprint::optimize_and_sort(std::move(_blueprint), true, opts);
     LOG(debug, "optimized blueprint:\n%s\n", _blueprint->asString().c_str());
 }
 
 void
-Query::fetchPostings(const vespalib::Doom & doom)
+Query::fetchPostings(const ExecuteInfo & executeInfo)
 {
-    _blueprint->fetchPostings(search::queryeval::ExecuteInfo::create(true, &doom));
+    _blueprint->fetchPostings(executeInfo);
 }
 
 void
-Query::handle_global_filter(const vespalib::Doom & doom, uint32_t docid_limit,
+Query::handle_global_filter(const IRequestContext & requestContext, uint32_t docid_limit,
                             double global_filter_lower_limit, double global_filter_upper_limit,
-                            vespalib::ThreadBundle &thread_bundle, search::engine::Trace& trace)
+                            search::engine::Trace& trace, bool sort_by_cost)
 {
-    if (!handle_global_filter(*_blueprint, docid_limit, global_filter_lower_limit, global_filter_upper_limit, thread_bundle, &trace)) {
+    if (!handle_global_filter(*_blueprint, docid_limit, global_filter_lower_limit, global_filter_upper_limit,
+                              requestContext.thread_bundle(), &trace))
+    {
         return;
     }
     // optimized order may change after accounting for global filter:
     trace.addEvent(5, "Optimize query execution plan to account for global filter");
-    _blueprint = Blueprint::optimize(std::move(_blueprint));
+    auto opts = Blueprint::Options::all().sort_by_cost(sort_by_cost);
+    _blueprint = Blueprint::optimize_and_sort(std::move(_blueprint), true, opts);
     LOG(debug, "blueprint after handle_global_filter:\n%s\n", _blueprint->asString().c_str());
     // strictness may change if optimized order changed:
-    fetchPostings(doom);
+    fetchPostings(ExecuteInfo::create(true, 1.0, requestContext.getDoom(), requestContext.thread_bundle()));
 }
 
 bool

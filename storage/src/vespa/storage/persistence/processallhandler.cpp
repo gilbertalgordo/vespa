@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include "processallhandler.h"
 #include "bucketprocessor.h"
@@ -29,7 +29,8 @@ public:
     explicit StatEntryProcessor(std::ostream& o)
         : ost(o) {};
 
-    void process(spi::DocEntry& e) override {
+    void process(std::unique_ptr<spi::DocEntry> entry) override {
+        const auto& e = *entry;
         ost << "  Timestamp: " << e.getTimestamp() << ", ";
         if (e.getDocument() != nullptr) {
             ost << "Doc(" << e.getDocument()->getId() << ")"

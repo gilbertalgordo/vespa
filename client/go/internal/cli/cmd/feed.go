@@ -1,3 +1,4 @@
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package cmd
 
 import (
@@ -11,7 +12,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
-	"github.com/vespa-engine/vespa/client/go/internal/util"
+	"github.com/vespa-engine/vespa/client/go/internal/httputil"
 	"github.com/vespa-engine/vespa/client/go/internal/vespa/document"
 )
 
@@ -57,16 +58,42 @@ func newFeedCmd(cli *CLI) *cobra.Command {
 	var options feedOptions
 	cmd := &cobra.Command{
 		Use:   "feed json-file [json-file]...",
-		Short: "Feed multiple document operations to a Vespa cluster",
-		Long: `Feed multiple document operations to a Vespa cluster.
+		Short: "Feed multiple document operations to Vespa",
+		Long: `Feed multiple document operations to Vespa.
 
 This command can be used to feed large amounts of documents to a Vespa cluster
 efficiently.
 
-The contents of JSON-FILE must be either a JSON array or JSON objects separated by
+The contents of json-file must be either a JSON array or JSON objects separated by
 newline (JSONL).
 
-If JSON-FILE is a single dash ('-'), documents will be read from standard input.
+If json-file is a single dash ('-'), documents will be read from standard input.
+
+Once feeding completes, metrics of the feed session are printed to standard out
+in a JSON format:
+
+- feeder.operation.count: Number of operations passed to the feeder by the user,
+  not counting retries.
+- feeder.seconds: Total time spent feeding.
+- feeder.ok.count: Number of successful operations.
+- feeder.ok.rate: Number of successful operations per second.
+- feeder.error.count: Number of network errors (transport layer).
+- feeder.inflight.count: Number of operations currently being sent.
+- http.request.count: Number of HTTP requests made, including retries.
+- http.request.bytes: Number of bytes sent.
+- http.request.MBps: Request throughput measured in MB/s. This is the raw
+  operation throughput, and not the network throughput,
+  I.e. using compression does not affect this number.
+- http.exception.count: Same as feeder.error.count. Present for compatiblity
+  with vespa-feed-client.
+- http.response.count: Number of HTTP responses received.
+- http.response.bytes: Number of bytes received.
+- http.response.MBps: Response throughput measured in MB/s.
+- http.response.error.count: Number of non-OK HTTP responses received.
+- http.response.latency.millis.min: Lowest latency of a successful operation.
+- http.response.latency.millis.avg: Average latency of successful operations.
+- http.response.latency.millis.max: Highest latency of a successful operation.
+- http.response.code.counts: Number of responses grouped by their HTTP code.
 `,
 		Example: `$ vespa feed docs.jsonl moredocs.json
 $ cat docs.jsonl | vespa feed -`,
@@ -97,7 +124,7 @@ $ cat docs.jsonl | vespa feed -`,
 	return cmd
 }
 
-func createServices(n int, timeout time.Duration, waitSecs int, cli *CLI) ([]util.HTTPClient, string, error) {
+func createServices(n int, timeout time.Duration, waitSecs int, cli *CLI) ([]httputil.Client, string, error) {
 	if n < 1 {
 		return nil, "", fmt.Errorf("need at least one client")
 	}
@@ -105,9 +132,9 @@ func createServices(n int, timeout time.Duration, waitSecs int, cli *CLI) ([]uti
 	if err != nil {
 		return nil, "", err
 	}
-	services := make([]util.HTTPClient, 0, n)
+	services := make([]httputil.Client, 0, n)
 	baseURL := ""
-	waiter := cli.waiter(false, time.Duration(waitSecs)*time.Second)
+	waiter := cli.waiter(time.Duration(waitSecs) * time.Second)
 	for i := 0; i < n; i++ {
 		service, err := waiter.Service(target, cli.config.cluster())
 		if err != nil {
@@ -117,7 +144,7 @@ func createServices(n int, timeout time.Duration, waitSecs int, cli *CLI) ([]uti
 		// Create a separate HTTP client for each service
 		client := cli.httpClientFactory(timeout)
 		// Feeding should always use HTTP/2
-		util.ForceHTTP2(client, service.TLSOptions.KeyPair, service.TLSOptions.CACertificate, service.TLSOptions.TrustAll)
+		httputil.ForceHTTP2(client, service.TLSOptions.KeyPair, service.TLSOptions.CACertificate, service.TLSOptions.TrustAll)
 		service.SetClient(client)
 		services = append(services, service)
 	}
@@ -243,6 +270,7 @@ type number float32
 func (n number) MarshalJSON() ([]byte, error) { return []byte(fmt.Sprintf("%.3f", n)), nil }
 
 type feedSummary struct {
+	Operations    int64  `json:"feeder.operation.count"`
 	Seconds       number `json:"feeder.seconds"`
 	SuccessCount  int64  `json:"feeder.ok.count"`
 	SuccessRate   number `json:"feeder.ok.rate"`
@@ -271,6 +299,7 @@ func mbps(bytes int64, duration time.Duration) float64 {
 
 func writeSummaryJSON(w io.Writer, stats document.Stats, duration time.Duration) error {
 	summary := feedSummary{
+		Operations:    stats.Operations,
 		Seconds:       number(duration.Seconds()),
 		SuccessCount:  stats.Successful(),
 		SuccessRate:   number(float64(stats.Successful()) / math.Max(1, duration.Seconds())),

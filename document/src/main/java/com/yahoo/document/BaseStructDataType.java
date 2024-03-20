@@ -1,7 +1,8 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.document;
 
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -12,7 +13,7 @@ import java.util.Map;
  */
 public abstract class BaseStructDataType extends StructuredDataType {
 
-    protected Map<Integer, Field> fieldIds = new LinkedHashMap<>();
+    protected Map<Integer, Field> fieldIds = new HashMap<>();
     protected Map<String, Field> fields = new LinkedHashMap<>();
 
     BaseStructDataType(String name) {
@@ -33,10 +34,10 @@ public abstract class BaseStructDataType extends StructuredDataType {
     @Override
     public BaseStructDataType clone() {
         BaseStructDataType type = (BaseStructDataType) super.clone();
-        type.fieldIds = new LinkedHashMap<>();
+        type.fieldIds = new HashMap<>();
 
         type.fields = new LinkedHashMap<>();
-        for (Field field : fieldIds.values()) {
+        for (Field field : fields.values()) {
             type.fields.put(field.getName(), field);
             type.fieldIds.put(field.getId(), field);
         }

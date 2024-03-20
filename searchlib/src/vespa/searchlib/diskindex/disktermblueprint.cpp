@@ -1,9 +1,10 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include "disktermblueprint.h"
 #include <vespa/searchlib/common/bitvectoriterator.h>
 #include <vespa/searchlib/queryeval/booleanmatchiteratorwrapper.h>
 #include <vespa/searchlib/queryeval/filter_wrapper.h>
+#include <vespa/searchlib/queryeval/flow_tuning.h>
 #include <vespa/searchlib/queryeval/intermediate_blueprints.h>
 #include <vespa/vespalib/objects/visit.h>
 #include <vespa/vespalib/util/stringfmt.h>
@@ -14,12 +15,14 @@ LOG_SETUP(".diskindex.disktermblueprint");
 using search::BitVectorIterator;
 using search::fef::TermFieldMatchDataArray;
 using search::index::Schema;
+using search::queryeval::Blueprint;
 using search::queryeval::BooleanMatchIteratorWrapper;
 using search::queryeval::FieldSpec;
 using search::queryeval::FieldSpecBaseList;
-using search::queryeval::SearchIterator;
 using search::queryeval::LeafBlueprint;
-using search::queryeval::Blueprint;
+using search::queryeval::SearchIterator;
+using search::queryeval::flow::disk_index_cost;
+using search::queryeval::flow::disk_index_strict_cost;
 
 namespace search::diskindex {
 
@@ -63,6 +66,13 @@ DiskTermBlueprint::fetchPostings(const queryeval::ExecuteInfo &execInfo)
         }
     }
     _fetchPostingsDone = true;
+}
+
+queryeval::FlowStats
+DiskTermBlueprint::calculate_flow_stats(uint32_t docid_limit) const
+{
+    double rel_est = abs_to_rel_est(_lookupRes->counts._numDocs, docid_limit);
+    return {rel_est, disk_index_cost(), disk_index_strict_cost(rel_est)};
 }
 
 SearchIterator::UP

@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.search.federation;
 
 import com.yahoo.component.ComponentId;
@@ -11,7 +11,8 @@ import com.yahoo.search.searchchain.Execution;
 import com.yahoo.search.searchchain.SearchChainRegistry;
 import com.yahoo.search.searchchain.model.federation.FederationOptions;
 
-import java.util.Collections;
+import java.util.List;
+import java.util.Map;
 
 /**
  * @author Tony Vaagenes
@@ -30,7 +31,7 @@ class FederationTester {
     void addSearchChain(String id, FederationOptions federationOptions, Searcher... searchers) {
         ComponentId searchChainId = ComponentId.fromString(id);
 
-        builder.addSearchChain(searchChainId, federationOptions, Collections.<String>emptyList());
+        builder.addSearchChain(searchChainId, federationOptions, List.of());
 
         Chain<Searcher> chain = new Chain<>(searchChainId, searchers);
         registry.register(chain);
@@ -46,7 +47,7 @@ class FederationTester {
     }
 
     FederationSearcher buildFederationSearcher() {
-        return new FederationSearcher(ComponentId.fromString("federation"), builder.build());
+        return new FederationSearcher(ComponentId.fromString("federation"), builder.build(), Map.of());
     }
 
     public Result search() {

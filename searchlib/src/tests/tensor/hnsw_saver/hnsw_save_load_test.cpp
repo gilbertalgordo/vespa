@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include <vespa/searchlib/tensor/hnsw_graph.h>
 #include <vespa/searchlib/tensor/hnsw_identity_mapping.h>
@@ -167,6 +167,7 @@ public:
 
     void expect_copy_as_populated() const {
         EXPECT_EQ(copy.size(), 7);
+        EXPECT_EQ(4, copy.get_active_nodes());
         auto entry = copy.get_entry_node();
         EXPECT_EQ(entry.nodeid, 2);
         EXPECT_EQ(entry.level, 1);

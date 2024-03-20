@@ -1,12 +1,9 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.prelude;
 
 import com.yahoo.search.Query;
 
-import java.util.ArrayList;
 import java.util.Collection;
-import java.util.HashMap;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -30,23 +27,13 @@ import static com.yahoo.text.Lowercase.toLowerCase;
 // TODO: Complete migration to SchemaInfo
 public class IndexFacts {
 
-    private Map<String, List<String>> clusterByDocument;
-
-    private static class DocumentTypeListOffset {
-        public final int offset;
-        public final SearchDefinition searchDefinition;
-
-        public DocumentTypeListOffset(int offset, SearchDefinition searchDefinition) {
-            this.offset = offset;
-            this.searchDefinition = searchDefinition;
-        }
-    }
+    private record DocumentTypeListOffset(int offset, SearchDefinition searchDefinition) { }
 
     /** A Map of all known search definitions indexed by name */
-    private Map<String, SearchDefinition> searchDefinitions = new LinkedHashMap<>();
+    private final Map<String, SearchDefinition> searchDefinitions;
 
     /** A map of document types contained in each cluster indexed by cluster name */
-    private Map<String, List<String>> clusters = new LinkedHashMap<>();
+    private final Map<String, List<String>> clusters;
 
     /**
      * The name of the default search definition, which is the union of all
@@ -62,53 +49,25 @@ public class IndexFacts {
     /** Whether this has (any) NGram indexes. Calculated at freeze time. */
     private boolean hasNGramIndices;
 
-    public IndexFacts() {}
+    public IndexFacts() {
+        searchDefinitions = Map.of();
+        clusters = Map.of();
+    }
 
     public IndexFacts(IndexModel indexModel) {
-        if (indexModel.getSearchDefinitions() != null) {
-            this.searchDefinitions = indexModel.getSearchDefinitions();
+        this.searchDefinitions = indexModel.getSearchDefinitions();
+        if (indexModel.getUnionSearchDefinition() != null) {
             this.unionSearchDefinition = indexModel.getUnionSearchDefinition();
         }
-        if (indexModel.getMasterClusters() != null) {
-            setMasterClusters(indexModel.getMasterClusters());
-        }
+        this.clusters = indexModel.getMasterClusters();
     }
 
-    private void setMasterClusters(Map<String, List<String>> clusters) {
-        // TODO: clusters should probably be a separate class
-        this.clusters = clusters;
-        clusterByDocument = invert(clusters);
-    }
-
-    private static Map<String, List<String>> invert(Map<String, List<String>> clusters) {
-        Map<String, List<String>> result = new HashMap<>();
-        for (Map.Entry<String,List<String>> entry : clusters.entrySet()) {
-            for (String value : entry.getValue()) {
-                addEntry(result, value, entry.getKey());
-            }
-        }
-        return result;
-    }
-
-    private static void addEntry(Map<String, List<String>> result, String key, String value) {
-        List<String> values = result.computeIfAbsent(key, k -> new ArrayList<>());
-        values.add(value);
-    }
-
-    // Assumes that document names are equal to the search definition that contain them.
-    public List<String> clustersHavingSearchDefinition(String searchDefinitionName) {
-        if (clusterByDocument == null) return List.of();
-
-        List<String> clusters = clusterByDocument.get(searchDefinitionName);
-        return clusters != null ? clusters : List.of();
-    }
-
-    private boolean isInitialized() {
-        return searchDefinitions.size() > 0;
+    private boolean notInitialized() {
+        return searchDefinitions.isEmpty();
     }
 
     private boolean isIndexFromDocumentTypes(String indexName, List<String> documentTypes) {
-        if ( ! isInitialized()) return true;
+        if ( notInitialized()) return true;
 
         if (documentTypes.isEmpty()) {
             return unionSearchDefinition.getIndex(indexName) != null;
@@ -127,8 +86,6 @@ public class IndexFacts {
     }
 
     private String getCanonicNameFromDocumentTypes(String indexName, List<String> documentTypes) {
-        if (!isInitialized()) return indexName;
-
         if (documentTypes.isEmpty()) {
             Index index = unionSearchDefinition.getIndexByLowerCase(toLowerCase(indexName));
             return index == null ? indexName : index.getName();
@@ -150,12 +107,9 @@ public class IndexFacts {
     }
 
     private Index getIndexByCanonicNameFromDocumentTypes(String canonicName, List<String> documentTypes) {
-        if ( ! isInitialized()) return Index.nullIndex;
-
         if (documentTypes.isEmpty()) {
             Index index = unionSearchDefinition.getIndex(canonicName);
-            if (index == null) return Index.nullIndex;
-            return index;
+            return (index != null) ? index : Index.nullIndex;
         }
 
         DocumentTypeListOffset sd = chooseSearchDefinition(documentTypes, 0);
@@ -170,10 +124,8 @@ public class IndexFacts {
     }
 
     private Collection<Index> getIndexes(String documentType) {
-        if ( ! isInitialized()) return List.of();
         SearchDefinition sd = searchDefinitions.get(documentType);
-        if (sd == null) return List.of();
-        return sd.indices().values();
+        return (sd != null) ? sd.indices().values() : List.of();
     }
 
     /** Calls resolveDocumentTypes(query.getModel().getSources(), query.getModel().getRestrict()) */
@@ -277,10 +229,6 @@ public class IndexFacts {
     /** Returns whether it is permissible to update this object */
     public boolean isFrozen() {
         return frozen;
-    }
-
-    private void ensureNotFrozen() {
-        if (frozen) throw new IllegalStateException("Tried to modify frozen IndexFacts instance.");
     }
 
     public String getDefaultPosition(String sdName) {

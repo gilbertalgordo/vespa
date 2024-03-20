@@ -2724,7 +2724,8 @@
       "abstract"
     ],
     "methods" : [
-      "public abstract com.yahoo.io.GrowableByteBuffer getBuf()"
+      "public abstract com.yahoo.io.GrowableByteBuffer getBuf()",
+      "public abstract com.yahoo.document.DocumentTypeManager getTypeRepo()"
     ],
     "fields" : [ ]
   },
@@ -2861,7 +2862,9 @@
     "methods" : [
       "public abstract void write(com.yahoo.document.Document)",
       "public abstract void write(com.yahoo.document.DocumentId)",
-      "public abstract void write(com.yahoo.document.DocumentType)"
+      "public abstract void write(com.yahoo.document.DocumentType)",
+      "public abstract void write(com.yahoo.document.DocumentRemove)",
+      "public abstract void write(com.yahoo.document.DocumentUpdate)"
     ],
     "fields" : [ ]
   },
@@ -3015,6 +3018,7 @@
     ],
     "methods" : [
       "public final com.yahoo.document.DocumentTypeManager getDocumentTypeManager()",
+      "public com.yahoo.document.DocumentTypeManager getTypeRepo()",
       "public void read(com.yahoo.document.Document)",
       "public void read(com.yahoo.vespa.objects.FieldBase, com.yahoo.document.Document)",
       "public void read(com.yahoo.vespa.objects.FieldBase, com.yahoo.document.datatypes.FieldValue)",
@@ -3102,6 +3106,7 @@
       "public void write(com.yahoo.vespa.objects.FieldBase, com.yahoo.document.annotation.AnnotationReference)",
       "public void write(com.yahoo.document.DocumentId)",
       "public void write(com.yahoo.document.DocumentType)",
+      "public void write(com.yahoo.document.DocumentRemove)",
       "public void write(com.yahoo.document.annotation.Annotation)",
       "public void write(com.yahoo.document.annotation.SpanTree)",
       "public void write(com.yahoo.document.annotation.SpanNode)",

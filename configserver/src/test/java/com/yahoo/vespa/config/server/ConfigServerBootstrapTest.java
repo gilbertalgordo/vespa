@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.config.server;
 
 import com.yahoo.cloud.config.ConfigserverConfig;
@@ -84,7 +84,7 @@ public class ConfigServerBootstrapTest {
         assertTrue(rpcServer.isServingConfigRequests());
         waitUntil(() -> bootstrap.status() == StateMonitor.Status.up, "failed waiting for status 'up'");
         waitUntil(() -> bootstrap.vipStatus().isInRotation(), "failed waiting for server to be in rotation");
-        assertEquals(List.of("ApplicationPackageMaintainer", "FileDistributionMaintainer", "ReindexingMaintainer", "SessionsMaintainer", "TenantsMaintainer"),
+        assertEquals(List.of("ApplicationPackageMaintainer", "FileDistributionMaintainer", "PendingRestartsMaintainer", "ReindexingMaintainer", "SessionsMaintainer", "TenantsMaintainer"),
                      bootstrap.configServerMaintenance().maintainers().stream()
                               .map(Maintainer::name)
                               .sorted().toList());

@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #pragma once
 
@@ -176,11 +176,8 @@ namespace mutate {
     };
 }
 
+// Add temporary flags used for safe rollout of new features here
 namespace temporary {
-    struct EnableNestedMultivalueGrouping {
-        static const vespalib::string NAME;
-        static bool check(const Properties &props);
-    };
 }
 
 namespace mutate::on_match {
@@ -338,6 +335,26 @@ namespace matching {
         static const vespalib::FuzzyMatchingAlgorithm DEFAULT_VALUE;
         static vespalib::FuzzyMatchingAlgorithm lookup(const Properties& props);
         static vespalib::FuzzyMatchingAlgorithm lookup(const Properties& props, vespalib::FuzzyMatchingAlgorithm default_value);
+    };
+    /**
+     * Sort blueprints based on relative cost estimate rather than est_hits
+     **/
+    struct SortBlueprintsByCost {
+        static const vespalib::string NAME;
+        static const bool DEFAULT_VALUE;
+        static bool check(const Properties &props) { return check(props, DEFAULT_VALUE); }
+        static bool check(const Properties &props, bool fallback);
+    };
+
+    /**
+     * When enabled, the unpacking part of the phrase iterator will be tagged as expensive
+     * under all intermediate iterators, not only AND.
+     **/
+    struct AlwaysMarkPhraseExpensive {
+        static const vespalib::string NAME;
+        static const bool DEFAULT_VALUE;
+        static bool check(const Properties &props) { return check(props, DEFAULT_VALUE); }
+        static bool check(const Properties &props, bool fallback);
     };
 }
 

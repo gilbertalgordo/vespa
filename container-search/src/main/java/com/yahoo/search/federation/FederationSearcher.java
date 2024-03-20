@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.search.federation;
 
 import com.yahoo.component.annotation.Inject;
@@ -11,7 +11,6 @@ import com.yahoo.component.chain.dependencies.Provides;
 import com.yahoo.component.provider.ComponentRegistry;
 import com.yahoo.errorhandling.Results;
 import com.yahoo.errorhandling.Results.Builder;
-import com.yahoo.prelude.IndexFacts;
 import com.yahoo.processing.IllegalInputException;
 import com.yahoo.processing.request.CompoundName;
 import com.yahoo.search.Query;
@@ -25,11 +24,14 @@ import com.yahoo.search.federation.sourceref.SingleTarget;
 import com.yahoo.search.federation.sourceref.SourceRefResolver;
 import com.yahoo.search.federation.sourceref.SourcesTarget;
 import com.yahoo.search.federation.sourceref.UnresolvedSearchChainException;
+import com.yahoo.search.federation.sourceref.VirtualSourceResolver;
 import com.yahoo.search.query.Properties;
 import com.yahoo.search.result.ErrorMessage;
 import com.yahoo.search.result.Hit;
 import com.yahoo.search.result.HitGroup;
 import com.yahoo.search.result.HitOrderer;
+import com.yahoo.search.schema.Cluster;
+import com.yahoo.search.schema.SchemaInfo;
 import com.yahoo.search.searchchain.AsyncExecution;
 import com.yahoo.search.searchchain.Execution;
 import com.yahoo.search.searchchain.ForkingSearcher;
@@ -41,6 +43,7 @@ import java.time.Clock;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.IdentityHashMap;
 import java.util.Iterator;
 import java.util.LinkedHashSet;
@@ -77,25 +80,34 @@ public class FederationSearcher extends ForkingSearcher {
 
     private final SearchChainResolver searchChainResolver;
     private final SourceRefResolver sourceRefResolver;
+    private final VirtualSourceResolver virtualSourceResolver;
 
     private final TargetSelector<?> targetSelector;
     private final Clock clock = Clock.systemUTC();
 
     @Inject
-    public FederationSearcher(FederationConfig config, ComponentRegistry<TargetSelector> targetSelectors) {
-        this(createResolver(config), resolveSelector(config.targetSelector(), targetSelectors));
+    public FederationSearcher(FederationConfig config, SchemaInfo schemaInfo,
+                              ComponentRegistry<TargetSelector> targetSelectors) {
+        this(createResolver(config),
+             VirtualSourceResolver.of(config),
+             resolveSelector(config.targetSelector(), targetSelectors),
+             createSchema2Clusters(schemaInfo));
     }
 
     // for testing
-    public FederationSearcher(ComponentId id, SearchChainResolver searchChainResolver) {
-        this(searchChainResolver, null);
+    public FederationSearcher(ComponentId id, SearchChainResolver searchChainResolver,
+                              Map<String, List<String>> schema2Clusters) {
+        this(searchChainResolver, VirtualSourceResolver.of(), null, schema2Clusters);
     }
 
     private FederationSearcher(SearchChainResolver searchChainResolver,
-                               TargetSelector targetSelector) {
+                               VirtualSourceResolver virtualSourceResolver,
+                               TargetSelector targetSelector,
+                               Map<String, List<String>> schema2Clusters) {
         this.searchChainResolver = searchChainResolver;
-        sourceRefResolver = new SourceRefResolver(searchChainResolver);
+        sourceRefResolver = new SourceRefResolver(searchChainResolver, schema2Clusters);
         this.targetSelector = targetSelector;
+        this.virtualSourceResolver = virtualSourceResolver;
     }
 
     private static TargetSelector resolveSelector(String selectorId,
@@ -103,6 +115,16 @@ public class FederationSearcher extends ForkingSearcher {
         if (selectorId.isEmpty()) return null;
         return checkNotNull(targetSelectors.getComponent(selectorId),
                 "Missing target selector with id '" + selectorId + "'");
+    }
+
+    private static Map<String, List<String>> createSchema2Clusters(SchemaInfo schemaInfo) {
+        Map<String, List<String>> schema2Clusters = new HashMap<>();
+        for (Cluster cluster : schemaInfo.clusters().values()) {
+            for (String schema : cluster.schemas()) {
+                schema2Clusters.computeIfAbsent(schema, key -> new ArrayList<>()).add(cluster.name());
+            }
+        }
+        return schema2Clusters;
     }
 
     private static SearchChainResolver createResolver(FederationConfig config) {
@@ -160,7 +182,7 @@ public class FederationSearcher extends ForkingSearcher {
         Result mergedResults = execution.search(query);
 
         Results<SearchChainInvocationSpec, UnresolvedSearchChainException> targets =
-                getTargets(query.getModel().getSources(), query.properties(), execution.context().getIndexFacts());
+                getTargets(query.getModel().getSources(), query.properties());
         warnIfUnresolvedSearchChains(targets.errors(), mergedResults.hits());
 
         Collection<SearchChainInvocationSpec> prunedTargets =
@@ -277,7 +299,7 @@ public class FederationSearcher extends ForkingSearcher {
         return descriptions;
     }
 
-    private Set<String> getMessagesSet(List<UnresolvedSearchChainException> unresolvedSearchChainExceptions) {
+    private static Set<String> getMessagesSet(List<UnresolvedSearchChainException> unresolvedSearchChainExceptions) {
         Set<String> messages = new LinkedHashSet<>();
         for (UnresolvedSearchChainException exception : unresolvedSearchChainExceptions) {
             messages.add(exception.getMessage());
@@ -370,9 +392,9 @@ public class FederationSearcher extends ForkingSearcher {
             else { // fill timed out: Remove these hits as they are incomplete and may cause a race when accessed later
                 result.hits().addError(futureFilledResult.getSecond().createTimeoutError());
                 for (Iterator<Hit> i = futureFilledResult.getFirst().hits().unorderedDeepIterator(); i.hasNext(); ) {
-                    // Note that some of these hits may be filled, but as the fill thread may still be working on them
-                    // and we do not synchronize with it we need to discard all
-                    Hit removed = result.hits().remove(i.next().getId());
+                    // Note that some of these hits may be filled, but as the fill thread may still be working on them,
+                    // and we do not synchronize with it, we need to discard all.
+                    result.hits().remove(i.next().getId());
                 }
             }
         }
@@ -421,18 +443,20 @@ public class FederationSearcher extends ForkingSearcher {
         return orderer;
     }
 
-    private Results<SearchChainInvocationSpec, UnresolvedSearchChainException> getTargets(Set<String> sources, Properties properties, IndexFacts indexFacts) {
+    private Results<SearchChainInvocationSpec, UnresolvedSearchChainException> getTargets(Set<String> sources, Properties properties) {
         return sources.isEmpty() ?
                 defaultSearchChains(properties):
-                resolveSources(sources, properties, indexFacts);
+                resolveSources(sources, properties);
     }
 
-    private Results<SearchChainInvocationSpec, UnresolvedSearchChainException> resolveSources(Set<String> sources, Properties properties, IndexFacts indexFacts) {
+
+    private Results<SearchChainInvocationSpec, UnresolvedSearchChainException> resolveSources(Set<String> sourcesInQuery, Properties properties) {
         Results.Builder<SearchChainInvocationSpec, UnresolvedSearchChainException> result = new Builder<>();
+        Set<String> sources = virtualSourceResolver.resolve(sourcesInQuery);
 
         for (String source : sources) {
             try {
-                result.addAllData(sourceRefResolver.resolve(asSourceSpec(source), properties, indexFacts));
+                result.addAllData(sourceRefResolver.resolve(asSourceSpec(source), properties));
             } catch (UnresolvedSearchChainException e) {
                 result.addError(e);
             }
@@ -578,11 +602,7 @@ public class FederationSearcher extends ForkingSearcher {
 
         /** Returns a result to fill for a query and chain, by creating it if necessary */
         public Result get(Chain<Searcher> chain, Query query) {
-            Map<Query,Result> resultsToFillForAChain = resultsToFill.get(chain);
-            if (resultsToFillForAChain == null) {
-                resultsToFillForAChain = new IdentityHashMap<>();
-                resultsToFill.put(chain,resultsToFillForAChain);
-            }
+            Map<Query, Result> resultsToFillForAChain = resultsToFill.computeIfAbsent(chain, k -> new IdentityHashMap<>());
 
             Result resultsToFillForAChainAndQuery = resultsToFillForAChain.get(query);
             if (resultsToFillForAChainAndQuery == null) {
@@ -686,26 +706,17 @@ public class FederationSearcher extends ForkingSearcher {
 
     }
 
-    private static class Window {
-        
-        private final int hits;
-        private final int offset;
-        
-        public Window(int hits, int offset) {
-            this.hits = hits;
-            this.offset = offset;
-        }
+    private record Window(int hits, int offset) {
 
         public Integer get(CompoundName parameterName) {
             if (parameterName.equals(Query.HITS)) return hits;
             if (parameterName.equals(Query.OFFSET)) return offset;
             return null;
         }
-        
+
         public static Window from(Query query) {
             return new Window(query.getHits(), query.getOffset());
         }
-
 
         public static Window from(Collection<Target> targets, Query query) {
             if (targets.size() == 1) // preserve requested top-level offsets

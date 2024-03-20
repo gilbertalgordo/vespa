@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 // vespa cert command
 // Author: mpolden
 package cmd
@@ -10,7 +10,7 @@ import (
 
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
-	"github.com/vespa-engine/vespa/client/go/internal/util"
+	"github.com/vespa-engine/vespa/client/go/internal/ioutil"
 	"github.com/vespa-engine/vespa/client/go/internal/vespa"
 )
 
@@ -21,8 +21,8 @@ func newCertCmd(cli *CLI) *cobra.Command {
 	)
 	cmd := &cobra.Command{
 		Use:   "cert",
-		Short: "Create a new private key and self-signed certificate for data-plane access with Vespa Cloud",
-		Long: `Create a new private key and self-signed certificate for data-plane access with Vespa Cloud.
+		Short: "Create a new self-signed certificate for authentication with Vespa Cloud data plane",
+		Long: `Create a new self-signed certificate for authentication with Vespa Cloud data plane.
 
 The private key and certificate will be stored in the Vespa CLI home directory
 (see 'vespa help config'). Other commands will then automatically load the
@@ -32,8 +32,10 @@ package specified as an argument to this command (default '.').
 It's possible to override the private key and certificate used through
 environment variables. This can be useful in continuous integration systems.
 
-It's also possible override the CA certificate which can be useful when using self-signed certificates with a
-self-hosted Vespa service. See https://docs.vespa.ai/en/operations-selfhosted/mtls.html for more information.
+It's also possible override the CA certificate which can be useful when using
+self-signed certificates with a self-hosted Vespa service.
+See https://docs.vespa.ai/en/operations-selfhosted/mtls.html for more
+information.
 
 Example of setting the CA certificate, certificate and key in-line:
 
@@ -47,12 +49,18 @@ Example of loading CA certificate, certificate and key from custom paths:
     export VESPA_CLI_DATA_PLANE_CERT_FILE=/path/to/cert
     export VESPA_CLI_DATA_PLANE_KEY_FILE=/path/to/key
 
+Example of disabling verification of the server's certificate chain and
+hostname:
+
+    export VESPA_CLI_DATA_PLANE_TRUST_ALL=true
+
 Note that when overriding key pair through environment variables, that key pair
 will always be used for all applications. It's not possible to specify an
 application-specific key.
 
-Read more in https://cloud.vespa.ai/en/security/guide`,
-		Example: `$ vespa auth cert -a my-tenant.my-app.my-instance
+See https://cloud.vespa.ai/en/security/guide for more details.`,
+		Example: `$ vespa auth cert
+$ vespa auth cert -a my-tenant.my-app.my-instance
 $ vespa auth cert -a my-tenant.my-app.my-instance path/to/application/package`,
 		DisableAutoGenTag: true,
 		SilenceUsage:      true,
@@ -95,7 +103,7 @@ $ vespa auth cert add -a my-tenant.my-app.my-instance path/to/application/packag
 }
 
 func doCert(cli *CLI, overwriteCertificate, skipApplicationPackage bool, args []string) error {
-	targetType, err := cli.targetType(true)
+	targetType, err := cli.targetType(cloudTargetOnly)
 	if err != nil {
 		return err
 	}
@@ -114,11 +122,11 @@ func doCert(cli *CLI, overwriteCertificate, skipApplicationPackage bool, args []
 
 	if !overwriteCertificate {
 		hint := "Use -f flag to force overwriting"
-		if util.PathExists(privateKeyFile.path) {
-			return errHint(fmt.Errorf("private key %s already exists", color.CyanString(privateKeyFile.path)), hint)
+		if ioutil.Exists(privateKeyFile.path) {
+			return errHint(fmt.Errorf("private key '%s' already exists", color.CyanString(privateKeyFile.path)), hint)
 		}
-		if util.PathExists(certificateFile.path) {
-			return errHint(fmt.Errorf("certificate %s already exists", color.CyanString(certificateFile.path)), hint)
+		if ioutil.Exists(certificateFile.path) {
+			return errHint(fmt.Errorf("certificate '%s' already exists", color.CyanString(certificateFile.path)), hint)
 		}
 	}
 
@@ -132,8 +140,8 @@ func doCert(cli *CLI, overwriteCertificate, skipApplicationPackage bool, args []
 	if err := keyPair.WritePrivateKeyFile(privateKeyFile.path, overwriteCertificate); err != nil {
 		return fmt.Errorf("could not write private key: %w", err)
 	}
-	cli.printSuccess("Certificate written to ", color.CyanString(certificateFile.path))
-	cli.printSuccess("Private key written to ", color.CyanString(privateKeyFile.path))
+	cli.printSuccess("Certificate written to ", color.CyanString("'"+certificateFile.path+"'"))
+	cli.printSuccess("Private key written to ", color.CyanString("'"+privateKeyFile.path+"'"))
 	if !skipApplicationPackage {
 		return doCertAdd(cli, overwriteCertificate, args)
 	}
@@ -141,16 +149,16 @@ func doCert(cli *CLI, overwriteCertificate, skipApplicationPackage bool, args []
 }
 
 func doCertAdd(cli *CLI, overwriteCertificate bool, args []string) error {
-	target, err := cli.target(targetOptions{cloudExclusive: true})
+	target, err := cli.target(targetOptions{supportedType: cloudTargetOnly})
 	if err != nil {
 		return err
 	}
-	pkg, err := cli.applicationPackageFrom(args, false)
+	pkg, err := cli.applicationPackageFrom(args, vespa.PackageOptions{})
 	if err != nil {
 		return err
 	}
 	if pkg.HasCertificate() && !overwriteCertificate {
-		return errHint(fmt.Errorf("application package %s already contains a certificate", pkg.Path), "Use -f flag to force overwriting")
+		return errHint(fmt.Errorf("application package '%s' already contains a certificate", pkg.Path), "Use -f flag to force overwriting")
 	}
 	return maybeCopyCertificate(true, false, cli, target, pkg)
 }
@@ -158,13 +166,13 @@ func doCertAdd(cli *CLI, overwriteCertificate bool, args []string) error {
 func maybeCopyCertificate(force, ignoreZip bool, cli *CLI, target vespa.Target, pkg vespa.ApplicationPackage) error {
 	if pkg.IsZip() {
 		if ignoreZip {
-			cli.printWarning("Cannot verify existence of "+color.CyanString("security/clients.pem")+" since "+pkg.Path+" is compressed",
+			cli.printWarning("Cannot verify existence of "+color.CyanString("security/clients.pem")+" since '"+pkg.Path+"' is compressed",
 				"Deployment to Vespa Cloud requires certificate in application package",
 				"See https://cloud.vespa.ai/en/security/guide")
 			return nil
 		} else {
 			hint := "Try running 'mvn clean', then 'vespa auth cert add' and finally 'mvn package'"
-			return errHint(fmt.Errorf("cannot add certificate to compressed application package: %s", pkg.Path), hint)
+			return errHint(fmt.Errorf("cannot add certificate to compressed application package: '%s'", pkg.Path), hint)
 		}
 	}
 	if force {
@@ -205,9 +213,9 @@ func copyCertificate(cli *CLI, target vespa.Target, pkg vespa.ApplicationPackage
 	if err := os.MkdirAll(filepath.Dir(dstPath), 0755); err != nil {
 		return fmt.Errorf("could not create security directory: %w", err)
 	}
-	err = util.AtomicWriteFile(dstPath, data)
+	err = ioutil.AtomicWriteFile(dstPath, data)
 	if err == nil {
-		cli.printSuccess("Copied certificate from ", tlsOptions.CertificateFile, " to ", dstPath)
+		cli.printSuccess("Copied certificate from '", tlsOptions.CertificateFile, "' to '", dstPath, "'")
 	}
 	return err
 }

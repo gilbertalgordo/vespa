@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.hosted.provision.maintenance;
 
 import com.google.common.collect.Sets;
@@ -114,7 +114,8 @@ public class LoadBalancerExpirer extends NodeRepositoryMaintainer {
                 LOG.log(Level.INFO, () -> "Removing reals from inactive load balancer " + lb.id() + ": " + Sets.difference(lb.instance().get().reals(), reals));
                 LoadBalancerInstance instance = service.configure(lb.instance().get(),
                                                                   new LoadBalancerSpec(lb.id().application(), lb.id().cluster(), reals,
-                                                                                       lb.instance().get().settings(), lb.instance().get().cloudAccount()),
+                                                                                       lb.instance().get().settings(),
+                                                                                       lb.instance().get().cloudAccount(), lb.idSeed()),
                                                                   true);
                 db.writeLoadBalancer(lb.with(instance), lb.state());
             } catch (Exception e) {
@@ -159,10 +160,14 @@ public class LoadBalancerExpirer extends NodeRepositoryMaintainer {
 
     private List<Node> allocatedNodes(LoadBalancerId loadBalancer) {
         return nodeRepository().nodes()
-                .list(Node.State.active, Node.State.inactive, Node.State.reserved)
-                .owner(loadBalancer.application())
-                .cluster(loadBalancer.cluster())
-                .asList();
+                               .list(Node.State.active, Node.State.inactive, Node.State.reserved)
+                               .owner(loadBalancer.application())
+                               // Always match the cluster by the effective container ID
+                               // TODO(mpolden): Remove this and use NodeList::cluster once combined disappears in Vespa 9
+                               .matching((node) -> node.allocation().isPresent() &&
+                                                   LoadBalancer.containerId(node.allocation().get().membership().cluster())
+                                                               .equals(loadBalancer.cluster()))
+                               .asList();
     }
 
 }

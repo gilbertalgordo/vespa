@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include "juniper_dfw_term_visitor.h"
 #include "juniper_dfw_explicit_item_data.h"
@@ -25,11 +25,11 @@ JuniperDFWTermVisitor::visitProperty(const search::fef::Property::Value &key, co
             _visitor->VisitPHRASE(&item, phraseLen);
             s = & values.getAt(index++);
             while ((*s)[0] != '"') {
-                _visitor->VisitKeyword(&item, s->c_str(), s->length());
+                _visitor->visitKeyword(&item, *s, false, false);
                 s = & values.getAt(index++);
             }
         } else {
-            _visitor->VisitKeyword(&item, s->c_str(), s->length());
+            _visitor->visitKeyword(&item, *s, false, false);
         }
     }
 }

@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 #pragma once
 
 #include "distributor_message_sender_stub.h"
@@ -76,8 +76,8 @@ public:
 
     bool tick(bool only_tick_top_level = false);
 
-    const DistributorConfig& current_distributor_config() const;
-    void reconfigure(const DistributorConfig&);
+    const DistributorManagerConfig& current_distributor_config() const;
+    void reconfigure(const DistributorManagerConfig&);
 
     framework::defaultimplementation::FakeClock& fake_clock() noexcept {
         return _node->getClock();

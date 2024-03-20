@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include "termfieldmatchdata.h"
 #include <limits>
@@ -22,8 +22,8 @@ TermFieldMatchData::TermFieldMatchData(const TermFieldMatchData & rhs) :
     _fieldId(rhs._fieldId),
     _flags(rhs._flags),
     _sz(0),
-    _numOccs(0),
-    _fieldLength(0)
+    _numOccs(rhs._numOccs),
+    _fieldLength(rhs._fieldLength)
 {
     memset(&_data, 0, sizeof(_data));
     if (isRawScore()) {

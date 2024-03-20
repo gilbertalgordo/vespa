@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include "getdocsumargs.h"
 #include <vespa/vespalib/stllike/hash_set_insert.hpp>
@@ -34,8 +34,7 @@ GetDocsumArgs::initFromDocsumRequest(const engine::DocsumRequest &req)
 void
 GetDocsumArgs::setStackDump(uint32_t stackDumpLen, const char *stackDump)
 {
-    _stackDump.resize(stackDumpLen);
-    memcpy(&_stackDump[0], stackDump, _stackDump.size());
+    _stackDump.assign(stackDump, stackDump + stackDumpLen);
 }
 
 bool

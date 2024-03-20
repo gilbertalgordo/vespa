@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.messagebus;
 
 import com.yahoo.concurrent.SystemTimer;
@@ -185,6 +185,8 @@ public class MessageBus implements ConfigHandler, NetworkOwner, MessageHandler, 
         msn.start();
     }
 
+    Messenger messenger() { return msn; }
+
     /**
      * <p>Sets the destroyed flag to true. The very first time this method is
      * called, it cleans up all its dependencies. Even if you retain a reference
@@ -265,10 +267,10 @@ public class MessageBus implements ConfigHandler, NetworkOwner, MessageHandler, 
      * values for the {@link IntermediateSessionParams} object.</p>
      *
      * @param name          The local unique name for the created session.
-     * @param broadcastName Whether or not to broadcast this session's name on
+     * @param broadcastName Whether to broadcast this session's name on
      *                      the network.
      * @param msgHandler    The handler to receive the messages for the session.
-     * @param replyHandler  The handler to received the replies for the session.
+     * @param replyHandler  The handler to receive the replies for the session.
      * @return The created session.
      */
     public IntermediateSession createIntermediateSession(String name,
@@ -365,7 +367,7 @@ public class MessageBus implements ConfigHandler, NetworkOwner, MessageHandler, 
      * sessions from receiving data from message bus.</p>
      *
      * @param name          The name of the session to remove.
-     * @param broadcastName Whether or not session name was broadcast.
+     * @param broadcastName Whether session name was broadcast.
      */
     public synchronized void unregisterSession(String name, boolean broadcastName) {
         net.unregisterSession(name, this, broadcastName);

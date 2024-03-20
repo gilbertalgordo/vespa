@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.hosted.provision;
 
 import com.yahoo.collections.AbstractFilteringList;
@@ -221,7 +221,7 @@ public class NodeList extends AbstractFilteringList<Node, NodeList> {
     }
 
     /** Returns the subset of nodes which have a record of being down */
-    public NodeList down() { return matching(Node::isDown); }
+    public NodeList down() { return matching(node -> node.history().isDown()); }
 
     /** Returns the subset of nodes which are being retired */
     public NodeList retiring() {

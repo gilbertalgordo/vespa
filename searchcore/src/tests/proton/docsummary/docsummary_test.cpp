@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include <vespa/searchcore/proton/test/dummydbowner.h>
 #include <vespa/searchcore/proton/attribute/attribute_writer.h>
@@ -23,12 +23,12 @@
 #include <vespa/searchlib/index/dummyfileheadercontext.h>
 #include <vespa/searchlib/tensor/tensor_attribute.h>
 #include <vespa/searchlib/test/doc_builder.h>
+#include <vespa/searchlib/util/linguisticsannotation.h>
 #include <vespa/searchlib/transactionlog/nosyncproxy.h>
 #include <vespa/searchlib/transactionlog/translogserver.h>
 #include <vespa/searchsummary/docsummary/i_docsum_field_writer_factory.h>
 #include <vespa/searchsummary/docsummary/i_docsum_store_document.h>
 #include <vespa/searchsummary/docsummary/i_juniper_converter.h>
-#include <vespa/searchsummary/docsummary/linguisticsannotation.h>
 #include <vespa/config-bucketspaces.h>
 #include <vespa/config/helper/configgetter.hpp>
 #include <vespa/document/annotation/annotation.h>
@@ -98,6 +98,7 @@ using vespalib::eval::SimpleValue;
 using vespalib::eval::TensorSpec;
 using vespalib::eval::ValueType;
 using vespalib::GateCallback;
+using vespalib::HwInfo;
 using vespalib::Slime;
 using vespalib::geo::ZCurve;
 using namespace vespalib::slime;
@@ -246,7 +247,7 @@ public:
         : _dmk(docTypeName),
           _fileHeaderContext(),
           _summaryExecutor(8),
-          _shared_service(_summaryExecutor, _summaryExecutor),
+          _shared_service(_summaryExecutor),
           _tls(_shared_service.transport(), "tmp", 9013, ".", _fileHeaderContext),
           _made_dir(std::filesystem::create_directory(std::filesystem::path("tmpdb"))),
           _queryLimiter(),

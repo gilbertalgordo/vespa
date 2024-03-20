@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 #pragma once
 
 #include "fieldsearcher.h"
@@ -9,8 +9,8 @@ template <typename T>
 class FloatFieldSearcherT : public FieldSearcher
 {
 public:
-    FloatFieldSearcherT(FieldIdT fId=0);
-    ~FloatFieldSearcherT();
+    explicit FloatFieldSearcherT(FieldIdT fId);
+    ~FloatFieldSearcherT() override;
     void prepare(search::streaming::QueryTermList& qtl,
                  const SharedSearcherBuf& buf,
                  const vsm::FieldPathMapT& field_paths,
@@ -20,7 +20,7 @@ protected:
     class FloatInfo
     {
     public:
-        FloatInfo(T low, T high, bool v) : _lower(low), _upper(high), _valid(v) { if (low > high) { _lower = high; _upper = low; } }
+        FloatInfo(T low, T high, bool v) noexcept : _lower(low), _upper(high), _valid(v) { }
         bool cmp(T key) const;
         bool valid()          const { return _valid; }
         void setValid(bool v)       { _valid = v; }
@@ -42,14 +42,14 @@ class FloatFieldSearcher : public FloatFieldSearcherTF
 {
 public:
     std::unique_ptr<FieldSearcher> duplicate() const override;
-    FloatFieldSearcher(FieldIdT fId=0) : FloatFieldSearcherTF(fId) { }
+    explicit FloatFieldSearcher(FieldIdT fId) : FloatFieldSearcherTF(fId) { }
 };
 
 class DoubleFieldSearcher : public FloatFieldSearcherTD
 {
 public:
     std::unique_ptr<FieldSearcher> duplicate() const override;
-    DoubleFieldSearcher(FieldIdT fId=0) : FloatFieldSearcherTD(fId) { }
+    DoubleFieldSearcher(FieldIdT fId) : FloatFieldSearcherTD(fId) { }
 };
 
 }

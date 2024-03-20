@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #pragma once
 
@@ -96,6 +96,7 @@ AndSearchStrict<Unpack>::andWith(SearchIterator::UP filter, uint32_t estimate_)
         } else {
             filter = this->offerFilterToChildren(std::move(filter), estimate_);
             if (filter) {
+                // TODO This sounds wrong... Must reconsider. If not strict it should probably be last.
                 this->insert(1, std::move(filter));
             }
         }

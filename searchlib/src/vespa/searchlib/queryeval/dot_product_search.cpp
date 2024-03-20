@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include "dot_product_search.h"
 #include "iterator_pack.h"
@@ -179,15 +179,15 @@ SearchIterator::UP
 DotProductSearch::create(TermFieldMatchData &tmd,
                          bool field_is_filter,
                          const std::vector<int32_t> &weights,
-                         std::vector<DocumentWeightIterator> &&iterators)
+                         std::vector<DocidWithWeightIterator> &&iterators)
 {
-    using ArrayHeapImpl = DotProductSearchImpl<vespalib::LeftArrayHeap, AttributeIteratorPack>;
-    using HeapImpl = DotProductSearchImpl<vespalib::LeftHeap, AttributeIteratorPack>;
+    using ArrayHeapImpl = DotProductSearchImpl<vespalib::LeftArrayHeap, DocidWithWeightIteratorPack>;
+    using HeapImpl = DotProductSearchImpl<vespalib::LeftHeap, DocidWithWeightIteratorPack>;
 
     if (iterators.size() < 128) {
-        return std::make_unique<ArrayHeapImpl>(tmd, field_is_filter, weights, AttributeIteratorPack(std::move(iterators)));
+        return std::make_unique<ArrayHeapImpl>(tmd, field_is_filter, weights, DocidWithWeightIteratorPack(std::move(iterators)));
     }
-    return std::make_unique<HeapImpl>(tmd, field_is_filter, weights, AttributeIteratorPack(std::move(iterators)));
+    return std::make_unique<HeapImpl>(tmd, field_is_filter, weights, DocidWithWeightIteratorPack(std::move(iterators)));
 }
 
 //-----------------------------------------------------------------------------

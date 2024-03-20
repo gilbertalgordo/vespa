@@ -1,5 +1,5 @@
 <?xml version="1.0"?>
-<!-- Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root. -->
+<!-- Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root. -->
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
   <modelVersion>4.0.0</modelVersion>
   <parent>
@@ -8,11 +8,11 @@
     <version>8-SNAPSHOT</version>
     <relativePath>../pom.xml</relativePath>
   </parent>
-  <artifactId>zookeeper-server-3.8.0</artifactId>
+  <artifactId>zookeeper-server-3.9.1</artifactId>
   <packaging>container-plugin</packaging>
   <version>8-SNAPSHOT</version>
   <properties>
-    <zookeeper.version>3.8.0</zookeeper.version>
+    <zookeeper.version>3.9.1</zookeeper.version>
   </properties>
   <dependencies>
     <dependency>
@@ -44,14 +44,6 @@
         <exclusion>
           <groupId>org.slf4j</groupId>
           <artifactId>slf4j-api</artifactId>
-        </exclusion>
-        <exclusion>
-          <groupId>org.slf4j</groupId>
-          <artifactId>slf4j-log4j12</artifactId>
-        </exclusion>
-        <exclusion>
-          <groupId>log4j</groupId>
-          <artifactId>log4j</artifactId>
         </exclusion>
       </exclusions>
     </dependency>

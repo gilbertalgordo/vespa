@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #pragma once
 
@@ -33,6 +33,7 @@ public:
         MatchContext context;
         std::unique_ptr<search::fef::Properties> feature_overrides;
         IDocumentMetaStoreContext::IReadGuard::SP readGuard;
+        std::vector<char> stackDump;
     };
 private:
     using SessionId = vespalib::string;
@@ -64,6 +65,9 @@ public:
     vespalib::steady_time getTimeOfDoom() const { return _time_of_doom; }
 
     MatchToolsFactory &getMatchToolsFactory() { return *_match_tools_factory; }
+    vespalib::stringref getStackDump() const noexcept {
+        return {_owned_objects.stackDump.data(), _owned_objects.stackDump.size()};
+    }
 };
 
 }

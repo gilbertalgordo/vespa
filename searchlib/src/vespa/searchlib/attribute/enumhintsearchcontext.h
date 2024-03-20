@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #pragma once
 
@@ -40,7 +40,7 @@ protected:
     createPostingIterator(fef::TermFieldMatchData *matchData, bool strict) override;
 
     void fetchPostings(const queryeval::ExecuteInfo & execInfo) override;
-    unsigned int approximateHits() const override;
+    HitEstimate calc_hit_estimate() const override;
     uint32_t get_committed_docid_limit() const noexcept { return _docIdLimit; }
 };
 

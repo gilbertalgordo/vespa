@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #pragma once
 
@@ -88,7 +88,7 @@ private:
         LazyValue       _score_feature;
         double          _rankDropLimit;
         HitCollector   &_hits;
-        const Doom     &_doom;
+        const Doom      _doom;
     public:
         std::vector<uint32_t> dropped;
     };

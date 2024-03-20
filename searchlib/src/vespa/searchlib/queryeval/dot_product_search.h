@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #pragma once
 
@@ -6,7 +6,7 @@
 #include <vespa/vespalib/util/priority_queue.h>
 #include <vespa/searchlib/fef/matchdata.h>
 #include <vespa/searchlib/fef/termfieldmatchdataarray.h>
-#include <vespa/searchlib/attribute/iterator_pack.h>
+#include <vespa/searchlib/attribute/posting_iterator_pack.h>
 
 namespace search::fef { class TermFieldMatchData; }
 
@@ -25,6 +25,10 @@ protected:
     DotProductSearch() {}
 
 public:
+    static constexpr bool filter_search = false;
+    static constexpr bool require_btree_iterators = true;
+    static constexpr bool supports_hash_filter = false;
+
     // TODO: use MultiSearch::Children to pass ownership
     static SearchIterator::UP create(const std::vector<SearchIterator*> &children,
                                      search::fef::TermFieldMatchData &tmd,
@@ -36,7 +40,7 @@ public:
     static SearchIterator::UP create(search::fef::TermFieldMatchData &tmd,
                                      bool field_is_filter,
                                      const std::vector<int32_t> &weights,
-                                     std::vector<DocumentWeightIterator> &&iterators);
+                                     std::vector<DocidWithWeightIterator> &&iterators);
 };
 
 }

@@ -660,6 +660,10 @@
       "public com.yahoo.container.jdisc.HttpRequestBuilder withRequestContent(java.io.InputStream)",
       "public com.yahoo.container.jdisc.HttpRequestBuilder withScheme(java.lang.String)",
       "public com.yahoo.container.jdisc.HttpRequestBuilder withHostname(java.lang.String)",
+      "public com.yahoo.container.jdisc.HttpRequestBuilder withPrincipal(java.security.Principal)",
+      "public com.yahoo.container.jdisc.HttpRequestBuilder withRemoteAddress(java.net.SocketAddress)",
+      "public com.yahoo.container.jdisc.HttpRequestBuilder withAttribute(java.lang.String, java.lang.Object)",
+      "public com.yahoo.container.jdisc.HttpRequestBuilder withPort(int)",
       "public com.yahoo.container.jdisc.HttpRequest build()"
     ],
     "fields" : [ ]
@@ -1086,8 +1090,10 @@
       "public com.yahoo.jdisc.http.ConnectorConfig$Builder responseHeaderSize(int)",
       "public com.yahoo.jdisc.http.ConnectorConfig$Builder acceptQueueSize(int)",
       "public com.yahoo.jdisc.http.ConnectorConfig$Builder maxContentSize(long)",
+      "public com.yahoo.jdisc.http.ConnectorConfig$Builder maxContentSizeErrorMessageTemplate(java.lang.String)",
       "public com.yahoo.jdisc.http.ConnectorConfig$Builder reuseAddress(boolean)",
       "public com.yahoo.jdisc.http.ConnectorConfig$Builder idleTimeout(double)",
+      "public com.yahoo.jdisc.http.ConnectorConfig$Builder shutdownIdleTimeout(double)",
       "public com.yahoo.jdisc.http.ConnectorConfig$Builder tcpKeepAliveEnabled(boolean)",
       "public com.yahoo.jdisc.http.ConnectorConfig$Builder tcpNoDelay(boolean)",
       "public com.yahoo.jdisc.http.ConnectorConfig$Builder throttling(com.yahoo.jdisc.http.ConnectorConfig$Throttling$Builder)",
@@ -1261,10 +1267,13 @@
       "public com.yahoo.jdisc.http.ConnectorConfig$ServerName$Builder fallback(java.lang.String)",
       "public com.yahoo.jdisc.http.ConnectorConfig$ServerName$Builder allowed(java.lang.String)",
       "public com.yahoo.jdisc.http.ConnectorConfig$ServerName$Builder allowed(java.util.Collection)",
+      "public com.yahoo.jdisc.http.ConnectorConfig$ServerName$Builder known(java.lang.String)",
+      "public com.yahoo.jdisc.http.ConnectorConfig$ServerName$Builder known(java.util.Collection)",
       "public com.yahoo.jdisc.http.ConnectorConfig$ServerName build()"
     ],
     "fields" : [
-      "public java.util.List allowed"
+      "public java.util.List allowed",
+      "public java.util.List known"
     ]
   },
   "com.yahoo.jdisc.http.ConnectorConfig$ServerName" : {
@@ -1278,7 +1287,9 @@
       "public void <init>(com.yahoo.jdisc.http.ConnectorConfig$ServerName$Builder)",
       "public java.lang.String fallback()",
       "public java.util.List allowed()",
-      "public java.lang.String allowed(int)"
+      "public java.lang.String allowed(int)",
+      "public java.util.List known()",
+      "public java.lang.String known(int)"
     ],
     "fields" : [ ]
   },
@@ -1466,8 +1477,10 @@
       "public int responseHeaderSize()",
       "public int acceptQueueSize()",
       "public long maxContentSize()",
+      "public java.lang.String maxContentSizeErrorMessageTemplate()",
       "public boolean reuseAddress()",
       "public double idleTimeout()",
+      "public double shutdownIdleTimeout()",
       "public boolean tcpKeepAliveEnabled()",
       "public boolean tcpNoDelay()",
       "public com.yahoo.jdisc.http.ConnectorConfig$Throttling throttling()",
@@ -2005,6 +2018,7 @@
       "public com.yahoo.jdisc.http.ServerConfig$Metric$Builder searchHandlerPaths(java.util.Collection)",
       "public com.yahoo.jdisc.http.ServerConfig$Metric$Builder ignoredUserAgents(java.lang.String)",
       "public com.yahoo.jdisc.http.ServerConfig$Metric$Builder ignoredUserAgents(java.util.Collection)",
+      "public com.yahoo.jdisc.http.ServerConfig$Metric$Builder reporterEnabled(boolean)",
       "public com.yahoo.jdisc.http.ServerConfig$Metric build()"
     ],
     "fields" : [
@@ -2027,7 +2041,8 @@
       "public java.util.List searchHandlerPaths()",
       "public java.lang.String searchHandlerPaths(int)",
       "public java.util.List ignoredUserAgents()",
-      "public java.lang.String ignoredUserAgents(int)"
+      "public java.lang.String ignoredUserAgents(int)",
+      "public boolean reporterEnabled()"
     ],
     "fields" : [ ]
   },

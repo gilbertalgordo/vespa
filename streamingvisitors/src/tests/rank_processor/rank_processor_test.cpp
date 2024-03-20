@@ -1,6 +1,7 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include <vespa/searchvisitor/rankprocessor.h>
+#include <vespa/searchlib/fef/test/indexenvironment.h>
 #include <vespa/searchlib/query/streaming/query.h>
 #include <vespa/searchlib/query/streaming/nearest_neighbor_query_node.h>
 #include <vespa/searchlib/query/tree/querybuilder.h>
@@ -12,6 +13,7 @@
 using search::fef::MatchData;
 using search::fef::TermFieldHandle;
 using search::fef::TermFieldMatchData;
+using search::fef::test::IndexEnvironment;
 using search::query::Weight;
 using search::query::QueryBuilder;
 using search::query::SimpleQueryNodeTypes;
@@ -40,7 +42,7 @@ protected:
 
 RankProcessorTest::RankProcessorTest()
     : testing::Test(),
-      _factory(),
+      _factory(nullptr),
       _query(),
       _query_wrapper()
 {
@@ -67,7 +69,7 @@ RankProcessorTest::test_unpack_match_data_for_term_node(bool interleaved_feature
     build_query(builder);
     auto& term_list = _query_wrapper->getTermList();
     EXPECT_EQ(1u, term_list.size());
-    auto node = dynamic_cast<QueryTerm*>(term_list.front().getTerm());
+    auto node = dynamic_cast<QueryTerm*>(term_list.front());
     EXPECT_NE(nullptr, node);
     auto& qtd = static_cast<QueryTermData &>(node->getQueryItem());
     auto& td = qtd.getTermData();
@@ -82,13 +84,14 @@ RankProcessorTest::test_unpack_match_data_for_term_node(bool interleaved_feature
     tfmd->setNeedInterleavedFeatures(interleaved_features);
     auto invalid_id = TermFieldMatchData::invalidId();
     EXPECT_EQ(invalid_id, tfmd->getDocId());
-    RankProcessor::unpack_match_data(1, *md, *_query_wrapper);
+    IndexEnvironment ie;
+    RankProcessor::unpack_match_data(1, *md, *_query_wrapper, ie);
     EXPECT_EQ(invalid_id, tfmd->getDocId());
-    node->add(0, field_id, 0, 1);
+    node->add(field_id, 0, 1, 0);
+    node->add(field_id, 0, 1, 1);
     auto& field_info = node->getFieldInfo(field_id);
-    field_info.setHitCount(mock_num_occs);
     field_info.setFieldLength(mock_field_length);
-    RankProcessor::unpack_match_data(2, *md, *_query_wrapper);
+    RankProcessor::unpack_match_data(2, *md, *_query_wrapper, ie);
     EXPECT_EQ(2, tfmd->getDocId());
     if (interleaved_features) {
         EXPECT_EQ(mock_num_occs, tfmd->getNumOccs());
@@ -97,9 +100,9 @@ RankProcessorTest::test_unpack_match_data_for_term_node(bool interleaved_feature
         EXPECT_EQ(0, tfmd->getNumOccs());
         EXPECT_EQ(0, tfmd->getFieldLength());
     }
-    EXPECT_EQ(1, tfmd->size());
+    EXPECT_EQ(2, tfmd->size());
     node->reset();
-    RankProcessor::unpack_match_data(3, *md, *_query_wrapper);
+    RankProcessor::unpack_match_data(3, *md, *_query_wrapper, ie);
     EXPECT_EQ(2, tfmd->getDocId());
 }
 
@@ -132,7 +135,7 @@ TEST_F(RankProcessorTest, unpack_match_data_for_nearest_neighbor_query_node)
     build_query(builder);
     auto& term_list = _query_wrapper->getTermList();
     EXPECT_EQ(1u, term_list.size());
-    auto node = dynamic_cast<NearestNeighborQueryNode*>(term_list.front().getTerm());
+    auto node = dynamic_cast<NearestNeighborQueryNode*>(term_list.front());
     EXPECT_NE(nullptr, node);
     MockRawScoreCalculator calc;
     node->set_raw_score_calc(&calc);
@@ -145,15 +148,16 @@ TEST_F(RankProcessorTest, unpack_match_data_for_nearest_neighbor_query_node)
     auto tfmd = md->resolveTermField(handle);
     auto invalid_id = TermFieldMatchData::invalidId();
     EXPECT_EQ(invalid_id, tfmd->getDocId());
-    RankProcessor::unpack_match_data(1, *md, *_query_wrapper);
+    IndexEnvironment ie;
+    RankProcessor::unpack_match_data(1, *md, *_query_wrapper, ie);
     EXPECT_EQ(invalid_id, tfmd->getDocId());
     constexpr double distance = 1.5;
     node->set_distance(distance);
-    RankProcessor::unpack_match_data(2, *md, *_query_wrapper);
+    RankProcessor::unpack_match_data(2, *md, *_query_wrapper, ie);
     EXPECT_EQ(2, tfmd->getDocId());
     EXPECT_EQ(distance * 2, tfmd->getRawScore());
     node->reset();
-    RankProcessor::unpack_match_data(3, *md, *_query_wrapper);
+    RankProcessor::unpack_match_data(3, *md, *_query_wrapper, ie);
     EXPECT_EQ(2, tfmd->getDocId());
 }
 

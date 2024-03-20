@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.search.federation;
 
 import com.yahoo.component.ComponentId;
@@ -16,6 +16,7 @@ import com.yahoo.search.result.ErrorHit;
 import com.yahoo.search.result.ErrorMessage;
 import com.yahoo.search.result.Hit;
 import com.yahoo.search.result.HitGroup;
+import com.yahoo.search.schema.SchemaInfo;
 import com.yahoo.search.searchchain.Execution;
 import com.yahoo.search.searchchain.Execution.Context;
 import com.yahoo.search.searchchain.model.federation.FederationOptions;
@@ -168,6 +169,7 @@ public class FederationSearcherTest {
 
         FederationSearcher searcher = new FederationSearcher(
                 new FederationConfig(new FederationConfig.Builder().targetSelector(targetSelectorId.toString())),
+                SchemaInfo.empty(),
                 targetSelectors);
 
         Query query = new Query();
@@ -186,6 +188,7 @@ public class FederationSearcherTest {
 
         FederationSearcher searcher = new FederationSearcher(
                 new FederationConfig(new FederationConfig.Builder().targetSelector(targetSelectorId.toString())),
+                SchemaInfo.empty(),
                 targetSelectors);
 
         Query query = new Query();

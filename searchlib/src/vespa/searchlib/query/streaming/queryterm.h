@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 #pragma once
 
 #include "hit.h"
@@ -9,9 +9,20 @@
 #include <vespa/vespalib/objects/objectvisitor.h>
 #include <vespa/vespalib/stllike/string.h>
 
+namespace search::fef {
+
+class IIndexEnvironment;
+class ITermData;
+class MatchData;
+
+}
 namespace search::streaming {
 
+class EquivQueryNode;
+class FuzzyTerm;
 class NearestNeighborQueryNode;
+class MultiTerm;
+class RegexpTerm;
 
 /**
    This is a leaf in the Query tree. All terms are leafs.
@@ -26,13 +37,10 @@ public:
     class EncodingBitMap
     {
     public:
-        EncodingBitMap(uint8_t bm=0) : _enc(bm) { }
+        explicit EncodingBitMap(uint8_t bm) : _enc(bm) { }
         bool isFloat()        const { return _enc & Float; }
         bool isBase10Integer()        const { return _enc & Base10Integer; }
         bool isAscii7Bit()            const { return _enc & Ascii7Bit; }
-        void setBase10Integer(bool v)       { if (v) _enc |= Base10Integer; else _enc &= ~Base10Integer; }
-        void setAscii7Bit(bool v)           { if (v) _enc |= Ascii7Bit; else _enc &= ~Ascii7Bit; }
-        void setFloat(bool v)               { if (v) _enc |= Float; else _enc &= ~Float; }
     private:
         enum { Ascii7Bit=0x01, Base10Integer=0x02, Float=0x04 };
         uint8_t _enc;
@@ -53,7 +61,12 @@ public:
         uint32_t _hitCount;
         uint32_t _fieldLength;
     };
-    QueryTerm(std::unique_ptr<QueryNodeResultBase> resultBase, const string & term, const string & index, Type type);
+    QueryTerm(std::unique_ptr<QueryNodeResultBase> resultBase, stringref term, const string & index, Type type)
+        : QueryTerm(std::move(resultBase), term, index, type, (type == Type::EXACTSTRINGTERM)
+                                                              ? Normalizing::LOWERCASE
+                                                              : Normalizing::LOWERCASE_AND_FOLD)
+    {}
+    QueryTerm(std::unique_ptr<QueryNodeResultBase> resultBase, stringref term, const string & index, Type type, Normalizing normalizing);
     QueryTerm(const QueryTerm &) = delete;
     QueryTerm & operator = (const QueryTerm &) = delete;
     QueryTerm(QueryTerm &&) = delete;
@@ -62,18 +75,19 @@ public:
     bool evaluate() const override;
     const HitList & evaluateHits(HitList & hl) const override;
     void reset() override;
-    void getLeafs(QueryTermList & tl) override;
-    void getLeafs(ConstQueryTermList & tl) const override;
-    /// Gives you all phrases of this tree.
-    void getPhrases(QueryNodeRefList & tl) override;
-    /// Gives you all phrases of this tree. Indicating that they are all const.
-    void getPhrases(ConstQueryNodeRefList & tl) const override;
+    void getLeaves(QueryTermList & tl) override;
+    void getLeaves(ConstQueryTermList & tl) const override;
 
-    void                add(unsigned pos, unsigned context, uint32_t elemId, int32_t weight);
+    uint32_t            add(uint32_t field_id, uint32_t element_id, int32_t element_weight, uint32_t position);
+    void                set_element_length(uint32_t hitlist_idx, uint32_t element_length);
     EncodingBitMap      encoding()                 const { return _encoding; }
     size_t              termLen()                  const { return getTermLen(); }
     const string      & index()                    const { return _index; }
     void                setWeight(query::Weight v)       { _weight = v; }
+    void                setRanked(bool ranked)           { _isRanked = ranked; }
+    bool                isRanked()                 const { return _isRanked; }
+    void                set_filter(bool v) noexcept      { _filter = v; }
+    bool                is_filter() const noexcept       { return _filter; }
     void                setUniqueId(uint32_t u)          { _uniqueId = u; }
     query::Weight       weight()                   const { return _weight; }
     uint32_t            uniqueId()                 const { return _uniqueId; }
@@ -89,13 +103,23 @@ public:
     void setFuzzyMaxEditDistance(uint32_t fuzzyMaxEditDistance) { _fuzzyMaxEditDistance = fuzzyMaxEditDistance; }
     void setFuzzyPrefixLength(uint32_t fuzzyPrefixLength) { _fuzzyPrefixLength = fuzzyPrefixLength; }
     virtual NearestNeighborQueryNode* as_nearest_neighbor_query_node() noexcept;
+    virtual MultiTerm* as_multi_term() noexcept;
+    virtual const MultiTerm* as_multi_term() const noexcept;
+    virtual RegexpTerm* as_regexp_term() noexcept;
+    virtual FuzzyTerm* as_fuzzy_term() noexcept;
+    virtual const EquivQueryNode* as_equiv_query_node() const noexcept;
+    virtual void unpack_match_data(uint32_t docid, const fef::ITermData& td, fef::MatchData& match_data, const fef::IIndexEnvironment& index_env);
 protected:
+    template <typename HitListType>
+    static void unpack_match_data_helper(uint32_t docid, const fef::ITermData& td, fef::MatchData& match_data, const HitListType& hit_list, const QueryTerm& fl_term, bool term_filter, const fef::IIndexEnvironment& index_env);
     using QueryNodeResultBaseContainer = std::unique_ptr<QueryNodeResultBase>;
-    string                       _index;
-    EncodingBitMap               _encoding;
-    QueryNodeResultBaseContainer _result;
     HitList                      _hitList;
 private:
+    string                       _index;
+    QueryNodeResultBaseContainer _result;
+    EncodingBitMap               _encoding;
+    bool                         _isRanked;
+    bool                         _filter;
     query::Weight                _weight;
     uint32_t                     _uniqueId;
     std::vector<FieldInfo>       _fieldInfo;

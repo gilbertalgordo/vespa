@@ -1,3 +1,4 @@
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.hosted.provision.maintenance;
 
 import com.yahoo.config.provision.ApplicationId;
@@ -67,12 +68,16 @@ class HostFlavorUpgraderTest {
                            .matching(node -> node.status().wantToUpgradeFlavor() || node.status().wantToRetire()),
                      "No hosts marked for upgrade or retirement");
 
-        // First provision request fails, but second succeeds and a replacement host starts provisioning
+        // First provision request fails, but we only try once for the same flavor
         hostProvisioner.with(Behaviour.failProvisionRequest, 1);
         assertEquals(1, upgrader.maintain());
         NodeList nodes = tester.nodeRepository().nodes().list();
-        NodeList upgradingFlavor = nodes.matching(node -> node.status().wantToRetire() &&
-                                                          node.status().wantToUpgradeFlavor());
+        assertEquals(0, nodes.matching(node -> node.status().wantToUpgradeFlavor()).size());
+
+        // Second succeeds and a replacement host starts provisioning
+        assertEquals(1, upgrader.maintain());
+        nodes = tester.nodeRepository().nodes().list();
+        NodeList upgradingFlavor = nodes.matching(node -> node.status().wantToUpgradeFlavor());
         assertEquals(1, upgradingFlavor.size());
         assertEquals(1, nodes.state(Node.State.provisioned).size());
 

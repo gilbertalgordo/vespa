@@ -1,7 +1,6 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include "groupingmanager.h"
-#include "groupingsession.h"
 #include "groupingcontext.h"
 #include <vespa/searchlib/aggregation/fs4hit.h>
 #include <vespa/searchlib/expression/attributenode.h>
@@ -19,13 +18,6 @@ using vespalib::Issue;
 using vespalib::make_string_short::fmt;
 
 //-----------------------------------------------------------------------------
-
-GroupingManager::GroupingManager(GroupingContext & groupingContext)
-    : _groupingContext(groupingContext)
-{
-}
-
-GroupingManager::~GroupingManager() = default;
 
 using search::expression::ExpressionNode;
 using search::expression::AttributeNode;
@@ -52,11 +44,11 @@ GroupingManager::init(const IAttributeContext &attrCtx)
                 ExpressionNode & en = *level.getExpression().getRoot();
 
                 if (en.inherits(AttributeNode::classId)) {
-                    AttributeNode & an = static_cast<AttributeNode &>(en);
+                    auto & an = static_cast<AttributeNode &>(en);
                     an.enableEnumOptimization(true);
                 }
             }
-            ConfigureStaticParams stuff(&attrCtx, nullptr, _groupingContext.enableNestedMultivalueGrouping());
+            ConfigureStaticParams stuff(&attrCtx, nullptr);
             grouping.configureStaticStuff(stuff);
             list.push_back(groupingList[i]);
         } catch (const std::exception & e) {
@@ -67,15 +59,17 @@ GroupingManager::init(const IAttributeContext &attrCtx)
 }
 
 void
-GroupingManager::groupInRelevanceOrder(const RankedHit *searchResults, uint32_t binSize)
+GroupingManager::groupInRelevanceOrder(uint32_t distributionKey, const RankedHit *searchResults, uint32_t binSize)
 {
     _groupingContext.groupInRelevanceOrder(searchResults, binSize);
+    _groupingContext.setDistributionKey(distributionKey);
 }
 
 void
-GroupingManager::groupUnordered(const RankedHit *searchResults, uint32_t binSize, const search::BitVector * overflow)
+GroupingManager::groupUnordered(uint32_t distributionKey, const RankedHit *searchResults, uint32_t binSize, const search::BitVector * overflow)
 {
     _groupingContext.groupUnordered(searchResults, binSize, overflow);
+    _groupingContext.setDistributionKey(distributionKey);
 }
 
 void
@@ -96,10 +90,9 @@ void
 GroupingManager::prune()
 {
     GroupingContext::GroupingList &groupingList(_groupingContext.getGroupingList());
-    for (size_t i = 0; i < groupingList.size(); ++i) {
-        Grouping &g = *groupingList[i];
-        g.postMerge();
-        g.sortById();
+    for (const auto & g : groupingList) {
+        g->postMerge();
+        g->sortById();
     }
 }
 
@@ -107,10 +100,9 @@ void
 GroupingManager::convertToGlobalId(const search::IDocumentMetaStore &metaStore)
 {
     GroupingContext::GroupingList & groupingList = _groupingContext.getGroupingList();
-    for (size_t i = 0; i < groupingList.size(); ++i) {
-        Grouping & g = *groupingList[i];
-        g.convertToGlobalId(metaStore);
-        LOG(debug, "convertToGlobalId: %s", g.asString().c_str());
+    for (const auto & g : groupingList) {
+        g->convertToGlobalId(metaStore);
+        LOG(debug, "convertToGlobalId: %s", g->asString().c_str());
     }
 }
 

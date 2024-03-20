@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #pragma once
 
@@ -15,7 +15,8 @@ class MoveOperation;
  */
 struct IDocumentMoveHandler
 {
-    virtual void handleMove(MoveOperation &op, std::shared_ptr<vespalib::IDestructorCallback> moveDoneCtx) = 0;
+    enum class MoveResult { SUCCESS, FAILURE};
+    [[nodiscard]] virtual MoveResult handleMove(MoveOperation &op, std::shared_ptr<vespalib::IDestructorCallback> moveDoneCtx) = 0;
     virtual ~IDocumentMoveHandler() = default;
 };
 

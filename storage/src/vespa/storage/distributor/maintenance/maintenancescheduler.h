@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 #pragma once
 
 #include <vespa/storage/distributor/maintenance/prioritizedbucket.h>
@@ -28,13 +28,6 @@ public:
 
     WaitTimeMs tick(SchedulingMode currentMode);
 
-    void set_implicitly_clear_priority_on_schedule(bool implicitly_clear) noexcept {
-        _implicitly_clear_priority_on_schedule = implicitly_clear;
-    }
-    [[nodiscard]] bool implicitly_clear_priority_on_schedule() const noexcept {
-        return _implicitly_clear_priority_on_schedule;
-    }
-
 private:
     MaintenanceScheduler(const MaintenanceScheduler&);
     MaintenanceScheduler& operator=(const MaintenanceScheduler&);
@@ -51,7 +44,6 @@ private:
     BucketPriorityDatabase&        _priorityDb;
     const PendingWindowChecker&    _pending_window_checker;
     OperationStarter&              _operationStarter;
-    bool                           _implicitly_clear_priority_on_schedule;
 };
 
 }

@@ -1,7 +1,10 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 // Unit tests for simple_index.
 
 #include <vespa/searchlib/predicate/simple_index.hpp>
+#include <vespa/searchlib/predicate/simple_index_saver.hpp>
+#include <vespa/searchlib/predicate/nbo_write.h>
+#include <vespa/searchlib/util/data_buffer_writer.h>
 #include <vespa/vespalib/testkit/testapp.h>
 #include <vespa/searchlib/attribute/predicate_attribute.h>
 #include <vespa/vespalib/btree/btree.hpp>
@@ -31,9 +34,9 @@ struct MyData {
     }
 };
 
-struct MyDataSerializer : PostingSerializer<MyData> {
-    void serialize(const MyData &data, vespalib::DataBuffer& buffer) const override {
-        buffer.writeInt32(data.data);
+struct MyDataSaver : PostingSaver<MyData> {
+    void save(const MyData &data, BufferWriter& writer) const override {
+        nbo_write<uint32_t>(writer, data.data);
     }
 };
 
@@ -176,7 +179,11 @@ TEST_FF("require that SimpleIndex can be serialized and deserialized.", Fixture,
     }
     f1.commit();
     vespalib::DataBuffer buffer;
-    f1.index().serialize(buffer, MyDataSerializer());
+    {
+        DataBufferWriter writer(buffer);
+        f1.index().make_saver(std::make_unique<MyDataSaver>())->save(writer);
+        writer.flush();
+    }
     MyObserver observer;
     MyDataDeserializer deserializer;
     f2.index().deserialize(buffer, deserializer, observer, PredicateAttribute::PREDICATE_ATTRIBUTE_VERSION);

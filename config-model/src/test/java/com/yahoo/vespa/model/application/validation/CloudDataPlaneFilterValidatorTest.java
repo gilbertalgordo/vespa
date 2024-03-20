@@ -1,7 +1,10 @@
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.model.application.validation;
 
 import com.yahoo.config.application.api.ApplicationPackage;
 import com.yahoo.config.model.NullConfigModelRegistry;
+import com.yahoo.config.model.api.ApplicationClusterEndpoint;
+import com.yahoo.config.model.api.ContainerEndpoint;
 import com.yahoo.config.model.api.EndpointCertificateSecrets;
 import com.yahoo.config.model.deploy.DeployState;
 import com.yahoo.config.model.deploy.TestProperties;
@@ -34,6 +37,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
@@ -67,7 +71,7 @@ public class CloudDataPlaneFilterValidatorTest {
                                                             certFile2, List.of(createCertificate("bar"))));
 
         VespaModel model = new VespaModel(new NullConfigModelRegistry(), deployState);
-        new CloudDataPlaneFilterValidator().validate(model, deployState);
+        ValidationTester.validate(new CloudDataPlaneFilterValidator(), model, deployState);
     }
 
     @Test
@@ -96,11 +100,8 @@ public class CloudDataPlaneFilterValidatorTest {
                                                             certFile2, List.of(certificate)));
 
         VespaModel model = new VespaModel(new NullConfigModelRegistry(), deployState);
-        IllegalArgumentException illegalArgumentException = Assertions.assertThrows(IllegalArgumentException.class, () ->
-                new CloudDataPlaneFilterValidator().validate(model, deployState));
-        assertEquals(
-                "Duplicate certificate(s) detected in files: [%s, %s]. Certificate subject of duplicates: [%s]".formatted(certFile1, certFile2, certificate.getSubjectX500Principal().getName()),
-                illegalArgumentException.getMessage());
+        ValidationTester.expect(new CloudDataPlaneFilterValidator(), model, deployState,
+                                "Duplicate certificate(s) detected in files: [%s, %s]. Certificate subject of duplicates: [%s]".formatted(certFile1, certFile2, certificate.getSubjectX500Principal().getName()));
     }
 
     @Test
@@ -123,11 +124,8 @@ public class CloudDataPlaneFilterValidatorTest {
                                                     Map.of(certFile1, List.of(certificate, certificate)));
 
         VespaModel model = new VespaModel(new NullConfigModelRegistry(), deployState);
-        IllegalArgumentException illegalArgumentException = Assertions.assertThrows(IllegalArgumentException.class, () ->
-                new CloudDataPlaneFilterValidator().validate(model, deployState));
-        assertEquals(
-                "Duplicate certificate(s) detected in files: [%s]. Certificate subject of duplicates: [%s]".formatted(certFile1, certificate.getSubjectX500Principal().getName()),
-                illegalArgumentException.getMessage());
+        ValidationTester.expect(new CloudDataPlaneFilterValidator(), model, deployState,
+                                "Duplicate certificate(s) detected in files: [%s]. Certificate subject of duplicates: [%s]".formatted(certFile1, certificate.getSubjectX500Principal().getName()));
     }
 
 
@@ -148,6 +146,7 @@ public class CloudDataPlaneFilterValidatorTest {
                         new TestProperties()
                                 .setEndpointCertificateSecrets(Optional.of(new EndpointCertificateSecrets("CERT", "KEY")))
                                 .setHostedVespa(true))
+                .endpoints(Set.of(new ContainerEndpoint("container", ApplicationClusterEndpoint.Scope.zone, List.of("c.example.com"))))
                 .zone(new Zone(SystemName.PublicCd, Environment.dev, RegionName.defaultName()))
                 .build();
     }

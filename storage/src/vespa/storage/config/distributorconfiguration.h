@@ -1,45 +1,44 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 #pragma once
 
-#include <vespa/storage/config/config-stor-distributormanager.h>
-#include <vespa/storage/config/config-stor-visitordispatcher.h>
-#include <vespa/vespalib/stllike/hash_set.h>
-#include <vespa/storage/common/storagecomponent.h>
+#include "replica_counting_mode.h"
 #include <vespa/vespalib/util/time.h>
+
+namespace vespa::config::content::core::internal {
+    class InternalStorDistributormanagerType;
+    class InternalStorVisitordispatcherType;
+}
 
 namespace storage {
 
-namespace distributor { struct LegacyDistributorTest; }
+class StorageComponent;
 
 class DistributorConfiguration {
-public: 
+public:
+    DistributorConfiguration(const DistributorConfiguration& other) = delete;
+    DistributorConfiguration& operator=(const DistributorConfiguration& other) = delete;
     explicit DistributorConfiguration(StorageComponent& component);
     ~DistributorConfiguration();
 
-    struct MaintenancePriorities
-    {
-        // Defaults for these are chosen as those used as the current (non-
-        // configurable) values at the time of implementation.
-        uint8_t mergeMoveToIdealNode {120};
+    struct MaintenancePriorities {
+        uint8_t mergeMoveToIdealNode {165};
         uint8_t mergeOutOfSyncCopies {120};
         uint8_t mergeTooFewCopies {120};
         uint8_t mergeGlobalBuckets {115};
         uint8_t activateNoExistingActive {100};
         uint8_t activateWithExistingActive {100};
-        uint8_t deleteBucketCopy {100};
+        uint8_t deleteBucketCopy {120};
         uint8_t joinBuckets {155};
         uint8_t splitDistributionBits {200};
         uint8_t splitLargeBucket {175};
         uint8_t splitInconsistentBucket {110};
         uint8_t garbageCollection {200};
     };
+    using DistributorManagerConfig = vespa::config::content::core::internal::InternalStorDistributormanagerType;
+    using VisitorDispatcherConfig = vespa::config::content::core::internal::InternalStorVisitordispatcherType;
 
-    using DistrConfig = vespa::config::content::core::StorDistributormanagerConfig;
-    
-    void configure(const DistrConfig& config);
-
-    void configure(const vespa::config::content::core::StorVisitordispatcherConfig& config);
-
+    void configure(const DistributorManagerConfig& config);
+    void configure(const VisitorDispatcherConfig& config);
 
     const std::string& getGarbageCollectionSelection() const {
         return _garbageCollectionSelection;
@@ -56,14 +55,6 @@ public:
 
     void setLastGarbageCollectionChangeTime(vespalib::steady_time lastChangeTime) {
         _lastGarbageCollectionChange = lastChangeTime;
-    }
-
-    bool stateCheckerIsActive(vespalib::stringref stateCheckerName) const {
-        return _blockedStateCheckers.find(stateCheckerName) == _blockedStateCheckers.end();
-    }
-
-    void disableStateChecker(vespalib::stringref stateCheckerName) {
-        _blockedStateCheckers.insert(stateCheckerName);
     }
 
     void setDoInlineSplit(bool value) {
@@ -177,12 +168,6 @@ public:
         return _enableInconsistentJoin;
     }
 
-    bool getEnableHostInfoReporting() const noexcept {
-        return _enableHostInfoReporting;
-    }
-
-    using ReplicaCountingMode = DistrConfig::MinimumReplicaCountingMode;
-
     ReplicaCountingMode getMinimumReplicaCountingMode() const noexcept {
         return _minimumReplicaCountingMode;
     }
@@ -203,13 +188,6 @@ public:
         return _simulated_db_merging_latency;
     }
 
-    bool getSequenceMutatingOperations() const noexcept {
-        return _sequenceMutatingOperations;
-    }
-    void setSequenceMutatingOperations(bool sequenceMutations) noexcept {
-        _sequenceMutatingOperations = sequenceMutations;
-    }
-
     bool allowStaleReadsDuringClusterStateTransitions() const noexcept {
         return _allowStaleReadsDuringClusterStateTransitions;
     }
@@ -226,9 +204,6 @@ public:
 
     bool merge_operations_disabled() const noexcept {
         return _merge_operations_disabled;
-    }
-    void set_merge_operations_disabled(bool disabled) noexcept {
-        _merge_operations_disabled = disabled;
     }
 
     void set_use_weak_internal_read_consistency_for_client_gets(bool use_weak) noexcept {
@@ -249,13 +224,6 @@ public:
         return _max_consecutively_inhibited_maintenance_ticks;
     }
 
-    void set_prioritize_global_bucket_merges(bool prioritize) noexcept {
-        _prioritize_global_bucket_merges = prioritize;
-    }
-    bool prioritize_global_bucket_merges() const noexcept {
-        return _prioritize_global_bucket_merges;
-    }
-
     void set_max_activation_inhibited_out_of_sync_groups(uint32_t max_groups) noexcept {
         _max_activation_inhibited_out_of_sync_groups = max_groups;
     }
@@ -263,48 +231,13 @@ public:
         return _max_activation_inhibited_out_of_sync_groups;
     }
 
-    [[nodiscard]] bool implicitly_clear_priority_on_schedule() const noexcept {
-        return _implicitly_clear_priority_on_schedule;
-    }
-    void set_use_unordered_merge_chaining(bool unordered) noexcept {
-        _use_unordered_merge_chaining = unordered;
-    }
-    [[nodiscard]] bool use_unordered_merge_chaining() const noexcept {
-        return _use_unordered_merge_chaining;
-    }
-    void set_inhibit_default_merges_when_global_merges_pending(bool inhibit) noexcept {
-        _inhibit_default_merges_when_global_merges_pending = inhibit;
-    }
-    [[nodiscard]] bool inhibit_default_merges_when_global_merges_pending() const noexcept {
-        return _inhibit_default_merges_when_global_merges_pending;
-    }
-    void set_enable_two_phase_garbage_collection(bool enable) noexcept {
-        _enable_two_phase_garbage_collection = enable;
-    }
-    [[nodiscard]] bool enable_two_phase_garbage_collection() const noexcept {
-        return _enable_two_phase_garbage_collection;
-    }
-    void set_enable_condition_probing(bool enable) noexcept {
-        _enable_condition_probing = enable;
-    }
-    [[nodiscard]] bool enable_condition_probing() const noexcept {
-        return _enable_condition_probing;
-    }
-    void set_enable_operation_cancellation(bool enable) noexcept {
-        _enable_operation_cancellation = enable;
-    }
     [[nodiscard]] bool enable_operation_cancellation() const noexcept {
         return _enable_operation_cancellation;
     }
 
-    uint32_t num_distributor_stripes() const noexcept { return _num_distributor_stripes; }
-
     bool containsTimeStatement(const std::string& documentSelection) const;
     
 private:
-    DistributorConfiguration(const DistributorConfiguration& other);
-    DistributorConfiguration& operator=(const DistributorConfiguration& other);
-    
     StorageComponent& _component;
     
     uint32_t _byteCountSplitLimit;
@@ -312,8 +245,6 @@ private:
     uint32_t _byteCountJoinLimit;
     uint32_t _docCountJoinLimit;
     uint32_t _minimalBucketSplit;
-    uint32_t _maxIdealStateOperations;
-    uint32_t _idealStateChunkSize;
     uint32_t _maxNodesPerMerge;
     uint32_t _max_consecutively_inhibited_maintenance_ticks;
     uint32_t _max_activation_inhibited_out_of_sync_groups;
@@ -326,12 +257,8 @@ private:
     uint32_t _minPendingMaintenanceOps;
     uint32_t _maxPendingMaintenanceOps;
 
-    vespalib::hash_set<vespalib::string> _blockedStateCheckers;
-
     uint32_t _maxVisitorsPerNodePerClientVisitor;
     uint32_t _minBucketsPerVisitor;
-
-    uint32_t _num_distributor_stripes;
 
     MaintenancePriorities _maintenancePriorities;
     std::chrono::seconds _maxClusterClockSkew;
@@ -342,27 +269,15 @@ private:
     bool _doInlineSplit;
     bool _enableJoinForSiblingLessBuckets;
     bool _enableInconsistentJoin;
-    bool _enableHostInfoReporting;
     bool _disableBucketActivation;
-    bool _sequenceMutatingOperations;
     bool _allowStaleReadsDuringClusterStateTransitions;
-    bool _update_fast_path_restart_enabled;
+    bool _update_fast_path_restart_enabled; //TODO Rewrite tests and GC
     bool _merge_operations_disabled;
     bool _use_weak_internal_read_consistency_for_client_gets;
-    bool _enable_metadata_only_fetch_phase_for_inconsistent_updates;
-    bool _prioritize_global_bucket_merges;
-    bool _implicitly_clear_priority_on_schedule;
-    bool _use_unordered_merge_chaining;
-    bool _inhibit_default_merges_when_global_merges_pending;
-    bool _enable_two_phase_garbage_collection;
-    bool _enable_condition_probing;
+    bool _enable_metadata_only_fetch_phase_for_inconsistent_updates; //TODO Rewrite tests and GC
     bool _enable_operation_cancellation;
 
-    DistrConfig::MinimumReplicaCountingMode _minimumReplicaCountingMode;
-
-    friend struct distributor::LegacyDistributorTest;
-    void configureMaintenancePriorities(
-            const vespa::config::content::core::StorDistributormanagerConfig&);
+    ReplicaCountingMode _minimumReplicaCountingMode;
 };
 
 }

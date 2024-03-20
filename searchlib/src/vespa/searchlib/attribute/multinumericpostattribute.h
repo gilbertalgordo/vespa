@@ -1,10 +1,11 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #pragma once
 
+#include "numeric_direct_posting_store_adapter.h"
 #include "multinumericenumattribute.h"
 #include "postinglistattribute.h"
-#include "i_document_weight_attribute.h"
+#include "i_docid_with_weight_posting_store.h"
 
 namespace search {
 
@@ -32,19 +33,6 @@ public:
     using EnumStoreBatchUpdater = typename EnumStore::BatchUpdater;
 
 private:
-    struct DocumentWeightAttributeAdapter final : IDocumentWeightAttribute {
-        const MultiValueNumericPostingAttribute &self;
-        DocumentWeightAttributeAdapter(const MultiValueNumericPostingAttribute &self_in) : self(self_in) {}
-        vespalib::datastore::EntryRef get_dictionary_snapshot() const override;
-        LookupResult lookup(const LookupKey & key, vespalib::datastore::EntryRef dictionary_snapshot) const override;
-        void collect_folded(vespalib::datastore::EntryRef enum_idx, vespalib::datastore::EntryRef dictionary_snapshot, const std::function<void(vespalib::datastore::EntryRef)>& callback) const override;
-        void create(vespalib::datastore::EntryRef idx, std::vector<DocumentWeightIterator> &dst) const override;
-        DocumentWeightIterator create(vespalib::datastore::EntryRef idx) const override;
-        std::unique_ptr<queryeval::SearchIterator> make_bitvector_iterator(vespalib::datastore::EntryRef idx, uint32_t doc_id_limit, fef::TermFieldMatchData &match_data, bool strict) const override;
-        bool has_weight_iterator(vespalib::datastore::EntryRef idx) const noexcept override;
-    };
-    DocumentWeightAttributeAdapter _document_weight_attribute_adapter;
-
     friend class PostingListAttributeTest;
     template <typename, typename, typename>
     friend class attribute::PostingSearchContext; // getEnumStore()
@@ -61,13 +49,17 @@ private:
     using DocIndices = typename MultiValueNumericEnumAttribute<B, M>::DocIndices;
     using FrozenDictionary = typename Dictionary::FrozenView;
     using Posting = typename PostingParent::Posting;
-    using PostingList = typename PostingParent::PostingList;
+    using PostingStore = typename PostingParent::PostingStore;
     using PostingMap = typename PostingParent::PostingMap;
     using QueryTermSimpleUP = AttributeVector::QueryTermSimpleUP;
     using WeightedIndex = typename MultiValueNumericEnumAttribute<B, M>::WeightedIndex;
     using generation_t = typename MultiValueNumericEnumAttribute<B, M>::generation_t;
 
-    using PostingParent::_postingList;
+    using DirectPostingStoreAdapterType = attribute::NumericDirectPostingStoreAdapter<IDocidWithWeightPostingStore,
+                                                                                      PostingStore, EnumStore>;
+    DirectPostingStoreAdapterType _posting_store_adapter;
+
+    using PostingParent::_posting_store;
     using PostingParent::clearAllPostings;
     using PostingParent::handle_load_posting_lists;
     using PostingParent::handle_load_posting_lists_and_update_enum_store;
@@ -87,7 +79,7 @@ public:
     std::unique_ptr<attribute::SearchContext>
     getSearch(QueryTermSimpleUP term, const attribute::SearchContextParams & params) const override;
 
-    const IDocumentWeightAttribute *asDocumentWeightAttribute() const override;
+    const IDocidWithWeightPostingStore *as_docid_with_weight_posting_store() const override;
 
     bool onAddDoc(DocId doc) override {
         return forwardedOnAddDoc(doc, this->_mvMapping.getNumKeys(), this->_mvMapping.getCapacityKeys());

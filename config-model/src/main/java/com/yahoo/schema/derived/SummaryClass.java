@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.schema.derived;
 
 import com.yahoo.config.application.api.DeployLogger;
@@ -11,6 +11,7 @@ import com.yahoo.vespa.documentmodel.DocumentSummary;
 import com.yahoo.vespa.documentmodel.SummaryField;
 import com.yahoo.vespa.documentmodel.SummaryTransform;
 
+import java.io.IOException;
 import java.util.Collections;
 import java.util.Map;
 import java.util.logging.Level;
@@ -119,11 +120,9 @@ public class SummaryClass extends Derived {
         return classBuilder;
     }
 
-    @Override
-    public int hashCode() { return id; }
+    @Override public int hashCode() { return id; }
 
-    @Override
-    protected String getDerivedName() { return "summary"; }
+    @Override protected String getDerivedName() { return "summary"; }
 
     @Override
     public String toString() {
@@ -155,7 +154,9 @@ public class SummaryClass extends Derived {
                 summaryField.getTransform() == SummaryTransform.GEOPOS ||
                 summaryField.getTransform() == SummaryTransform.POSITIONS ||
                 summaryField.getTransform() == SummaryTransform.MATCHED_ELEMENTS_FILTER ||
-                summaryField.getTransform() == SummaryTransform.MATCHED_ATTRIBUTE_ELEMENTS_FILTER)
+                summaryField.getTransform() == SummaryTransform.MATCHED_ATTRIBUTE_ELEMENTS_FILTER ||
+                summaryField.getTransform() == SummaryTransform.TOKENS ||
+                summaryField.getTransform() == SummaryTransform.ATTRIBUTE_TOKENS)
         {
             return summaryField.getSingleSource();
         } else if (summaryField.getTransform().isDynamic()) {

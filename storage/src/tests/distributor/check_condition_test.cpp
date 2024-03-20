@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 #include <vespa/document/bucket/bucket.h>
 #include <vespa/document/bucket/fixed_bucket_spaces.h>
 #include <vespa/document/base/documentid.h>
@@ -39,7 +39,6 @@ public:
         // By default, set up 2 nodes {0, 1} with mutually out of sync replica state
         // and with both reporting that they support condition probing.
         setup_stripe(2, 2, "version:1 storage:2 distributor:1");
-        config_enable_condition_probing(true);
         tag_content_node_supports_condition_probing(0, true);
         tag_content_node_supports_condition_probing(1, true);
         addNodesToBucketDB(_bucket_id, "0=10/20/30/t,1=40/50/60");
@@ -118,12 +117,6 @@ public:
 
 CheckConditionTest::CheckConditionTest() = default;
 CheckConditionTest::~CheckConditionTest() = default;
-
-TEST_F(CheckConditionTest, no_checker_returned_when_config_disabled) {
-    config_enable_condition_probing(false);
-    auto cond = create_check_condition();
-    EXPECT_FALSE(cond);
-}
 
 TEST_F(CheckConditionTest, no_checker_returned_when_probing_not_supported_on_at_least_one_node) {
     tag_content_node_supports_condition_probing(1, false);

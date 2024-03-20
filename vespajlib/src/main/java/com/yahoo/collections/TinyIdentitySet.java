@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.collections;
 
 import java.util.Arrays;
@@ -67,8 +67,11 @@ public final class TinyIdentitySet<E> implements Set<E> {
      * @param initSize
      *            initial size of internal element array
      */
-    public TinyIdentitySet(final int initSize) {
+    public TinyIdentitySet(int initSize) {
         entries = new Object[initSize];
+    }
+    public TinyIdentitySet() {
+        this(4);
     }
 
     /**

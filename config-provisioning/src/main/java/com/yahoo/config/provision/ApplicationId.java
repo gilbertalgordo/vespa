@@ -1,14 +1,11 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.config.provision;
 
 import com.yahoo.cloud.config.ApplicationIdConfig;
 
 import java.util.Comparator;
 import java.util.Objects;
-import java.util.logging.Logger;
 import java.util.regex.Pattern;
-
-import static java.util.logging.Level.SEVERE;
 
 /**
  * A complete, immutable identification of an application instance.
@@ -18,10 +15,6 @@ import static java.util.logging.Level.SEVERE;
  * @author bratseth
  */
 public class ApplicationId implements Comparable<ApplicationId> {
-
-    private static final Logger log = Logger.getLogger(ApplicationId.class.getName());
-
-    static final Pattern namePattern = Pattern.compile("[a-zA-Z0-9_-]{1,256}");
 
     private static final ApplicationId global = new ApplicationId(TenantName.from("hosted-vespa"),
                                                                   ApplicationName.from("routing"),

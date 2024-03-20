@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.curator;
 
 import com.yahoo.cloud.config.CuratorConfig;
@@ -8,7 +8,7 @@ import com.yahoo.concurrent.DaemonThreadFactory;
 import com.yahoo.path.Path;
 import com.yahoo.vespa.curator.recipes.CuratorCounter;
 import com.yahoo.vespa.defaults.Defaults;
-import com.yahoo.vespa.zookeeper.VespaZooKeeperServer;
+import com.yahoo.vespa.zookeeper.server.VespaZooKeeperServer;
 import com.yahoo.vespa.zookeeper.client.ZkClientConfigBuilder;
 import org.apache.curator.RetryPolicy;
 import org.apache.curator.framework.CuratorFramework;

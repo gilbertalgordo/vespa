@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.configmodel.producers;
 
 import com.yahoo.document.ArrayDataType;
@@ -33,12 +33,6 @@ public class DataTypeRecognizer {
     private Map<Object, String> toUniqueNames = new IdentityHashMap<>();
 
     DataTypeRecognizer() {
-    }
-
-    DataTypeRecognizer(DataTypeCollection dtc) {
-        for (var type : dtc.getTypes()) {
-            System.err.println("added: "+nameOf(type));
-        }
     }
 
     String nameOf(Object type) {

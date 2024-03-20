@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.search.dispatch.rpc;
 
 import ai.vespa.searchlib.searchprotocol.protobuf.SearchProtocol;
@@ -14,7 +14,7 @@ import com.yahoo.io.GrowableByteBuffer;
 import com.yahoo.prelude.fastsearch.DocumentDatabase;
 import com.yahoo.prelude.fastsearch.FastHit;
 import com.yahoo.prelude.fastsearch.GroupingListHit;
-import com.yahoo.prelude.fastsearch.VespaBackEndSearcher;
+import com.yahoo.prelude.fastsearch.VespaBackend;
 import com.yahoo.search.Query;
 import com.yahoo.search.Result;
 import com.yahoo.search.dispatch.InvokerResult;
@@ -227,7 +227,7 @@ public class ProtobufSerialization {
         return convertFromResult(searchResult).toByteArray();
     }
 
-    static InvokerResult deserializeToSearchResult(byte[] payload, Query query, VespaBackEndSearcher searcher, int partId, int distKey)
+    static InvokerResult deserializeToSearchResult(byte[] payload, Query query, VespaBackend searcher, int partId, int distKey)
             throws InvalidProtocolBufferException {
         var protobuf = SearchProtocol.SearchReply.parseFrom(payload);
         return convertToResult(query, protobuf, searcher.getDocumentDatabase(query), partId, distKey);
@@ -255,8 +255,7 @@ public class ProtobufSerialization {
                 g.deserialize(buf);
                 list.add(g);
             }
-            GroupingListHit hit = new GroupingListHit(list, documentDatabase.getDocsumDefinitionSet());
-            hit.setQuery(query);
+            GroupingListHit hit = new GroupingListHit(list, documentDatabase, query);
             result.getResult().hits().add(hit);
         }
         for (var replyHit : protobuf.getHitsList()) {

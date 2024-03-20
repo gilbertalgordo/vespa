@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.documentapi.messagebus.protocol;
 
 import com.yahoo.document.DocumentId;
@@ -38,6 +38,8 @@ public class DocumentState implements Comparable<DocumentState> {
         timestamp = buf.getLong(null);
         removeEntry = buf.getByte(null)>0;
     }
+
+    public boolean hasDocId() { return docId != null; }
 
     public DocumentId getDocId() {
         return docId;

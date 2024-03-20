@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.model.content.storagecluster;
 
 import ai.vespa.metrics.StorageMetrics;
@@ -35,7 +35,7 @@ public class StorageCluster extends TreeConfigProducer<StorageNode>
             return new StorageCluster(ancestor,
                                       ContentCluster.getClusterId(clusterElem),
                                       new FileStorProducer.Builder().build(deployState.getProperties(), cluster, clusterElem),
-                                      new StorServerProducer.Builder().build(clusterElem),
+                                      new StorServerProducer.Builder().build(deployState.getProperties(), clusterElem),
                                       new StorVisitorProducer.Builder().build(clusterElem),
                                       new PersistenceProducer.Builder().build(clusterElem));
         }

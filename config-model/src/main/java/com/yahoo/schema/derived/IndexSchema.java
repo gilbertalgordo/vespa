@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.schema.derived;
 
 import com.yahoo.document.ArrayDataType;
@@ -12,6 +12,7 @@ import com.yahoo.schema.document.FieldSet;
 import com.yahoo.schema.document.ImmutableSDField;
 import com.yahoo.vespa.config.search.IndexschemaConfig;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -24,7 +25,7 @@ import java.util.Map;
  *
  * @author geirst
  */
-public class IndexSchema extends Derived implements IndexschemaConfig.Producer {
+public class IndexSchema extends Derived {
 
     private final List<IndexField> fields = new ArrayList<>();
     private final Map<String, FieldCollection> collections = new LinkedHashMap<>();
@@ -109,30 +110,38 @@ public class IndexSchema extends Derived implements IndexschemaConfig.Producer {
         return "indexschema";
     }
 
-    @Override
-    public void getConfig(IndexschemaConfig.Builder icB) {
-        for (IndexField f : fields) {
-            IndexschemaConfig.Indexfield.Builder ifB = new IndexschemaConfig.Indexfield.Builder()
+    private static IndexschemaConfig.Indexfield.Builder createIndexFieldConfig(IndexField f) {
+        var ifB = new IndexschemaConfig.Indexfield.Builder()
                 .name(f.getName())
                 .datatype(IndexschemaConfig.Indexfield.Datatype.Enum.valueOf(f.getType()))
                 .prefix(f.hasPrefix())
                 .phrases(false)
                 .positions(true)
                 .interleavedfeatures(f.useInterleavedFeatures());
-            if (!f.getCollectionType().equals("SINGLE")) {
-                ifB.collectiontype(IndexschemaConfig.Indexfield.Collectiontype.Enum.valueOf(f.getCollectionType()));
-            }
-            icB.indexfield(ifB);
+        if (!f.getCollectionType().equals("SINGLE")) {
+            ifB.collectiontype(IndexschemaConfig.Indexfield.Collectiontype.Enum.valueOf(f.getCollectionType()));
         }
-        for (FieldSet fieldSet : fieldSets.values()) {
-            IndexschemaConfig.Fieldset.Builder fsB = new IndexschemaConfig.Fieldset.Builder()
-                .name(fieldSet.getName());
-            for (String f : fieldSet.getFieldNames()) {
-                fsB.field(new IndexschemaConfig.Fieldset.Field.Builder()
-                        .name(f));
-            }
-            icB.fieldset(fsB);
+        return ifB;
+    }
+
+    private static IndexschemaConfig.Fieldset.Builder createFieldSetConfig(FieldSet fieldSet) {
+        var fsB = new IndexschemaConfig.Fieldset.Builder().name(fieldSet.getName());
+        for (String f : fieldSet.getFieldNames()) {
+            fsB.field(new IndexschemaConfig.Fieldset.Field.Builder().name(f));
         }
+        return fsB;
+    }
+
+    public void getConfig(IndexschemaConfig.Builder icB) {
+        // Replace
+        icB.indexfield(fields.stream().map(IndexSchema::createIndexFieldConfig).toList());
+        icB.fieldset(fieldSets.values().stream().map(IndexSchema::createFieldSetConfig).toList());
+    }
+
+    public void export(String toDirectory) throws IOException {
+        var builder = new IndexschemaConfig.Builder();
+        getConfig(builder);
+        export(toDirectory, builder.build());
     }
 
     static List<Field> flattenField(Field field) {

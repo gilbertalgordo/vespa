@@ -1,10 +1,10 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 #include <vespa/document/bucket/bucketidfactory.h>
 #include <vespa/document/base/documentid.h>
 #include <vespa/document/base/globalid.h>
 #include <vespa/vespalib/util/random.h>
 #include <vespa/vespalib/stllike/asciistream.h>
-#include <gtest/gtest.h>
+#include <vespa/vespalib/gtest/gtest.h>
 
 namespace document {
 

@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.prelude.querytransform;
 
 import static com.yahoo.prelude.querytransform.StemmingSearcher.STEMMING;
@@ -79,7 +79,7 @@ public class CJKSearcher extends Searcher {
             for (ListIterator<Item> i = ((CompositeItem) root).getItemIterator(); i.hasNext();) {
                 Item item = i.next();
                 Item transformedItem = transform(item);
-                if (item != transformedItem)
+                if (item != transformedItem && ((CompositeItem) root).acceptsItemsOfType(transformedItem.getItemType()))
                     i.set(transformedItem);
             }
             return root;

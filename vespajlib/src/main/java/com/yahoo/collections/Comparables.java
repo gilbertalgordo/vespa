@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 package com.yahoo.collections;
 
@@ -18,7 +18,7 @@ public class Comparables {
     }
 
     /**
-     * Returns the least element, or {@code second} if they are equal according to
+     * Returns the greatest element, or {@code second} if they are equal according to
      * {@link Comparable#compareTo(Object) compareTo}.
      */
     public static <T extends Comparable<? super T>> T max(T first, T second) {

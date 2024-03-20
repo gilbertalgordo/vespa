@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 #pragma once
 
 #include "expressionnode.h"
@@ -50,11 +50,11 @@ public:
     };
 
     ExpressionTree() noexcept;
-    ExpressionTree(const ExpressionNode & root);
-    ExpressionTree(ExpressionNode::UP root);
+    explicit ExpressionTree(const ExpressionNode & root);
+    explicit ExpressionTree(ExpressionNode::UP root);
     ExpressionTree(const ExpressionTree & rhs);
     ExpressionTree(ExpressionTree &&) noexcept = default;
-    ~ExpressionTree();
+    ~ExpressionTree() override;
     ExpressionTree & operator = (ExpressionNode::UP rhs);
     ExpressionTree & operator = (const ExpressionTree & rhs);
     ExpressionTree & operator = (ExpressionTree &&) noexcept = default;

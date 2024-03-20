@@ -1,4 +1,4 @@
-# Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+# Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 vespa_add_library(persistence_spi OBJECT
     SOURCES
     abstractpersistenceprovider.cpp
@@ -9,6 +9,7 @@ vespa_add_library(persistence_spi OBJECT
     clusterstate.cpp
     context.cpp
     docentry.cpp
+    doctype_gid_and_timestamp.cpp
     exceptions.cpp
     id_and_timestamp.cpp
     persistenceprovider.cpp

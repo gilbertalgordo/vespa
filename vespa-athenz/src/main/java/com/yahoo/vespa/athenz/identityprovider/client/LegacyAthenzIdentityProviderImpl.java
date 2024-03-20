@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.athenz.identityprovider.client;
 
 import ai.vespa.metrics.ContainerMetrics;
@@ -261,6 +261,11 @@ public final class LegacyAthenzIdentityProviderImpl extends AbstractComponent im
     }
 
     @Override
+    public String getAccessToken(String domain, List<String> roles, List<String> proxyPrincipal) {
+        throw new UnsupportedOperationException("Not implemented in legacy client");
+    }
+
+    @Override
     public PrivateKey getPrivateKey() {
         return credentials.getKeyPair().getPrivate();
     }
@@ -358,7 +363,7 @@ public final class LegacyAthenzIdentityProviderImpl extends AbstractComponent im
 
     private static SiaIdentityProvider createNodeIdentityProvider(IdentityConfig config) {
         return new SiaIdentityProvider(
-                new AthenzService(config.nodeIdentityName()), SiaUtils.DEFAULT_SIA_DIRECTORY, CLIENT_TRUST_STORE);
+                new AthenzService(config.nodeIdentityName()), SiaUtils.DEFAULT_SIA_DIRECTORY, CLIENT_TRUST_STORE, false);
     }
 
     private boolean isExpired(AthenzCredentials credentials) {
@@ -383,7 +388,8 @@ public final class LegacyAthenzIdentityProviderImpl extends AbstractComponent im
         try {
             Instant expirationTime = getExpirationTime(credentials);
             Duration remainingLifetime = Duration.between(clock.instant(), expirationTime);
-            metric.set(CERTIFICATE_EXPIRY_METRIC_NAME, remainingLifetime.getSeconds(), null);
+            Metric.Context dimensions = metric.createContext(Map.of("implementation", this.getClassName()));
+            metric.set(CERTIFICATE_EXPIRY_METRIC_NAME, remainingLifetime.getSeconds(), dimensions);
         } catch (Throwable t) {
             log.log(Level.WARNING, "Failed to update metrics: " + t.getMessage(), t);
         }

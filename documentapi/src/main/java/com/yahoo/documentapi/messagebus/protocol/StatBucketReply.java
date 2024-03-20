@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.documentapi.messagebus.protocol;
 
 public class StatBucketReply extends DocumentReply {
@@ -7,6 +7,11 @@ public class StatBucketReply extends DocumentReply {
 
     public StatBucketReply() {
         super(DocumentProtocol.REPLY_STATBUCKET);
+    }
+
+    public StatBucketReply(String results) {
+        super(DocumentProtocol.REPLY_STATBUCKET);
+        this.results = results;
     }
 
     public String getResults() {

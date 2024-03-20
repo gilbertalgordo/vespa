@@ -1,9 +1,10 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.jdisc.http.filter.security.base;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.yahoo.json.Jackson;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.yahoo.component.AbstractComponent;
 import com.yahoo.jdisc.Response;
@@ -27,7 +28,8 @@ import java.util.logging.Logger;
 public abstract class JsonSecurityRequestFilterBase extends AbstractComponent implements SecurityRequestFilter {
 
     private static final Logger log = Logger.getLogger(JsonSecurityRequestFilterBase.class.getName());
-    private static final ObjectMapper mapper = new ObjectMapper();
+
+    protected ObjectMapper jsonMapper() { return Jackson.mapper(); }
 
     @Override
     public final void filter(DiscFilterRequest request, ResponseHandler handler) {
@@ -37,10 +39,9 @@ public abstract class JsonSecurityRequestFilterBase extends AbstractComponent im
 
     protected abstract Optional<ErrorResponse> filter(DiscFilterRequest request);
 
-    protected ObjectMapper jsonMapper() { return mapper; }
-
     private void writeResponse(DiscFilterRequest request, ErrorResponse error, ResponseHandler responseHandler) {
         JsonNode json;
+        var mapper = jsonMapper();
         if (error.customJson != null) {
             json = error.customJson;
         } else {

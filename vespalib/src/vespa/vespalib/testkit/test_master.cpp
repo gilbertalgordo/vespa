@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include "test_master.h"
 #include <vespa/vespalib/util/barrier.h>
@@ -16,11 +16,6 @@ namespace {
 const char *skip_path(const char *file) {
     const char *last = strrchr(file, '/');
     return (last == nullptr) ? file : (last + 1);
-}
-
-std::string get_source_dir() {
-    const char *dir = getenv("SOURCE_DIRECTORY");
-    return (dir ? dir : ".");
 }
 
 } // namespace vespalib::<unnamed>
@@ -81,7 +76,7 @@ TestMaster::checkFailed(const lock_guard &guard,
     if (!thread.traceStack.empty()) {
         for (size_t i = thread.traceStack.size(); i-- > 0; ) {
             const TraceItem &item = thread.traceStack[i];
-            fprintf(stderr, "    STATE[%zu]: '%s' (%s:%d)\n",
+            fprintf(stderr, "    STATE[%zu]: '%s' %s:%d\n",
                     i, item.msg.c_str(), item.file.c_str(), item.line);
         }
     }
@@ -100,12 +95,12 @@ TestMaster::printDiff(const lock_guard &guard,
                 lhs.c_str(), rhs.c_str());
     } else {
         fprintf(_state.lhsFile,
-                "[check failure #%zu] '%s' in thread '%s' (%s:%d)\n"
+                "[check failure #%zu] '%s' in thread '%s' %s:%d\n"
                 "%s\n",
                 _state.failCnt, text.c_str(), thread.name.c_str(),
                 file.c_str(), line, lhs.c_str());
         fprintf(_state.rhsFile,
-                "[check failure #%zu] '%s' in thread '%s' (%s:%d)\n"
+                "[check failure #%zu] '%s' in thread '%s' %s:%d\n"
                 "%s\n",
                 _state.failCnt, text.c_str(), thread.name.c_str(),
                 file.c_str(), line, rhs.c_str());
@@ -170,7 +165,6 @@ TestMaster::reportConclusion(const lock_guard &)
 TestMaster::TestMaster()
     : _lock(),
       _name("<unnamed>"),
-      _path_prefix(get_source_dir() + "/"),
       _state(),
       _threadStorage()
 {
@@ -193,12 +187,6 @@ TestMaster::getName()
 {
     lock_guard guard(_lock);
     return _name;
-}
-
-std::string
-TestMaster::get_path(const std::string &local_file)
-{
-    return (_path_prefix + local_file);
 }
 
 void
@@ -340,7 +328,7 @@ TestMaster::flush(const char *file, uint32_t line)
     if (thread.passCnt > 0) {
         lock_guard guard(_lock);
         _state.passCnt += thread.passCnt;
-        fprintf(stderr, "%s: info:  flushed %zu passed check(s) from thread '%s' (%s:%d)\n",
+        fprintf(stderr, "%s: info:  flushed %zu passed check(s) from thread '%s' %s:%d\n",
                 _name.c_str(), thread.passCnt, thread.name.c_str(), skip_path(file), line);
         thread.passCnt = 0;
     }
@@ -350,7 +338,7 @@ void
 TestMaster::trace(const char *file, uint32_t line)
 {
     ThreadState &thread = threadState();
-    fprintf(stderr, "%s: info:  trace: thread '%s' (%s:%d)\n",
+    fprintf(stderr, "%s: info:  trace: thread '%s' %s:%d\n",
             _name.c_str(), thread.name.c_str(), skip_path(file), line);
 }
 

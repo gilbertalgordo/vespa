@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 #pragma once
 
 #include "wand_parts.h"
@@ -71,8 +71,8 @@ struct ParallelWeakAndSearch : public SearchIterator
     static SearchIterator::UP create(fef::TermFieldMatchData &tmd,
                                      const MatchParams &matchParams,
                                      const std::vector<int32_t> &weights,
-                                     const std::vector<IDocumentWeightAttribute::LookupResult> &dict_entries,
-                                     const IDocumentWeightAttribute &attr,
+                                     const std::vector<IDirectPostingStore::LookupResult> &dict_entries,
+                                     const IDocidWithWeightPostingStore &attr,
                                      bool strict);
 };
 

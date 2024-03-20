@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #pragma once
 
@@ -20,7 +20,7 @@ private:
     document::GlobalId _gid;
     uint32_t _docid_limit;
 
-    unsigned int approximateHits() const override;
+    search::attribute::HitEstimate calc_hit_estimate() const override;
     int32_t onFind(DocId docId, int32_t elemId, int32_t &weight) const override;
     int32_t onFind(DocId docId, int32_t elemId) const override;
 

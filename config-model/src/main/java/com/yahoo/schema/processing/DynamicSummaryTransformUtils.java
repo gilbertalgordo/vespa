@@ -1,3 +1,4 @@
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.schema.processing;
 
 import com.yahoo.document.DataType;
@@ -42,7 +43,7 @@ public class DynamicSummaryTransformUtils {
      * Whether a summary field must be populated by the source field with the given type in an indexing script.
      */
     public static boolean summaryFieldIsPopulatedBySourceField(DataType sourceFieldType) {
-        return isOriginalSupportedType(sourceFieldType);
+        return false;
     }
 
     /**

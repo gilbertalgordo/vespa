@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.document.annotation;
 
 import java.util.Collection;
@@ -23,11 +23,7 @@ abstract class AnnotationContainer {
      */
     abstract void annotate(Annotation annotation);
 
-    /**
-     * Returns a mutable collection of annotations.
-     *
-     * @return a mutable collection of annotations.
-     */
+    /** Returns a mutable collection of the annotations in this. */
     abstract Collection<Annotation> annotations();
 
     /**

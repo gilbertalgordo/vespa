@@ -1,7 +1,8 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 #pragma once
 
 #include "simple_index.h"
+#include "simple_index_saver.h"
 #include <vespa/vespalib/util/stringfmt.h>
 
 namespace search::predicate {
@@ -13,13 +14,15 @@ namespace simpleindex {
 
 template <typename Posting, typename Key, typename DocId>
 void
-SimpleIndex<Posting, Key, DocId>::insertIntoPosting(vespalib::datastore::EntryRef &ref, Key key, DocId doc_id, const Posting &posting) {
-    bool ok = _btree_posting_lists.insert(ref, doc_id, posting);
-    if (!ok) {
-        _btree_posting_lists.remove(ref, doc_id);
-        ok = _btree_posting_lists.insert(ref, doc_id, posting);
-    }
-    assert(ok);
+SimpleIndex<Posting, Key, DocId>::insertIntoPosting(vespalib::datastore::EntryRef &ref, Key key, DocId doc_id, const Posting &posting)
+{
+    typename BTreeStore::KeyDataType addition(doc_id, posting);
+    /*
+     * Note: existing value is overwritten by new value without
+     * cleanup. Data referenced by existing value might be leaked,
+     * but PredicateIntervalStore::remove() is already a noop.
+     */
+    _btree_posting_lists.apply(ref, &addition, &addition + 1, nullptr, nullptr);
     insertIntoVectorPosting(ref, key, doc_id, posting);
     pruneBelowThresholdVectors();
 }
@@ -69,26 +72,6 @@ SimpleIndex<Posting, Key, DocId>::~SimpleIndex() {
 
 template <typename Posting, typename Key, typename DocId>
 void
-SimpleIndex<Posting, Key, DocId>::serialize(vespalib::DataBuffer &buffer, const PostingSerializer<Posting> &serializer) const {
-    assert(sizeof(Key) <= sizeof(uint64_t));
-    assert(sizeof(DocId) <= sizeof(uint32_t));
-    buffer.writeInt32(_dictionary.size());
-    for (auto it = _dictionary.begin(); it.valid(); ++it) {
-        vespalib::datastore::EntryRef ref = it.getData();
-        buffer.writeInt32(_btree_posting_lists.size(ref));  // 0 if !valid()
-        auto posting_it = _btree_posting_lists.begin(ref);
-        if (!posting_it.valid())
-            continue;
-        buffer.writeInt64(it.getKey());  // Key
-        for (; posting_it.valid(); ++posting_it) {
-            buffer.writeInt32(posting_it.getKey());  // DocId
-            serializer.serialize(posting_it.getData(), buffer);
-        }
-    }
-}
-
-template <typename Posting, typename Key, typename DocId>
-void
 SimpleIndex<Posting, Key, DocId>::deserialize(vespalib::DataBuffer &buffer, PostingDeserializer<Posting> &deserializer,
                                               SimpleIndexDeserializeObserver<Key, DocId> &observer, uint32_t version)
 {
@@ -127,18 +110,18 @@ SimpleIndex<Posting, Key, DocId>::deserialize(vespalib::DataBuffer &buffer, Post
 template <typename Posting, typename Key, typename DocId>
 void
 SimpleIndex<Posting, Key, DocId>::addPosting(Key key, DocId doc_id, const Posting &posting) {
-    auto iter = _dictionary.find(key);
+    auto iter = _dictionary.lowerBound(key);
     vespalib::datastore::EntryRef ref;
-    if (iter.valid()) {
+    if (iter.valid() && key == iter.getKey()) {
         ref = iter.getData();
         insertIntoPosting(ref, key, doc_id, posting);
         if (ref != iter.getData()) {
-            std::atomic_thread_fence(std::memory_order_release);
+            _dictionary.thaw(iter);
             iter.writeData(ref);
         }
     } else {
         insertIntoPosting(ref, key, doc_id, posting);
-        _dictionary.insert(key, ref);
+        _dictionary.insert(iter, key, ref);
     }
 }
 
@@ -163,12 +146,12 @@ SimpleIndex<Posting, Key, DocId>::removeFromPostingList(Key key, DocId doc_id) {
 
     Posting posting = posting_it.getData();
     vespalib::datastore::EntryRef original_ref(ref);
-    _btree_posting_lists.remove(ref, doc_id);
+    _btree_posting_lists.apply(ref, nullptr, nullptr, &doc_id, &doc_id + 1);
     removeFromVectorPostingList(ref, key, doc_id);
     if (!ref.valid()) { // last posting was removed
-        _dictionary.remove(key);
+        _dictionary.remove(dict_it);
     } else if (ref != original_ref) {  // ref changed. update dictionary.
-        std::atomic_thread_fence(std::memory_order_release);
+        _dictionary.thaw(dict_it);
         dict_it.writeData(ref);
     }
     return std::make_pair(posting, true);
@@ -318,5 +301,12 @@ SimpleIndex<Posting, Key, DocId>::getMemoryUsage() const {
     }
     return combined;
 };
+
+template <typename Posting, typename Key, typename DocId>
+std::unique_ptr<ISaver>
+SimpleIndex<Posting, Key, DocId>::make_saver(std::unique_ptr<PostingSaver<Posting>> subsaver) const
+{
+    return std::make_unique<SimpleIndexSaver<Posting, Key, DocId>>(_dictionary.getFrozenView(), _btree_posting_lists, std::move(subsaver));
+}
 
 }

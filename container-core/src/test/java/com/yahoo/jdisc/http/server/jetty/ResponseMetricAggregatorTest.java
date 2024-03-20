@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.jdisc.http.server.jetty;
 
 import com.yahoo.jdisc.http.server.jetty.ResponseMetricAggregator.StatisticsEntry;
@@ -26,7 +26,7 @@ public class ResponseMetricAggregatorTest {
 
     private final List<String> monitoringPaths = List.of("/status.html");
     private final List<String> searchPaths = List.of("/search");
-    private final ResponseMetricAggregator collector = new ResponseMetricAggregator(monitoringPaths, searchPaths, Set.of());
+    private final ResponseMetricAggregator collector = new ResponseMetricAggregator(monitoringPaths, searchPaths, Set.of(), false);
 
     @BeforeEach
     public void initializeCollector() {

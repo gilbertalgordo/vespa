@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include <vespa/searchcore/proton/server/proton.h>
 #include <vespa/storage/storageserver/storagenode.h>
@@ -105,11 +105,13 @@ class ProtonServiceLayerProcess : public storage::ServiceLayerProcess {
     FNET_Transport&         _transport;
     vespalib::string        _file_distributor_connection_spec;
     metrics::MetricManager* _metricManager;
+    std::weak_ptr<streaming::SearchVisitorFactory> _search_visitor_factory;
 
 public:
     ProtonServiceLayerProcess(const config::ConfigUri & configUri,
                               proton::Proton & proton, FNET_Transport& transport,
-                              const vespalib::string& file_distributor_connection_spec);
+                              const vespalib::string& file_distributor_connection_spec,
+                              const vespalib::HwInfo& hw_info);
     ~ProtonServiceLayerProcess() override { shutdown(); }
 
     void shutdown() override;
@@ -130,12 +132,14 @@ public:
 
 ProtonServiceLayerProcess::ProtonServiceLayerProcess(const config::ConfigUri & configUri,
                                                      proton::Proton & proton, FNET_Transport& transport,
-                                                     const vespalib::string& file_distributor_connection_spec)
-    : ServiceLayerProcess(configUri),
+                                                     const vespalib::string& file_distributor_connection_spec,
+                                                     const vespalib::HwInfo& hw_info)
+    : ServiceLayerProcess(configUri, hw_info),
       _proton(proton),
       _transport(transport),
       _file_distributor_connection_spec(file_distributor_connection_spec),
-      _metricManager(nullptr)
+      _metricManager(nullptr),
+      _search_visitor_factory()
 {
     setMetricManager(_proton.getMetricManager());
 }
@@ -165,13 +169,23 @@ ProtonServiceLayerProcess::getGeneration() const
 {
     int64_t slGen = storage::ServiceLayerProcess::getGeneration();
     int64_t protonGen = _proton.getConfigGeneration();
-    return std::min(slGen, protonGen);
+    int64_t gen = std::min(slGen, protonGen);
+    auto factory = _search_visitor_factory.lock();
+    if (factory) {
+        auto factory_gen = factory->get_oldest_config_generation();
+        if (factory_gen.has_value()) {
+            gen = std::min(gen, factory_gen.value());
+        }
+    }
+    return gen;
 }
 
 void
 ProtonServiceLayerProcess::add_external_visitors()
 {
-    _externalVisitors["searchvisitor"] = std::make_shared<streaming::SearchVisitorFactory>(_configUri, &_transport, _file_distributor_connection_spec);
+    auto factory = std::make_shared<streaming::SearchVisitorFactory>(_configUri, &_transport, _file_distributor_connection_spec);
+    _search_visitor_factory = factory;
+    _externalVisitors["searchvisitor"] = factory;
 }
 
 namespace {
@@ -259,18 +273,18 @@ App::startAndRun(FNET_Transport & transport, int argc, char **argv) {
             proton.init(configSnapshot);
         }
         vespalib::string file_distributor_connection_spec = configSnapshot->getFiledistributorrpcConfig().connectionspec;
-        configSnapshot.reset();
         std::unique_ptr<ProtonServiceLayerProcess> spiProton;
 
         if ( ! params.serviceidentity.empty()) {
             spiProton = std::make_unique<ProtonServiceLayerProcess>(identityUri.createWithNewId(params.serviceidentity), proton, transport,
-                                                                    file_distributor_connection_spec);
+                                                                    file_distributor_connection_spec, configSnapshot->getHwInfo());
             spiProton->setupConfig(subscribeTimeout);
             spiProton->createNode();
             EV_STARTED("servicelayer");
         } else {
             proton.getMetricManager().init(identityUri);
         }
+        configSnapshot.reset();
         EV_STARTED("proton");
         while (!(SIG::INT.check() || SIG::TERM.check() || (spiProton && spiProton->getNode().attemptedStopped()))) {
             std::this_thread::sleep_for(1000ms);

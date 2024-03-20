@@ -1,16 +1,16 @@
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package cmd
 
 import (
 	"bytes"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/vespa-engine/vespa/client/go/internal/ioutil"
 	"github.com/vespa-engine/vespa/client/go/internal/mock"
-	"github.com/vespa-engine/vespa/client/go/internal/util"
 	"github.com/vespa-engine/vespa/client/go/internal/vespa"
 )
 
@@ -75,8 +75,8 @@ func TestProdInit(t *testing.T) {
 	assert.Contains(t, servicesXML, contentFragment)
 
 	// Backups are created
-	assert.True(t, util.PathExists(deploymentPath+".1.bak"))
-	assert.True(t, util.PathExists(servicesPath+".1.bak"))
+	assert.True(t, ioutil.Exists(deploymentPath+".1.bak"))
+	assert.True(t, ioutil.Exists(servicesPath+".1.bak"))
 }
 
 func readFileString(t *testing.T, filename string) string {
@@ -166,7 +166,6 @@ func TestProdDeployWithoutTests(t *testing.T) {
 func prodDeploy(pkgDir string, t *testing.T) {
 	t.Helper()
 	httpClient := &mock.HTTPClient{}
-	httpClient.NextResponseString(200, `ok`)
 
 	cli, stdout, _ := newTestCLI(t, "CI=true")
 	cli.httpClient = httpClient
@@ -188,12 +187,14 @@ func prodDeploy(pkgDir string, t *testing.T) {
 
 	stdout.Reset()
 	cli.Environment["VESPA_CLI_API_KEY_FILE"] = filepath.Join(cli.config.homeDir, "t1.api-key.pem")
+	httpClient.NextResponseString(200, `{"build": 42}`)
 	assert.Nil(t, cli.Run("prod", "deploy", "--add-cert"))
-	assert.Contains(t, stdout.String(), "Success: Deployed")
+	assert.Contains(t, stdout.String(), "Success: Deployed '.' with build number 42")
 	assert.Contains(t, stdout.String(), "See https://console.vespa-cloud.com/tenant/t1/application/a1/prod/deployment for deployment progress")
 	stdout.Reset()
+	httpClient.NextResponseString(200, `{"build": 43}`)
 	assert.Nil(t, cli.Run("prod", "submit", "--add-cert")) // old variant also works
-	assert.Contains(t, stdout.String(), "Success: Deployed")
+	assert.Contains(t, stdout.String(), "Success: Deployed '.' with build number 43")
 	assert.Contains(t, stdout.String(), "See https://console.vespa-cloud.com/tenant/t1/application/a1/prod/deployment for deployment progress")
 }
 
@@ -202,7 +203,7 @@ func TestProdDeployWithJava(t *testing.T) {
 	createApplication(t, pkgDir, true, false)
 
 	httpClient := &mock.HTTPClient{}
-	httpClient.NextResponseString(200, `ok`)
+	httpClient.NextResponseString(200, `{"build": 42}`)
 	cli, stdout, stderr := newTestCLI(t, "CI=true")
 	cli.httpClient = httpClient
 	assert.Nil(t, cli.Run("config", "set", "application", "t1.a1.i1"))
@@ -214,7 +215,7 @@ func TestProdDeployWithJava(t *testing.T) {
 	cli.Environment["VESPA_CLI_API_KEY_FILE"] = filepath.Join(cli.config.homeDir, "t1.api-key.pem")
 	assert.Nil(t, cli.Run("prod", "deploy", "--add-cert", pkgDir))
 	assert.Equal(t, "", stderr.String())
-	assert.Contains(t, stdout.String(), "Success: Deployed")
+	assert.Contains(t, stdout.String(), "Success: Deployed '"+pkgDir+"/target/application' with build number 42")
 	assert.Contains(t, stdout.String(), "See https://console.vespa-cloud.com/tenant/t1/application/a1/prod/deployment for deployment progress")
 }
 
@@ -223,7 +224,6 @@ func TestProdDeployInvalidZip(t *testing.T) {
 	createApplication(t, pkgDir, true, false)
 
 	httpClient := &mock.HTTPClient{}
-	httpClient.NextResponseString(200, `ok`)
 	cli, _, stderr := newTestCLI(t, "CI=true")
 	cli.httpClient = httpClient
 	assert.Nil(t, cli.Run("config", "set", "application", "t1.a1.i1"))
@@ -237,20 +237,4 @@ func TestProdDeployInvalidZip(t *testing.T) {
 
 	assert.NotNil(t, cli.Run("prod", "deploy", zipFile))
 	assert.Equal(t, "Error: found invalid path inside zip: ../../../../../../../tmp/foo\n", stderr.String())
-}
-
-func copyFile(t *testing.T, dstFilename, srcFilename string) {
-	dst, err := os.Create(dstFilename)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer dst.Close()
-	src, err := os.Open(srcFilename)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer src.Close()
-	if _, err := io.Copy(dst, src); err != nil {
-		t.Fatal(err)
-	}
 }

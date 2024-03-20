@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package cmd
 
 import (
@@ -10,14 +10,12 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/vespa-engine/vespa/client/go/internal/curl"
-	"github.com/vespa-engine/vespa/client/go/internal/vespa"
 )
 
 func newCurlCmd(cli *CLI) *cobra.Command {
 	var (
-		waitSecs    int
-		dryRun      bool
-		curlService string
+		waitSecs int
+		dryRun   bool
 	)
 	cmd := &cobra.Command{
 		Use:   "curl [curl-options] path",
@@ -39,17 +37,8 @@ $ vespa curl -- -v --data-urlencode "yql=select * from music where album contain
 			if err != nil {
 				return err
 			}
-			var service *vespa.Service
-			useDeploy := curlService == "deploy"
-			waiter := cli.waiter(false, time.Duration(waitSecs)*time.Second)
-			if useDeploy {
-				if cli.config.cluster() != "" {
-					return fmt.Errorf("cannot specify cluster for service %s", curlService)
-				}
-				service, err = target.DeployService()
-			} else {
-				service, err = waiter.Service(target, cli.config.cluster())
-			}
+			waiter := cli.waiter(time.Duration(waitSecs) * time.Second)
+			service, err := waiter.Service(target, cli.config.cluster())
 			if err != nil {
 				return err
 			}
@@ -59,15 +48,9 @@ $ vespa curl -- -v --data-urlencode "yql=select * from music where album contain
 			if err != nil {
 				return err
 			}
-			if useDeploy {
-				if err := addAccessToken(c, target); err != nil {
-					return err
-				}
-			} else {
-				c.CaCertificate = service.TLSOptions.CACertificateFile
-				c.PrivateKey = service.TLSOptions.PrivateKeyFile
-				c.Certificate = service.TLSOptions.CertificateFile
-			}
+			c.CaCertificate = service.TLSOptions.CACertificateFile
+			c.PrivateKey = service.TLSOptions.PrivateKeyFile
+			c.Certificate = service.TLSOptions.CertificateFile
 			if dryRun {
 				log.Print(c.String())
 			} else {
@@ -79,17 +62,8 @@ $ vespa curl -- -v --data-urlencode "yql=select * from music where album contain
 		},
 	}
 	cmd.Flags().BoolVarP(&dryRun, "dry-run", "n", false, "Print the curl command that would be executed")
-	cmd.Flags().StringVarP(&curlService, "service", "s", "container", "Which service to query. Must be \"deploy\" or \"container\"")
 	cli.bindWaitFlag(cmd, 0, &waitSecs)
 	return cmd
-}
-
-func addAccessToken(cmd *curl.Command, target vespa.Target) error {
-	if target.Type() != vespa.TargetCloud {
-		return nil
-	}
-	cmd.Header("Authorization", "secret")
-	return nil
 }
 
 func joinURL(baseURL, path string) string {

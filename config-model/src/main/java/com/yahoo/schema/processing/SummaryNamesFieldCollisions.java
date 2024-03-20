@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.schema.processing;
 
 import java.util.HashMap;
@@ -41,10 +41,10 @@ public class SummaryNamesFieldCollisions extends Processor {
                         if ( ! prevClass.equals(summary.getName())) {
                             if ( ! prevSource.equals(source.getName())) {
                                 throw new IllegalArgumentException("For " + schema +
-                                                                   ", summary class '" + summary.getName() + "'," +
+                                                                   ", document-summary '" + summary.getName() + "'," +
                                                                    " summary field '" + summaryField.getName() + "':" +
                                                                    " Can not use source '" + source.getName() +
-                                                                   "' for this summary field, an equally named field in summary class '" +
+                                                                   "' for this summary field, an equally named field in document-summary '" +
                                                                    prevClass + "' uses a different source: '" + prevSource + "'.");
                             }
                         }

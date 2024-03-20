@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #pragma once
 
@@ -87,7 +87,7 @@ private:
     };
 
     vespalib::CpuUtil                      _cpu_util;
-    HwInfo                                 _hw_info;
+    vespalib::HwInfo                       _hw_info;
     FNET_Transport                       & _transport;
     const config::ConfigUri                _configUri;
     mutable std::shared_mutex              _mutex;

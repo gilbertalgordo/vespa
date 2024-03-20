@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.jrt;
 
 import java.io.IOException;
@@ -296,6 +296,9 @@ public class TransportThread {
      */
     public TransportThread sync() {
         SyncCmd cmd = new SyncCmd();
+        if (Thread.currentThread() == thread) {
+            log.log(Level.WARNING, "Attempting to sync " + thread + " with itself, which will deadlock");
+        }
         if (postCommand(cmd)) {
             cmd.waitDone();
         } else {

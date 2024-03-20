@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.model.container.http.ssl;
 
 import com.yahoo.config.model.api.EndpointCertificateSecrets;
@@ -9,7 +9,10 @@ import com.yahoo.vespa.model.container.http.ConnectorFactory;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.List;
+import java.util.Set;
+import java.util.TreeSet;
 
 /**
  * Component specification for {@link com.yahoo.jdisc.http.server.jetty.ConnectorFactory} with hosted specific configuration.
@@ -25,6 +28,7 @@ public class HostedSslConnectorFactory extends ConnectorFactory {
     private final Duration endpointConnectionTtl;
     private final List<String> remoteAddressHeaders;
     private final List<String> remotePortHeaders;
+    private final Set<String> knownServerNames;
 
     public static Builder builder(String name, int listenPort) { return new Builder(name, listenPort); }
 
@@ -37,6 +41,7 @@ public class HostedSslConnectorFactory extends ConnectorFactory {
         this.endpointConnectionTtl = builder.endpointConnectionTtl;
         this.remoteAddressHeaders = List.copyOf(builder.remoteAddressHeaders);
         this.remotePortHeaders = List.copyOf(builder.remotePortHeaders);
+        this.knownServerNames = Collections.unmodifiableSet(new TreeSet<>(builder.knownServerNames));
     }
 
     private static SslProvider createSslProvider(Builder builder) {
@@ -70,7 +75,8 @@ public class HostedSslConnectorFactory extends ConnectorFactory {
                 .maxConnectionLife(endpointConnectionTtl != null ? endpointConnectionTtl.toSeconds() : 0)
                 .accessLog(new ConnectorConfig.AccessLog.Builder()
                                   .remoteAddressHeaders(remoteAddressHeaders)
-                                  .remotePortHeaders(remotePortHeaders));
+                                  .remotePortHeaders(remotePortHeaders))
+                .serverName.known(knownServerNames);
 
     }
 
@@ -89,6 +95,7 @@ public class HostedSslConnectorFactory extends ConnectorFactory {
         String tlsCaCertificatesPem;
         String tlsCaCertificatesPath;
         boolean tokenEndpoint;
+        Set<String> knownServerNames = Set.of();
 
         private Builder(String name, int port) { this.name = name; this.port = port; }
         public Builder clientAuth(SslClientAuth auth) { clientAuth = auth; return this; }
@@ -101,7 +108,7 @@ public class HostedSslConnectorFactory extends ConnectorFactory {
         public Builder tokenEndpoint(boolean enable) { this.tokenEndpoint = enable; return this; }
         public Builder remoteAddressHeader(String header) { this.remoteAddressHeaders.add(header); return this; }
         public Builder remotePortHeader(String header) { this.remotePortHeaders.add(header); return this; }
-
+        public Builder knownServerNames(Set<String> knownServerNames) { this.knownServerNames = Set.copyOf(knownServerNames); return this; }
         public HostedSslConnectorFactory build() { return new HostedSslConnectorFactory(this); }
     }
 }

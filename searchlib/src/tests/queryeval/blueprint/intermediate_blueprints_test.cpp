@@ -1,19 +1,26 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include "mysearch.h"
 #include <vespa/vespalib/testkit/testapp.h>
 #include <vespa/searchlib/queryeval/isourceselector.h>
 #include <vespa/searchlib/queryeval/blueprint.h>
+#include <vespa/searchlib/queryeval/flow.h>
+#include <vespa/searchlib/queryeval/flow_tuning.h>
 #include <vespa/searchlib/queryeval/intermediate_blueprints.h>
 #include <vespa/searchlib/queryeval/leaf_blueprints.h>
 #include <vespa/searchlib/queryeval/equiv_blueprint.h>
 #include <vespa/searchlib/queryeval/multisearch.h>
-#include <vespa/searchlib/queryeval/andnotsearch.h>
 #include <vespa/searchlib/queryeval/wand/weak_and_search.h>
 #include <vespa/searchlib/queryeval/fake_requestcontext.h>
 #include <vespa/searchlib/test/diskindex/testdiskindex.h>
 #include <vespa/searchlib/query/tree/simplequery.h>
 #include <vespa/searchlib/common/bitvectoriterator.h>
+#include <vespa/vespalib/util/overload.h>
+#include <vespa/vespalib/util/approx.h>
+#include <vespa/vespalib/data/simple_buffer.h>
+#include <vespa/vespalib/data/slime/slime.h>
+#include <vespa/vespalib/data/slime/inserter.h>
+#include <vespa/vespalib/util/normalize_class_name.h>
 #include <filesystem>
 
 #include <vespa/log/log.h>
@@ -23,6 +30,15 @@ using namespace search::queryeval;
 using namespace search::fef;
 using namespace search::query;
 using search::BitVector;
+using BlueprintVector = std::vector<std::unique_ptr<Blueprint>>;
+using vespalib::Slime;
+using vespalib::slime::Inspector;
+using vespalib::slime::SlimeInserter;
+using vespalib::make_string_short::fmt;
+using vespalib::normalize_class_name;
+using Path = std::vector<std::variant<size_t,vespalib::stringref>>;
+
+vespalib::string strict_equiv_name = "search::queryeval::EquivImpl<true, search::queryeval::StrictHeapOrSearch<search::queryeval::NoUnpack, vespalib::LeftArrayHeap, unsigned char> >";
 
 struct InvalidSelector : ISourceSelector {
     InvalidSelector() : ISourceSelector(Source()) {}
@@ -39,13 +55,16 @@ struct WeightOrder {
 };
 
 struct RememberExecuteInfo : public MyLeaf {
-    ExecuteInfo executeInfo;
+    bool   is_strict;
+    double hit_rate;
 
-    using MyLeaf::MyLeaf;
+    RememberExecuteInfo() : MyLeaf(), is_strict(false), hit_rate(0.0) {}
+    RememberExecuteInfo(FieldSpecBaseList fields) : MyLeaf(std::move(fields)), is_strict(false), hit_rate(0.0) {}
 
     void fetchPostings(const ExecuteInfo &execInfo) override {
         LeafBlueprint::fetchPostings(execInfo);
-        executeInfo = execInfo;
+        is_strict = execInfo.is_strict();
+        hit_rate = execInfo.hit_rate();
     }
 };
 
@@ -56,16 +75,26 @@ bool got_global_filter(Blueprint &b) {
     return (static_cast<MyLeaf &>(b)).got_global_filter();
 }
 
-void check_sort_order(IntermediateBlueprint &self, std::vector<Blueprint*> unordered, std::vector<size_t> order) {
-    ASSERT_EQUAL(unordered.size(), order.size());
-    std::vector<Blueprint::UP> children;
-    for (auto *child: unordered) {
-        children.push_back(std::unique_ptr<Blueprint>(child));
+void check_sort_order(IntermediateBlueprint &self, BlueprintVector children, std::vector<size_t> order) {
+    ASSERT_EQUAL(children.size(), order.size());
+    std::vector<const Blueprint *> unordered;
+    for (const auto & child: children) {
+        unordered.push_back(child.get());
     }
-    self.sort(children);
+    // TODO: sort by cost (requires both setDocIdLimit and optimize to be called)
+    self.sort(children, true, false);
     for (size_t i = 0; i < children.size(); ++i) {
         EXPECT_EQUAL(children[i].get(), unordered[order[i]]);
     }
+}
+
+std::vector<std::unique_ptr<Blueprint>>
+createLeafs(std::initializer_list<uint32_t> estimates) {
+    std::vector<std::unique_ptr<Blueprint>> leafs;
+    for (auto estimate : estimates) {
+        leafs.emplace_back(MyLeafSpec(estimate).create());
+    }
+    return leafs;
 }
 
 TEST("test AndNot Blueprint") {
@@ -74,13 +103,13 @@ TEST("test AndNot Blueprint") {
         std::vector<Blueprint::HitEstimate> est;
         EXPECT_EQUAL(true, b.combine(est).empty);
         EXPECT_EQUAL(0u, b.combine(est).estHits);
-        est.push_back(Blueprint::HitEstimate(10, false));
+        est.emplace_back(10, false);
         EXPECT_EQUAL(false, b.combine(est).empty);
         EXPECT_EQUAL(10u, b.combine(est).estHits);
-        est.push_back(Blueprint::HitEstimate(20, false));
+        est.emplace_back(20, false);
         EXPECT_EQUAL(false, b.combine(est).empty);
         EXPECT_EQUAL(10u, b.combine(est).estHits);
-        est.push_back(Blueprint::HitEstimate(5, false));
+        est.emplace_back(5, false);
         EXPECT_EQUAL(false, b.combine(est).empty);
         EXPECT_EQUAL(10u, b.combine(est).estHits);
     }
@@ -97,40 +126,74 @@ TEST("test AndNot Blueprint") {
         EXPECT_EQUAL(false, got_global_filter(a.getChild(0)));
         EXPECT_EQUAL(true,  got_global_filter(a.getChild(1)));
     }
-    {
-        check_sort_order(b,
-                         {MyLeafSpec(10).create(),
-                          MyLeafSpec(20).create(),
-                          MyLeafSpec(40).create(),
-                          MyLeafSpec(30).create()},
-                         {0, 2, 3, 1});
-    }
-    {
-        EXPECT_EQUAL(true, b.inheritStrict(0));
-        EXPECT_EQUAL(false, b.inheritStrict(1));
-        EXPECT_EQUAL(false, b.inheritStrict(2));
-        EXPECT_EQUAL(false, b.inheritStrict(-1));
-    }
+    check_sort_order(b, createLeafs({10, 20, 40, 30}), {0, 2, 3, 1});
+    EXPECT_EQUAL(true, b.inheritStrict(0));
+    EXPECT_EQUAL(false, b.inheritStrict(1));
+    EXPECT_EQUAL(false, b.inheritStrict(2));
+    EXPECT_EQUAL(false, b.inheritStrict(-1));
     // createSearch tested by iterator unit test
 }
 
+template <typename BP>
+void optimize(std::unique_ptr<BP> &ref, bool strict) {
+    auto opts = Blueprint::Options::all();
+    auto optimized = Blueprint::optimize_and_sort(std::move(ref), strict, opts);
+    ref.reset(dynamic_cast<BP*>(optimized.get()));
+    ASSERT_TRUE(ref);
+    optimized.release();
+}
+
 TEST("test And propagates updated histestimate") {
-    AndBlueprint bp;
-    bp.setSourceId(2);
-    bp.addChild(ap(MyLeafSpec(20).create<RememberExecuteInfo>()->setSourceId(2)));
-    bp.addChild(ap(MyLeafSpec(200).create<RememberExecuteInfo>()->setSourceId(2)));
-    bp.addChild(ap(MyLeafSpec(2000).create<RememberExecuteInfo>()->setSourceId(2)));
-    bp.optimize_self();
-    bp.setDocIdLimit(5000);
-    bp.fetchPostings(ExecuteInfo::create(true));
-    EXPECT_EQUAL(3u, bp.childCnt());
-    for (uint32_t i = 0; i < bp.childCnt(); i++) {
-        const RememberExecuteInfo & child = dynamic_cast<const RememberExecuteInfo &>(bp.getChild(i));
-        EXPECT_EQUAL((i == 0), child.executeInfo.isStrict());
+    auto bp = std::make_unique<AndBlueprint>();
+    bp->setSourceId(2);
+    bp->addChild(ap(MyLeafSpec(20).create<RememberExecuteInfo>()->setSourceId(2)));
+    bp->addChild(ap(MyLeafSpec(200).create<RememberExecuteInfo>()->setSourceId(2)));
+    bp->addChild(ap(MyLeafSpec(2000).create<RememberExecuteInfo>()->setSourceId(2)));
+    bp->setDocIdLimit(5000);
+    optimize(bp, true);
+    bp->fetchPostings(ExecuteInfo::TRUE);
+    EXPECT_EQUAL(3u, bp->childCnt());
+    for (uint32_t i = 0; i < bp->childCnt(); i++) {
+        const auto & child = dynamic_cast<const RememberExecuteInfo &>(bp->getChild(i));
+        EXPECT_EQUAL((i == 0), child.is_strict);
     }
-    EXPECT_EQUAL(1.0f, dynamic_cast<const RememberExecuteInfo &>(bp.getChild(0)).executeInfo.hitRate());
-    EXPECT_EQUAL(1.0f/250, dynamic_cast<const RememberExecuteInfo &>(bp.getChild(1)).executeInfo.hitRate());
-    EXPECT_EQUAL(1.0f/(250*25), dynamic_cast<const RememberExecuteInfo &>(bp.getChild(2)).executeInfo.hitRate());
+    EXPECT_EQUAL(1.0, dynamic_cast<const RememberExecuteInfo &>(bp->getChild(0)).hit_rate);
+    EXPECT_EQUAL(1.0/250, dynamic_cast<const RememberExecuteInfo &>(bp->getChild(1)).hit_rate);
+    EXPECT_EQUAL(1.0/(250*25), dynamic_cast<const RememberExecuteInfo &>(bp->getChild(2)).hit_rate);
+}
+
+TEST("test Or propagates updated histestimate") {
+    auto bp = std::make_unique<OrBlueprint>();
+    bp->setSourceId(2);
+    bp->addChild(ap(MyLeafSpec(5000).create<RememberExecuteInfo>()->setSourceId(2)));
+    bp->addChild(ap(MyLeafSpec(2000).create<RememberExecuteInfo>()->setSourceId(2)));
+    bp->addChild(ap(MyLeafSpec(800).create<RememberExecuteInfo>()->setSourceId(2)));
+    bp->addChild(ap(MyLeafSpec(20).create<RememberExecuteInfo>()->setSourceId(2)));
+    bp->setDocIdLimit(5000);
+    // NOTE: use non-strict OR ordering since strict OR ordering is non-deterministic
+    optimize(bp, false);
+    //--- execute info when non-strict:
+    bp->fetchPostings(ExecuteInfo::FALSE);
+    EXPECT_EQUAL(4u, bp->childCnt());
+    for (uint32_t i = 0; i < bp->childCnt(); i++) {
+        const auto & child = dynamic_cast<const RememberExecuteInfo &>(bp->getChild(i));
+        EXPECT_FALSE(child.is_strict);
+    }
+    EXPECT_EQUAL(1.0, dynamic_cast<const RememberExecuteInfo &>(bp->getChild(0)).hit_rate);
+    EXPECT_APPROX(0.5, dynamic_cast<const RememberExecuteInfo &>(bp->getChild(1)).hit_rate, 1e-6);
+    EXPECT_APPROX(0.5*3.0/5.0, dynamic_cast<const RememberExecuteInfo &>(bp->getChild(2)).hit_rate, 1e-6);
+    EXPECT_APPROX(0.5*3.0*42.0/(5.0*50.0), dynamic_cast<const RememberExecuteInfo &>(bp->getChild(3)).hit_rate, 1e-6);
+    //--- execute info when strict:
+    bp->fetchPostings(ExecuteInfo::TRUE);
+    EXPECT_EQUAL(4u, bp->childCnt());
+    for (uint32_t i = 0; i < bp->childCnt(); i++) {
+        const auto & child = dynamic_cast<const RememberExecuteInfo &>(bp->getChild(i));
+        EXPECT_TRUE(child.is_strict);
+    }
+    EXPECT_EQUAL(1.0, dynamic_cast<const RememberExecuteInfo &>(bp->getChild(0)).hit_rate);
+    EXPECT_EQUAL(1.0, dynamic_cast<const RememberExecuteInfo &>(bp->getChild(1)).hit_rate);
+    EXPECT_EQUAL(1.0, dynamic_cast<const RememberExecuteInfo &>(bp->getChild(2)).hit_rate);
+    EXPECT_EQUAL(1.0, dynamic_cast<const RememberExecuteInfo &>(bp->getChild(3)).hit_rate);
 }
 
 TEST("test And Blueprint") {
@@ -139,16 +202,16 @@ TEST("test And Blueprint") {
         std::vector<Blueprint::HitEstimate> est;
         EXPECT_EQUAL(true, b.combine(est).empty);
         EXPECT_EQUAL(0u, b.combine(est).estHits);
-        est.push_back(Blueprint::HitEstimate(10, false));
+        est.emplace_back(10, false);
         EXPECT_EQUAL(false, b.combine(est).empty);
         EXPECT_EQUAL(10u, b.combine(est).estHits);
-        est.push_back(Blueprint::HitEstimate(20, false));
+        est.emplace_back(20, false);
         EXPECT_EQUAL(false, b.combine(est).empty);
         EXPECT_EQUAL(10u, b.combine(est).estHits);
-        est.push_back(Blueprint::HitEstimate(5, false));
+        est.emplace_back(5, false);
         EXPECT_EQUAL(false, b.combine(est).empty);
         EXPECT_EQUAL(5u, b.combine(est).estHits);
-        est.push_back(Blueprint::HitEstimate(0, true));
+        est.emplace_back(0, true);
         EXPECT_EQUAL(true, b.combine(est).empty);
         EXPECT_EQUAL(0u, b.combine(est).estHits);
     }
@@ -164,20 +227,12 @@ TEST("test And Blueprint") {
         EXPECT_EQUAL(false, got_global_filter(a.getChild(0)));
         EXPECT_EQUAL(true,  got_global_filter(a.getChild(1)));
     }
-    {
-        check_sort_order(b,
-                         {MyLeafSpec(20).create(),
-                          MyLeafSpec(40).create(),
-                          MyLeafSpec(10).create(),
-                          MyLeafSpec(30).create()},
-                         {2, 0, 3, 1});
-    }
-    {
-        EXPECT_EQUAL(true, b.inheritStrict(0));
-        EXPECT_EQUAL(false, b.inheritStrict(1));
-        EXPECT_EQUAL(false, b.inheritStrict(2));
-        EXPECT_EQUAL(false, b.inheritStrict(-1));
-    }
+    check_sort_order(b, createLeafs({20, 40, 10, 30}), {2, 0, 3, 1});
+    EXPECT_EQUAL(true, b.inheritStrict(0));
+    EXPECT_EQUAL(false, b.inheritStrict(1));
+    EXPECT_EQUAL(false, b.inheritStrict(2));
+    EXPECT_EQUAL(false, b.inheritStrict(-1));
+
     // createSearch tested by iterator unit test
 }
 
@@ -187,16 +242,16 @@ TEST("test Or Blueprint") {
         std::vector<Blueprint::HitEstimate> est;
         EXPECT_EQUAL(true, b.combine(est).empty);
         EXPECT_EQUAL(0u, b.combine(est).estHits);
-        est.push_back(Blueprint::HitEstimate(10, false));
+        est.emplace_back(10, false);
         EXPECT_EQUAL(false, b.combine(est).empty);
         EXPECT_EQUAL(10u, b.combine(est).estHits);
-        est.push_back(Blueprint::HitEstimate(20, false));
+        est.emplace_back(20, false);
         EXPECT_EQUAL(false, b.combine(est).empty);
         EXPECT_EQUAL(20u, b.combine(est).estHits);
-        est.push_back(Blueprint::HitEstimate(5, false));
+        est.emplace_back(5, false);
         EXPECT_EQUAL(false, b.combine(est).empty);
         EXPECT_EQUAL(20u, b.combine(est).estHits);
-        est.push_back(Blueprint::HitEstimate(0, true));
+        est.emplace_back(0, true);
         EXPECT_EQUAL(false, b.combine(est).empty);
         EXPECT_EQUAL(20u, b.combine(est).estHits);
     }
@@ -236,20 +291,11 @@ TEST("test Or Blueprint") {
         EXPECT_EQUAL(false, got_global_filter(o.getChild(0)));
         EXPECT_EQUAL(true,  got_global_filter(o.getChild(o.childCnt() - 1)));
     }
-    {
-        check_sort_order(b,
-                         {MyLeafSpec(10).create(),
-                          MyLeafSpec(20).create(),
-                          MyLeafSpec(40).create(),
-                          MyLeafSpec(30).create()},
-                         {2, 3, 1, 0});
-    }
-    {
-        EXPECT_EQUAL(true, b.inheritStrict(0));
-        EXPECT_EQUAL(true, b.inheritStrict(1));
-        EXPECT_EQUAL(true, b.inheritStrict(2));
-        EXPECT_EQUAL(true, b.inheritStrict(-1));
-    }
+    check_sort_order(b, createLeafs({10, 20, 40, 30}), {2, 3, 1, 0});
+    EXPECT_EQUAL(true, b.inheritStrict(0));
+    EXPECT_EQUAL(true, b.inheritStrict(1));
+    EXPECT_EQUAL(true, b.inheritStrict(2));
+    EXPECT_EQUAL(true, b.inheritStrict(-1));
     // createSearch tested by iterator unit test
 }
 
@@ -259,16 +305,16 @@ TEST("test Near Blueprint") {
         std::vector<Blueprint::HitEstimate> est;
         EXPECT_EQUAL(true, b.combine(est).empty);
         EXPECT_EQUAL(0u, b.combine(est).estHits);
-        est.push_back(Blueprint::HitEstimate(10, false));
+        est.emplace_back(10, false);
         EXPECT_EQUAL(false, b.combine(est).empty);
         EXPECT_EQUAL(10u, b.combine(est).estHits);
-        est.push_back(Blueprint::HitEstimate(20, false));
+        est.emplace_back(20, false);
         EXPECT_EQUAL(false, b.combine(est).empty);
         EXPECT_EQUAL(10u, b.combine(est).estHits);
-        est.push_back(Blueprint::HitEstimate(5, false));
+        est.emplace_back(5, false);
         EXPECT_EQUAL(false, b.combine(est).empty);
         EXPECT_EQUAL(5u, b.combine(est).estHits);
-        est.push_back(Blueprint::HitEstimate(0, true));
+        est.emplace_back(0, true);
         EXPECT_EQUAL(true, b.combine(est).empty);
         EXPECT_EQUAL(0u, b.combine(est).estHits);
     }
@@ -277,20 +323,11 @@ TEST("test Near Blueprint") {
         a.addChild(ap(MyLeafSpec(10).addField(1, 1).create()));
         EXPECT_EQUAL(0u, a.exposeFields().size());
     }
-    {
-        check_sort_order(b,
-                         {MyLeafSpec(40).create(),
-                          MyLeafSpec(10).create(),
-                          MyLeafSpec(30).create(),
-                          MyLeafSpec(20).create()},
-                         {1, 3, 2, 0});
-    }
-    {
-        EXPECT_EQUAL(true, b.inheritStrict(0));
-        EXPECT_EQUAL(false, b.inheritStrict(1));
-        EXPECT_EQUAL(false, b.inheritStrict(2));
-        EXPECT_EQUAL(false, b.inheritStrict(-1));
-    }
+    check_sort_order(b, createLeafs({40, 10, 30, 20}), {1, 3, 2, 0});
+    EXPECT_EQUAL(true, b.inheritStrict(0));
+    EXPECT_EQUAL(false, b.inheritStrict(1));
+    EXPECT_EQUAL(false, b.inheritStrict(2));
+    EXPECT_EQUAL(false, b.inheritStrict(-1));
     // createSearch tested by iterator unit test
 }
 
@@ -300,16 +337,16 @@ TEST("test ONear Blueprint") {
         std::vector<Blueprint::HitEstimate> est;
         EXPECT_EQUAL(true, b.combine(est).empty);
         EXPECT_EQUAL(0u, b.combine(est).estHits);
-        est.push_back(Blueprint::HitEstimate(10, false));
+        est.emplace_back(10, false);
         EXPECT_EQUAL(false, b.combine(est).empty);
         EXPECT_EQUAL(10u, b.combine(est).estHits);
-        est.push_back(Blueprint::HitEstimate(20, false));
+        est.emplace_back(20, false);
         EXPECT_EQUAL(false, b.combine(est).empty);
         EXPECT_EQUAL(10u, b.combine(est).estHits);
-        est.push_back(Blueprint::HitEstimate(5, false));
+        est.emplace_back(5, false);
         EXPECT_EQUAL(false, b.combine(est).empty);
         EXPECT_EQUAL(5u, b.combine(est).estHits);
-        est.push_back(Blueprint::HitEstimate(0, true));
+        est.emplace_back(0, true);
         EXPECT_EQUAL(true, b.combine(est).empty);
         EXPECT_EQUAL(0u, b.combine(est).estHits);
     }
@@ -318,20 +355,11 @@ TEST("test ONear Blueprint") {
         a.addChild(ap(MyLeafSpec(10).addField(1, 1).create()));
         EXPECT_EQUAL(0u, a.exposeFields().size());
     }
-    {
-        check_sort_order(b,
-                         {MyLeafSpec(20).create(),
-                          MyLeafSpec(10).create(),
-                          MyLeafSpec(40).create(),
-                          MyLeafSpec(30).create()},
-                         {0, 1, 2, 3});
-    }
-    {
-        EXPECT_EQUAL(true, b.inheritStrict(0));
-        EXPECT_EQUAL(false, b.inheritStrict(1));
-        EXPECT_EQUAL(false, b.inheritStrict(2));
-        EXPECT_EQUAL(false, b.inheritStrict(-1));
-    }
+    check_sort_order(b, createLeafs({20, 10, 40, 30}), {0, 1, 2, 3});
+    EXPECT_EQUAL(true, b.inheritStrict(0));
+    EXPECT_EQUAL(false, b.inheritStrict(1));
+    EXPECT_EQUAL(false, b.inheritStrict(2));
+    EXPECT_EQUAL(false, b.inheritStrict(-1));
     // createSearch tested by iterator unit test
 }
 
@@ -341,16 +369,16 @@ TEST("test Rank Blueprint") {
         std::vector<Blueprint::HitEstimate> est;
         EXPECT_EQUAL(true, b.combine(est).empty);
         EXPECT_EQUAL(0u, b.combine(est).estHits);
-        est.push_back(Blueprint::HitEstimate(10, false));
+        est.emplace_back(10, false);
         EXPECT_EQUAL(false, b.combine(est).empty);
         EXPECT_EQUAL(10u, b.combine(est).estHits);
-        est.push_back(Blueprint::HitEstimate(20, false));
+        est.emplace_back(20, false);
         EXPECT_EQUAL(false, b.combine(est).empty);
         EXPECT_EQUAL(10u, b.combine(est).estHits);
-        est.push_back(Blueprint::HitEstimate(5, false));
+        est.emplace_back(5, false);
         EXPECT_EQUAL(false, b.combine(est).empty);
         EXPECT_EQUAL(10u, b.combine(est).estHits);
-        est.push_back(Blueprint::HitEstimate(0, true));
+        est.emplace_back(0, true);
         EXPECT_EQUAL(false, b.combine(est).empty);
         EXPECT_EQUAL(10u, b.combine(est).estHits);
     }
@@ -367,20 +395,11 @@ TEST("test Rank Blueprint") {
         EXPECT_EQUAL(false, got_global_filter(a.getChild(0)));
         EXPECT_EQUAL(true,  got_global_filter(a.getChild(1)));
     }
-    {
-        check_sort_order(b,
-                         {MyLeafSpec(20).create(),
-                          MyLeafSpec(10).create(),
-                          MyLeafSpec(40).create(),
-                          MyLeafSpec(30).create()},
-                         {0, 1, 2, 3});
-    }
-    {
-        EXPECT_EQUAL(true, b.inheritStrict(0));
-        EXPECT_EQUAL(false, b.inheritStrict(1));
-        EXPECT_EQUAL(false, b.inheritStrict(2));
-        EXPECT_EQUAL(false, b.inheritStrict(-1));
-    }
+    check_sort_order(b, createLeafs({20, 10, 40, 30}), {0, 1, 2, 3});
+    EXPECT_EQUAL(true, b.inheritStrict(0));
+    EXPECT_EQUAL(false, b.inheritStrict(1));
+    EXPECT_EQUAL(false, b.inheritStrict(2));
+    EXPECT_EQUAL(false, b.inheritStrict(-1));
     // createSearch tested by iterator unit test
 }
 
@@ -391,16 +410,16 @@ TEST("test SourceBlender Blueprint") {
         std::vector<Blueprint::HitEstimate> est;
         EXPECT_EQUAL(true, b.combine(est).empty);
         EXPECT_EQUAL(0u, b.combine(est).estHits);
-        est.push_back(Blueprint::HitEstimate(10, false));
+        est.emplace_back(10, false);
         EXPECT_EQUAL(false, b.combine(est).empty);
         EXPECT_EQUAL(10u, b.combine(est).estHits);
-        est.push_back(Blueprint::HitEstimate(20, false));
+        est.emplace_back(20, false);
         EXPECT_EQUAL(false, b.combine(est).empty);
         EXPECT_EQUAL(20u, b.combine(est).estHits);
-        est.push_back(Blueprint::HitEstimate(5, false));
+        est.emplace_back(5, false);
         EXPECT_EQUAL(false, b.combine(est).empty);
         EXPECT_EQUAL(20u, b.combine(est).estHits);
-        est.push_back(Blueprint::HitEstimate(0, true));
+        est.emplace_back(0, true);
         EXPECT_EQUAL(false, b.combine(est).empty);
         EXPECT_EQUAL(20u, b.combine(est).estHits);
     }
@@ -432,550 +451,456 @@ TEST("test SourceBlender Blueprint") {
         o.addChild(ap(MyLeafSpec(0, true).create()));
         EXPECT_EQUAL(0u, a->getState().numFields());
     }
-    {
-        check_sort_order(b,
-                         {MyLeafSpec(20).create(),
-                          MyLeafSpec(10).create(),
-                          MyLeafSpec(40).create(),
-                          MyLeafSpec(30).create()},
-                         {0, 1, 2, 3});
-    }
-    {
-        EXPECT_EQUAL(true, b.inheritStrict(0));
-        EXPECT_EQUAL(true, b.inheritStrict(1));
-        EXPECT_EQUAL(true, b.inheritStrict(2));
-        EXPECT_EQUAL(true, b.inheritStrict(-1));
-    }
+    check_sort_order(b, createLeafs({20, 10, 40, 30}), {0, 1, 2, 3});
+    EXPECT_EQUAL(true, b.inheritStrict(0));
+    EXPECT_EQUAL(true, b.inheritStrict(1));
+    EXPECT_EQUAL(true, b.inheritStrict(2));
+    EXPECT_EQUAL(true, b.inheritStrict(-1));
     // createSearch tested by iterator unit test
 }
 
-TEST("test SourceBlender below AND optimization") {
-    auto selector_1 = std::make_unique<InvalidSelector>(); // the one
-    auto selector_2 = std::make_unique<InvalidSelector>(); // not the one
-    //-------------------------------------------------------------------------
-    AndBlueprint *top = new AndBlueprint();
-    Blueprint::UP top_bp(top);
-    top->addChild(ap(MyLeafSpec(2).create()));
-    top->addChild(ap(MyLeafSpec(1).create()));
-    top->addChild(ap(MyLeafSpec(3).create()));
-    {
-        SourceBlenderBlueprint *blender = new SourceBlenderBlueprint(*selector_1);
-        blender->addChild(ap(MyLeafSpec(200).create()->setSourceId(2)));
-        blender->addChild(ap(MyLeafSpec(100).create()->setSourceId(1)));
-        blender->addChild(ap(MyLeafSpec(300).create()->setSourceId(3)));
-        top->addChild(ap(blender));
+std::unique_ptr<IntermediateBlueprint>
+addLeafsWithSourceId(std::unique_ptr<IntermediateBlueprint> parent, std::initializer_list<std::pair<uint32_t, uint32_t>> list) {
+    for (const auto & leaf : list) {
+        parent->addChild(ap(MyLeafSpec(leaf.first).create()->setSourceId(leaf.second)));
     }
-    {
-        SourceBlenderBlueprint *blender = new SourceBlenderBlueprint(*selector_1);
-        blender->addChild(ap(MyLeafSpec(20).create()->setSourceId(2)));
-        blender->addChild(ap(MyLeafSpec(10).create()->setSourceId(1)));
-        blender->addChild(ap(MyLeafSpec(30).create()->setSourceId(3)));        
-        top->addChild(ap(blender));
-    }
-    {
-        SourceBlenderBlueprint *blender = new SourceBlenderBlueprint(*selector_2);
-        blender->addChild(ap(MyLeafSpec(10).create()->setSourceId(1)));
-        blender->addChild(ap(MyLeafSpec(20).create()->setSourceId(2)));
-        top->addChild(ap(blender));
-    }
-    {
-        SourceBlenderBlueprint *blender = new SourceBlenderBlueprint(*selector_1);
-        blender->addChild(ap(MyLeafSpec(2000).create()->setSourceId(2)));
-        blender->addChild(ap(MyLeafSpec(1000).create()->setSourceId(1)));
-        top->addChild(ap(blender));
-    }
-    //-------------------------------------------------------------------------
-    AndBlueprint *expect = new AndBlueprint();
-    Blueprint::UP expect_bp(expect);
-    expect->addChild(ap(MyLeafSpec(1).create()));
-    expect->addChild(ap(MyLeafSpec(2).create()));
-    expect->addChild(ap(MyLeafSpec(3).create()));
-    {
-        SourceBlenderBlueprint *blender = new SourceBlenderBlueprint(*selector_2);
-        blender->addChild(ap(MyLeafSpec(10).create()->setSourceId(1)));
-        blender->addChild(ap(MyLeafSpec(20).create()->setSourceId(2)));
-        expect->addChild(ap(blender));
-    }
-    {
-        SourceBlenderBlueprint *blender(new SourceBlenderBlueprint(*selector_1));
-        {
-            AndBlueprint *sub_and = new AndBlueprint();
-            sub_and->setSourceId(3);
-            sub_and->addChild(ap(MyLeafSpec(30).create()->setSourceId(3)));        
-            sub_and->addChild(ap(MyLeafSpec(300).create()->setSourceId(3)));
-            blender->addChild(ap(sub_and));
-        }
-        {
-            AndBlueprint *sub_and = new AndBlueprint();
-            sub_and->setSourceId(2);
-            sub_and->addChild(ap(MyLeafSpec(20).create()->setSourceId(2)));
-            sub_and->addChild(ap(MyLeafSpec(200).create()->setSourceId(2)));
-            sub_and->addChild(ap(MyLeafSpec(2000).create()->setSourceId(2)));
-            blender->addChild(ap(sub_and));
-        }
-        {
-            AndBlueprint *sub_and = new AndBlueprint();
-            sub_and->setSourceId(1);
-            sub_and->addChild(ap(MyLeafSpec(10).create()->setSourceId(1)));
-            sub_and->addChild(ap(MyLeafSpec(100).create()->setSourceId(1)));
-            sub_and->addChild(ap(MyLeafSpec(1000).create()->setSourceId(1)));
-            blender->addChild(ap(sub_and));
-        }
-        expect->addChild(ap(blender));
-    }
-    //-------------------------------------------------------------------------
-    EXPECT_NOT_EQUAL(expect_bp->asString(), top_bp->asString());
-    top_bp = Blueprint::optimize(std::move(top_bp));
-    EXPECT_EQUAL(expect_bp->asString(), top_bp->asString());
-    expect_bp = Blueprint::optimize(std::move(expect_bp));
-    EXPECT_EQUAL(expect_bp->asString(), top_bp->asString());
+    return parent;
 }
 
-TEST("test SourceBlender below OR optimization") {
-    auto selector_1 = std::make_unique<InvalidSelector>(); // the one
-    auto selector_2 = std::make_unique<InvalidSelector>(); // not the one
-    //-------------------------------------------------------------------------
-    OrBlueprint *top = new OrBlueprint();
-    Blueprint::UP top_up(top);
-    top->addChild(ap(MyLeafSpec(2).create()));
-    top->addChild(ap(MyLeafSpec(1).create()));
-    top->addChild(ap(MyLeafSpec(3).create()));
-    {
-        SourceBlenderBlueprint *blender = new SourceBlenderBlueprint(*selector_1);
-        blender->addChild(ap(MyLeafSpec(200).create()->setSourceId(2)));
-        blender->addChild(ap(MyLeafSpec(100).create()->setSourceId(1)));
-        blender->addChild(ap(MyLeafSpec(300).create()->setSourceId(3)));
-        top->addChild(ap(blender));
+std::unique_ptr<IntermediateBlueprint>
+addLeafsWithCostTier(std::unique_ptr<IntermediateBlueprint> parent, std::initializer_list<std::pair<uint32_t, uint32_t>> list) {
+    for (const auto & leaf : list) {
+        parent->addChild(ap(MyLeafSpec(leaf.first).create()->cost_tier(leaf.second)));
     }
-    {
-        SourceBlenderBlueprint *blender = new SourceBlenderBlueprint(*selector_1);
-        blender->addChild(ap(MyLeafSpec(20).create()->setSourceId(2)));
-        blender->addChild(ap(MyLeafSpec(10).create()->setSourceId(1)));
-        blender->addChild(ap(MyLeafSpec(30).create()->setSourceId(3)));        
-        top->addChild(ap(blender));
-    }
-    {
-        SourceBlenderBlueprint *blender = new SourceBlenderBlueprint(*selector_2);
-        blender->addChild(ap(MyLeafSpec(10).create()->setSourceId(1)));
-        blender->addChild(ap(MyLeafSpec(20).create()->setSourceId(2)));
-        top->addChild(ap(blender));
-    }
-    {
-        SourceBlenderBlueprint *blender = new SourceBlenderBlueprint(*selector_1);
-        blender->addChild(ap(MyLeafSpec(2000).create()->setSourceId(2)));
-        blender->addChild(ap(MyLeafSpec(1000).create()->setSourceId(1)));
-        top->addChild(ap(blender));
-    }
-    //-------------------------------------------------------------------------
-    OrBlueprint *expect = new OrBlueprint();
-    Blueprint::UP expect_up(expect);
-    {
-        SourceBlenderBlueprint *blender(new SourceBlenderBlueprint(*selector_1));
-        {
-            OrBlueprint *sub_and = new OrBlueprint();
-            sub_and->setSourceId(3);
-            sub_and->addChild(ap(MyLeafSpec(300).create()->setSourceId(3)));
-            sub_and->addChild(ap(MyLeafSpec(30).create()->setSourceId(3)));        
-            blender->addChild(ap(sub_and));
-        }
-        {
-            OrBlueprint *sub_and = new OrBlueprint();
-            sub_and->setSourceId(2);
-            sub_and->addChild(ap(MyLeafSpec(2000).create()->setSourceId(2)));
-            sub_and->addChild(ap(MyLeafSpec(200).create()->setSourceId(2)));
-            sub_and->addChild(ap(MyLeafSpec(20).create()->setSourceId(2)));
-            blender->addChild(ap(sub_and));
-        }
-        {
-            OrBlueprint *sub_and = new OrBlueprint();
-            sub_and->setSourceId(1);
-            sub_and->addChild(ap(MyLeafSpec(1000).create()->setSourceId(1)));
-            sub_and->addChild(ap(MyLeafSpec(100).create()->setSourceId(1)));
-            sub_and->addChild(ap(MyLeafSpec(10).create()->setSourceId(1)));
-            blender->addChild(ap(sub_and));
-        }
-        expect->addChild(ap(blender));
-    }
-    {
-        SourceBlenderBlueprint *blender = new SourceBlenderBlueprint(*selector_2);
-        blender->addChild(ap(MyLeafSpec(10).create()->setSourceId(1)));
-        blender->addChild(ap(MyLeafSpec(20).create()->setSourceId(2)));
-        expect->addChild(ap(blender));
-    }
-    expect->addChild(ap(MyLeafSpec(3).create()));
-    expect->addChild(ap(MyLeafSpec(2).create()));
-    expect->addChild(ap(MyLeafSpec(1).create()));
-    //-------------------------------------------------------------------------
-    EXPECT_NOT_EQUAL(expect_up->asString(), top_up->asString());
-    top_up = Blueprint::optimize(std::move(top_up));
-    EXPECT_EQUAL(expect_up->asString(), top_up->asString());
-    expect_up = Blueprint::optimize(std::move(expect_up));
-    EXPECT_EQUAL(expect_up->asString(), top_up->asString());
+    return parent;
 }
 
-TEST("test SourceBlender below AND_NOT optimization") {
-    auto selector_1 = std::make_unique<InvalidSelector>(); // the one
-    auto selector_2 = std::make_unique<InvalidSelector>(); // not the one
-    //-------------------------------------------------------------------------
-    AndNotBlueprint *top = new AndNotBlueprint();
-    Blueprint::UP top_up(top);
-    {
-        SourceBlenderBlueprint *blender = new SourceBlenderBlueprint(*selector_1);
-        blender->addChild(ap(MyLeafSpec(42).create()->setSourceId(1)));
-        top->addChild(ap(blender));
-    }
-    top->addChild(ap(MyLeafSpec(2).create()));
-    top->addChild(ap(MyLeafSpec(1).create()));
-    top->addChild(ap(MyLeafSpec(3).create()));
-    {
-        SourceBlenderBlueprint *blender = new SourceBlenderBlueprint(*selector_1);
-        blender->addChild(ap(MyLeafSpec(200).create()->setSourceId(2)));
-        blender->addChild(ap(MyLeafSpec(100).create()->setSourceId(1)));
-        blender->addChild(ap(MyLeafSpec(300).create()->setSourceId(3)));
-        top->addChild(ap(blender));
-    }
-    {
-        SourceBlenderBlueprint *blender = new SourceBlenderBlueprint(*selector_1);
-        blender->addChild(ap(MyLeafSpec(20).create()->setSourceId(2)));
-        blender->addChild(ap(MyLeafSpec(10).create()->setSourceId(1)));
-        blender->addChild(ap(MyLeafSpec(30).create()->setSourceId(3)));        
-        top->addChild(ap(blender));
-    }
-    {
-        SourceBlenderBlueprint *blender = new SourceBlenderBlueprint(*selector_2);
-        blender->addChild(ap(MyLeafSpec(10).create()->setSourceId(1)));
-        blender->addChild(ap(MyLeafSpec(20).create()->setSourceId(2)));
-        top->addChild(ap(blender));
-    }
-    {
-        SourceBlenderBlueprint *blender = new SourceBlenderBlueprint(*selector_1);
-        blender->addChild(ap(MyLeafSpec(2000).create()->setSourceId(2)));
-        blender->addChild(ap(MyLeafSpec(1000).create()->setSourceId(1)));
-        top->addChild(ap(blender));
-    }
-    //-------------------------------------------------------------------------
-    AndNotBlueprint *expect = new AndNotBlueprint();
-    Blueprint::UP expect_up(expect);
-    {
-        SourceBlenderBlueprint *blender = new SourceBlenderBlueprint(*selector_1);
-        blender->addChild(ap(MyLeafSpec(42).create()->setSourceId(1)));
-        expect->addChild(ap(blender));
-    }
-    {
-        SourceBlenderBlueprint *blender(new SourceBlenderBlueprint(*selector_1));
-        {
-            OrBlueprint *sub_and = new OrBlueprint();
-            sub_and->setSourceId(3);
-            sub_and->addChild(ap(MyLeafSpec(300).create()->setSourceId(3)));
-            sub_and->addChild(ap(MyLeafSpec(30).create()->setSourceId(3)));        
-            blender->addChild(ap(sub_and));
-        }
-        {
-            OrBlueprint *sub_and = new OrBlueprint();
-            sub_and->setSourceId(2);
-            sub_and->addChild(ap(MyLeafSpec(2000).create()->setSourceId(2)));
-            sub_and->addChild(ap(MyLeafSpec(200).create()->setSourceId(2)));
-            sub_and->addChild(ap(MyLeafSpec(20).create()->setSourceId(2)));
-            blender->addChild(ap(sub_and));
-        }
-        {
-            OrBlueprint *sub_and = new OrBlueprint();
-            sub_and->setSourceId(1);
-            sub_and->addChild(ap(MyLeafSpec(1000).create()->setSourceId(1)));
-            sub_and->addChild(ap(MyLeafSpec(100).create()->setSourceId(1)));
-            sub_and->addChild(ap(MyLeafSpec(10).create()->setSourceId(1)));
-            blender->addChild(ap(sub_and));
-        }
-        expect->addChild(ap(blender));
-    }
-    {
-        SourceBlenderBlueprint *blender = new SourceBlenderBlueprint(*selector_2);
-        blender->addChild(ap(MyLeafSpec(10).create()->setSourceId(1)));
-        blender->addChild(ap(MyLeafSpec(20).create()->setSourceId(2)));
-        expect->addChild(ap(blender));
-    }
-    expect->addChild(ap(MyLeafSpec(3).create()));
-    expect->addChild(ap(MyLeafSpec(2).create()));
-    expect->addChild(ap(MyLeafSpec(1).create()));
-    //-------------------------------------------------------------------------
-    EXPECT_NOT_EQUAL(expect_up->asString(), top_up->asString());
-    top_up = Blueprint::optimize(std::move(top_up));
-    EXPECT_EQUAL(expect_up->asString(), top_up->asString());
-    expect_up = Blueprint::optimize(std::move(expect_up));
-    EXPECT_EQUAL(expect_up->asString(), top_up->asString());
+std::unique_ptr<IntermediateBlueprint>
+addLeafsWithSourceId(uint32_t sourceId, std::unique_ptr<IntermediateBlueprint> parent, std::initializer_list<std::pair<uint32_t, uint32_t>> list) {
+    parent->setSourceId(sourceId);
+    return addLeafsWithSourceId(std::move(parent), list);
 }
 
-TEST("test SourceBlender below RANK optimization") {
-    auto selector_1 = std::make_unique<InvalidSelector>(); // the one
-    auto selector_2 = std::make_unique<InvalidSelector>(); // not the one
-    //-------------------------------------------------------------------------
-    RankBlueprint *top = new RankBlueprint();
-    Blueprint::UP top_up(top);
-    {
-        SourceBlenderBlueprint *blender = new SourceBlenderBlueprint(*selector_1);
-        blender->addChild(ap(MyLeafSpec(42).create()->setSourceId(1)));
-        top->addChild(ap(blender));
+void
+addLeafs(IntermediateBlueprint & parent, std::initializer_list<uint32_t> estimates) {
+    for (const auto & estimate : estimates) {
+        parent.addChild(ap(MyLeafSpec(estimate).create()));
     }
-    top->addChild(ap(MyLeafSpec(2).create()));
-    top->addChild(ap(MyLeafSpec(1).create()));
-    top->addChild(ap(MyLeafSpec(3).create()));
-    {
-        SourceBlenderBlueprint *blender = new SourceBlenderBlueprint(*selector_1);
-        blender->addChild(ap(MyLeafSpec(200).create()->setSourceId(2)));
-        blender->addChild(ap(MyLeafSpec(100).create()->setSourceId(1)));
-        blender->addChild(ap(MyLeafSpec(300).create()->setSourceId(3)));
-        top->addChild(ap(blender));
+}
+
+struct EstimateWithStrict {
+    EstimateWithStrict(uint32_t estimate, bool strict) noexcept : _estimate(estimate), _strict(strict) {}
+    EstimateWithStrict(uint32_t estimate) noexcept : EstimateWithStrict(estimate, false) {}
+    uint32_t _estimate;
+    bool     _strict;
+};
+
+std::unique_ptr<IntermediateBlueprint>
+addLeafs(std::unique_ptr<IntermediateBlueprint> parent, std::initializer_list<EstimateWithStrict> list) {
+    for (const auto & leaf : list) {
+        parent->addChild(ap(MyLeafSpec(leaf._estimate, leaf._strict).create()));
     }
-    {
-        SourceBlenderBlueprint *blender = new SourceBlenderBlueprint(*selector_1);
-        blender->addChild(ap(MyLeafSpec(20).create()->setSourceId(2)));
-        blender->addChild(ap(MyLeafSpec(10).create()->setSourceId(1)));
-        blender->addChild(ap(MyLeafSpec(30).create()->setSourceId(3)));        
-        top->addChild(ap(blender));
-    }
-    {
-        SourceBlenderBlueprint *blender = new SourceBlenderBlueprint(*selector_2);
-        blender->addChild(ap(MyLeafSpec(10).create()->setSourceId(1)));
-        blender->addChild(ap(MyLeafSpec(20).create()->setSourceId(2)));
-        top->addChild(ap(blender));
-    }
-    {
-        SourceBlenderBlueprint *blender = new SourceBlenderBlueprint(*selector_1);
-        blender->addChild(ap(MyLeafSpec(2000).create()->setSourceId(2)));
-        blender->addChild(ap(MyLeafSpec(1000).create()->setSourceId(1)));
-        top->addChild(ap(blender));
-    }
-    //-------------------------------------------------------------------------
-    RankBlueprint *expect = new RankBlueprint();
-    Blueprint::UP expect_up(expect);
-    {
-        SourceBlenderBlueprint *blender = new SourceBlenderBlueprint(*selector_1);
-        blender->addChild(ap(MyLeafSpec(42).create()->setSourceId(1)));
-        expect->addChild(ap(blender));
-    }
-    expect->addChild(ap(MyLeafSpec(2).create()));
-    expect->addChild(ap(MyLeafSpec(1).create()));
-    expect->addChild(ap(MyLeafSpec(3).create()));
-    {
-        SourceBlenderBlueprint *blender = new SourceBlenderBlueprint(*selector_2);
-        blender->addChild(ap(MyLeafSpec(10).create()->setSourceId(1)));
-        blender->addChild(ap(MyLeafSpec(20).create()->setSourceId(2)));
-        expect->addChild(ap(blender));
-    }
-    {
-        SourceBlenderBlueprint *blender(new SourceBlenderBlueprint(*selector_1));
-        {
-            OrBlueprint *sub_and = new OrBlueprint();
-            sub_and->setSourceId(3);
-            sub_and->addChild(ap(MyLeafSpec(300).create()->setSourceId(3)));
-            sub_and->addChild(ap(MyLeafSpec(30).create()->setSourceId(3)));        
-            blender->addChild(ap(sub_and));
+    return parent;
+}
+
+struct SourceBlenderTestFixture {
+    InvalidSelector selector_1; // the one
+    InvalidSelector selector_2; // not the one
+    void addChildrenForSBTest(IntermediateBlueprint & parent);
+    void addChildrenForSimpleSBTest(IntermediateBlueprint & parent);
+};
+
+vespalib::string path_to_str(const Path &path) {
+    size_t cnt = 0;
+    vespalib::string str("[");
+    for (const auto &item: path) {
+        if (cnt++ > 0) {
+            str.append(",");
         }
-        {
-            OrBlueprint *sub_and = new OrBlueprint();
-            sub_and->setSourceId(2);
-            sub_and->addChild(ap(MyLeafSpec(2000).create()->setSourceId(2)));
-            sub_and->addChild(ap(MyLeafSpec(200).create()->setSourceId(2)));
-            sub_and->addChild(ap(MyLeafSpec(20).create()->setSourceId(2)));
-            blender->addChild(ap(sub_and));
-        }
-        {
-            OrBlueprint *sub_and = new OrBlueprint();
-            sub_and->setSourceId(1);
-            sub_and->addChild(ap(MyLeafSpec(1000).create()->setSourceId(1)));
-            sub_and->addChild(ap(MyLeafSpec(100).create()->setSourceId(1)));
-            sub_and->addChild(ap(MyLeafSpec(10).create()->setSourceId(1)));
-            blender->addChild(ap(sub_and));
-        }
-        expect->addChild(ap(blender));
+        std::visit(vespalib::overload{
+                [&str](size_t value)noexcept{ str.append(fmt("%zu", value)); },
+                [&str](vespalib::stringref value)noexcept{ str.append(value); }}, item);
     }
+    str.append("]");
+    return str;
+}
+
+vespalib::string to_str(const Inspector &value) {
+    if (!value.valid()) {
+        return "<missing>";
+    }
+    vespalib::SimpleBuffer buf;
+    vespalib::slime::JsonFormat::encode(value, buf, true);
+    return buf.get().make_string();
+}
+
+void compare(const Blueprint &bp1, const Blueprint &bp2, bool expect_eq) {
+    auto cmp_hook = [expect_eq](const auto &path, const auto &a, const auto &b) {
+                        if (!path.empty() && std::holds_alternative<vespalib::stringref>(path.back())) {
+                            vespalib::stringref field = std::get<vespalib::stringref>(path.back());
+                            // ignore these fields to enable comparing optimized with unoptimized trees
+                            if (field == "relative_estimate" || field == "cost" || field == "strict_cost") {
+                                auto check_value = [&](double value){
+                                                       if ((value > 0.0 && value < 1e-6) || (value > 0.0 && value < 1e-6)) {
+                                                           fprintf(stderr, "  small value at %s: %g\n", path_to_str(path).c_str(),
+                                                                   value);
+                                                       }
+                                                   };
+                                check_value(a.asDouble());
+                                check_value(b.asDouble());
+                                return true;
+                            }
+                        }
+                        if (expect_eq) {
+                            fprintf(stderr, "  mismatch at %s: %s vs %s\n", path_to_str(path).c_str(),
+                                    to_str(a).c_str(), to_str(b).c_str());
+                        }
+                        return false;
+                    };
+    Slime a;
+    Slime b;
+    bp1.asSlime(SlimeInserter(a));
+    bp2.asSlime(SlimeInserter(b));
+    if (expect_eq) {
+        EXPECT_TRUE(vespalib::slime::are_equal(a.get(), b.get(), cmp_hook));
+    } else {
+        EXPECT_FALSE(vespalib::slime::are_equal(a.get(), b.get(), cmp_hook));
+    }
+}
+
+void
+optimize_and_compare(Blueprint::UP top, Blueprint::UP expect, bool strict = true, bool sort_by_cost = true) {
+    top->setDocIdLimit(1000);
+    expect->setDocIdLimit(1000);
+    TEST_DO(compare(*top, *expect, false));
+    auto opts = Blueprint::Options::all().sort_by_cost(sort_by_cost);
+    top = Blueprint::optimize_and_sort(std::move(top), strict, opts);
+    TEST_DO(compare(*top, *expect, true));
+    expect = Blueprint::optimize_and_sort(std::move(expect), strict, opts);
+    TEST_DO(compare(*expect, *top, true));
+}
+
+void SourceBlenderTestFixture::addChildrenForSBTest(IntermediateBlueprint & parent) {
+    addLeafs(parent, {2,1,3});
+    parent.addChild(addLeafsWithSourceId(std::make_unique<SourceBlenderBlueprint>(selector_1), {{200, 2}, {100, 1}, {300, 3}}));
+    parent.addChild(addLeafsWithSourceId(std::make_unique<SourceBlenderBlueprint>(selector_1), {{20, 2}, {10, 1}, {30, 3}}));
+    parent.addChild(addLeafsWithSourceId(std::make_unique<SourceBlenderBlueprint>(selector_2), {{10, 1}, {20, 2}}));
+    parent.addChild(addLeafsWithSourceId(std::make_unique<SourceBlenderBlueprint>(selector_1), {{2000, 2}, {1000, 1}}));
+}
+
+void SourceBlenderTestFixture::addChildrenForSimpleSBTest(IntermediateBlueprint & parent) {
+    parent.addChild(addLeafsWithSourceId(std::make_unique<SourceBlenderBlueprint>(selector_1), {{200, 2}, {100, 1}, {300, 3}}));
+    parent.addChild(addLeafsWithSourceId(std::make_unique<SourceBlenderBlueprint>(selector_1), {{20, 2}, {10, 1}, {30, 3}}));
+    parent.addChild(addLeafsWithSourceId(std::make_unique<SourceBlenderBlueprint>(selector_1), {{2000, 2}, {1000, 1}}));
+}
+
+TEST_F("test SourceBlender below AND partial optimization", SourceBlenderTestFixture) {
+    auto top = std::make_unique<AndBlueprint>();
+    f.addChildrenForSBTest(*top);
+
+    auto expect = std::make_unique<AndBlueprint>();
+    addLeafs(*expect, {1,2,3});
+    expect->addChild(addLeafsWithSourceId(std::make_unique<SourceBlenderBlueprint>(f.selector_2), {{10, 1}, {20, 2}}));
+
+    auto blender = std::make_unique<SourceBlenderBlueprint>(f.selector_1);
+    blender->addChild(addLeafsWithSourceId(3, std::make_unique<AndBlueprint>(), {{30,  3}, {300, 3}}));
+    blender->addChild(addLeafsWithSourceId(2, std::make_unique<AndBlueprint>(), {{20,   2}, {200,  2}, {2000, 2}}));
+    blender->addChild(addLeafsWithSourceId(1, std::make_unique<AndBlueprint>(), {{10,   1}, {100,  1}, {1000, 1}}));
+    expect->addChild(std::move(blender));
+
+    optimize_and_compare(std::move(top), std::move(expect));
+}
+
+TEST_F("test AND replaced by source blender after full optimization", SourceBlenderTestFixture) {
+    auto top = std::make_unique<AndBlueprint>();
+    f.addChildrenForSimpleSBTest(*top);
+
+    auto expect = std::make_unique<SourceBlenderBlueprint>(f.selector_1);
+    expect->addChild(addLeafsWithSourceId(3, std::make_unique<AndBlueprint>(), {{30,  3}, {300, 3}}));
+    expect->addChild(addLeafsWithSourceId(2, std::make_unique<AndBlueprint>(), {{20,   2}, {200,  2}, {2000, 2}}));
+    expect->addChild(addLeafsWithSourceId(1, std::make_unique<AndBlueprint>(), {{10,   1}, {100,  1}, {1000, 1}}));
+
+    optimize_and_compare(std::move(top), std::move(expect));
+}
+
+TEST_F("test SourceBlender below OR partial optimization", SourceBlenderTestFixture) {
+    auto top = std::make_unique<OrBlueprint>();
+    f.addChildrenForSBTest(*top);
     //-------------------------------------------------------------------------
-    EXPECT_NOT_EQUAL(expect_up->asString(), top_up->asString());
-    top_up = Blueprint::optimize(std::move(top_up));
-    EXPECT_EQUAL(expect_up->asString(), top_up->asString());
-    expect_up = Blueprint::optimize(std::move(expect_up));
-    EXPECT_EQUAL(expect_up->asString(), top_up->asString());
+    auto expect = std::make_unique<OrBlueprint>();
+    auto blender = std::make_unique<SourceBlenderBlueprint>(f.selector_1);
+    blender->addChild(addLeafsWithSourceId(3, std::make_unique<OrBlueprint>(), {{300, 3}, {30,  3}}));
+    blender->addChild(addLeafsWithSourceId(2, std::make_unique<OrBlueprint>(), {{2000, 2}, {200,  2}, {20,   2}}));
+    blender->addChild(addLeafsWithSourceId(1, std::make_unique<OrBlueprint>(), {{1000, 1}, {100,  1}, {10,   1}}));
+    expect->addChild(std::move(blender));
+    expect->addChild(addLeafsWithSourceId(std::make_unique<SourceBlenderBlueprint>(f.selector_2), {{10, 1}, {20, 2}}));
+    addLeafs(*expect, {3, 2, 1});
+
+    // NOTE: use non-strict cost based sorting for expected order
+    optimize_and_compare(std::move(top), std::move(expect), false);
+}
+
+TEST_F("test OR replaced by source blender after full optimization", SourceBlenderTestFixture) {
+    auto top = std::make_unique<OrBlueprint>();
+    f.addChildrenForSimpleSBTest(*top);
+
+    auto expect = std::make_unique<SourceBlenderBlueprint>(f.selector_1);
+    expect->addChild(addLeafsWithSourceId(3, std::make_unique<OrBlueprint>(), {{300, 3}, {30,  3}}));
+    expect->addChild(addLeafsWithSourceId(2, std::make_unique<OrBlueprint>(), {{2000, 2}, {200,  2}, {20,   2}}));
+    expect->addChild(addLeafsWithSourceId(1, std::make_unique<OrBlueprint>(), {{1000, 1}, {100,  1}, {10,   1}}));
+
+    // NOTE: use non-strict cost based sorting for expected order
+    optimize_and_compare(std::move(top), std::move(expect), false);
+}
+
+TEST_F("test SourceBlender below AND_NOT optimization", SourceBlenderTestFixture) {
+    auto top = std::make_unique<AndNotBlueprint>();
+    top->addChild(addLeafsWithSourceId(std::make_unique<SourceBlenderBlueprint>(f.selector_1), {{42, 1}}));
+    f.addChildrenForSBTest(*top);
+
+    //-------------------------------------------------------------------------
+    auto expect = std::make_unique<AndNotBlueprint>();
+    expect->addChild(addLeafsWithSourceId(std::make_unique<SourceBlenderBlueprint>(f.selector_1), {{42, 1}}));
+    auto blender = std::make_unique<SourceBlenderBlueprint>(f.selector_1);
+    blender->addChild(addLeafsWithSourceId(3, std::make_unique<OrBlueprint>(), {{300, 3}, {30,  3}}));
+    blender->addChild(addLeafsWithSourceId(2, std::make_unique<OrBlueprint>(), {{2000, 2}, {200,  2}, {20,   2}}));
+    blender->addChild(addLeafsWithSourceId(1, std::make_unique<OrBlueprint>(), {{1000, 1}, {100,  1}, {10,   1}}));
+    expect->addChild(std::move(blender));
+    expect->addChild(addLeafsWithSourceId(std::make_unique<SourceBlenderBlueprint>(f.selector_2), {{10, 1}, {20, 2}}));
+    addLeafs(*expect, {3, 2, 1});
+
+    optimize_and_compare(std::move(top), std::move(expect));
+}
+
+TEST_F("test SourceBlender below RANK optimization", SourceBlenderTestFixture) {
+    auto top = std::make_unique<RankBlueprint>();
+    top->addChild(addLeafsWithSourceId(std::make_unique<SourceBlenderBlueprint>(f.selector_1), {{42, 1}}));
+    f.addChildrenForSBTest(*top);
+
+    //-------------------------------------------------------------------------
+    auto expect = std::make_unique<RankBlueprint>();
+    expect->addChild(addLeafsWithSourceId(std::make_unique<SourceBlenderBlueprint>(f.selector_1), {{42, 1}}));
+    addLeafs(*expect, {2, 1, 3});
+    expect->addChild(addLeafsWithSourceId(std::make_unique<SourceBlenderBlueprint>(f.selector_2), {{10, 1}, {20, 2}}));
+    auto blender = std::make_unique<SourceBlenderBlueprint>(f.selector_1);
+    blender->addChild(addLeafsWithSourceId(3, std::make_unique<OrBlueprint>(), {{300, 3}, {30,  3}}));
+    blender->addChild(addLeafsWithSourceId(2, std::make_unique<OrBlueprint>(), {{2000, 2}, {200,  2}, {20,   2}}));
+    blender->addChild(addLeafsWithSourceId(1, std::make_unique<OrBlueprint>(), {{1000, 1}, {100,  1}, {10,   1}}));
+    expect->addChild(std::move(blender));
+
+    optimize_and_compare(std::move(top), std::move(expect));
 }
 
 TEST("test empty root node optimization and safeness") {
-    //-------------------------------------------------------------------------
     // tests leaf node elimination
-    Blueprint::UP top1_up(ap(MyLeafSpec(0, true).create()));
-    //-------------------------------------------------------------------------
+    auto top1(ap(MyLeafSpec(0, true).create()));
     // tests intermediate node elimination
-    Blueprint::UP top2_up(ap((new AndBlueprint())->
-                             addChild(ap(MyLeafSpec(0, true).create())).
-                             addChild(ap(MyLeafSpec(10).create())).
-                             addChild(ap(MyLeafSpec(20).create()))));
-    //-------------------------------------------------------------------------
+    auto top2 = addLeafs(std::make_unique<AndBlueprint>(), {{0, true}, 10, 20});
     // tests safety of empty AND_NOT child removal
-    Blueprint::UP top3_up(ap((new AndNotBlueprint())->
-                             addChild(ap(MyLeafSpec(0, true).create())).
-                             addChild(ap(MyLeafSpec(10).create())).
-                             addChild(ap(MyLeafSpec(20).create()))));
-    //-------------------------------------------------------------------------
+    auto top3 = addLeafs(std::make_unique<AndNotBlueprint>(), {{0, true}, 10, 20});
     // tests safety of empty RANK child removal
-    Blueprint::UP top4_up(ap((new RankBlueprint())->
-                             addChild(ap(MyLeafSpec(0, true).create())).
-                             addChild(ap(MyLeafSpec(10).create())).
-                             addChild(ap(MyLeafSpec(20).create()))));
-    //-------------------------------------------------------------------------
+    auto top4 = addLeafs(std::make_unique<RankBlueprint>(), {{0, true}, 10, 20});
     // tests safety of empty OR child removal
-    Blueprint::UP top5_up(ap((new OrBlueprint())->
-                             addChild(ap(MyLeafSpec(0, true).create())).
-                             addChild(ap(MyLeafSpec(0, true).create())).
-                             addChild(ap(MyLeafSpec(0, true).create()))));
+    auto top5 = addLeafs(std::make_unique<OrBlueprint>(), {{0, true}, {0, true}, {0, true}});
+
     //-------------------------------------------------------------------------
-    Blueprint::UP expect_up(new EmptyBlueprint());
-    //-------------------------------------------------------------------------
-    top1_up = Blueprint::optimize(std::move(top1_up));
-    top2_up = Blueprint::optimize(std::move(top2_up));
-    top3_up = Blueprint::optimize(std::move(top3_up));
-    top4_up = Blueprint::optimize(std::move(top4_up));
-    top5_up = Blueprint::optimize(std::move(top5_up));
-    EXPECT_EQUAL(expect_up->asString(), top1_up->asString());
-    EXPECT_EQUAL(expect_up->asString(), top2_up->asString());
-    EXPECT_EQUAL(expect_up->asString(), top3_up->asString());
-    EXPECT_EQUAL(expect_up->asString(), top4_up->asString());
-    EXPECT_EQUAL(expect_up->asString(), top5_up->asString());
+    auto expect_up = std::make_unique<EmptyBlueprint>();
+    auto opts = Blueprint::Options::all();
+    compare(*expect_up, *Blueprint::optimize_and_sort(std::move(top1), true, opts), true);
+    compare(*expect_up, *Blueprint::optimize_and_sort(std::move(top2), true, opts), true);
+    compare(*expect_up, *Blueprint::optimize_and_sort(std::move(top3), true, opts), true);
+    compare(*expect_up, *Blueprint::optimize_and_sort(std::move(top4), true, opts), true);
+    compare(*expect_up, *Blueprint::optimize_and_sort(std::move(top5), true, opts), true);
 }
 
 TEST("and with one empty child is optimized away") {
     auto selector = std::make_unique<InvalidSelector>();
-    Blueprint::UP top(ap((new SourceBlenderBlueprint(*selector))->
-                          addChild(ap(MyLeafSpec(10).create())).
-                          addChild(ap((new AndBlueprint())->
-                                          addChild(ap(MyLeafSpec(0, true).create())).
-                                          addChild(ap(MyLeafSpec(10).create())).
-                                          addChild(ap(MyLeafSpec(20).create()))))));
-    top = Blueprint::optimize(std::move(top));
+    Blueprint::UP top = ap((new SourceBlenderBlueprint(*selector))->
+                           addChild(ap(MyLeafSpec(10).create())).
+                           addChild(addLeafs(std::make_unique<AndBlueprint>(), {{0, true}, 10, 20})));
+    auto opts = Blueprint::Options::all();
+    top = Blueprint::optimize_and_sort(std::move(top), true, opts);
     Blueprint::UP expect_up(ap((new SourceBlenderBlueprint(*selector))->
                           addChild(ap(MyLeafSpec(10).create())).
-                          addChild(ap(new EmptyBlueprint()))));
-    EXPECT_EQUAL(expect_up->asString(), top->asString());
+                          addChild(std::make_unique<EmptyBlueprint>())));
+    compare(*expect_up, *top, true);
+}
+
+struct make {
+    make(make &&) = delete;
+    make &operator=(make &&) = delete;
+    static constexpr double invalid_cost = -1.0;
+    static constexpr uint32_t invalid_source = -1;
+    double cost_tag = invalid_cost;
+    uint32_t source_tag = invalid_source;
+    std::unique_ptr<IntermediateBlueprint> making;
+    make(std::unique_ptr<IntermediateBlueprint> making_in) : making(std::move(making_in)) {}
+    operator std::unique_ptr<Blueprint>() && noexcept { return std::move(making); }
+    make &&cost(double leaf_cost) && {
+        cost_tag = leaf_cost;
+        return std::move(*this);
+    }
+    make &&source(uint32_t source_id) && {
+        source_tag = source_id;
+        return std::move(*this);
+    }
+    make &&add(std::unique_ptr<Blueprint> child) && {
+        if (source_tag != invalid_source) {
+            child->setSourceId(source_tag);
+            source_tag = invalid_source;
+        }
+        if (auto *weak_and = making->asWeakAnd()) {
+            weak_and->addTerm(std::move(child), 1);
+        } else {
+            making->addChild(std::move(child));
+        }
+        return std::move(*this);
+    }
+    make &&leaf(uint32_t estimate) && {
+        std::unique_ptr<MyLeaf> bp(MyLeafSpec(estimate).create());
+        if (cost_tag != invalid_cost) {
+            bp->set_cost(cost_tag);
+            cost_tag = invalid_cost;
+        }
+        return std::move(*this).add(std::move(bp));
+    }
+    make &&leafs(std::initializer_list<uint32_t> estimates) && {
+        for (uint32_t estimate: estimates) {
+            std::move(*this).leaf(estimate);
+        }
+        return std::move(*this);
+    }
+    static make OR() { return make(std::make_unique<OrBlueprint>()); }
+    static make AND() { return make(std::make_unique<AndBlueprint>()); }
+    static make RANK() { return make(std::make_unique<RankBlueprint>()); }
+    static make ANDNOT() { return make(std::make_unique<AndNotBlueprint>()); }
+    static make SB(ISourceSelector &selector) { return make(std::make_unique<SourceBlenderBlueprint>(selector)); }
+    static make NEAR(uint32_t window) { return make(std::make_unique<NearBlueprint>(window)); }
+    static make ONEAR(uint32_t window) { return make(std::make_unique<ONearBlueprint>(window)); }
+    static make WEAKAND(uint32_t n) { return make(std::make_unique<WeakAndBlueprint>(n)); }
+};
+
+TEST("AND AND collapsing") {
+    Blueprint::UP top = make::AND().leafs({1,3,5}).add(make::AND().leafs({2,4}));
+    Blueprint::UP expect = make::AND().leafs({1,2,3,4,5});
+    optimize_and_compare(std::move(top), std::move(expect));
+}
+
+TEST("OR OR collapsing") {
+    Blueprint::UP top = make::OR().leafs({1,3,5}).add(make::OR().leafs({2,4}));
+    Blueprint::UP expect = make::OR().leafs({5,4,3,2,1});
+    // NOTE: use non-strict cost based sorting for expected order
+    optimize_and_compare(std::move(top), std::move(expect), false);
+}
+
+TEST("AND_NOT AND_NOT collapsing") {
+    Blueprint::UP top = make::ANDNOT().add(make::ANDNOT().leafs({1,3,5})).leafs({2,4});
+    Blueprint::UP expect = make::ANDNOT().leafs({1,5,4,3,2});
+    optimize_and_compare(std::move(top), std::move(expect));
+}
+
+TEST("AND_NOT AND AND_NOT collapsing") {
+    Blueprint::UP top = make::ANDNOT()
+        .add(make::AND()
+             .add(make::ANDNOT().leafs({1,5,6}))
+             .leafs({3,2})
+             .add(make::ANDNOT().leafs({4,8,9})))
+        .leaf(7);
+    Blueprint::UP expect = make::ANDNOT()
+        .add(make::AND().leafs({1,2,3,4}))
+        .leafs({9,8,7,6,5});
+    optimize_and_compare(std::move(top), std::move(expect));
+}
+
+TEST("AND_NOT AND AND_NOT AND nested collapsing") {
+    Blueprint::UP top = make::ANDNOT()
+        .add(make::AND()
+             .add(make::ANDNOT()
+                  .add(make::AND().leafs({1,2}))
+                  .leafs({5,6}))
+             .add(make::ANDNOT()
+                  .add(make::AND().leafs({3,4}))
+                  .leafs({8,9})))
+        .leaf(7);
+    Blueprint::UP expect = make::ANDNOT()
+        .add(make::AND().leafs({1,2,3,4}))
+        .leafs({9,8,7,6,5});
+    optimize_and_compare(std::move(top), std::move(expect));
+}
+
+TEST("AND_NOT AND AND_NOT collapsing into full source blender optimization") {
+    InvalidSelector sel;
+    Blueprint::UP top =
+        make::ANDNOT()
+        .add(make::AND()
+             .add(make::ANDNOT()
+                  .add(make::SB(sel)
+                       .source(1).leaf(1)
+                       .source(2).leaf(2))
+                  .leaf(5))
+             .add(make::SB(sel)
+                  .source(1).leaf(3)
+                  .source(2).leaf(4)))
+        .leaf(6);
+    Blueprint::UP expect =
+        make::ANDNOT()
+        .add(make::SB(sel)
+             .source(1).add(make::AND()
+                            .source(1).leaf(1)
+                            .source(1).leaf(3))
+             .source(2).add(make::AND()
+                            .source(2).leaf(2)
+                            .source(2).leaf(4)))
+        .leafs({6,5});
+    optimize_and_compare(std::move(top), std::move(expect));
 }
 
 TEST("test single child optimization") {
-    auto selector = std::make_unique<InvalidSelector>();
+    InvalidSelector selector;
     //-------------------------------------------------------------------------
-    Blueprint::UP top_up(
-            ap((new AndNotBlueprint())->
-               addChild(ap((new AndBlueprint())->
-                           addChild(ap((new OrBlueprint())->
-                                           addChild(ap((new SourceBlenderBlueprint(*selector))->
-                                                           addChild(ap((new RankBlueprint())->
-                                                                           addChild(ap(MyLeafSpec(42).create()))))))))))));
+    Blueprint::UP top = make::ANDNOT().add(make::AND().add(make::RANK().add(make::OR().add(make::SB(selector).source(2).add(make::RANK().leaf(42))))));
     //-------------------------------------------------------------------------
-    Blueprint::UP expect_up(
-            ap((new SourceBlenderBlueprint(*selector))->
-               addChild(ap(MyLeafSpec(42).create()))));
+    Blueprint::UP expect = make::SB(selector).source(2).leaf(42);
     //-------------------------------------------------------------------------
-    EXPECT_NOT_EQUAL(expect_up->asString(), top_up->asString());
-    top_up = Blueprint::optimize(std::move(top_up));
-    EXPECT_EQUAL(expect_up->asString(), top_up->asString());
-    expect_up = Blueprint::optimize(std::move(expect_up));
-    EXPECT_EQUAL(expect_up->asString(), top_up->asString());
+    optimize_and_compare(std::move(top), std::move(expect));
 }
 
 TEST("test empty OR child optimization") {
-    //-------------------------------------------------------------------------
-    Blueprint::UP top_up(
-            ap((new OrBlueprint())->
-               addChild(ap(MyLeafSpec(0, true).create())).
-               addChild(ap(MyLeafSpec(20).create())).
-               addChild(ap(MyLeafSpec(0, true).create())).
-               addChild(ap(MyLeafSpec(10).create())).
-               addChild(ap(MyLeafSpec(0, true).create())).
-               addChild(ap(MyLeafSpec(0).create())).
-               addChild(ap(MyLeafSpec(30).create())).
-               addChild(ap(MyLeafSpec(0, true).create()))));
-    //-------------------------------------------------------------------------
-    Blueprint::UP expect_up(
-            ap((new OrBlueprint())->
-               addChild(ap(MyLeafSpec(30).create())).
-               addChild(ap(MyLeafSpec(20).create())).
-               addChild(ap(MyLeafSpec(10).create())).
-               addChild(ap(MyLeafSpec(0).create()))));
-    //-------------------------------------------------------------------------
-    EXPECT_NOT_EQUAL(expect_up->asString(), top_up->asString());
-    top_up = Blueprint::optimize(std::move(top_up));
-    EXPECT_EQUAL(expect_up->asString(), top_up->asString());
-    expect_up = Blueprint::optimize(std::move(expect_up));
-    EXPECT_EQUAL(expect_up->asString(), top_up->asString());
+    Blueprint::UP top = addLeafs(std::make_unique<OrBlueprint>(), {{0, true}, 20, {0, true}, 10, {0, true}, 0, 30, {0, true}});
+    Blueprint::UP expect = addLeafs(std::make_unique<OrBlueprint>(), {30, 20, 10, 0});
+    // NOTE: use non-strict cost based sorting for expected order
+    optimize_and_compare(std::move(top), std::move(expect), false);
 }
 
 TEST("test empty AND_NOT child optimization") {
-    //-------------------------------------------------------------------------
-    Blueprint::UP top_up(
-            ap((new AndNotBlueprint())->
-               addChild(ap(MyLeafSpec(42).create())).
-               addChild(ap(MyLeafSpec(20).create())).
-               addChild(ap(MyLeafSpec(0, true).create())).
-               addChild(ap(MyLeafSpec(10).create())).
-               addChild(ap(MyLeafSpec(0, true).create())).
-               addChild(ap(MyLeafSpec(0).create())).
-               addChild(ap(MyLeafSpec(30).create())).
-               addChild(ap(MyLeafSpec(0, true).create()))));
-    //-------------------------------------------------------------------------
-    Blueprint::UP expect_up(
-            ap((new AndNotBlueprint())->
-               addChild(ap(MyLeafSpec(42).create())).
-               addChild(ap(MyLeafSpec(30).create())).
-               addChild(ap(MyLeafSpec(20).create())).
-               addChild(ap(MyLeafSpec(10).create())).
-               addChild(ap(MyLeafSpec(0).create()))));
-    //-------------------------------------------------------------------------
-    EXPECT_NOT_EQUAL(expect_up->asString(), top_up->asString());
-    top_up = Blueprint::optimize(std::move(top_up));
-    EXPECT_EQUAL(expect_up->asString(), top_up->asString());
-    expect_up = Blueprint::optimize(std::move(expect_up));
-    EXPECT_EQUAL(expect_up->asString(), top_up->asString());
+    Blueprint::UP top = addLeafs(std::make_unique<AndNotBlueprint>(), {42, 20, {0, true}, 10, {0, true}, 0, 30, {0, true}});
+    Blueprint::UP expect = addLeafs(std::make_unique<AndNotBlueprint>(), {42, 30, 20, 10, 0});
+    optimize_and_compare(std::move(top), std::move(expect));
 }
 
 TEST("test empty RANK child optimization") {
-    //-------------------------------------------------------------------------
-    Blueprint::UP top_up(
-            ap((new RankBlueprint())->
-               addChild(ap(MyLeafSpec(42).create())).
-               addChild(ap(MyLeafSpec(20).create())).
-               addChild(ap(MyLeafSpec(0, true).create())).
-               addChild(ap(MyLeafSpec(10).create())).
-               addChild(ap(MyLeafSpec(0, true).create())).
-               addChild(ap(MyLeafSpec(0).create())).
-               addChild(ap(MyLeafSpec(30).create())).
-               addChild(ap(MyLeafSpec(0, true).create()))));
-    //-------------------------------------------------------------------------
-    Blueprint::UP expect_up(
-            ap((new RankBlueprint())->
-               addChild(ap(MyLeafSpec(42).create())).
-               addChild(ap(MyLeafSpec(20).create())).
-               addChild(ap(MyLeafSpec(10).create())).
-               addChild(ap(MyLeafSpec(0).create())).
-               addChild(ap(MyLeafSpec(30).create()))));
-    //-------------------------------------------------------------------------
-    EXPECT_NOT_EQUAL(expect_up->asString(), top_up->asString());
-    top_up = Blueprint::optimize(std::move(top_up));
-    EXPECT_EQUAL(expect_up->asString(), top_up->asString());
-    expect_up = Blueprint::optimize(std::move(expect_up));
-    EXPECT_EQUAL(expect_up->asString(), top_up->asString());
+    Blueprint::UP top = addLeafs(std::make_unique<RankBlueprint>(), {42, 20, {0, true}, 10, {0, true}, 0, 30, {0, true}});
+    Blueprint::UP expect = addLeafs(std::make_unique<RankBlueprint>(), {42, 20, 10, 0, 30});
+    optimize_and_compare(std::move(top), std::move(expect));
 }
 
 TEST("require that replaced blueprints retain source id") {
     //-------------------------------------------------------------------------
     // replace empty root with empty search
     Blueprint::UP top1_up(ap(MyLeafSpec(0, true).create()->setSourceId(13)));
-    Blueprint::UP expect1_up(new EmptyBlueprint());
+    auto expect1_up = std::make_unique<EmptyBlueprint>();
     expect1_up->setSourceId(13);
     //-------------------------------------------------------------------------
     // replace self with single child
-    Blueprint::UP top2_up(ap(static_cast<AndBlueprint&>((new AndBlueprint())->setSourceId(42)).
+    Blueprint::UP top2_up(ap(dynamic_cast<AndBlueprint&>((new AndBlueprint())->setSourceId(42)).
                              addChild(ap(MyLeafSpec(30).create()->setSourceId(55)))));
     Blueprint::UP expect2_up(ap(MyLeafSpec(30).create()->setSourceId(42)));
     //-------------------------------------------------------------------------
-    top1_up = Blueprint::optimize(std::move(top1_up));
-    top2_up = Blueprint::optimize(std::move(top2_up));
-    EXPECT_EQUAL(expect1_up->asString(), top1_up->asString());
-    EXPECT_EQUAL(expect2_up->asString(), top2_up->asString());
+    auto opts = Blueprint::Options::all();
+    top1_up = Blueprint::optimize_and_sort(std::move(top1_up), true, opts);
+    top2_up = Blueprint::optimize_and_sort(std::move(top2_up), true, opts);
+    compare(*expect1_up, *top1_up, true);
+    compare(*expect2_up, *top2_up, true);
     EXPECT_EQUAL(13u, top1_up->getSourceId());
     EXPECT_EQUAL(42u, top2_up->getSourceId());
 }
@@ -1017,16 +942,16 @@ TEST("test WeakAnd Blueprint") {
         std::vector<Blueprint::HitEstimate> est;
         EXPECT_EQUAL(true, b.combine(est).empty);
         EXPECT_EQUAL(0u, b.combine(est).estHits);
-        est.push_back(Blueprint::HitEstimate(10, false));
+        est.emplace_back(10, false);
         EXPECT_EQUAL(false, b.combine(est).empty);
         EXPECT_EQUAL(10u, b.combine(est).estHits);
-        est.push_back(Blueprint::HitEstimate(20, false));
+        est.emplace_back(20, false);
         EXPECT_EQUAL(false, b.combine(est).empty);
         EXPECT_EQUAL(20u, b.combine(est).estHits);
-        est.push_back(Blueprint::HitEstimate(5, false));
+        est.emplace_back(5, false);
         EXPECT_EQUAL(false, b.combine(est).empty);
         EXPECT_EQUAL(20u, b.combine(est).estHits);
-        est.push_back(Blueprint::HitEstimate(0, true));
+        est.emplace_back(0, true);
         EXPECT_EQUAL(false, b.combine(est).empty);
         EXPECT_EQUAL(20u, b.combine(est).estHits);
     }
@@ -1035,20 +960,11 @@ TEST("test WeakAnd Blueprint") {
         a.addChild(ap(MyLeafSpec(10).addField(1, 1).create()));
         EXPECT_EQUAL(0u, a.exposeFields().size());
     }
-    {
-        check_sort_order(b,
-                         {MyLeafSpec(20).create(),
-                          MyLeafSpec(10).create(),
-                          MyLeafSpec(40).create(),
-                          MyLeafSpec(30).create()},
-                         {0, 1, 2, 3});
-    }
-    {
-        EXPECT_EQUAL(true, b.inheritStrict(0));
-        EXPECT_EQUAL(true, b.inheritStrict(1));
-        EXPECT_EQUAL(true, b.inheritStrict(2));
-        EXPECT_EQUAL(true, b.inheritStrict(-1));
-    }
+    check_sort_order(b, createLeafs({20, 10, 40, 30}), {0, 1, 2, 3});
+    EXPECT_EQUAL(true, b.inheritStrict(0));
+    EXPECT_EQUAL(true, b.inheritStrict(1));
+    EXPECT_EQUAL(true, b.inheritStrict(2));
+    EXPECT_EQUAL(true, b.inheritStrict(-1));
     {
         FieldSpec field("foo", 1, 1);
         FakeResult x = FakeResult().doc(1).doc(2).doc(5);
@@ -1057,14 +973,14 @@ TEST("test WeakAnd Blueprint") {
         {
             WeakAndBlueprint wa(456);
             MatchData::UP md = MatchData::makeTestInstance(100, 10);
-            wa.addTerm(Blueprint::UP(new FakeBlueprint(field, x)), 120);
-            wa.addTerm(Blueprint::UP(new FakeBlueprint(field, z)), 140);
-            wa.addTerm(Blueprint::UP(new FakeBlueprint(field, y)), 130);
+            wa.addTerm(std::make_unique<FakeBlueprint>(field, x), 120);
+            wa.addTerm(std::make_unique<FakeBlueprint>(field, z), 140);
+            wa.addTerm(std::make_unique<FakeBlueprint>(field, y), 130);
             {
                 wa.fetchPostings(ExecuteInfo::TRUE);
                 SearchIterator::UP search = wa.createSearch(*md, true);
-                EXPECT_TRUE(dynamic_cast<WeakAndSearch*>(search.get()) != 0);
-                WeakAndSearch &s = dynamic_cast<WeakAndSearch&>(*search);
+                EXPECT_TRUE(dynamic_cast<WeakAndSearch*>(search.get()) != nullptr);
+                auto &s = dynamic_cast<WeakAndSearch&>(*search);
                 EXPECT_EQUAL(456u, s.getN());
                 ASSERT_EQUAL(3u, s.getTerms().size());
                 EXPECT_GREATER(s.get_max_score(0), 0.0);
@@ -1085,7 +1001,7 @@ TEST("test WeakAnd Blueprint") {
             {
                 wa.fetchPostings(ExecuteInfo::FALSE);
                 SearchIterator::UP search = wa.createSearch(*md, false);
-                EXPECT_TRUE(dynamic_cast<WeakAndSearch*>(search.get()) != 0);
+                EXPECT_TRUE(dynamic_cast<WeakAndSearch*>(search.get()) != nullptr);
                 EXPECT_TRUE(search->seek(1));
                 EXPECT_TRUE(search->seek(2));
                 EXPECT_FALSE(search->seek(3));
@@ -1195,7 +1111,7 @@ namespace {
 SimpleStringTerm
 makeTerm(const std::string & term)
 {
-    return SimpleStringTerm(term, "field", 0, search::query::Weight(0));
+    return {term, "field", 0, search::query::Weight(0)};
 }
 
 }
@@ -1229,9 +1145,9 @@ TEST("require that children does not optimize when parents refuse them to") {
     MatchData::UP md = MatchData::makeTestInstance(100, 10);
     top_up->fetchPostings(ExecuteInfo::FALSE);
     SearchIterator::UP search = top_up->createSearch(*md, true);
-    EXPECT_EQUAL("search::queryeval::EquivImpl<true>", search->getClassName());
+    EXPECT_EQUAL(strict_equiv_name, normalize_class_name(search->getClassName()));
     {
-        const MultiSearch & e = dynamic_cast<const MultiSearch &>(*search);
+        const auto & e = dynamic_cast<const MultiSearch &>(*search);
         EXPECT_EQUAL("search::BitVectorIteratorStrictT<false>", e.getChildren()[0]->getClassName());
         EXPECT_EQUAL("search::diskindex::ZcRareWordPosOccIterator<true, false>", e.getChildren()[1]->getClassName());
         EXPECT_EQUAL("search::diskindex::ZcRareWordPosOccIterator<true, false>", e.getChildren()[2]->getClassName());
@@ -1239,9 +1155,9 @@ TEST("require that children does not optimize when parents refuse them to") {
 
     md->resolveTermField(12)->tagAsNotNeeded();
     search = top_up->createSearch(*md, true);
-    EXPECT_EQUAL("search::queryeval::EquivImpl<true>", search->getClassName());
+    EXPECT_EQUAL(strict_equiv_name, normalize_class_name(search->getClassName()));
     {
-        const MultiSearch & e = dynamic_cast<const MultiSearch &>(*search);
+        const auto & e = dynamic_cast<const MultiSearch &>(*search);
         EXPECT_EQUAL("search::BitVectorIteratorStrictT<false>", e.getChildren()[0]->getClassName());
         EXPECT_EQUAL("search::diskindex::ZcRareWordPosOccIterator<true, false>", e.getChildren()[1]->getClassName());
         EXPECT_EQUAL("search::diskindex::ZcRareWordPosOccIterator<true, false>", e.getChildren()[2]->getClassName());
@@ -1267,150 +1183,106 @@ TEST("require_that_unpack_optimization_is_not_overruled_by_equiv") {
     MatchData::UP md = MatchData::makeTestInstance(100, 10);
     top_up->fetchPostings(ExecuteInfo::FALSE);
     SearchIterator::UP search = top_up->createSearch(*md, true);
-    EXPECT_EQUAL("search::queryeval::EquivImpl<true>", search->getClassName());
+    EXPECT_EQUAL(strict_equiv_name, normalize_class_name(search->getClassName()));
     {
-        const MultiSearch & e = dynamic_cast<const MultiSearch &>(*search);
-        EXPECT_EQUAL("search::queryeval::OrLikeSearch<true, search::queryeval::(anonymous namespace)::FullUnpack>",
+        const auto & e = dynamic_cast<const MultiSearch &>(*search);
+        EXPECT_EQUAL("search::queryeval::StrictHeapOrSearch<search::queryeval::(anonymous namespace)::FullUnpack, vespalib::LeftArrayHeap, unsigned char>",
                      e.getChildren()[0]->getClassName());
     }
 
     md->resolveTermField(2)->tagAsNotNeeded();
     search = top_up->createSearch(*md, true);
-    EXPECT_EQUAL("search::queryeval::EquivImpl<true>", search->getClassName());
+    EXPECT_EQUAL(strict_equiv_name, normalize_class_name(search->getClassName()));
     {
-        const MultiSearch & e = dynamic_cast<const MultiSearch &>(*search);
-        EXPECT_EQUAL("search::queryeval::OrLikeSearch<true, search::queryeval::(anonymous namespace)::SelectiveUnpack>",
+        const auto & e = dynamic_cast<const MultiSearch &>(*search);
+        EXPECT_EQUAL("search::queryeval::StrictHeapOrSearch<search::queryeval::(anonymous namespace)::SelectiveUnpack, vespalib::LeftArrayHeap, unsigned char>",
                      e.getChildren()[0]->getClassName());
     }
 
     md->resolveTermField(1)->tagAsNotNeeded();
     md->resolveTermField(3)->tagAsNotNeeded();
     search = top_up->createSearch(*md, true);
-    EXPECT_EQUAL("search::queryeval::EquivImpl<true>", search->getClassName());
+    EXPECT_EQUAL(strict_equiv_name, normalize_class_name(search->getClassName()));
     {
-        const MultiSearch & e = dynamic_cast<const MultiSearch &>(*search);
-        EXPECT_EQUAL("search::queryeval::OrLikeSearch<true, search::queryeval::NoUnpack>",
+        const auto & e = dynamic_cast<const MultiSearch &>(*search);
+        EXPECT_EQUAL("search::queryeval::StrictHeapOrSearch<search::queryeval::NoUnpack, vespalib::LeftArrayHeap, unsigned char>",
                      e.getChildren()[0]->getClassName());
     }
 }
 
-TEST("require that children of near are not optimized") {
-    //-------------------------------------------------------------------------
-    Blueprint::UP top_up(
-            ap((new NearBlueprint(10))->
-               addChild(ap((new OrBlueprint())->
-                           addChild(ap(MyLeafSpec(20).create())).
-                           addChild(ap(MyLeafSpec(0, true).create())))).
-               addChild(ap((new OrBlueprint())->
-                           addChild(ap(MyLeafSpec(0, true).create())).
-                           addChild(ap(MyLeafSpec(30).create()))))));
-    //-------------------------------------------------------------------------
-    Blueprint::UP expect_up(
-            ap((new NearBlueprint(10))->
-               addChild(ap((new OrBlueprint())->
-                           addChild(ap(MyLeafSpec(20).create())).
-                           addChild(ap(MyLeafSpec(0, true).create())))).
-               addChild(ap((new OrBlueprint())->
-                           addChild(ap(MyLeafSpec(0, true).create())).
-                           addChild(ap(MyLeafSpec(30).create()))))));
-    //-------------------------------------------------------------------------
-    top_up = Blueprint::optimize(std::move(top_up));
-    EXPECT_EQUAL(expect_up->asString(), top_up->asString());
-}
-
-TEST("require that children of onear are not optimized") {
-    //-------------------------------------------------------------------------
-    Blueprint::UP top_up(
-            ap((new ONearBlueprint(10))->
-               addChild(ap((new OrBlueprint())->
-                           addChild(ap(MyLeafSpec(20).create()->estimate(20))).
-                           addChild(ap(MyLeafSpec(0, true).create()->estimate(0, true))))).
-               addChild(ap((new OrBlueprint())->
-                           addChild(ap(MyLeafSpec(0, true).create()->estimate(0, true))).
-                           addChild(ap(MyLeafSpec(30).create()->estimate(30)))))));
-    //-------------------------------------------------------------------------
-    Blueprint::UP expect_up(
-            ap((new ONearBlueprint(10))->
-               addChild(ap((new OrBlueprint())->
-                           addChild(ap(MyLeafSpec(20).create())).
-                           addChild(ap(MyLeafSpec(0, true).create())))).
-               addChild(ap((new OrBlueprint())->
-                           addChild(ap(MyLeafSpec(0, true).create())).
-                           addChild(ap(MyLeafSpec(30).create()))))));
-    //-------------------------------------------------------------------------
-    top_up = Blueprint::optimize(std::move(top_up));
-    EXPECT_EQUAL(expect_up->asString(), top_up->asString());
-}
-
 TEST("require that ANDNOT without children is optimized to empty search") {
-    Blueprint::UP top_up(new AndNotBlueprint());
-    Blueprint::UP expect_up(new EmptyBlueprint());
-    top_up = Blueprint::optimize(std::move(top_up));
-    EXPECT_EQUAL(expect_up->asString(), top_up->asString());
+    Blueprint::UP top_up = std::make_unique<AndNotBlueprint>();
+    auto expect_up = std::make_unique<EmptyBlueprint>();
+    auto opts = Blueprint::Options::all();
+    top_up = Blueprint::optimize_and_sort(std::move(top_up), true, opts);
+    compare(*expect_up, *top_up, true);
 }
 
 TEST("require that highest cost tier sorts last for OR") {
-    //-------------------------------------------------------------------------
-    Blueprint::UP top_up(
-            ap((new OrBlueprint())->
-               addChild(ap(MyLeafSpec(50).cost_tier(1).create())).
-               addChild(ap(MyLeafSpec(30).cost_tier(3).create())).
-               addChild(ap(MyLeafSpec(20).cost_tier(2).create())).
-               addChild(ap(MyLeafSpec(10).cost_tier(1).create()))));
-    //-------------------------------------------------------------------------
-    Blueprint::UP expect_up(
-            ap((new OrBlueprint())->
-               addChild(ap(MyLeafSpec(50).cost_tier(1).create())).
-               addChild(ap(MyLeafSpec(10).cost_tier(1).create())).
-               addChild(ap(MyLeafSpec(20).cost_tier(2).create())).
-               addChild(ap(MyLeafSpec(30).cost_tier(3).create()))));
-    //-------------------------------------------------------------------------
-    EXPECT_NOT_EQUAL(expect_up->asString(), top_up->asString());
-    top_up = Blueprint::optimize(std::move(top_up));
-    EXPECT_EQUAL(expect_up->asString(), top_up->asString());
-    expect_up = Blueprint::optimize(std::move(expect_up));
-    EXPECT_EQUAL(expect_up->asString(), top_up->asString());
+    Blueprint::UP top = addLeafsWithCostTier(std::make_unique<OrBlueprint>(), {{50, 1}, {30, 3}, {20, 2}, {10, 1}});
+    Blueprint::UP expect = addLeafsWithCostTier(std::make_unique<OrBlueprint>(), {{50, 1}, {10, 1}, {20, 2}, {30, 3}});
+    // cost-based sorting would ignore cost tier
+    optimize_and_compare(std::move(top), std::move(expect), true, false);
 }
 
 TEST("require that highest cost tier sorts last for AND") {
-    //-------------------------------------------------------------------------
-    Blueprint::UP top_up(
-            ap((new AndBlueprint())->
-               addChild(ap(MyLeafSpec(10).cost_tier(1).create())).
-               addChild(ap(MyLeafSpec(20).cost_tier(3).create())).
-               addChild(ap(MyLeafSpec(30).cost_tier(2).create())).
-               addChild(ap(MyLeafSpec(50).cost_tier(1).create()))));
-    //-------------------------------------------------------------------------
-    Blueprint::UP expect_up(
-            ap((new AndBlueprint())->
-               addChild(ap(MyLeafSpec(10).cost_tier(1).create())).
-               addChild(ap(MyLeafSpec(50).cost_tier(1).create())).
-               addChild(ap(MyLeafSpec(30).cost_tier(2).create())).
-               addChild(ap(MyLeafSpec(20).cost_tier(3).create()))));
-    //-------------------------------------------------------------------------
-    EXPECT_NOT_EQUAL(expect_up->asString(), top_up->asString());
-    top_up = Blueprint::optimize(std::move(top_up));
-    EXPECT_EQUAL(expect_up->asString(), top_up->asString());
-    expect_up = Blueprint::optimize(std::move(expect_up));
-    EXPECT_EQUAL(expect_up->asString(), top_up->asString());
+    Blueprint::UP top = addLeafsWithCostTier(std::make_unique<AndBlueprint>(), {{10, 1}, {20, 3}, {30, 2}, {50, 1}});
+    Blueprint::UP expect = addLeafsWithCostTier(std::make_unique<AndBlueprint>(), {{10, 1}, {50, 1}, {30, 2}, {20, 3}});
+    // cost-based sorting would ignore cost tier
+    optimize_and_compare(std::move(top), std::move(expect), true, false);
 }
 
-TEST("require that intermediate cost tier is minimum cost tier of children") {
-    Blueprint::UP bp1(
-            ap((new AndBlueprint())->
-               addChild(ap(MyLeafSpec(10).cost_tier(1).create())).
-               addChild(ap(MyLeafSpec(20).cost_tier(2).create())).
-               addChild(ap(MyLeafSpec(30).cost_tier(3).create()))));
-    Blueprint::UP bp2(
-            ap((new AndBlueprint())->
-               addChild(ap(MyLeafSpec(10).cost_tier(3).create())).
-               addChild(ap(MyLeafSpec(20).cost_tier(2).create())).
-               addChild(ap(MyLeafSpec(30).cost_tier(2).create()))));
-    EXPECT_EQUAL(bp1->getState().cost_tier(), 1u);
-    EXPECT_EQUAL(bp2->getState().cost_tier(), 2u);
+template<typename BP>
+void
+verifyCostTierInheritance(uint8_t expected, uint8_t expected_reverse) {
+    auto bp1 = std::make_unique<BP>();
+    bp1->addChild(ap(MyLeafSpec(10).cost_tier(1).create())).
+         addChild(ap(MyLeafSpec(20).cost_tier(2).create())).
+         addChild(ap(MyLeafSpec(30).cost_tier(3).create()));
+    auto bp2 = std::make_unique<BP>();
+    bp2->addChild(ap(MyLeafSpec(10).cost_tier(3).create())).
+         addChild(ap(MyLeafSpec(20).cost_tier(2).create())).
+         addChild(ap(MyLeafSpec(30).cost_tier(1).create()));
+    EXPECT_EQUAL(bp1->getState().cost_tier(), expected);
+    EXPECT_EQUAL(bp2->getState().cost_tier(), expected_reverse);
 }
 
-void verify_or_est(const std::vector<Blueprint::HitEstimate> &child_estimates, Blueprint::HitEstimate expect) {
+TEST("require that AND cost tier is minimum cost tier of children") {
+    verifyCostTierInheritance<AndBlueprint>(1, 1);
+}
+
+TEST("require that OR cost tier is maximum cost tier of children") {
+    verifyCostTierInheritance<OrBlueprint>(3, 3);
+}
+
+TEST("require that Rank cost tier is first childs cost tier") {
+    verifyCostTierInheritance<RankBlueprint>(1, 3);
+}
+
+TEST("require that AndNot cost tier is first childs cost tier") {
+    verifyCostTierInheritance<AndNotBlueprint>(1, 3);
+}
+
+struct MySourceBlender {
+    InvalidSelector selector;
+    SourceBlenderBlueprint sb;
+    MySourceBlender() : selector(), sb(selector) {}
+    IntermediateBlueprint &
+    addChild(Blueprint::UP child) {
+        return sb.addChild(std::move(child));
+    }
+    const Blueprint::State &getState() const {
+        return sb.getState();
+    }
+
+};
+
+TEST("require that SourceBlender cost tier is maximum cost tier of children") {
+    verifyCostTierInheritance<MySourceBlender>(3, 3);
+}
+
+void
+verify_or_est(const std::vector<Blueprint::HitEstimate> &child_estimates, Blueprint::HitEstimate expect) {
     OrBlueprint my_or;
     my_or.setDocIdLimit(32);
     auto my_est = my_or.combine(child_estimates);
@@ -1424,6 +1296,113 @@ TEST("require that OR blueprint use saturated sum as estimate") {
     TEST_DO(verify_or_est({{4, false},{6, false},{5, false}}, {15, false}));
     TEST_DO(verify_or_est({{5, false},{20, false},{10, false}}, {32, false}));
     TEST_DO(verify_or_est({{100, false},{300, false},{200, false}}, {300, false}));
+}
+
+std::vector<FlowStats> child_stats({{0.2, 1.1, 0.2*1.1},
+                                    {0.3, 1.2, 0.3*1.2},
+                                    {0.5, 1.3, 1.3}});
+
+void verify_relative_estimate(make &&mk, double expect) {
+    EXPECT_EQUAL(mk.making->estimate(), 0.0);
+    Blueprint::UP bp = std::move(mk).leafs({200,300,950});
+    bp->setDocIdLimit(1000);
+    bp = Blueprint::optimize(std::move(bp));
+    EXPECT_EQUAL(bp->estimate(), expect);
+}
+
+TEST("relative estimate for OR") {
+    verify_relative_estimate(make::OR(), 1.0-0.8*0.7*0.5);
+}
+
+TEST("relative estimate for AND") {
+    verify_relative_estimate(make::AND(), 0.2*0.3*0.5);
+}
+
+TEST("relative estimate for RANK") {
+    verify_relative_estimate(make::RANK(), 0.2);
+}
+
+TEST("relative estimate for ANDNOT") {
+    verify_relative_estimate(make::ANDNOT(), 0.2*0.7*0.5);
+}
+
+TEST("relative estimate for SB") {
+    InvalidSelector sel;
+    verify_relative_estimate(make::SB(sel), 1.0-0.8*0.7*0.5);
+}
+
+TEST("relative estimate for NEAR") {
+    verify_relative_estimate(make::NEAR(1), 0.2*0.3*0.5);
+}
+
+TEST("relative estimate for ONEAR") {
+    verify_relative_estimate(make::ONEAR(1), 0.2*0.3*0.5);
+}
+
+TEST("relative estimate for WEAKAND") {
+    double est1 = (Blueprint::abs_to_rel_est(1000, 1000) + OrFlow::estimate_of(child_stats)) / 2.0;
+    double est2 = (Blueprint::abs_to_rel_est(50, 1000) + OrFlow::estimate_of(child_stats)) / 2.0;
+    verify_relative_estimate(make::WEAKAND(1000), est1);
+    verify_relative_estimate(make::WEAKAND(50), est2);
+}
+
+void verify_cost(make &&mk, double expect, double expect_strict) {
+    EXPECT_EQUAL(mk.making->cost(), 0.0);
+    EXPECT_EQUAL(mk.making->strict_cost(), 0.0);
+    Blueprint::UP bp = std::move(mk)
+        .cost(1.1).leaf(200)  // strict_cost: 0.2*1.1
+        .cost(1.2).leaf(300)  // strict_cost: 0.3*1.2
+        .cost(1.3).leaf(950); // rel_est: 0.5, strict_cost: 1.3
+    bp->setDocIdLimit(1000);
+    bp = Blueprint::optimize(std::move(bp));
+    EXPECT_EQUAL(bp->cost(), expect);
+    EXPECT_EQUAL(bp->strict_cost(), expect_strict);
+}
+
+TEST("cost for OR") {
+    verify_cost(make::OR(),
+                OrFlow::cost_of(child_stats, false),
+                OrFlow::cost_of(child_stats, true) + flow::heap_cost(OrFlow::estimate_of(child_stats), 3));
+}
+
+TEST("cost for AND") {
+    verify_cost(make::AND(),
+                AndFlow::cost_of(child_stats, false),
+                AndFlow::cost_of(child_stats, true));
+}
+
+TEST("cost for RANK") {
+    verify_cost(make::RANK(), 1.1, 0.2*1.1); // first
+}
+
+TEST("cost for ANDNOT") {
+    verify_cost(make::ANDNOT(),
+                AndNotFlow::cost_of(child_stats, false),
+                AndNotFlow::cost_of(child_stats, true));
+}
+
+TEST("cost for SB") {
+    InvalidSelector sel;
+    verify_cost(make::SB(sel), 1.3, 1.3); // max
+}
+
+TEST("cost for NEAR") {
+    verify_cost(make::NEAR(1),
+                AndFlow::cost_of(child_stats, false) + AndFlow::estimate_of(child_stats) * 3,
+                AndFlow::cost_of(child_stats, true) + AndFlow::estimate_of(child_stats) * 3);
+}
+
+TEST("cost for ONEAR") {
+    verify_cost(make::ONEAR(1),
+                AndFlow::cost_of(child_stats, false) + AndFlow::estimate_of(child_stats) * 3,
+                AndFlow::cost_of(child_stats, true) + AndFlow::estimate_of(child_stats) * 3);
+}
+
+TEST("cost for WEAKAND") {
+    double est = (Blueprint::abs_to_rel_est(1000, 1000) + OrFlow::estimate_of(child_stats)) / 2.0;
+    verify_cost(make::WEAKAND(1000),
+                OrFlow::cost_of(child_stats, false),
+                OrFlow::cost_of(child_stats, true) + flow::heap_cost(est, 3));
 }
 
 TEST_MAIN() { TEST_DEBUG("lhs.out", "rhs.out"); TEST_RUN_ALL(); }

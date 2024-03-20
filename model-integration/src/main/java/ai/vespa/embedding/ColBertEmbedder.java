@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package ai.vespa.embedding;
 
 import ai.vespa.modelintegration.evaluator.OnnxEvaluator;
@@ -10,11 +10,15 @@ import com.yahoo.component.annotation.Inject;
 import com.yahoo.embedding.ColBertEmbedderConfig;
 import com.yahoo.language.huggingface.HuggingFaceTokenizer;
 import com.yahoo.language.process.Embedder;
+import com.yahoo.searchlib.rankingexpression.evaluation.MapContext;
+import com.yahoo.searchlib.rankingexpression.evaluation.TensorValue;
+import com.yahoo.searchlib.rankingexpression.rule.ReferenceNode;
+import com.yahoo.searchlib.rankingexpression.rule.UnpackBitsNode;
 import com.yahoo.tensor.IndexedTensor;
 import com.yahoo.tensor.Tensor;
 import com.yahoo.tensor.TensorAddress;
 import com.yahoo.tensor.TensorType;
-import com.yahoo.tensor.functions.Reduce;
+
 import java.nio.file.Paths;
 import java.util.Map;
 import java.util.List;
@@ -22,7 +26,6 @@ import java.util.ArrayList;
 import java.util.Set;
 import java.util.HashSet;
 import java.util.BitSet;
-import java.util.Arrays;
 
 import static com.yahoo.language.huggingface.ModelInfo.TruncationStrategy.LONGEST_FIRST;
 
@@ -31,19 +34,20 @@ import static com.yahoo.language.huggingface.ModelInfo.TruncationStrategy.LONGES
  * This embedder uses a HuggingFace tokenizer to produce a token sequence that is then input to a transformer model.
  *
  * See col-bert-embedder.def for configurable parameters.
+ *
  * @author bergum
  */
 @Beta
 public class ColBertEmbedder extends AbstractComponent implements Embedder {
+
+    private static final String PUNCTUATION = "!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~";
+
     private final Embedder.Runtime runtime;
     private final String inputIdsName;
     private final String attentionMaskName;
-
     private final String outputName;
-
     private final HuggingFaceTokenizer tokenizer;
     private final OnnxEvaluator evaluator;
-
     private final int maxTransformerTokens;
     private final int maxQueryTokens;
     private final int maxDocumentTokens;
@@ -52,6 +56,14 @@ public class ColBertEmbedder extends AbstractComponent implements Embedder {
     private final long endSequenceToken;
     private final long maskSequenceToken;
 
+    private final long padSequenceToken;
+
+    private final long querySequenceToken;
+
+    private final long documentSequenceToken;
+    private final Set<Long> skipTokens;
+
+    public record TransformerInput(List<Long> inputIds, List<Long> attentionMask) {}
 
     @Inject
     public ColBertEmbedder(OnnxRuntime onnx, Embedder.Runtime runtime, ColBertEmbedderConfig config) {
@@ -65,6 +77,9 @@ public class ColBertEmbedder extends AbstractComponent implements Embedder {
         startSequenceToken = config.transformerStartSequenceToken();
         endSequenceToken = config.transformerEndSequenceToken();
         maskSequenceToken = config.transformerMaskToken();
+        padSequenceToken = config.transformerPadToken();
+        querySequenceToken = config.queryTokenId();
+        documentSequenceToken = config.documentTokenId();
 
         var tokenizerPath = Paths.get(config.tokenizerPath().toString());
         var builder = new HuggingFaceTokenizer.Builder()
@@ -81,8 +96,12 @@ public class ColBertEmbedder extends AbstractComponent implements Embedder {
             builder.setTruncation(true).setMaxLength(maxLength);
         }
         this.tokenizer = builder.build();
+        this.skipTokens = new HashSet<>();
+        PUNCTUATION.chars().forEach(
+                c -> this.skipTokens.addAll(
+                        tokenizer.encode(Character.toString((char) c), null).ids())
+        );
         var onnxOpts = new OnnxEvaluatorOptions();
-
         if (config.transformerGpuDevice() >= 0)
             onnxOpts.setGpuDevice(config.transformerGpuDevice());
         onnxOpts.setExecutionMode(config.transformerExecutionMode().toString());
@@ -102,7 +121,7 @@ public class ColBertEmbedder extends AbstractComponent implements Embedder {
     private void validateName(Map<String, TensorType> types, String name, String type) {
         if (!types.containsKey(name)) {
             throw new IllegalArgumentException("Model does not contain required " + type + ": '" + name + "'. " +
-                    "Model contains: " + String.join(",", types.keySet()));
+                                               "Model contains: " + String.join(",", types.keySet()));
         }
     }
 
@@ -113,9 +132,9 @@ public class ColBertEmbedder extends AbstractComponent implements Embedder {
 
     @Override
     public Tensor embed(String text, Context context, TensorType tensorType) {
-        if(!verifyTensorType(tensorType)) {
-            throw new IllegalArgumentException("Invalid ColBERT embedder tensor destination. " +
-                    "Wanted a mixed 2-d mapped-indexed tensor, got " + tensorType);
+        if ( ! validTensorType(tensorType)) {
+            throw new IllegalArgumentException("Invalid colbert embedder tensor target destination. " +
+                                               "Wanted a mixed 2-d mapped-indexed tensor, got " + tensorType);
         }
         if (context.getDestination().startsWith("query")) {
             return embedQuery(text, context, tensorType);
@@ -123,119 +142,113 @@ public class ColBertEmbedder extends AbstractComponent implements Embedder {
             return embedDocument(text, context, tensorType);
         }
     }
-
     @Override
     public void deconstruct() {
         evaluator.close();
         tokenizer.close();
     }
 
+    protected TransformerInput buildTransformerInput(List<Long> tokens, int maxTokens, boolean isQuery) {
+        if(!isQuery) {
+            tokens = tokens.stream().filter(token -> !skipTokens.contains(token)).toList();
+        }
+        List<Long> inputIds = new ArrayList<>(maxTokens);
+        List<Long> attentionMask = new ArrayList<>(maxTokens);
+        if (tokens.size() > maxTokens - 3)
+            tokens = tokens.subList(0, maxTokens - 3);
+        inputIds.add(startSequenceToken);
+        inputIds.add(isQuery? querySequenceToken: documentSequenceToken);
+        inputIds.addAll(tokens);
+        inputIds.add(endSequenceToken);
+
+        int inputLength = inputIds.size();
+        long padTokenId = isQuery? maskSequenceToken: padSequenceToken;
+
+        int padding = isQuery? maxTokens - inputLength: 0;
+        for (int i = 0; i < padding; i++)
+            inputIds.add(padTokenId);
+
+        for (int i = 0; i < inputLength; i++)
+            attentionMask.add((long) 1);
+
+        for (int i = 0; i < padding; i++)
+            attentionMask.add((long) 0);//Do not attend to mask paddings
+
+        return new TransformerInput(inputIds, attentionMask);
+    }
+
     protected Tensor embedQuery(String text, Context context, TensorType tensorType) {
-        if(tensorType.valueType() == TensorType.Value.INT8)
+        if (tensorType.valueType() == TensorType.Value.INT8)
             throw new IllegalArgumentException("ColBert query embed does not accept int8 tensor value type");
 
-        long Q_TOKEN_ID = 1; // [unused0] token id used during training to differentiate query versus document.
 
         var start = System.nanoTime();
         var encoding = tokenizer.encode(text, context.getLanguage());
         runtime.sampleSequenceLength(encoding.ids().size(), context);
 
-        List<Long> ids = encoding.ids();
-        if (ids.size() > maxQueryTokens - 3)
-            ids = ids.subList(0, maxQueryTokens - 3);
+        TransformerInput input = buildTransformerInput(encoding.ids(), maxQueryTokens, true);
 
-        List<Long> inputIds = new ArrayList<>(maxQueryTokens);
-        List<Long> attentionMask = new ArrayList<>(maxQueryTokens);
-
-        inputIds.add(startSequenceToken);
-        inputIds.add(Q_TOKEN_ID);
-        inputIds.addAll(ids);
-        inputIds.add(endSequenceToken);
-
-        int length = inputIds.size();
-
-        int padding = maxQueryTokens - length;
-        for (int i = 0; i < padding; i++)
-            inputIds.add(maskSequenceToken);
-
-        for (int i = 0; i < length; i++)
-            attentionMask.add((long) 1);
-        for (int i = 0; i < padding; i++)
-            attentionMask.add((long) 0);//Do not attend to mask paddings
-
-        Tensor inputIdsTensor = createTensorRepresentation(inputIds, "d1");
-        Tensor attentionMaskTensor = createTensorRepresentation(attentionMask, "d1");
+        Tensor inputIdsTensor = createTensorRepresentation(input.inputIds, "d1");
+        Tensor attentionMaskTensor = createTensorRepresentation(input.attentionMask, "d1");
 
         var inputs = Map.of(inputIdsName, inputIdsTensor.expand("d0"),
                 attentionMaskName, attentionMaskTensor.expand("d0"));
         Map<String, Tensor> outputs = evaluator.evaluate(inputs);
         Tensor tokenEmbeddings = outputs.get(outputName);
-        IndexedTensor result = (IndexedTensor) tokenEmbeddings.reduce(Reduce.Aggregator.min, "d0");
+        IndexedTensor result = (IndexedTensor) tokenEmbeddings;
 
         int dims = tensorType.indexedSubtype().dimensions().get(0).size().get().intValue();
-        if(dims != result.shape()[1]) {
-            throw new IllegalArgumentException("Token dimensionality does not" +
-                    " match indexed dimensionality of " + dims);
+        if (dims != result.shape()[2]) {
+            throw new IllegalArgumentException("Token vector dimensionality does not" +
+                                               " match indexed dimensionality of " + dims);
         }
-        Tensor resultTensor = toFloatTensor(result, tensorType, inputIds.size());
+        Tensor resultTensor = toFloatTensor(result, tensorType, input.inputIds.size());
         runtime.sampleEmbeddingLatency((System.nanoTime() - start) / 1_000_000d, context);
         return resultTensor;
     }
 
     protected Tensor embedDocument(String text, Context context, TensorType tensorType) {
-        long D_TOKEN_ID = 2; // [unused1] token id used during training to differentiate query versus document.
         var start = System.nanoTime();
         var encoding = tokenizer.encode(text, context.getLanguage());
         runtime.sampleSequenceLength(encoding.ids().size(), context);
 
-        List<Long> ids = encoding.ids().stream().filter(token
-                -> !PUNCTUATION_TOKEN_IDS.contains(token)).toList();
-
-        if (ids.size() > maxDocumentTokens - 3)
-            ids = ids.subList(0, maxDocumentTokens - 3);
-        List<Long> inputIds = new ArrayList<>(maxDocumentTokens);
-        List<Long> attentionMask = new ArrayList<>(maxDocumentTokens);
-        inputIds.add(startSequenceToken);
-        inputIds.add(D_TOKEN_ID);
-        inputIds.addAll(ids);
-        inputIds.add(endSequenceToken);
-        for (int i = 0; i < inputIds.size(); i++)
-            attentionMask.add((long) 1);
-
-        Tensor inputIdsTensor = createTensorRepresentation(inputIds, "d1");
-        Tensor attentionMaskTensor = createTensorRepresentation(attentionMask, "d1");
+        TransformerInput input = buildTransformerInput(encoding.ids(), maxDocumentTokens, false);
+        Tensor inputIdsTensor = createTensorRepresentation(input.inputIds, "d1");
+        Tensor attentionMaskTensor = createTensorRepresentation(input.attentionMask, "d1");
 
         var inputs = Map.of(inputIdsName, inputIdsTensor.expand("d0"),
-                attentionMaskName, attentionMaskTensor.expand("d0"));
+                            attentionMaskName, attentionMaskTensor.expand("d0"));
 
         Map<String, Tensor> outputs = evaluator.evaluate(inputs);
         Tensor tokenEmbeddings = outputs.get(outputName);
-        IndexedTensor result = (IndexedTensor) tokenEmbeddings.reduce(Reduce.Aggregator.min, "d0");
+        IndexedTensor result = (IndexedTensor) tokenEmbeddings;
         Tensor contextualEmbeddings;
-        int retainedTokens = inputIds.size() -1; //Do not retain last PAD
-        if(tensorType.valueType() == TensorType.Value.INT8) {
-            contextualEmbeddings = toBitTensor(result, tensorType, retainedTokens);
+        int maxTokens = input.inputIds.size(); // Retain all token vectors, including PAD tokens.
+        if (tensorType.valueType() == TensorType.Value.INT8) {
+            contextualEmbeddings = toBitTensor(result, tensorType, maxTokens);
         } else {
-            contextualEmbeddings = toFloatTensor(result, tensorType, retainedTokens);
+            contextualEmbeddings = toFloatTensor(result, tensorType, maxTokens);
         }
         runtime.sampleEmbeddingLatency((System.nanoTime() - start) / 1_000_000d, context);
         return contextualEmbeddings;
     }
 
     public static Tensor toFloatTensor(IndexedTensor result, TensorType type, int nTokens) {
+        if (result.shape().length != 3)
+            throw new IllegalArgumentException("Expected onnx result to have 3-dimensions [batch, sequence, dim]");
         int size = type.indexedSubtype().dimensions().size();
         if (size != 1)
-            throw new IllegalArgumentException("Indexed tensor must have one dimension");
+            throw new IllegalArgumentException("Target indexed sub-type must have one dimension");
         int wantedDimensionality = type.indexedSubtype().dimensions().get(0).size().get().intValue();
-        int resultDimensionality = (int)result.shape()[1];
-        if(resultDimensionality != wantedDimensionality) {
-            throw new IllegalArgumentException("Not possible to map token vector embedding with " + resultDimensionality
-                    + " + dimensions into tensor with " + wantedDimensionality);
+        int resultDimensionality = (int)result.shape()[2];
+        if (resultDimensionality != wantedDimensionality) {
+            throw new IllegalArgumentException("Not possible to map token vector embedding with " + resultDimensionality +
+                                               " dimensions into tensor with " + wantedDimensionality);
         }
         Tensor.Builder builder = Tensor.Builder.of(type);
         for (int token = 0; token < nTokens; token++) {
             for (int d = 0; d < resultDimensionality; d++) {
-                var value = result.get(TensorAddress.of(token, d));
+                var value = result.get(0,token,d); // batch, sequence token, dimension
                 builder.cell(TensorAddress.of(token,d),value);
             }
         }
@@ -244,23 +257,25 @@ public class ColBertEmbedder extends AbstractComponent implements Embedder {
 
     public static Tensor toBitTensor(IndexedTensor result, TensorType type, int nTokens) {
         if (type.valueType() != TensorType.Value.INT8)
-            throw new IllegalArgumentException("Only a int8 tensor type can be" +
-                    " the destination of bit packing");
+            throw new IllegalArgumentException("Only a int8 tensor type can be the destination of bit packing");
+        if(result.shape().length != 3)
+            throw new IllegalArgumentException("Expected onnx result to have 3-dimensions [batch, sequence, dim]");
+
         int size = type.indexedSubtype().dimensions().size();
         if (size != 1)
-            throw new IllegalArgumentException("Indexed tensor must have one dimension");
+            throw new IllegalArgumentException("Target indexed sub-type must have one dimension");
         int wantedDimensionality = type.indexedSubtype().dimensions().get(0).size().get().intValue();
-        int resultDimensionality = (int)result.shape()[1];
-        if(resultDimensionality/8 != wantedDimensionality) {
-            throw new IllegalArgumentException("Not possible to pack " + resultDimensionality
-                    + " + dimensions into " + wantedDimensionality + " dimensions");
+        int resultDimensionality = (int)result.shape()[2];
+        if (resultDimensionality != 8 * wantedDimensionality) {
+            throw new IllegalArgumentException("Not possible to pack " + resultDimensionality +
+                                               " + dimensions into " + wantedDimensionality + " dimensions");
         }
         Tensor.Builder builder = Tensor.Builder.of(type);
         for (int token = 0; token < nTokens; token++) {
             BitSet bitSet = new BitSet(8);
             int key = 0;
-            for (int d = 0; d < result.shape()[1]; d++) {
-                var value = result.get(TensorAddress.of(token, d));
+            for (int d = 0; d < result.shape()[2]; d++) {
+                var value = result.get(0, token, d); // batch, sequence token, dimension
                 int bitIndex = 7 - (d % 8);
                 if (value > 0.0) {
                     bitSet.set(bitIndex);
@@ -279,9 +294,19 @@ public class ColBertEmbedder extends AbstractComponent implements Embedder {
         return builder.build();
     }
 
-    protected boolean verifyTensorType(TensorType target) {
-        return target.dimensions().size() == 2 &&
-                target.indexedSubtype().rank() == 1 && target.mappedSubtype().rank() == 1;
+    public Set<Long> getSkipTokens() {
+        return this.skipTokens;
+    }
+
+    public static Tensor expandBitTensor(Tensor packed) {
+        var unpacker = new UnpackBitsNode(new ReferenceNode("input"), TensorType.Value.FLOAT, "big");
+        var context = new MapContext();
+        context.put("input", new TensorValue(packed));
+        return unpacker.evaluate(context).asTensor();
+    }
+
+    protected boolean validTensorType(TensorType target) {
+        return target.dimensions().size() == 2 && target.indexedSubtype().rank() == 1;
     }
 
     private IndexedTensor createTensorRepresentation(List<Long> input, String dimension) {
@@ -294,9 +319,4 @@ public class ColBertEmbedder extends AbstractComponent implements Embedder {
         return builder.build();
     }
 
-    private static final Set<Long> PUNCTUATION_TOKEN_IDS = new HashSet<>(
-            Arrays.asList(999L, 1000L, 1001L, 1002L, 1003L, 1004L, 1005L, 1006L,
-                    1007L, 1008L, 1009L, 1010L, 1011L, 1012L, 1013L, 1024L,
-                    1025L, 1026L, 1027L, 1028L, 1029L, 1030L, 1031L, 1032L,
-                    1033L, 1034L, 1035L, 1036L, 1063L, 1064L, 1065L, 1066L));
 }

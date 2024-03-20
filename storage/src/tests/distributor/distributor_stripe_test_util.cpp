@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include "distributor_stripe_test_util.h"
 #include <vespa/config-stor-distribution.h>
@@ -10,6 +10,8 @@
 #include <vespa/storage/distributor/distributormetricsset.h>
 #include <vespa/storage/distributor/ideal_state_total_metrics.h>
 #include <vespa/storage/distributor/node_supported_features_repo.h>
+#include <vespa/storage/config/distributorconfiguration.h>
+#include <vespa/storage/config/config-stor-distributormanager.h>
 #include <vespa/storage/storageutil/utils.h>
 #include <vespa/vdslib/distribution/distribution.h>
 #include <vespa/vespalib/text/stringtokenizer.h>
@@ -549,13 +551,6 @@ DistributorStripeTestUtil::enable_cluster_state(const lib::ClusterStateBundle& s
 void
 DistributorStripeTestUtil::setSystemState(const lib::ClusterState& systemState) {
     _stripe->enableClusterStateBundle(lib::ClusterStateBundle(systemState));
-}
-
-void
-DistributorStripeTestUtil::config_enable_condition_probing(bool enable) {
-    auto cfg = make_config();
-    cfg->set_enable_condition_probing(enable);
-    configure_stripe(cfg);
 }
 
 void

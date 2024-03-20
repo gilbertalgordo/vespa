@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include "ranksetup.h"
 #include "blueprint.h"
@@ -56,10 +56,12 @@ RankSetup::RankSetup(const BlueprintFactory &factory, const IIndexEnvironment &i
       _dumpFeatures(),
       _warnings(),
       _feature_rename_map(),
+      _sort_blueprints_by_cost(false),
       _ignoreDefaultRankFeatures(false),
       _compiled(false),
       _compileError(false),
       _degradationAscendingOrder(false),
+      _always_mark_phrase_expensive(false),
       _diversityAttribute(),
       _diversityMinGroups(1),
       _diversityCutoffFactor(10.0),
@@ -74,8 +76,7 @@ RankSetup::RankSetup(const BlueprintFactory &factory, const IIndexEnvironment &i
       _mutateOnFirstPhase(),
       _mutateOnSecondPhase(),
       _mutateOnSummary(),
-      _mutateAllowQueryOverride(false),
-      _enableNestedMultivalueGrouping(false)
+      _mutateAllowQueryOverride(false)
 { }
 
 RankSetup::~RankSetup() = default;
@@ -134,7 +135,8 @@ RankSetup::configure()
     _mutateOnSummary._attribute = mutate::on_summary::Attribute::lookup(_indexEnv.getProperties());
     _mutateOnSummary._operation = mutate::on_summary::Operation::lookup(_indexEnv.getProperties());
     _mutateAllowQueryOverride = mutate::AllowQueryOverride::check(_indexEnv.getProperties());
-    _enableNestedMultivalueGrouping = temporary::EnableNestedMultivalueGrouping::check(_indexEnv.getProperties());
+    _sort_blueprints_by_cost = matching::SortBlueprintsByCost::check(_indexEnv.getProperties());
+    _always_mark_phrase_expensive = matching::AlwaysMarkPhraseExpensive::check(_indexEnv.getProperties());
 }
 
 void

@@ -1,6 +1,7 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
-package com.yahoo.restapi;// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+package com.yahoo.restapi;
 
+import ai.vespa.json.InvalidJsonException;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.yahoo.container.jdisc.AclMapping;
 import com.yahoo.container.jdisc.HttpRequestBuilder;
@@ -20,6 +21,8 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.MissingFormatWidthException;
+import java.util.NoSuchElementException;
 import java.util.Set;
 
 import static com.yahoo.jdisc.http.HttpRequest.Method;
@@ -99,6 +102,23 @@ class RestApiImplTest {
     }
 
     @Test
+    void chooses_most_specific_exception_mapper() {
+        RestApi restApi = RestApi.builder()
+                .addRoute(route("/json").get(ctx -> { throw new InvalidJsonException("oops invalid json"); }))
+                .addRoute(route("/illegal-argument").get(ctx -> { throw new IllegalArgumentException(); }))
+                .addRoute(route("/bad-format").get(ctx -> { throw new MissingFormatWidthException(""); }))
+                .addExceptionMapper(IllegalArgumentException.class, (ctx, exception) -> ErrorResponse.badRequest("oops illegal argument"))
+                .addExceptionMapper(NoSuchElementException.class, (ctx, exception) -> ErrorResponse.badRequest("oops no such element"))
+                .addExceptionMapper(RuntimeException.class, (ctx, exception) -> ErrorResponse.internalServerError("oops runtime"))
+                .addExceptionMapper(MissingFormatWidthException.class, (ctx, exception) -> ErrorResponse.internalServerError("oops bad format width"))
+                .build();
+        // Uses default mapper for `InvalidJsonException` since it's more specific than `IllegalArgumentException`
+        verifyJsonResponse(restApi, Method.GET, "/json", null, 400, "{\"error-code\":\"BAD_REQUEST\",\"message\":\"oops invalid json\"}");
+        verifyJsonResponse(restApi, Method.GET, "/illegal-argument", null, 400, "{\"message\":\"oops illegal argument\", \"error-code\":\"BAD_REQUEST\"}");
+        verifyJsonResponse(restApi, Method.GET, "/bad-format", null, 500, "{\"message\":\"oops bad format width\", \"error-code\":\"INTERNAL_SERVER_ERROR\"}");
+    }
+
+    @Test
     void method_handler_can_consume_and_produce_json() {
         RestApi.HandlerWithRequestEntity<TestEntity, TestEntity> handler = (context, requestEntity) -> requestEntity;
         RestApi restApi = RestApi.builder()
@@ -156,6 +176,42 @@ class RestApiImplTest {
         assertRequiredCapability(restApi, Method.POST, "/api1", Capability.CONTENT__SEARCH_API);
         assertRequiredCapability(restApi, Method.GET, "/api2", Capability.CONTENT__METRICS_API);
         assertRequiredCapability(restApi, Method.POST, "/api2", Capability.CONTENT__DOCUMENT_API);
+    }
+
+    @Test
+    void maps_exception_for_filter_throwing() {
+        RestApi.Filter throwingFilter = (ctx) -> {
+            throw new RestApiException.Forbidden("forbidden");
+        };
+        var restApi = RestApi.builder()
+                .setDefaultRoute(route("{*}").defaultHandler(ctx -> "hello world"))
+                .addFilter(throwingFilter)
+                .build();
+        verifyJsonResponse(restApi, Method.GET, "/", null, 403, "{\"error-code\":\"FORBIDDEN\",\"message\":\"forbidden\"}");
+    }
+
+    @Test
+    void missing_parameters_are_mapped_to_4xx_response() {
+        var restApi = RestApi.builder()
+                .addRoute(route("/missing-path-param").get(ctx -> ctx.pathParameters().getStringOrThrow("missing")))
+                .addRoute(route("/missing-query-param").get(ctx -> ctx.queryParameters().getStringOrThrow("missing")))
+                .build();
+        verifyJsonResponse(restApi, Method.GET, "/missing-path-param", null, 404,
+                           "{\"error-code\":\"NOT_FOUND\",\"message\":\"Path parameter 'missing' is missing\"}");
+        verifyJsonResponse(restApi, Method.GET, "/missing-query-param", null, 400,
+                            "{\"error-code\":\"BAD_REQUEST\",\"message\":\"Query parameter 'missing' is missing\"}");
+    }
+
+    @Test
+    void principal_from_filter_is_visible_to_handler() {
+        var restApi = RestApi.builder()
+                .addRoute(route("/api1").get(ctx -> ctx.userPrincipalOrThrow().getName()))
+                .addFilter(ctx -> {
+                    ctx.setPrincipal(() -> "my-principal-name");
+                    return ctx.executeNext();
+                })
+                .build();
+        verifyJsonResponse(restApi, Method.GET, "/api1", null, 200, "{\"message\":\"my-principal-name\"}");
     }
 
     private static void verifyJsonResponse(

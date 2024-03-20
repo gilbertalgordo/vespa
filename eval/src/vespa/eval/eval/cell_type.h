@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #pragma once
 
@@ -129,6 +129,9 @@ struct CellMeta {
 
     // convenience functions to be used for specific operations
     constexpr CellMeta map() const { return decay(); }
+    constexpr CellMeta wrap(CellMeta inner) const {
+        return (inner.is_scalar) ? decay() : inner;
+    }
     constexpr CellMeta reduce(bool output_is_scalar) const {
         return normalize(cell_type, output_is_scalar).decay();
     }

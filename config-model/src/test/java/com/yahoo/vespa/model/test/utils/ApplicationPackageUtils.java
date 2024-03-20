@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.model.test.utils;
 
 import java.util.ArrayList;
@@ -42,7 +42,7 @@ public class ApplicationPackageUtils {
                "  }" +
                "  rank-profile inputs {" +
                "    inputs {" +
-               "      query(foo) tensor<float>(x[10])" +
+               "      query(foo) tensor<float>(x[10])\n" +
                "      query(bar) tensor(key{},x[1000])" +
                "    }" +
                "  }" +

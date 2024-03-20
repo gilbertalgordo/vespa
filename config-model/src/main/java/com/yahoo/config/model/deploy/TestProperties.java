@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.config.model.deploy;
 
 import com.yahoo.config.model.api.ConfigServerSpec;
@@ -23,8 +23,6 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
-
-import static com.yahoo.config.provision.NodeResources.Architecture;
 
 /**
  * A test-only Properties class
@@ -81,12 +79,10 @@ public class TestProperties implements ModelContext.Properties, ModelContext.Fea
     private int rpc_events_before_wakeup = 1;
     private int mbus_network_threads = 1;
     private int heapSizePercentage = ApplicationContainerCluster.defaultHeapSizePercentageOfAvailableMemory;
-    private Architecture adminClusterNodeResourcesArchitecture = Architecture.getDefault();
     private Optional<CloudAccount> cloudAccount = Optional.empty();
     private boolean allowUserFilters = true;
     private List<DataplaneToken> dataplaneTokens;
     private int contentLayerMetadataFeatureLevel = 0;
-    private boolean dynamicHeapSize = false;
 
     @Override public ModelContext.FeatureFlags featureFlags() { return this; }
     @Override public boolean multitenant() { return multitenant; }
@@ -127,7 +123,6 @@ public class TestProperties implements ModelContext.Properties, ModelContext.Fea
     @Override public int maxCompactBuffers() { return maxCompactBuffers; }
     @Override public boolean useV8GeoPositions() { return useV8GeoPositions; }
     @Override public List<String> environmentVariables() { return environmentVariables; }
-    @Override public Architecture adminClusterArchitecture() { return adminClusterNodeResourcesArchitecture; }
     @Override public boolean sharedStringRepoNoReclaim() { return sharedStringRepoNoReclaim; }
     @Override public boolean loadCodeAsHugePages() { return loadCodeAsHugePages; }
     @Override public int mbusNetworkThreads() { return mbus_network_threads; }
@@ -142,10 +137,8 @@ public class TestProperties implements ModelContext.Properties, ModelContext.Fea
     @Override public String summaryDecodePolicy() { return summaryDecodePolicy; }
     @Override public Optional<CloudAccount> cloudAccount() { return cloudAccount; }
     @Override public boolean allowUserFilters() { return allowUserFilters; }
-    @Override public boolean enableGlobalPhase() { return true; } // Enable global-phase by default for unit tests only
     @Override public List<DataplaneToken> dataplaneTokens() { return dataplaneTokens; }
     @Override public int contentLayerMetadataFeatureLevel() { return contentLayerMetadataFeatureLevel; }
-    @Override public boolean dynamicHeapSize() { return dynamicHeapSize; }
 
     public TestProperties sharedStringRepoNoReclaim(boolean sharedStringRepoNoReclaim) {
         this.sharedStringRepoNoReclaim = sharedStringRepoNoReclaim;
@@ -359,11 +352,6 @@ public class TestProperties implements ModelContext.Properties, ModelContext.Fea
         return this;
     }
 
-    public TestProperties setAdminClusterNodeResourcesArchitecture(Architecture architecture) {
-        this.adminClusterNodeResourcesArchitecture = architecture;
-        return this;
-    }
-
     public TestProperties setCloudAccount(CloudAccount cloudAccount) {
         this.cloudAccount = Optional.ofNullable(cloudAccount);
         return this;
@@ -380,8 +368,6 @@ public class TestProperties implements ModelContext.Properties, ModelContext.Fea
         this.contentLayerMetadataFeatureLevel = level;
         return this;
     }
-
-    public TestProperties setDynamicHeapSize(boolean b) { this.dynamicHeapSize = b; return this; }
 
     public static class Spec implements ConfigServerSpec {
 

@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.search.dispatch;
 
 import com.yahoo.search.Query;
@@ -35,7 +35,7 @@ public class SearchErrorInvoker extends SearchInvoker {
     }
 
     @Override
-    protected Object sendSearchRequest(Query query, Object context) throws IOException {
+    protected Object sendSearchRequest(Query query, Object context) {
         this.query = query;
         if (monitor != null) {
             monitor.responseAvailable(this);
@@ -44,7 +44,7 @@ public class SearchErrorInvoker extends SearchInvoker {
     }
 
     @Override
-    protected InvokerResult getSearchResult(Execution execution) throws IOException {
+    protected InvokerResult getSearchResult() {
         Result res = new Result(query, message);
         if (coverage != null) {
             res.setCoverage(coverage);

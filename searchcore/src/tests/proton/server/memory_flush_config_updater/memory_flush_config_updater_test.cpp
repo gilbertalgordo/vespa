@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include <vespa/vespalib/testkit/testapp.h>
 #include <vespa/searchcore/proton/server/memory_flush_config_updater.h>
@@ -6,6 +6,7 @@
 
 using namespace proton;
 using vespa::config::search::core::ProtonConfig;
+using vespalib::HwInfo;
 
 ProtonConfig::Flush::Memory
 getConfig(int64_t maxMemory, int64_t eachMaxMemory, int64_t maxTlsSize,
@@ -68,8 +69,8 @@ struct Fixture
     void notifyDiskMemUsage(const ResourceUsageState &diskState, const ResourceUsageState &memoryState) {
         updater.notifyDiskMemUsage(DiskMemUsageState(diskState, memoryState));
     }
-    void setNodeRetired(bool nodeRetired) {
-        updater.setNodeRetired(nodeRetired);
+    void set_node_retired_or_maintenance(bool value) {
+        updater.set_node_retired_or_maintenance(value);
     }
 };
 
@@ -225,12 +226,12 @@ TEST_F("require that we must go below low watermark for memory usage before usin
     TEST_DO(f.assertStrategyConfig(4, 1, 20));
 }
 
-TEST_F("require that more disk bloat is allowed while node state is retired", Fixture)
+TEST_F("require that more disk bloat is allowed while node state is retired or maintenance", Fixture)
 {
     constexpr double DEFAULT_DISK_BLOAT = 0.25;
     f.notifyDiskMemUsage(ResourceUsageState(0.7, 0.3), belowLimit());
     TEST_DO(f.assertStrategyDiskConfig(DEFAULT_DISK_BLOAT, DEFAULT_DISK_BLOAT));
-    f.setNodeRetired(true);
+    f.set_node_retired_or_maintenance(true);
     TEST_DO(f.assertStrategyDiskConfig((0.8 - ((0.3/0.7)*(1 - DEFAULT_DISK_BLOAT))) / 0.8, 1.0));
     f.notifyDiskMemUsage(belowLimit(), belowLimit());
     TEST_DO(f.assertStrategyDiskConfig(DEFAULT_DISK_BLOAT, DEFAULT_DISK_BLOAT));

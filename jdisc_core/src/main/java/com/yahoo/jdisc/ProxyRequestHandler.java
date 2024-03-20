@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.jdisc;
 
 import com.yahoo.jdisc.handler.CompletionHandler;
@@ -31,9 +31,9 @@ class ProxyRequestHandler implements DelegatedRequestHandler {
 
     @Override
     public ContentChannel handleRequest(Request request, ResponseHandler responseHandler) {
-        try (final ResourceReference requestReference = request.refer()) {
+        try (ResourceReference requestReference = request.refer()) {
             ContentChannel contentChannel;
-            final ResponseHandler proxyResponseHandler = new ProxyResponseHandler(
+            ResponseHandler proxyResponseHandler = new ProxyResponseHandler(
                     request, new NullContentResponseHandler(responseHandler));
             try {
                 contentChannel = delegate.handleRequest(request, proxyResponseHandler);

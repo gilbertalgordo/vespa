@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include "bm_cluster_params.h"
 #include <iostream>
@@ -7,7 +7,6 @@ namespace search::bmcluster {
 
 BmClusterParams::BmClusterParams()
     : _bucket_db_stripe_bits(4),
-      _disable_queue_limits_for_chained_merges(false), // Same default as in stor-server.def
       _distributor_merge_busy_wait(10), // Same default as stor_distributormanager.def
       _distributor_stripes(0),
       _doc_store_chunk_compression_level(9), // Same default as in proton.def
@@ -18,7 +17,6 @@ BmClusterParams::BmClusterParams()
       _indexing_sequencer(),
       _max_merges_per_node(16),     // Same default as in stor-server.def
       _max_merge_queue_size(1024),  // Same default as in stor-server.def
-      _max_pending_idealstate_operations(100), // Same default as in stor-distributormanager.def
       _mbus_distributor_node_max_pending_count(),
       _num_nodes(1),
       _nodes_per_group(1),

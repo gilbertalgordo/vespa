@@ -1,16 +1,15 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 #pragma once
 
 #include "node_supported_features.h"
 #include "pending_bucket_space_db_transition_entry.h"
 #include "clusterinformation.h"
+#include "outdated_nodes_map.h"
 #include <vespa/storageapi/message/bucket.h>
 #include <vespa/storageapi/message/state.h>
 #include <vespa/vdslib/state/cluster_state_bundle.h>
 #include <vespa/vespalib/util/xmlserializable.h>
 #include <vespa/vespalib/stllike/hash_map.h>
-#include "outdated_nodes_map.h"
-#include <unordered_map>
 #include <deque>
 
 namespace storage::framework { struct Clock; }

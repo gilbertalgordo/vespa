@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include <vespa/searchcore/proton/common/selectpruner.h>
 #include <vespa/searchlib/attribute/attributefactory.h>
@@ -797,6 +797,12 @@ TEST_F("Imported fields with matching attribute names are supported", TestFixtur
 {
     f.testPrune("test.my_imported_field > 0",
                 "test.my_imported_field > 0");
+}
+
+TEST_F("Imported fields can be used alongside non-attribute fields", TestFixture)
+{
+    f.testPrune("test.my_imported_field > 0 and id.namespace != \"foo\"",
+                "test.my_imported_field > 0 and id.namespace != \"foo\"");
 }
 
 // Edge case: document type reconfigured but attribute not yet visible in Proton

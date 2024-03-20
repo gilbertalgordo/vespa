@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.clustercontroller.core.restapiv2.requests;
 
 import com.yahoo.vdslib.state.ClusterState;
@@ -127,8 +127,8 @@ public class SetNodeStateRequestTest {
         NodeState storageNodeState = new NodeState(NodeType.STORAGE, storageWantedState);
         when(storageNodeInfo.getUserWantedState()).thenReturn(storageNodeState);
 
-        when(unitState.getId()).thenReturn(wantedStateString);
-        when(unitState.getReason()).thenReturn(REASON);
+        when(unitState.id()).thenReturn(wantedStateString);
+        when(unitState.reason()).thenReturn(REASON);
 
         when(cluster.calculateEffectOfNewState(any(), any(), any(), any(), any(), anyBoolean())).thenReturn(result);
 

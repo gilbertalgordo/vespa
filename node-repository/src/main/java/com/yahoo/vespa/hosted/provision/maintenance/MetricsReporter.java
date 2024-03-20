@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.hosted.provision.maintenance;
 
 import ai.vespa.metrics.ConfigServerMetrics;
@@ -268,7 +268,7 @@ public class MetricsReporter extends NodeRepositoryMaintainer {
             boolean down = NodeHealthTracker.allDown(services);
             metric.set(ConfigServerMetrics.NODE_FAILER_BAD_NODE.baseName(), (down ? 1 : 0), context);
 
-            boolean nodeDownInNodeRepo = node.isDown();
+            boolean nodeDownInNodeRepo = node.history().isDown();;
             metric.set(ConfigServerMetrics.DOWN_IN_NODE_REPO.baseName(), (nodeDownInNodeRepo ? 1 : 0), context);
         }
 
@@ -397,13 +397,16 @@ public class MetricsReporter extends NodeRepositoryMaintainer {
 
     private void updateEmptyExclusiveHosts(NodeList nodes) {
         Instant now = nodeRepository().clock().instant();
-        Duration minActivePeriod = Duration.ofMinutes(10);
+        Instant tenMinutesAgo = now.minus(Duration.ofMinutes(10));
         int emptyHosts = nodes.parents().state(State.active)
                               .matching(node -> (node.type() != NodeType.host && node.type().isHost()) ||
                                                 node.exclusiveToApplicationId().isPresent())
                               .matching(host -> host.history().hasEventBefore(History.Event.Type.activated,
-                                                                              now.minus(minActivePeriod)))
-                              .matching(host -> nodes.childrenOf(host).state(State.active).isEmpty())
+                                                                              tenMinutesAgo))
+                              .matching(host -> nodes.childrenOf(host).isEmpty())
+                              .matching(host -> host.hostEmptyAt()
+                                      .map(time -> time.isBefore(tenMinutesAgo))
+                                      .orElse(true))
                               .size();
         metric.set(ConfigServerMetrics.NODES_EMPTY_EXCLUSIVE.baseName(), emptyHosts, null);
     }

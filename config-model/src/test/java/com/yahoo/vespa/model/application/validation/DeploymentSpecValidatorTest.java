@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.model.application.validation;
 
 import com.yahoo.config.model.NullConfigModelRegistry;
@@ -63,7 +63,7 @@ public class DeploymentSpecValidatorTest {
         try {
             var deployState = builder.build();
             VespaModel model = new VespaModel(new NullConfigModelRegistry(), deployState);
-            new DeploymentSpecValidator().validate(model, deployState);
+            ValidationTester.validate(new DeploymentSpecValidator(), model, deployState);
             fail("Did not get expected exception");
         } catch (IllegalArgumentException e) {
             assertEquals(message, e.getMessage());

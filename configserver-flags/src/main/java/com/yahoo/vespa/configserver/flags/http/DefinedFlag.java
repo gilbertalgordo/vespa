@@ -1,13 +1,13 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.configserver.flags.http;
 
+import com.yahoo.json.Jackson;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.yahoo.container.jdisc.HttpResponse;
 import com.yahoo.jdisc.Response;
 import com.yahoo.vespa.flags.FlagDefinition;
-import com.yahoo.vespa.flags.json.DimensionHelper;
 
 import java.io.IOException;
 import java.io.OutputStream;
@@ -16,7 +16,7 @@ import java.io.OutputStream;
  * @author hakonhall
  */
 public class DefinedFlag extends HttpResponse {
-    private static final ObjectMapper mapper = new ObjectMapper();
+    private static final ObjectMapper mapper = Jackson.mapper();
 
     private final FlagDefinition flagDefinition;
 
@@ -41,7 +41,7 @@ public class DefinedFlag extends HttpResponse {
         definitionNode.put("createdAt", flagDefinition.getCreatedAt().toString());
         definitionNode.put("expiresAt", flagDefinition.getExpiresAt().toString());
         ArrayNode dimensionsNode = definitionNode.putArray("dimensions");
-        flagDefinition.getDimensions().forEach(dimension -> dimensionsNode.add(DimensionHelper.toWire(dimension)));
+        flagDefinition.getDimensions().forEach(dimension -> dimensionsNode.add(dimension.toWire()));
     }
 
     @Override

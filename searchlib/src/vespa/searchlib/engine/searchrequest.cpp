@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include "searchrequest.h"
 
@@ -12,8 +12,7 @@ SearchRequest::SearchRequest(RelativeTime relativeTime)
       offset(0),
       maxhits(10),
       sortSpec(),
-      groupSpec(),
-      sessionId()
+      groupSpec()
 {
 }
 

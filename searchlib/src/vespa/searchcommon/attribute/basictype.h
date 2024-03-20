@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #pragma once
 
@@ -36,6 +36,7 @@ class BasicType
     Type type() const noexcept { return _type; }
     const char * asString() const noexcept { return asString(_type); }
     size_t fixedSize() const noexcept { return fixedSize(_type); }
+    bool is_integer_type() const noexcept;
     static BasicType fromType(bool) noexcept { return BOOL; }
     static BasicType fromType(int8_t)  noexcept { return INT8; }
     static BasicType fromType(int16_t) noexcept { return INT16; }

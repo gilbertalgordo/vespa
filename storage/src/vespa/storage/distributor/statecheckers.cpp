@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include "statecheckers.h"
 #include "activecopy.h"
@@ -10,6 +10,7 @@
 #include <vespa/storage/distributor/operations/idealstate/setbucketstateoperation.h>
 #include <vespa/storage/distributor/operations/idealstate/mergeoperation.h>
 #include <vespa/storage/distributor/operations/idealstate/garbagecollectionoperation.h>
+#include <vespa/storage/config/distributorconfiguration.h>
 #include <vespa/storageframework/generic/clock/clock.h>
 #include <vespa/vdslib/distribution/distribution.h>
 #include <vespa/vdslib/state/clusterstate.h>
@@ -159,12 +160,8 @@ equalNodeSet(ConstNodesRef idealState, const BucketDatabase::Entry& dbEntry)
     }
     // Note: no assumptions are made on the ordering of the elements in
     // either vector.
-    for (uint16_t node : idealState) {
-        if (!dbEntry->getNode(node)) {
-            return false;
-        }
-    }
-    return true;
+    return std::all_of(idealState.cbegin(), idealState.cend(),
+                       [&dbEntry](uint16_t node) { return dbEntry->getNode(node); });
 }
 
 bool
@@ -721,7 +718,7 @@ checkForNodesMissingFromIdealState(const StateChecker::Context& c)
                 if (c.idealState().size() > c.entry()->getNodeCount()) {
                     ret.markMissingReplica(node, mp.mergeTooFewCopies);
                 } else {
-                    ret.markMoveToIdealLocation(node,mp.mergeMoveToIdealNode);
+                    ret.markMoveToIdealLocation(node, mp.mergeMoveToIdealNode);
                 }
                 c.stats.incCopyingIn(node, c.getBucketSpace());
                 hasMissingReplica = true;
@@ -770,9 +767,7 @@ allCopiesAreInvalid(const StateChecker::Context& c)
 bool
 merging_effectively_disabled_for_state_checker(const StateChecker::Context& c) noexcept
 {
-    return (c.distributorConfig.merge_operations_disabled()
-            || (c.distributorConfig.inhibit_default_merges_when_global_merges_pending()
-                && c.merges_inhibited_in_bucket_space));
+    return c.distributorConfig.merge_operations_disabled() || c.merges_inhibited_in_bucket_space;
 }
 
 }
@@ -807,9 +802,7 @@ SynchronizeAndMoveStateChecker::check(const Context &c) const
                                                    c.distributorConfig.getMaxNodesPerMerge());
         op->setDetailedReason(result.reason());
         MaintenancePriority::Priority schedPri;
-        if ((c.getBucketSpace() == document::FixedBucketSpaces::default_space())
-            || !c.distributorConfig.prioritize_global_bucket_merges())
-        {
+        if (c.getBucketSpace() == document::FixedBucketSpaces::default_space()) {
             schedPri = (result.needsMoveOnly() ? MaintenancePriority::LOW : MaintenancePriority::MEDIUM);
             op->setPriority(result.priority());
         } else {

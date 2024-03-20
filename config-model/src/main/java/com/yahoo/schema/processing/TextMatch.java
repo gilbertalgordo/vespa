@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.schema.processing;
 
 import com.yahoo.config.application.api.DeployLogger;
@@ -16,13 +16,9 @@ import com.yahoo.vespa.indexinglanguage.expressions.ForEachExpression;
 import com.yahoo.vespa.indexinglanguage.expressions.IndexExpression;
 import com.yahoo.vespa.indexinglanguage.expressions.OutputExpression;
 import com.yahoo.vespa.indexinglanguage.expressions.ScriptExpression;
-import com.yahoo.vespa.indexinglanguage.expressions.SummaryExpression;
 import com.yahoo.vespa.indexinglanguage.expressions.TokenizeExpression;
 import com.yahoo.vespa.indexinglanguage.linguistics.AnnotatorConfig;
 import com.yahoo.vespa.model.container.search.QueryProfiles;
-
-import java.util.Set;
-import java.util.TreeSet;
 
 /**
  * @author Simon Thoresen Hult
@@ -47,13 +43,7 @@ public class TextMatch extends Processor {
             }
             if (fieldType != DataType.STRING) continue;
 
-            Set<String> dynamicSummary = new TreeSet<>();
-            Set<String> staticSummary = new TreeSet<>();
-            new IndexingOutputs(schema, deployLogger, rankProfileRegistry, queryProfiles).findSummaryTo(schema,
-                                                                                                        field,
-                                                                                                        dynamicSummary,
-                                                                                                        staticSummary);
-            MyVisitor visitor = new MyVisitor(dynamicSummary);
+            MyVisitor visitor = new MyVisitor();
             visitor.visit(script);
             if ( ! visitor.requiresTokenize) continue;
 
@@ -70,29 +60,29 @@ public class TextMatch extends Processor {
         }
         ret.setStemMode(activeStemming.toStemMode());
         ret.setRemoveAccents(field.getNormalizing().doRemoveAccents());
-        if ((field.getMatching() != null) && (field.getMatching().maxLength() != null)) {
-            ret.setMaxTokenLength(field.getMatching().maxLength());
+        var fieldMatching = field.getMatching();
+        if (fieldMatching != null) {
+            var maxLength = fieldMatching.maxLength();
+            if (maxLength != null) {
+                ret.setMaxTokenLength(maxLength);
+            }
+            var maxTermOccurrences = fieldMatching.maxTermOccurrences();
+            if (maxTermOccurrences != null) {
+                ret.setMaxTermOccurrences(maxTermOccurrences);
+            }
         }
         return ret;
     }
 
     private static class MyVisitor extends ExpressionVisitor {
 
-        final Set<String> dynamicSummaryFields;
         boolean requiresTokenize = false;
 
-        MyVisitor(Set<String> dynamicSummaryFields) {
-            this.dynamicSummaryFields = dynamicSummaryFields;
-        }
+        MyVisitor() { }
 
         @Override
         protected void doVisit(Expression exp) {
             if (exp instanceof IndexExpression) {
-                requiresTokenize = true;
-            }
-            if (exp instanceof SummaryExpression &&
-                dynamicSummaryFields.contains(((SummaryExpression)exp).getFieldName()))
-            {
                 requiresTokenize = true;
             }
         }

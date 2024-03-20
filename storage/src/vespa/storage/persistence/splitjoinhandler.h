@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #pragma once
 
@@ -33,6 +33,7 @@ private:
     PersistenceUtil          &_env;
     spi::PersistenceProvider &_spi;
     BucketOwnershipNotifier  &_bucketOwnershipNotifier;
+    // TODO Rewrite tests so below config can be removed. Hardcoded to false in production.
     bool                      _enableMultibitSplitOptimalization;
 };
 

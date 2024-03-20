@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.search.dispatch;
 
 import com.yahoo.prelude.fastsearch.FastHit;
@@ -40,7 +40,7 @@ class MockInvoker extends SearchInvoker {
     }
 
     @Override
-    protected InvokerResult getSearchResult(Execution execution) {
+    protected InvokerResult getSearchResult() {
         InvokerResult ret = new InvokerResult(query, 10);
         if (coverage != null) {
             ret.getResult().setCoverage(coverage);

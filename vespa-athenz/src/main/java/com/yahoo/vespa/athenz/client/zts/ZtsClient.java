@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.athenz.client.zts;
 
 import com.yahoo.security.Pkcs10Csr;
@@ -127,6 +127,15 @@ public interface ZtsClient extends AutoCloseable {
      * @return An Athenz access token
      */
     AthenzAccessToken getAccessToken(List<AthenzRole> athenzRole);
+
+    /**
+     * Fetch an access token for the target roles
+     *
+     * @param athenzRole List of athenz roles to get access token for
+     * @param proxyPrincipals List of principals to allow proxying token
+     * @return An Athenz access token
+     */
+    AthenzAccessToken getAccessToken(List<AthenzRole> athenzRole, List<AthenzIdentity> proxyPrincipals);
 
     /**
      * Fetch role certificate for the target domain and role

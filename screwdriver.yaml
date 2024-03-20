@@ -1,4 +1,4 @@
-# Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+# Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 ---
 cache:
   job:
@@ -6,7 +6,7 @@ cache:
     component-build: [/main_job_cache]
 
 shared:
-  image: vespaengine/vespa-build-centos-stream8:latest
+  image: docker.io/vespaengine/vespa-build-almalinux-8
   environment:
     USER_SHELL_BIN: bash
   annotations:
@@ -34,7 +34,7 @@ shared:
         du -sh /tmp/vespa/*
 
         if [[ -z "$SD_PULL_REQUEST" ]]; then
-          if [[ -z $VESPA_USE_SANITIZER ]] || [[ $VESPA_USE_SANITIZER == null ]]; then
+          if [[ -z "$VESPA_USE_SANITIZER" ]] || [[ "$VESPA_USE_SANITIZER" == null ]]; then
             # Remove what we have produced
             rm -rf $LOCAL_MVN_REPO/com/yahoo
             rm -rf $LOCAL_MVN_REPO/ai/vespa
@@ -44,7 +44,7 @@ shared:
             (cd /tmp && tar cf $MAIN_CACHE_FILE vespa)
 
             # Wipe the cache if we exceed 2GB to avoid pulling and pusing too large files
-            if (( $(stat --format='%s' $MAIN_CACHE_FILE) > $(( 2200*1000*1000 )) )); then
+            if (( $(stat --format='%s' $MAIN_CACHE_FILE) > $(( 2500*1000*1000 )) )); then
               tar cf $MAIN_CACHE_FILE --files-from=/dev/null;
               echo "Cleaning cache file. $MAIN_CACHE_FILE is now $(stat --format='%s' $MAIN_CACHE_FILE) bytes."
             fi
@@ -53,13 +53,12 @@ shared:
 
 jobs:
   build-vespa:
-    requires: [~pr]
     annotations:
       screwdriver.cd/cpu: 7
       screwdriver.cd/ram: 16
       screwdriver.cd/disk: HIGH
       screwdriver.cd/timeout: 90
-      screwdriver.cd/buildPeriodically: H 4 * * *
+      #screwdriver.cd/buildPeriodically: H 4 * * *
 
     environment:
       LOCAL_MVN_REPO: "/tmp/vespa/mvnrepo"
@@ -87,6 +86,7 @@ jobs:
           df -h
 
   component-build:
+    requires: [~pr]
     annotations:
       screwdriver.cd/cpu: 7
       screwdriver.cd/ram: 16
@@ -103,40 +103,51 @@ jobs:
       CCACHE_DATA_DIR: "/tmp/vespa/ccache"
       MAIN_CACHE_FILE: "/main_job_cache/vespa.tar"
       CCACHE_COMPRESS: "1"
+      GOPATH: "/tmp/vespa/go"
     secrets:
       - DOCKER_HUB_DEPLOY_KEY
       - SVC_OKTA_VESPA_FACTORY_TOKEN
     steps:
       - get-vespa-version: |
-          VERSION_INFO=$(screwdriver/factory-command.sh create-build)
-          VESPA_VERSION=$(jq -re '.version' <<< "$VERSION_INFO")
-          VESPA_REF=$(jq -re '.commits|.[]|select(.repo=="vespa")|.ref' <<< "$VERSION_INFO")
-          SYSTEM_TEST_REF=$(jq -re '.commits|.[]|select(.repo=="system-test")|.ref' <<< "$VERSION_INFO")
-          if [[ $VESPA_VERSION == null ]] || [[ $VESPA_REF == null ]] || [[ $SYSTEM_TEST_REF == null ]]; then
-            echo "Must have valid Vespa version and reference to continue \
-                  (got VESPA_VERSION=$VESPA_VERSION, VESPA_REF=$VESPA_REF, SYSTEM_TEST_REF=$SYSTEM_TEST_REF)."
-            exit 1
+          if [[ -z "$SD_PULL_REQUEST" ]]; then
+            VERSION_INFO=$(screwdriver/factory-command.sh create-build)
+            VESPA_VERSION=$(jq -re '.version' <<< "$VERSION_INFO")
+            VESPA_REF=$(jq -re '.commits|.[]|select(.repo=="vespa")|.ref' <<< "$VERSION_INFO")
+            SYSTEM_TEST_REF=$(jq -re '.commits|.[]|select(.repo=="system-test")|.ref' <<< "$VERSION_INFO")
+            if [[ $VESPA_VERSION == null ]] || [[ $VESPA_REF == null ]] || [[ $SYSTEM_TEST_REF == null ]]; then
+              echo "Must have valid Vespa version and reference to continue \
+                    (got VESPA_VERSION=$VESPA_VERSION, VESPA_REF=$VESPA_REF, SYSTEM_TEST_REF=$SYSTEM_TEST_REF)."
+              exit 1
+            fi
+          else
+            # We'll just use the version number from the latest factory build for PRs
+            VESPA_VERSION=$(meta get vespa.version --external component-build)
           fi
-      - install-dependencies: |
-          dnf config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
-          dnf -y install docker-ce docker-ce-cli containerd.io
-          docker system info
+          meta set vespa.version $VESPA_VERSION
       - checkout: |
-          mkdir -p workdir
-          cd workdir
-          WORKDIR=$(pwd)
-          git clone -q https://github.com/vespa-engine/vespa
-          (cd vespa && git checkout $VESPA_REF && git tag v$VESPA_VERSION)
-          git clone -q https://github.com/vespa-engine/system-test
-          (cd system-test && git checkout $SYSTEM_TEST_REF)
-          git clone -q https://github.com/vespa-engine/sample-apps
+          WORKDIR=$(pwd)/..
+          cd $WORKDIR
+
+          if [[ -z "$SD_PULL_REQUEST" ]]; then
+            git clone -q https://github.com/vespa-engine/system-test
+            git clone -q --depth 1 https://github.com/vespa-engine/sample-apps
+            (cd vespa && git checkout $VESPA_REF)
+            (cd system-test && git checkout $SYSTEM_TEST_REF)
+            (cd sample-apps && find . -name "pom.xml" -exec sed -i -e "s,<vespa_version>.*</vespa_version>,<vespa_version>$VESPA_VERSION</vespa_version>," {} \;)
+            (cd sample-apps && find . -name "pom.xml" -exec sed -i -e "s:<version>[[]8,9[)]</version>:<version>$VESPA_VERSION</version>:" {} \;)
+          else
+            git clone -q --depth 1 https://github.com/vespa-engine/system-test
+          fi
+
+          # We set the tag locally to make the SRPM build like Copr does it
+          (cd vespa && git tag v$VESPA_VERSION)
           # Set correct version in pom.xml files
           (cd vespa && screwdriver/replace-vespa-version-in-poms.sh $VESPA_VERSION $(pwd) )
-          (cd sample-apps && find . -name "pom.xml" -exec sed -i -e "s,<vespa_version>.*</vespa_version>,<vespa_version>$VESPA_VERSION</vespa_version>," {} \;)
-          (cd sample-apps && find . -name "pom.xml" -exec sed -i -e "s:<version>[[]8,9[)]</version>:<version>$VESPA_VERSION</version>:" {} \;)
       - make-srpm: |
-          $SD_SOURCE_DIR/screwdriver/factory-command.sh update-build-status running "Building"
-
+          if [[ -z "$SD_PULL_REQUEST" ]]; then
+            $SD_SOURCE_DIR/screwdriver/factory-command.sh update-build-status running "Building"
+          fi
+          echo "%_binary_payload w0.gzdio" >> $HOME/.rpmmacros
           make -C $WORKDIR/vespa -f .copr/Makefile srpm outdir=$WORKDIR
       - *restore-cache
       - build: |
@@ -159,7 +170,9 @@ jobs:
           ccache --show-stats
           time make -j ${NUM_THREADS} install DESTDIR=$WORKDIR/vespa-install
       - build-sample-apps: |
-          (cd $WORKDIR/sample-apps && time ../vespa/mvnw -T $NUM_THREADS $VESPA_MAVEN_EXTRA_OPTS package)
+          if [[ -z "$SD_PULL_REQUEST" ]]; then
+            (cd $WORKDIR/sample-apps && time ../vespa/mvnw -T $NUM_THREADS $VESPA_MAVEN_EXTRA_OPTS package)
+          fi
       - verify-rpm-build: |
           cd $WORKDIR
           ulimit -c 0
@@ -179,14 +192,20 @@ jobs:
           git archive HEAD --format tar | tar x -C docker/vespa-systemtests
           cp -a $LOCAL_MVN_REPO docker/repository
           cd docker
+          if [[ -z "$SD_PULL_REQUEST" ]]; then
+            SKIP_M2_POPULATE=false
+          else
+            SKIP_M2_POPULATE=true
+          fi
           docker build --file Dockerfile.systemtest \
-                       --build-arg VESPA_BASE_IMAGE=vespaengine/vespa-systemtest-base-centos-stream8:latest \
-                       --build-arg SYSTEMTEST_BASE_IMAGE=vespa --build-arg SKIP_M2_POPULATE=false \
+                       --progress=plain \
+                       --build-arg VESPA_BASE_IMAGE=docker.io/vespaengine/vespa-systemtest-base-el8:latest \
+                       --build-arg SYSTEMTEST_BASE_IMAGE=vespa --build-arg SKIP_M2_POPULATE=$SKIP_M2_POPULATE \
                        --target systemtest \
-                       --tag vespaengine/vespa-systemtest-centos-stream8:$VESPA_VERSION \
-                       --tag vespaengine/vespa-systemtest-centos-stream8:latest .
+                       --tag docker.io/vespaengine/vespa-systemtest-el8:$VESPA_VERSION \
+                       --tag docker.io/vespaengine/vespa-systemtest-el8:latest .
       - verify-test-image: |
-          docker run --rm -ti --entrypoint bash vespaengine/vespa-systemtest-centos-stream8:$VESPA_VERSION -lc \
+          docker run --rm -ti --entrypoint bash docker.io/vespaengine/vespa-systemtest-el8:$VESPA_VERSION -lc \
           "/opt/vespa-systemtests/lib/node_server.rb & sleep 3 && ruby /opt/vespa-systemtests/tests/search/basicsearch/basic_search.rb --run test_basicsearch__ELASTIC"
       - publish-test-image: |
           if [[ -z "$SD_PULL_REQUEST" ]]; then
@@ -194,8 +213,8 @@ jobs:
             set +x
             docker login --username aressem --password "$DOCKER_HUB_DEPLOY_KEY"
             eval "$OPT_STATE"
-            docker push docker.io/vespaengine/vespa-systemtest-centos-stream8:$VESPA_VERSION
-            docker push docker.io/vespaengine/vespa-systemtest-centos-stream8:latest
+            docker push docker.io/vespaengine/vespa-systemtest-el8:$VESPA_VERSION
+            docker push docker.io/vespaengine/vespa-systemtest-el8:latest
           fi
       - *save-cache
       - update-build-status: |
@@ -208,12 +227,12 @@ jobs:
             FACTORY_BUILD_STATUS=failure
             DESCRIPTION="Build failed"
           fi
-          echo "Reporting build status as $FACTORY_BUILD_STATUS"
-          $SD_SOURCE_DIR/screwdriver/factory-command.sh update-build-status $FACTORY_BUILD_STATUS "$DESCRIPTION"
+          if [[ -z "$SD_PULL_REQUEST" ]]; then
+            echo "Reporting build status as $FACTORY_BUILD_STATUS"
+            $SD_SOURCE_DIR/screwdriver/factory-command.sh update-build-status $FACTORY_BUILD_STATUS "$DESCRIPTION"
+          fi
 
   publish-release:
-    image: docker.io/vespaengine/vespa-build-centos-stream8:latest
-
     annotations:
       screwdriver.cd/cpu: 7
       screwdriver.cd/ram: 16
@@ -237,6 +256,7 @@ jobs:
       - DOCKER_IMAGE_DEPLOY_KEY
       - DOCKER_HUB_DEPLOY_KEY
       - GHCR_DEPLOY_KEY
+      - ANN_BENCHMARK_DEPLOY_KEY
       - SVC_OKTA_VESPA_FACTORY_TOKEN
 
     environment:
@@ -256,7 +276,7 @@ jobs:
           meta set vespa.version $VESPA_VERSION
       - install-dependencies: |
           dnf config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
-          dnf install -y docker-ce docker-ce-cli containerd.io
+          dnf install -y docker-ce docker-ce-cli containerd.io python3 python3-pip
           docker system info
       - release-java-artifacts: |
           screwdriver/release-java-artifacts.sh $VESPA_VERSION $VESPA_REF
@@ -264,14 +284,14 @@ jobs:
           screwdriver/release-rpms.sh $VESPA_VERSION $VESPA_REF
       - release-container-image: |
           screwdriver/release-container-image-docker.sh $VESPA_VERSION
+      - release-ann-benchmark: |
+          screwdriver/release-ann-benchmark.sh $VESPA_VERSION
       - update-sample-apps: |
           screwdriver/update-vespa-version-in-sample-apps.sh $VESPA_VERSION
       - update-released-time: |
           screwdriver/factory-command.sh update-released-time $VESPA_VERSION
 
   publish-legacy-release:
-    image: docker.io/vespaengine/vespa-build-centos-stream8:latest
-
     annotations:
       screwdriver.cd/cpu: 7
       screwdriver.cd/ram: 16
@@ -298,7 +318,7 @@ jobs:
           fi
       - install-dependencies: |
           dnf config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
-          dnf install -y docker-ce docker-ce-cli containerd.io
+          dnf install -y docker-ce docker-ce-cli containerd.io python3 python3-pip
           docker system info
       - checkout: |
           mkdir -p workdir
@@ -337,7 +357,7 @@ jobs:
           $SD_SOURCE_DIR/screwdriver/test-quick-start-guide.sh
       - publish-image: |
           if [[ -z $SD_PULL_REQUEST ]]; then
-            if curl -fsSL https://index.docker.io/v1/repositories/$IMAGE_NAME/tags/$VESPA_VERSION &> /dev/null; then
+            if curl -fsSL https://hub.docker.com/v2/repositories/$IMAGE_NAME/tags/$VESPA_VERSION/ &> /dev/null; then
               echo "Container image docker.io/$IMAGE_NAME:$VESPA_VERSION aldready exists."
             else
               OPT_STATE="$(set +o)"
@@ -350,7 +370,6 @@ jobs:
           fi
 
   publish-el9-preview:
-    image: docker.io/vespaengine/vespa-build-centos-stream8:latest
     annotations:
       screwdriver.cd/cpu: 7
       screwdriver.cd/ram: 16
@@ -362,12 +381,13 @@ jobs:
       screwdriver.cd/buildPeriodically: H 6 1 * *
 
     environment:
+      BASE_IMAGE: "el9"
       IMAGE_NAME: "vespaengine/vespa-el9-preview"
 
     secrets:
       - DOCKER_HUB_DEPLOY_KEY
 
-    steps:
+    steps: &publish-el9-preview-steps
       - get-vespa-version: |
           set -x
           VESPA_VERSION=$(meta get vespa.version --external publish-release)
@@ -378,7 +398,7 @@ jobs:
           VESPA_MAJOR=$(echo $VESPA_VERSION | cut -d. -f1)
       - install-dependencies: |
           dnf config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
-          dnf -y install docker-ce docker-ce-cli containerd.io
+          dnf -y install docker-ce docker-ce-cli containerd.io python3 python3-pip
           docker system info
       - checkout: |
           git clone https://github.com/vespa-engine/docker-image
@@ -394,17 +414,18 @@ jobs:
                 --progress plain \
                 --load \
                 --platform linux/amd64 \
-                --build-arg VESPA_BASE_IMAGE=el9 \
+                --build-arg VESPA_BASE_IMAGE=$BASE_IMAGE \
                 --build-arg VESPA_VERSION=$VESPA_VERSION \
                 --file Dockerfile  \
-                --tag vespaengine/$IMAGE_NAME:latest \
+                --tag docker.io/vespaengine/vespa:latest \
+                --tag docker.io/$IMAGE_NAME:latest \
                 .
       - verify-container-image: |
           # Run quick start guide
           $SD_SOURCE_DIR/screwdriver/test-quick-start-guide.sh
       - publish-image: |
           if [[ -z $SD_PULL_REQUEST ]]; then
-            if curl -fsSL https://index.docker.io/v1/repositories/$IMAGE_NAME/tags/$VESPA_VERSION &> /dev/null; then
+            if curl -fsSL https://hub.docker.com/v2/repositories/$IMAGE_NAME/tags/$VESPA_VERSION/ &> /dev/null; then
               echo "Container image docker.io/$IMAGE_NAME:$VESPA_VERSION aldready exists."
             else
               OPT_STATE="$(set +o)"
@@ -415,12 +436,12 @@ jobs:
                 --progress plain \
                 --push \
                 --platform linux/amd64,linux/arm64 \
-                --build-arg VESPA_BASE_IMAGE=el9 \
+                --build-arg VESPA_BASE_IMAGE=$BASE_IMAGE \
                 --build-arg VESPA_VERSION=$VESPA_VERSION \
                 --file Dockerfile  \
-                --tag docker.io/vespaengine/$IMAGE_NAME:$VESPA_VERSION \
-                --tag docker.io/vespaengine/$IMAGE_NAME:$VESPA_MAJOR \
-                --tag docker.io/vespaengine/$IMAGE_NAME:latest \
+                --tag docker.io/$IMAGE_NAME:$VESPA_VERSION \
+                --tag docker.io/$IMAGE_NAME:$VESPA_MAJOR \
+                --tag docker.io/$IMAGE_NAME:latest \
                 .
             fi
           fi
@@ -478,13 +499,16 @@ jobs:
       screwdriver.cd/buildPeriodically: H 0 * * *
     steps:
       - install: |
+          dnf list llvm-libs --showduplicates
           dnf install -y dnf-plugins-core
-          dnf config-manager --add-repo https://raw.githubusercontent.com/vespa-engine/vespa/master/dist/vespa-engine.repo
+          dnf config-manager --add-repo https://copr.fedorainfracloud.org/coprs/g/vespa/vespa/repo/epel-8/group_vespa-vespa-epel-8.repo
           dnf config-manager --enable powertools
           dnf install -y epel-release
           dnf install -y vespa
 
-  mirror-copr-rpms-to-artifactory:
+  mirror-copr-rpms-to-archive:
+    requires: [publish-release]
+    image: docker.io/almalinux:8
     annotations:
       screwdriver.cd/cpu: LOW
       screwdriver.cd/ram: LOW
@@ -492,22 +516,26 @@ jobs:
       screwdriver.cd/timeout: 60
       screwdriver.cd/buildPeriodically: H 6 * * *
     secrets:
-      - JFROG_API_TOKEN
+      - CLOUDSMITH_API_CREDS
     steps:
-      - mirror: |
-          screwdriver/publish-unpublished-rpms-to-jfrog-cloud.sh
+      - install: |
+          dnf install -y dnf-plugins-core jq
+      - mirror-x86-64: |
+          screwdriver/publish-unpublished-rpms-to-archive.sh x86_64
+      - mirror-aarch64: |
+          screwdriver/publish-unpublished-rpms-to-archive.sh aarch64
 
-  delete-old-versions-on-artifactory:
+  delete-old-versions-in-archive:
     annotations:
       screwdriver.cd/cpu: LOW
       screwdriver.cd/ram: LOW
       screwdriver.cd/timeout: 10
-      screwdriver.cd/buildPeriodically: H 6 * * 1
+      screwdriver.cd/buildPeriodically: H 6 * * *
     secrets:
-      - JFROG_API_TOKEN
+      - CLOUDSMITH_API_CREDS
     steps:
       - cleanup: |
-          screwdriver/delete-old-artifactory-artifacts.sh
+          screwdriver/delete-old-cloudsmith-artifacts.sh
 
   link-check:
     image: ruby:3.1
@@ -524,14 +552,12 @@ jobs:
             while read f; do (echo -e "---\nrender_with_liquid: false\n---\n"; cat ${f})>${f}.new; mv ${f}.new ${f}; done
       - build-site: |
           bundle exec jekyll build
-      - ignore-files: |
-          rm -rf _site/airlift-zstd
       - check-links: |
           bundle exec htmlproofer \
-          --assume-extension --check-html --check-external-hash --no-enforce-http \
+          --assume-extension --check-html --no-check-external-hash --no-enforce-http \
           --typhoeus '{"connecttimeout": 10, "timeout": 30, "followlocation": false}' \
           --hydra '{"max_concurrency": 1}' \
           --ignore-urls '/slack.vespa.ai/,/localhost:8080/,/127.0.0.1:3000/,/favicon.svg/,/main.jsx/' \
-          --ignore-files '/fnet/index.html/' \
+          --ignore-files '/fnet/index.html/,/client/js/app/node_modules/' \
           --swap-urls '(.*).md:\1.html' \
           _site

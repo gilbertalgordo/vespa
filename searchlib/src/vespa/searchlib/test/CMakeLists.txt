@@ -1,9 +1,10 @@
-# Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+# Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 vespa_add_library(searchlib_test
     SOURCES
     attribute_builder.cpp
     document_weight_attribute_helper.cpp
     doc_builder.cpp
+    ft_test_app_base.cpp
     imported_attribute_fixture.cpp
     initrange.cpp
     make_attribute_map_lookup_node.cpp
@@ -25,6 +26,7 @@ vespa_add_library(searchlib_test
 
 vespa_add_library(searchlib_test_gtest_migration OBJECT
     SOURCES
+    ft_test_app_base.cpp
     initrange.cpp
     searchiteratorverifier.cpp
 )

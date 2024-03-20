@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include <vespa/searchcore/proton/test/dummydbowner.h>
 #include <vespa/searchcore/proton/attribute/flushableattribute.h>
@@ -56,6 +56,7 @@ using searchcorespi::IFlushTarget;
 using searchcorespi::index::IndexFlushTarget;
 using vespa::config::search::core::ProtonConfig;
 using vespa::config::content::core::BucketspacesConfig;
+using vespalib::HwInfo;
 using vespalib::Slime;
 
 namespace {
@@ -128,7 +129,7 @@ Fixture::Fixture(bool file_config)
       _dummy(),
       _myDBOwner(),
       _summaryExecutor(8),
-      _shared_service(_summaryExecutor, _summaryExecutor),
+      _shared_service(_summaryExecutor),
       _hwInfo(),
       _db(),
       _fileHeaderContext(),

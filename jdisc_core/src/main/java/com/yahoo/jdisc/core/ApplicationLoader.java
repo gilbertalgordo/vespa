@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.jdisc.core;
 
 import com.google.inject.AbstractModule;
@@ -186,7 +186,7 @@ public class ApplicationLoader implements BootstrapLoader, ContainerActivator, C
         synchronized (appLock) {
             application = null;
         }
-        activateContainer(null);
+        try (DeactivatedContainer deactivated = activateContainer(null)) { }
         synchronized (appLock) {
             this.applicationInUseTracker = null;
         }

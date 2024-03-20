@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include "empty_search_context.h"
 #include <vespa/searchlib/queryeval/emptysearch.h>
@@ -24,10 +24,10 @@ EmptySearchContext::onFind(DocId, int32_t) const
     return -1;
 }
 
-unsigned int
-EmptySearchContext::approximateHits() const
+HitEstimate
+EmptySearchContext::calc_hit_estimate() const
 {
-    return 0u;
+    return HitEstimate(0);
 }
 
 uint32_t

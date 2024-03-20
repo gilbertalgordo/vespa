@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 package ai.vespa.modelintegration.evaluator;
 
@@ -9,8 +9,15 @@ import org.junit.Test;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Paths;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+
+import java.util.logging.Level;
+import java.util.logging.Logger;
+import java.util.logging.Handler;
+import java.util.logging.LogRecord;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
@@ -83,12 +90,14 @@ public class OnnxEvaluatorTest {
         var runtime = new OnnxRuntime();
         assertEvaluate(runtime, "add_double.onnx", "tensor(d0[1]):[3]", "tensor(d0[1]):[1]", "tensor(d0[1]):[2]");
         assertEvaluate(runtime, "add_float.onnx", "tensor<float>(d0[1]):[3]", "tensor<float>(d0[1]):[1]", "tensor<float>(d0[1]):[2]");
+        assertEvaluate(runtime, "add_float16.onnx", "tensor<float>(d0[1]):[3]", "tensor<float>(d0[1]):[1]", "tensor<float>(d0[1]):[2]");
+        //Add is not a supported operation for bfloat16 types in onnx operators.
+        assertEvaluate(runtime, "sign_bfloat16.onnx", "tensor<bfloat16>(d0[1]):[1]", "tensor<bfloat16>(d0[1]):[1]");
+
         assertEvaluate(runtime, "add_int64.onnx", "tensor<double>(d0[1]):[3]", "tensor<double>(d0[1]):[1]", "tensor<double>(d0[1]):[2]");
         assertEvaluate(runtime, "cast_int8_float.onnx", "tensor<float>(d0[1]):[-128]", "tensor<int8>(d0[1]):[128]");
         assertEvaluate(runtime, "cast_float_int8.onnx", "tensor<int8>(d0[1]):[-1]", "tensor<float>(d0[1]):[255]");
-
-        // ONNX Runtime 1.8.0 does not support much of bfloat16 yet
-        // assertEvaluate("cast_bfloat16_float.onnx", "tensor<float>(d0[1]):[1]", "tensor<bfloat16>(d0[1]):[1]");
+        assertEvaluate(runtime,"cast_bfloat16_float.onnx", "tensor<float>(d0[1]):[1]", "tensor<bfloat16>(d0[1]):[1]");
     }
 
     @Test
@@ -170,6 +179,29 @@ public class OnnxEvaluatorTest {
         evaluator.close();
     }
 
+    @Test
+    public void testLoggingMessages() throws IOException {
+        assumeTrue(OnnxRuntime.isRuntimeAvailable());
+        Logger logger = Logger.getLogger(OnnxEvaluator.class.getName());
+        CustomLogHandler logHandler = new CustomLogHandler();
+        logger.addHandler(logHandler);
+        var runtime = new OnnxRuntime();
+        var model = Files.readAllBytes(Paths.get("src/test/models/onnx/simple/simple.onnx"));
+        OnnxEvaluatorOptions options = new OnnxEvaluatorOptions();
+        options.setGpuDevice(0);
+        var evaluator = runtime.evaluatorOf(model,options);
+        evaluator.close();
+        List<LogRecord> records = logHandler.getLogRecords();
+        assertEquals(1,records.size());
+        assertEquals(Level.INFO,records.get(0).getLevel());
+        String message = records.get(0).getMessage();
+        assertEquals("Failed to create session with CUDA using GPU device 0. " +
+                "Falling back to CPU. Reason: Error code - ORT_EP_FAIL - message:" +
+                " Failed to find CUDA shared provider", message);
+        logger.removeHandler(logHandler);
+
+    }
+
     private void assertEvaluate(OnnxRuntime runtime, String model, String output, String... input) {
         OnnxEvaluator evaluator = runtime.evaluatorOf("src/test/models/onnx/" + model);
         Map<String, Tensor> inputs = new HashMap<>();
@@ -180,6 +212,27 @@ public class OnnxEvaluatorTest {
         Tensor result = evaluator.evaluate(inputs, "output");
         assertEquals(expected, result);
         assertEquals(expected.type().valueType(), result.type().valueType());
+    }
+
+    static class CustomLogHandler extends Handler {
+        private List<LogRecord> records = new ArrayList<>();
+
+        @Override
+        public void publish(LogRecord record) {
+            records.add(record);
+        }
+
+        @Override
+        public void flush() {
+        }
+
+        @Override
+        public void close() throws SecurityException {
+        }
+
+        public List<LogRecord> getLogRecords() {
+            return records;
+        }
     }
 
 }

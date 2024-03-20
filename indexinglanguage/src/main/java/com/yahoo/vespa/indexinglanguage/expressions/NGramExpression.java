@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.indexinglanguage.expressions;
 
 import com.yahoo.document.DataType;
@@ -14,6 +14,8 @@ import com.yahoo.language.process.TokenType;
 import com.yahoo.vespa.indexinglanguage.linguistics.LinguisticsAnnotator;
 
 import java.util.Iterator;
+
+import static com.yahoo.language.LinguisticsCase.toLowerCase;
 
 /**
  * A filter which splits incoming text into n-grams.
@@ -68,8 +70,9 @@ public final class NGramExpression extends Expression {
 
             // annotate gram as a word term
             String gramString = gram.extractFrom(output.getString());
-            typedSpan(gram.getStart(), gram.getCodePointCount(), TokenType.ALPHABETIC, spanList).
-                    annotate(LinguisticsAnnotator.lowerCaseTermAnnotation(gramString, gramString));
+            typedSpan(gram.getStart(),
+                      gram.getCodePointCount(),
+                      TokenType.ALPHABETIC, spanList).annotate(LinguisticsAnnotator.termAnnotation(toLowerCase(gramString), gramString));
 
             lastPosition = gram.getStart() + gram.getCodePointCount();
         }

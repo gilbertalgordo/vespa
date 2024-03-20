@@ -1,10 +1,10 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #pragma once
 
 #include <vespa/storage/distributor/min_replica_provider.h>
 #include <vespa/storage/bucketdb/bucketdatabase.h>
-#include <vespa/storage/config/config-stor-distributormanager.h>
+#include <vespa/storage/config/replica_counting_mode.h>
 #include <vespa/vespalib/util/memoryusage.h>
 #include <vespa/vespalib/stllike/hash_map.h>
 
@@ -56,8 +56,6 @@ public:
          */
         void propagateMetrics(IdealStateMetricSet&, DistributorMetricSet&) const;
     };
-
-    using ReplicaCountingMode = vespa::config::content::core::StorDistributormanagerConfig::MinimumReplicaCountingMode;
 
 private:
     Stats               _workingStats;

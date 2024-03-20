@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.model.container.search.searchchain;
 
 import com.yahoo.collections.CollectionUtil;
@@ -38,11 +38,20 @@ public class SearchChains extends Chains<SearchChain> {
         initializeComponents();
     }
 
+
     private void setSearchClusterForLocalProvider(Map<String, ? extends SearchCluster> clusterIndexByName) {
         for (LocalProvider provider : localProviders()) {
-            SearchCluster cluster = clusterIndexByName.get(provider.getClusterName());
-            if (cluster == null)
-                throw new IllegalArgumentException("No searchable content cluster with id '" + provider.getClusterName() + "'");
+            String clusterName = provider.getClusterName();
+            SearchCluster cluster = clusterIndexByName.get(clusterName);
+            if (cluster == null) {
+                if (clusterName.contains(".")) { // Is there a super cluster ...
+                    String prefix = clusterName.substring(0, clusterName.indexOf('.'));
+                    cluster = clusterIndexByName.get(prefix);
+                }
+                if (cluster == null) {
+                    throw new IllegalArgumentException("No searchable content cluster with id '" + provider.getClusterName() + "'");
+                }
+            }
             provider.setSearchCluster(cluster);
         }
     }
@@ -98,7 +107,7 @@ public class SearchChains extends Chains<SearchChain> {
         return allChains;
     }
 
-    private void addSources(ComponentRegistry<SearchChain> chains, Provider provider) {
+    private static void addSources(ComponentRegistry<SearchChain> chains, Provider provider) {
          for (Source source : provider.getSources()) {
              chains.register(source.getId(), source);
          }

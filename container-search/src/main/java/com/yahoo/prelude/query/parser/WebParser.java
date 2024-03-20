@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.prelude.query.parser;
 
 import com.yahoo.prelude.query.AndItem;
@@ -6,6 +6,7 @@ import com.yahoo.prelude.query.CompositeItem;
 import com.yahoo.prelude.query.Item;
 import com.yahoo.prelude.query.NotItem;
 import com.yahoo.prelude.query.OrItem;
+import com.yahoo.prelude.query.TrueItem;
 import com.yahoo.prelude.query.WordItem;
 import com.yahoo.search.query.parser.ParserEnvironment;
 
@@ -69,8 +70,8 @@ public class WebParser extends AllParser {
         if (or != null)
             topLevel = or;
 
-        if (not != null && topLevel != null) {
-            not.setPositiveItem(topLevel);
+        if (not != null) {
+            not.setPositiveItem(topLevel != null ? topLevel : new TrueItem());
             topLevel = not;
         }
 

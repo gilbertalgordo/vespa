@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include "prod_features_test.h"
 #include <vespa/searchlib/features/fieldmatchfeature.h>
@@ -12,11 +12,7 @@ using namespace search::fef::test;
 using search::AttributeVector;
 using CollectionType = FieldInfo::CollectionType;
 
-Test::Test() {}
-Test::~Test() {}
-
-void
-Test::testFieldMatch()
+TEST_F(ProdFeaturesTest, test_field_match)
 {
     testFieldMatchBluePrint();
     testFieldMatchExecutor();

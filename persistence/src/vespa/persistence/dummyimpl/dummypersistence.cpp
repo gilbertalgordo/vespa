@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include "dummypersistence.h"
 #include <vespa/document/select/parser.h>
@@ -6,6 +6,7 @@
 #include <vespa/document/fieldvalue/document.h>
 #include <vespa/document/update/documentupdate.h>
 #include <vespa/document/bucket/fixed_bucket_spaces.h>
+#include <vespa/persistence/spi/doctype_gid_and_timestamp.h>
 #include <vespa/persistence/spi/i_resource_usage_listener.h>
 #include <vespa/persistence/spi/resource_usage.h>
 #include <vespa/persistence/spi/bucketexecutor.h>
@@ -252,6 +253,15 @@ BucketContent::getEntry(const DocumentId &did) const {
     return DocEntry::SP();
 }
 
+std::shared_ptr<DocEntry>
+BucketContent::getEntry(const document::GlobalId& gid) const {
+    auto it(_gidMap.find(gid));
+    if (it != _gidMap.end()) {
+        return it->second;
+    }
+    return {};
+}
+
 DocEntry::SP
 BucketContent::getEntry(Timestamp t) const {
     auto iter = lower_bound(_entries.begin(), _entries.end(), t, TimestampLess());
@@ -278,6 +288,17 @@ BucketContent::eraseEntry(Timestamp t) {
             // FIXME: is this correct? seems like it could cause wrong behavior!
             _gidMap.erase(gidIt);
         } // else: not erasing newest entry, cannot erase from GID map
+        _outdatedInfo = true;
+    }
+}
+
+void
+BucketContent::eraseEntries(const GlobalId& gid) {
+    auto gid_it = _gidMap.find(gid);
+    if (gid_it != _gidMap.end()) {
+        _gidMap.erase(gid_it);
+        auto it = std::remove_if(_entries.begin(), _entries.end(), [&gid](auto& e) { return e.gid == gid; });
+        _entries.erase(it, _entries.end());
         _outdatedInfo = true;
     }
 }
@@ -523,6 +544,33 @@ DummyPersistence::removeAsync(const Bucket& b, std::vector<spi::IdAndTimestamp> 
             LOG(debug, "Not adding tombstone for %s at %" PRIu64 " since it has already "
                        "been succeeded by a newer write at timestamp %" PRIu64,
                 id.toString().c_str(), t.getValue(), entry->getTimestamp().getValue());
+        }
+    }
+    bc.reset();
+    onComplete->onComplete(std::make_unique<RemoveResult>(numRemoves));
+}
+
+void
+DummyPersistence::removeByGidAsync(const Bucket& b, std::vector<spi::DocTypeGidAndTimestamp> ids, std::unique_ptr<OperationComplete> onComplete)
+{
+    verifyInitialized();
+    assert(b.getBucketSpace() == FixedBucketSpaces::default_space());
+    BucketContentGuard::UP bc(acquireBucketWithLock(b));
+
+    uint32_t numRemoves(0);
+    for (const auto& dt_gid_ts : ids) {
+        auto& gid = dt_gid_ts.gid;
+        auto t = dt_gid_ts.timestamp;
+        LOG(debug, "removeByGidAsync(%s, %" PRIu64 ", %s, %s)", b.toString().c_str(), uint64_t(t), dt_gid_ts.doc_type.c_str(), gid.toString().c_str());
+
+        while (!bc) {
+            internal_create_bucket(b);
+            bc = acquireBucketWithLock(b);
+        }
+        DocEntry::SP entry((*bc)->getEntry(gid));
+        if (entry && entry->getTimestamp() <= t) {
+            numRemoves += entry->isRemove() ? 0 : 1;
+            (*bc)->eraseEntries(gid);
         }
     }
     bc.reset();

@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.indexinglanguage;
 
 import com.yahoo.vespa.indexinglanguage.expressions.*;
@@ -59,7 +59,7 @@ public class ExpressionOptimizer extends ExpressionConverter {
     }
 
     static boolean ignoresInput(Expression exp) {
-        if (exp instanceof SwitchExpression || exp instanceof ScriptExpression) {
+        if (exp instanceof SwitchExpression || exp instanceof ScriptExpression || exp instanceof ForEachExpression ) {
             return false;  // Switch and script never ignores input.
         }
         if (exp instanceof CompositeExpression) {

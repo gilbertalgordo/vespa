@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.schema.processing;
 
 import com.yahoo.config.application.api.DeployLogger;
@@ -78,7 +78,9 @@ public class IndexingOutputs extends Processor {
                 return;
             }
             dynamicSummary.add(summaryName);
-        } else if (summaryTransform != SummaryTransform.ATTRIBUTE) {
+        } else if (summaryTransform != SummaryTransform.ATTRIBUTE &&
+                summaryTransform != SummaryTransform.TOKENS &&
+                summaryTransform != SummaryTransform.ATTRIBUTE_TOKENS) {
             staticSummary.add(summaryName);
         }
     }
@@ -134,6 +136,15 @@ public class IndexingOutputs extends Processor {
             } else if (exp instanceof SummaryExpression) {
                 for (String fieldName : summaryFields) {
                     ret.add(new SummaryExpression(fieldName));
+                }
+                /*
+                 * Write to summary field source. AddExtraFieldsToDocument processor adds the "copy"
+                 * summary transform to summary fields without a corresponding explicitly declared
+                 * document field (2023-11-01). Future vespa versions will stop adding document
+                 * fields for those summary fields.
+                 */
+                if (!summaryFields.contains(field.getName())) {
+                    ret.add(new SummaryExpression(field.getName()));
                 }
             } else {
                 throw new UnsupportedOperationException(exp.getClass().getName());

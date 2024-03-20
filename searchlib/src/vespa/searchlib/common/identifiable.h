@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 #pragma once
 
 #include <vespa/vespalib/objects/identifiable.h>
@@ -171,6 +171,8 @@
 #define CID_PredicateAttribute                              SEARCHLIB_CID(163)
 #define CID_TensorAttribute                                 SEARCHLIB_CID(164)
 #define CID_ReferenceAttribute                              SEARCHLIB_CID(165)
+
+#define CID_search_expression_InterpolatedDocumentFieldLookupNode SEARCHLIB_CID(166)
 
 #define CID_search_NormalSketch                             SEARCHLIB_CID(170)
 #define CID_search_SparseSketch                             SEARCHLIB_CID(171)

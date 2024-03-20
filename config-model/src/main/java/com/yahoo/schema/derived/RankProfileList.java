@@ -1,9 +1,10 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.schema.derived;
 
 import ai.vespa.rankingexpression.importer.configmodelview.ImportedMlModels;
 import com.yahoo.config.model.api.ModelContext;
 import com.yahoo.config.model.deploy.DeployState;
+import com.yahoo.schema.RankingExpressionBody;
 import com.yahoo.search.query.profile.QueryProfileRegistry;
 import com.yahoo.schema.LargeRankingExpressions;
 import com.yahoo.schema.OnnxModel;
@@ -16,6 +17,7 @@ import com.yahoo.vespa.config.search.core.OnnxModelsConfig;
 import com.yahoo.vespa.config.search.core.RankingConstantsConfig;
 import com.yahoo.vespa.config.search.core.RankingExpressionsConfig;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
@@ -32,7 +34,7 @@ import java.util.concurrent.Future;
  *
  * @author bratseth
  */
-public class RankProfileList extends Derived implements RankProfilesConfig.Producer {
+public class RankProfileList extends Derived {
 
     private final Map<String, RawRankProfile> rankProfiles;
     private final FileDistributedConstants constants;
@@ -190,32 +192,32 @@ public class RankProfileList extends Derived implements RankProfilesConfig.Produ
     public FileDistributedConstants constants() { return constants; }
     public FileDistributedOnnxModels getOnnxModels() { return onnxModels; }
 
-    @Override
-    public String getDerivedName() { return "rank-profiles"; }
+    @Override public String getDerivedName() { return "rank-profiles"; }
 
-    @Override
-    public void export(String toDirectory) throws java.io.IOException {
-        super.export(toDirectory);
-        onnxModels.export(toDirectory);
+    public void export(String toDirectory) throws IOException {
+        export(toDirectory, new RankProfilesConfig.Builder().rankprofile(getRankProfilesConfig()).build());
     }
 
-    @Override
-    public void getConfig(RankProfilesConfig.Builder builder) {
-        for (RawRankProfile rank : rankProfiles.values() ) {
-            rank.getConfig(builder);
-        }
+    public List<RankProfilesConfig.Rankprofile.Builder> getRankProfilesConfig() {
+        return rankProfiles.values().stream().map(RawRankProfile::getConfig).toList();
     }
 
-    public void getConfig(RankingExpressionsConfig.Builder builder) {
-        largeRankingExpressions.expressions().forEach((expr) -> builder.expression.add(new RankingExpressionsConfig.Expression.Builder().name(expr.getName()).fileref(expr.getFileReference())));
+    private static RankingExpressionsConfig.Expression.Builder toConfig(RankingExpressionBody expr) {
+        return new RankingExpressionsConfig.Expression.Builder()
+                .name(expr.getName())
+                .fileref(expr.getFileReference());
     }
 
-    public void getConfig(RankingConstantsConfig.Builder builder) {
-        constants.getConfig(builder);
+    public List<RankingExpressionsConfig.Expression.Builder> getExpressionsConfig() {
+        return largeRankingExpressions.expressions().stream().map(RankProfileList::toConfig).toList();
     }
 
-    public void getConfig(OnnxModelsConfig.Builder builder) {
-        onnxModels.getConfig(builder);
+    public List<RankingConstantsConfig.Constant.Builder> getConstantsConfig() {
+        return constants.getConfig();
+    }
+
+    public List<OnnxModelsConfig.Model.Builder> getOnnxConfig() {
+        return onnxModels.getConfig();
     }
 
 }

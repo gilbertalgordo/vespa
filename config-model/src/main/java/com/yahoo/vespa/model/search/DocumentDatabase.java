@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.model.search;
 
 import com.yahoo.config.model.producer.AnyConfigProducer;
@@ -15,6 +15,8 @@ import com.yahoo.vespa.config.search.core.OnnxModelsConfig;
 import com.yahoo.vespa.config.search.core.RankingConstantsConfig;
 import com.yahoo.vespa.config.search.core.RankingExpressionsConfig;
 import com.yahoo.vespa.config.search.summary.JuniperrcConfig;
+import com.yahoo.vespa.config.search.vsm.VsmfieldsConfig;
+import com.yahoo.vespa.config.search.vsm.VsmsummaryConfig;
 import com.yahoo.vespa.configdefinition.IlscriptsConfig;
 
 /**
@@ -34,7 +36,10 @@ public class DocumentDatabase extends AnyConfigProducer implements
         JuniperrcConfig.Producer,
         SummaryConfig.Producer,
         ImportedFieldsConfig.Producer,
-        SchemaInfoConfig.Producer {
+        SchemaInfoConfig.Producer,
+        VsmsummaryConfig.Producer,
+        VsmfieldsConfig.Producer
+{
 
     private final String schemaName;
     private final DerivedConfiguration derivedCfg;
@@ -56,41 +61,32 @@ public class DocumentDatabase extends AnyConfigProducer implements
     public DerivedConfiguration getDerivedConfiguration() {
         return derivedCfg;
     }
+    // These methods will append to the config
+    @Override public void getConfig(IndexInfoConfig.Builder builder) { derivedCfg.getIndexInfo().getConfig(builder); }
+    @Override public void getConfig(IlscriptsConfig.Builder builder) { derivedCfg.getIndexingScript().getConfig(builder); }
+    @Override public void getConfig(SchemaInfoConfig.Builder builder) { derivedCfg.getSchemaInfo().getConfig(builder); }
 
-    @Override
-    public void getConfig(IndexInfoConfig.Builder builder) { derivedCfg.getIndexInfo().getConfig(builder); }
+    // These methods append as multiple databases join config => TODO will loose information - not good
+    @Override public void getConfig(AttributesConfig.Builder builder) { derivedCfg.getConfig(builder); }
 
-    @Override
-    public void getConfig(IlscriptsConfig.Builder builder) { derivedCfg.getIndexingScript().getConfig(builder); }
-
-    @Override
-    public void getConfig(AttributesConfig.Builder builder) { derivedCfg.getConfig(builder); }
-
-    @Override
-    public void getConfig(RankProfilesConfig.Builder builder) { derivedCfg.getRankProfileList().getConfig(builder); }
-
-    @Override
-    public void getConfig(RankingExpressionsConfig.Builder builder) { derivedCfg.getRankProfileList().getConfig(builder); }
-
-    @Override
-    public void getConfig(RankingConstantsConfig.Builder builder) { derivedCfg.getRankProfileList().getConfig(builder); }
-
-    @Override
-    public void getConfig(OnnxModelsConfig.Builder builder) { derivedCfg.getRankProfileList().getConfig(builder); }
-
-    @Override
-    public void getConfig(IndexschemaConfig.Builder builder) { derivedCfg.getIndexSchema().getConfig(builder); }
-
-    @Override
-    public void getConfig(JuniperrcConfig.Builder builder) { derivedCfg.getJuniperrc().getConfig(builder); }
-
-    @Override
-    public void getConfig(SummaryConfig.Builder builder) { derivedCfg.getSummaries().getConfig(builder); }
-
-    @Override
-    public void getConfig(ImportedFieldsConfig.Builder builder) { derivedCfg.getImportedFields().getConfig(builder); }
-
-    @Override
-    public void getConfig(SchemaInfoConfig.Builder builder) { derivedCfg.getSchemaInfo().getConfig(builder); }
+    // Below methods will replace config completely
+    @Override public void getConfig(OnnxModelsConfig.Builder builder) {
+        builder.model(derivedCfg.getRankProfileList().getOnnxConfig());
+    }
+    @Override public void getConfig(RankingExpressionsConfig.Builder builder) {
+        builder.expression(derivedCfg.getRankProfileList().getExpressionsConfig());
+    }
+    @Override public void getConfig(RankingConstantsConfig.Builder builder) {
+        builder.constant(derivedCfg.getRankProfileList().getConstantsConfig());
+    }
+    @Override public void getConfig(RankProfilesConfig.Builder builder) {
+        builder.rankprofile(derivedCfg.getRankProfileList().getRankProfilesConfig());
+    }
+    @Override public void getConfig(IndexschemaConfig.Builder builder) { derivedCfg.getIndexSchema().getConfig(builder); }
+    @Override public void getConfig(JuniperrcConfig.Builder builder) { derivedCfg.getJuniperrc().getConfig(builder); }
+    @Override public void getConfig(SummaryConfig.Builder builder) { derivedCfg.getSummaries().getConfig(builder); }
+    @Override public void getConfig(ImportedFieldsConfig.Builder builder) { derivedCfg.getImportedFields().getConfig(builder); }
+    @Override public void getConfig(VsmsummaryConfig.Builder builder) { derivedCfg.getVsmSummary().getConfig(builder); }
+    @Override public void getConfig(VsmfieldsConfig.Builder builder) { derivedCfg.getVsmFields().getConfig(builder); }
 
 }

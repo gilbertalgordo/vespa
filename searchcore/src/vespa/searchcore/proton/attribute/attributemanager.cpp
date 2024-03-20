@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include "attributemanager.h"
 #include "attribute_directory.h"
@@ -249,7 +249,7 @@ AttributeManager::AttributeManager(const vespalib::string &baseDir,
                                    std::shared_ptr<search::attribute::Interlock> interlock,
                                    vespalib::ISequencedTaskExecutor &attributeFieldWriter,
                                    vespalib::Executor& shared_executor,
-                                   const HwInfo &hwInfo)
+                                   const vespalib::HwInfo &hwInfo)
     : proton::IAttributeManager(),
       _attributes(),
       _flushables(),
@@ -275,7 +275,7 @@ AttributeManager::AttributeManager(const vespalib::string &baseDir,
                                    vespalib::ISequencedTaskExecutor &attributeFieldWriter,
                                    vespalib::Executor& shared_executor,
                                    IAttributeFactory::SP factory,
-                                   const HwInfo &hwInfo)
+                                   const vespalib::HwInfo &hwInfo)
     : proton::IAttributeManager(),
       _attributes(),
       _flushables(),

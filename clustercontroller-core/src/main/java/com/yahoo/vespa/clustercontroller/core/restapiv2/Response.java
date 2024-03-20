@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.clustercontroller.core.restapiv2;
 
 import com.yahoo.vdslib.state.NodeState;
@@ -45,11 +45,11 @@ public class Response {
         }
 
         @Override
-        public String getId() { return id; }
+        public String id() { return id; }
         @Override
-        public String getReason() { return reason; }
+        public String reason() { return reason; }
         @Override
-        public String toString() { return getId() +": " + getReason(); }
+        public String toString() { return id() +": " + reason(); }
     }
     public static class Link implements SubUnitList {
         private final Map<String, String> links = new LinkedHashMap<>();

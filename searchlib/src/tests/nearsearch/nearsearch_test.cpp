@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 #include <vespa/log/log.h>
 LOG_SETUP("nearsearch_test");
 
@@ -215,7 +215,7 @@ bool
 Test::testNearSearch(MyQuery &query, uint32_t matchId)
 {
     LOG(info, "testNearSearch(%d)", matchId);
-    search::queryeval::IntermediateBlueprint *near_b = 0;
+    search::queryeval::IntermediateBlueprint *near_b = nullptr;
     if (query.isOrdered()) {
         near_b = new search::queryeval::ONearBlueprint(query.getWindow());
     } else {
@@ -228,9 +228,11 @@ Test::testNearSearch(MyQuery &query, uint32_t matchId)
         layout.allocTermField(fieldId);
         near_b->addChild(query.getTerm(i).make_blueprint(fieldId, i));
     }
-    search::fef::MatchData::UP md(layout.createMatchData());
-
+    bp->setDocIdLimit(1000);
+    auto opts = search::queryeval::Blueprint::Options::all();
+    bp = search::queryeval::Blueprint::optimize_and_sort(std::move(bp), true, opts);
     bp->fetchPostings(search::queryeval::ExecuteInfo::TRUE);
+    search::fef::MatchData::UP md(layout.createMatchData());
     search::queryeval::SearchIterator::UP near = bp->createSearch(*md, true);
     near->initFullRange();
     bool foundMatch = false;

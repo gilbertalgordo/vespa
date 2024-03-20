@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.testrunner;
 
 import com.yahoo.exception.ExceptionUtils;
@@ -163,7 +163,7 @@ class AggregateTestRunnerTest {
             }
         }
         catch (Exception e) {
-            TestReport.trimStackTraces(e, "org.junit.platform.commons.util.ReflectionUtils");
+            TestReport.trimStackTraces(e);
             assertEquals("""
                             java.lang.RuntimeException: java.lang.RuntimeException: inner
                             \tat com.yahoo.vespa.testrunner.AggregateTestRunnerTest.testStackTrimming(AggregateTestRunnerTest.java:162)

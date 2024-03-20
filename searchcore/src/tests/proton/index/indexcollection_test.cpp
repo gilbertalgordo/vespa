@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include <vespa/searchcore/proton/matching/fakesearchcontext.h>
 #include <vespa/searchlib/queryeval/fake_requestcontext.h>
@@ -47,7 +47,6 @@ public:
     std::shared_ptr<IndexSearchable> _source2;
     std::shared_ptr<IndexSearchable> _fusion_source;
     vespalib::ThreadStackExecutor    _executor;
-    vespalib::TestClock              _clock;
     std::shared_ptr<IndexSearchable> _warmup;
 
     void expect_searchable_can_be_appended(ISearchableIndexCollection & collection) {
@@ -84,7 +83,7 @@ public:
 
     std::shared_ptr<WarmupIndexCollection>
     create_warmup(const IndexCollection::SP& prev, const IndexCollection::SP& next) {
-        return std::make_shared<WarmupIndexCollection>(WarmupConfig(1s, false), prev, next, *_warmup, _executor, _clock.clock(), *this);
+        return std::make_shared<WarmupIndexCollection>(WarmupConfig(1s, false), prev, next, *_warmup, _executor, *this);
     }
 
     void warmupDone(std::shared_ptr<WarmupIndexCollection> current) override {

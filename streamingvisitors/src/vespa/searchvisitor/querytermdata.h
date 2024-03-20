@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #pragma once
 
@@ -17,15 +17,25 @@ private:
     search::fef::SimpleTermData   _termData;
 public:
     QueryTermData * clone() const override { return new QueryTermData(); }
-    search::fef::SimpleTermData &getTermData() { return _termData; }
+    search::fef::SimpleTermData &getTermData() noexcept { return _termData; }
 };
 
 class QueryTermDataFactory final : public search::streaming::QueryNodeResultFactory {
 public:
+    using Normalizing = search::Normalizing;
+    using QueryNormalization = search::QueryNormalization;
+    QueryTermDataFactory(const  QueryNormalization * normalization) noexcept : _normalization(normalization) {}
     std::unique_ptr<search::streaming::QueryNodeResultBase> create() const override {
         return std::make_unique<QueryTermData>();
     }
-    bool getRewriteFloatTerms() const override { return true; }
+    Normalizing normalizing_mode(vespalib::stringref index) const noexcept override {
+        return _normalization ? _normalization->normalizing_mode(index) : Normalizing::LOWERCASE_AND_FOLD;
+    }
+    bool allow_float_terms_rewrite(vespalib::stringref index ) const noexcept override {
+        return _normalization && _normalization->is_text_matching(index);
+    }
+private:
+    const QueryNormalization * _normalization;
 };
 
 

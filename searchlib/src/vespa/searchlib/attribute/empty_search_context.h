@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #pragma once
 
@@ -13,7 +13,7 @@ class EmptySearchContext : public SearchContext
 {
     int32_t onFind(DocId, int32_t, int32_t&) const override;
     int32_t onFind(DocId, int32_t) const override;
-    unsigned int approximateHits() const override;
+    HitEstimate calc_hit_estimate() const override;
     std::unique_ptr<queryeval::SearchIterator> createIterator(fef::TermFieldMatchData*, bool) override;
     std::unique_ptr<queryeval::SearchIterator> createFilterIterator(fef::TermFieldMatchData*, bool) override;
 public:

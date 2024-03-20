@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #pragma once
 
@@ -26,11 +26,12 @@ public:
 private:
     using ParentType::get;
     std::reference_wrapper<const std::vector<uint32_t>> _candidate;
+    bool _cased;
 
 public:
-    DfaStringComparator(const DataStoreType& data_store, const std::vector<uint32_t>& candidate);
+    DfaStringComparator(const DataStoreType& data_store, const std::vector<uint32_t>& candidate, bool cased) noexcept;
 
-    bool less(const vespalib::datastore::EntryRef lhs, const vespalib::datastore::EntryRef rhs) const override;
+    bool less(const vespalib::datastore::EntryRef lhs, const vespalib::datastore::EntryRef rhs) const noexcept override;
 };
 
 }

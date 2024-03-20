@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.schema.processing;
 
 import com.yahoo.schema.Schema;
@@ -18,7 +18,7 @@ import static org.junit.jupiter.api.Assertions.fail;
 public abstract class AssertIndexingScript {
 
     public static void assertIndexing(List<String> expected, Schema schema) {
-        assertIndexing(expected, new IndexingScript(schema).expressions());
+        assertIndexing(expected, new IndexingScript(schema, false).expressions());
     }
 
     public static void assertIndexing(List<String> expected, IndexingScript script) {

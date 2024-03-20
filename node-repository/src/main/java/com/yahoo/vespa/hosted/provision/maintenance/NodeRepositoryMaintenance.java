@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.hosted.provision.maintenance;
 
 import com.yahoo.component.AbstractComponent;
@@ -63,8 +63,10 @@ public class NodeRepositoryMaintenance extends AbstractComponent {
         maintainers.add(new DeprovisionedExpirer(nodeRepository, defaults.deprovisionedExpiry, metric));
 
         provisionServiceProvider.getLoadBalancerService()
-                                .map(lbService -> new LoadBalancerExpirer(nodeRepository, defaults.loadBalancerExpirerInterval, lbService, metric))
-                                .ifPresent(maintainers::add);
+                .ifPresent(lbService -> {
+                    maintainers.add(new LoadBalancerExpirer(nodeRepository, defaults.loadBalancerExpirerInterval, lbService, metric));
+                    maintainers.add(new LoadBalancerPreProvisioner(nodeRepository, defaults.loadBalancerPreProvisionerInterval, lbService, metric));
+                });
         provisionServiceProvider.getHostProvisioner()
                                 .map(hostProvisioner -> List.of(
                                         new HostCapacityMaintainer(nodeRepository, defaults.dynamicProvisionerInterval, hostProvisioner, flagSource, metric),
@@ -110,6 +112,7 @@ public class NodeRepositoryMaintenance extends AbstractComponent {
         private final Duration retiredInterval;
         private final Duration infrastructureProvisionInterval;
         private final Duration loadBalancerExpirerInterval;
+        private final Duration loadBalancerPreProvisionerInterval;
         private final Duration dynamicProvisionerInterval;
         private final Duration hostDeprovisionerInterval;
         private final Duration hostResumeProvisionerInterval;
@@ -137,11 +140,12 @@ public class NodeRepositoryMaintenance extends AbstractComponent {
             hostResumeProvisionerInterval = Duration.ofMinutes(3);
             diskReplacerInterval = Duration.ofMinutes(3);
             failedExpirerInterval = Duration.ofMinutes(10);
-            failGrace = Duration.ofMinutes(20);
+            failGrace = Duration.ofMinutes(10);
             infrastructureProvisionInterval = Duration.ofMinutes(3);
             loadBalancerExpirerInterval = Duration.ofMinutes(5);
+            loadBalancerPreProvisionerInterval = Duration.ofMinutes(1);
             metricsInterval = Duration.ofMinutes(1);
-            nodeFailerInterval = Duration.ofMinutes(7);
+            nodeFailerInterval = Duration.ofMinutes(4);
             nodeFailureStatusUpdateInterval = Duration.ofMinutes(2);
             nodeMetricsCollectionInterval = Duration.ofMinutes(1);
             expeditedChangeRedeployInterval = Duration.ofMinutes(3);
@@ -158,7 +162,7 @@ public class NodeRepositoryMaintenance extends AbstractComponent {
             switchRebalancerInterval = Duration.ofHours(1);
             throttlePolicy = NodeFailer.ThrottlePolicy.hosted;
             hostRetirerInterval = Duration.ofMinutes(30);
-            hostFlavorUpgraderInterval = Duration.ofMinutes(30);
+            hostFlavorUpgraderInterval = Duration.ofHours(1);
             // CD, test and staging (de)provisions hosts frequently. Expire deprovisioned ones earlier
             deprovisionedExpiry = (isCdZone || isTest) ? Duration.ofDays(3) : Duration.ofDays(30);
 

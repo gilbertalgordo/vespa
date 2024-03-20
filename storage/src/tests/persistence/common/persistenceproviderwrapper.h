@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 /**
  * \class storage::PersistenceProviderWrapper
  *
@@ -107,6 +107,7 @@ public:
     spi::BucketInfoResult getBucketInfo(const spi::Bucket&) const override;
     void putAsync(const spi::Bucket&, spi::Timestamp, spi::DocumentSP, spi::OperationComplete::UP) override;
     void removeAsync(const spi::Bucket&, std::vector<spi::IdAndTimestamp> ids, spi::OperationComplete::UP) override;
+    void removeByGidAsync(const spi::Bucket&, std::vector<spi::DocTypeGidAndTimestamp> ids, std::unique_ptr<spi::OperationComplete>) override;
     void removeIfFoundAsync(const spi::Bucket&, spi::Timestamp, const spi::DocumentId&, spi::OperationComplete::UP) override;
     void updateAsync(const spi::Bucket&, spi::Timestamp, spi::DocumentUpdateSP, spi::OperationComplete::UP) override;
     spi::GetResult get(const spi::Bucket&, const document::FieldSet&, const spi::DocumentId&, spi::Context&) const override;

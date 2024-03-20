@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.model.content.cluster;
 
 import com.google.common.base.Preconditions;
@@ -73,14 +73,14 @@ import static java.util.logging.Level.WARNING;
  * @author bratseth
  */
 public class ContentCluster extends TreeConfigProducer<AnyConfigProducer> implements
-                                                           DistributionConfig.Producer,
-                                                           StorDistributionConfig.Producer,
-                                                           StorDistributormanagerConfig.Producer,
-                                                           FleetcontrollerConfig.Producer,
-                                                           MetricsmanagerConfig.Producer,
-                                                           MessagetyperouteselectorpolicyConfig.Producer,
-                                                           BucketspacesConfig.Producer {
-
+        DistributionConfig.Producer,
+        StorDistributionConfig.Producer,
+        StorDistributormanagerConfig.Producer,
+        FleetcontrollerConfig.Producer,
+        MetricsmanagerConfig.Producer,
+        MessagetyperouteselectorpolicyConfig.Producer,
+        BucketspacesConfig.Producer
+{
     private final String documentSelection;
     private ContentSearchCluster search;
     private final boolean isHosted;
@@ -140,7 +140,7 @@ public class ContentCluster extends TreeConfigProducer<AnyConfigProducer> implem
             c.search.handleRedundancy(c.redundancy);
             setupSearchCluster(c.search, contentElement, deployState.getDeployLogger());
 
-            if (c.search.hasIndexedCluster() && !(c.persistenceFactory instanceof ProtonEngine.Factory) )
+            if (c.search.hasIndexed() && !(c.persistenceFactory instanceof ProtonEngine.Factory) )
                 throw new IllegalArgumentException("Indexed search requires proton as engine");
 
             if (documentsElement != null) {
@@ -177,8 +177,9 @@ public class ContentCluster extends TreeConfigProducer<AnyConfigProducer> implem
             if (visibilityDelay != null) {
                 csc.setVisibilityDelay(visibilityDelay);
             }
-            if (csc.hasIndexedCluster()) {
-                setupIndexedCluster(csc.getIndexed(), search, element, logger);
+            IndexedSearchCluster sc = csc.getSearchCluster();
+            if (sc != null) {
+                setupIndexedCluster(sc, search, element, logger);
             }
         }
 
@@ -209,20 +210,10 @@ public class ContentCluster extends TreeConfigProducer<AnyConfigProducer> implem
                 docprocChain = docprocChain.trim();
             }
             if (docprocCluster != null && !docprocCluster.isEmpty()) {
-                if (!c.getSearch().hasIndexedCluster() && c.getSearch().getIndexingDocproc().isEmpty() &&
-                        docprocChain != null && !docprocChain.isEmpty()) {
-                    c.getSearch().setupStreamingSearchIndexingDocProc();
-                }
-                var indexingDocproc = c.getSearch().getIndexingDocproc();
-                if (indexingDocproc.isPresent()) {
-                    indexingDocproc.get().setClusterName(docprocCluster);
-                }
+                c.getSearch().getIndexingDocproc().setClusterName(docprocCluster);
             }
             if (docprocChain != null && !docprocChain.isEmpty()) {
-                var indexingDocproc = c.getSearch().getIndexingDocproc();
-                if (indexingDocproc.isPresent()) {
-                    indexingDocproc.get().setChainName(docprocChain);
-                }
+                c.getSearch().getIndexingDocproc().setChainName(docprocChain);
             }
         }
 
@@ -301,10 +292,7 @@ public class ContentCluster extends TreeConfigProducer<AnyConfigProducer> implem
                     Objects.requireNonNull(admin.getLogserver(), "logserver cannot be null");
                     List<HostResource> host = List.of(admin.getLogserver().getHostResource());
                     admin.setClusterControllers(createClusterControllers(new ClusterControllerCluster(admin, "standalone", deployState),
-                                                                         host,
-                                                                         clusterName,
-                                                                         true,
-                                                                         deployState),
+                                                                         host, clusterName, true, deployState),
                                                 deployState);
                 }
                 clusterControllers = admin.getClusterControllers();
@@ -457,7 +445,6 @@ public class ContentCluster extends TreeConfigProducer<AnyConfigProducer> implem
 
     @Override
     public void getConfig(MessagetyperouteselectorpolicyConfig.Builder builder) {
-        if (getSearch().getIndexingDocproc().isEmpty()) return;
         DocumentProtocol.getConfig(builder, getConfigId());
     }
 
@@ -544,7 +531,7 @@ public class ContentCluster extends TreeConfigProducer<AnyConfigProducer> implem
         super.validate();
         if (search.usesHierarchicDistribution() && !isHosted) {
             // validate manually configured groups
-            new IndexedHierarchicDistributionValidator(rootGroup, redundancy, search.getIndexed().getTuning().dispatch.getDispatchPolicy()).validate();
+            new IndexedHierarchicDistributionValidator(rootGroup, redundancy, search.getSearchCluster().getTuning().dispatch.getDispatchPolicy()).validate();
         }
         new ReservedDocumentTypeNameValidator().validate(documentDefinitions);
         new GlobalDistributionValidator().validate(documentDefinitions, globallyDistributedDocuments);

@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #pragma once
 
@@ -12,7 +12,7 @@ namespace search::queryeval {
 }
 namespace search::index {
 class FieldLengthCalculator;
-class IndexBuilder;
+class FieldIndexBuilder;
 }
 
 namespace search::memoryindex {
@@ -37,7 +37,7 @@ public:
     virtual FieldIndexRemover& getDocumentRemover() = 0;
     virtual index::FieldLengthCalculator& get_calculator() = 0;
     virtual void compactFeatures() = 0;
-    virtual void dump(search::index::IndexBuilder& indexBuilder) = 0;
+    virtual void dump(search::index::FieldIndexBuilder& builder) = 0;
 
     virtual std::unique_ptr<queryeval::SimpleLeafBlueprint> make_term_blueprint(const vespalib::string& term,
                                                                                 const queryeval::FieldSpec& field,

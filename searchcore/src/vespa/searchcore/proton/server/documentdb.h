@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 #pragma once
 
 #include "buckethandler.h"
@@ -229,7 +229,7 @@ private:
                std::shared_ptr<search::attribute::Interlock> attribute_interlock,
                ConfigStore::UP config_store,
                InitializeThreads initializeThreads,
-               const HwInfo &hwInfo);
+               const vespalib::HwInfo &hwInfo);
 public:
     using SP = std::shared_ptr<DocumentDB>;
 
@@ -259,7 +259,7 @@ public:
            std::shared_ptr<search::attribute::Interlock> attribute_interlock,
            ConfigStore::UP config_store,
            InitializeThreads initializeThreads,
-           const HwInfo &hwInfo);
+           const vespalib::HwInfo &hwInfo);
 
     /**
      * Frees any allocated resources. This will also stop the internal thread
@@ -383,7 +383,7 @@ public:
 
     bool getDelayedConfig() const { return _state.getDelayedConfig(); }
     void replayConfig(SerialNum serialNum) override;
-    const DocTypeName & getDocTypeName() const { return _docTypeName; }
+    const DocTypeName & getDocTypeName() const noexcept { return _docTypeName; }
     std::unique_ptr<DocumentDBReconfig> prepare_reconfig(const DocumentDBConfig& new_config_snapshot, std::optional<SerialNum> serial_num);
     void reconfigure(DocumentDBConfigSP snapshot) override;
     int64_t getActiveGeneration() const;

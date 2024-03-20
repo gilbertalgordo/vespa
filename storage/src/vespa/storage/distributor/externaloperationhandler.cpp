@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include "bucket_space_distribution_context.h"
 #include "crypto_uuid_generator.h"
@@ -18,6 +18,7 @@
 #include <vespa/storage/distributor/operations/external/statbucketoperation.h>
 #include <vespa/storage/distributor/operations/external/twophaseupdateoperation.h>
 #include <vespa/storage/distributor/operations/external/visitoroperation.h>
+#include <vespa/storage/config/distributorconfiguration.h>
 #include <vespa/storageapi/message/persistence.h>
 #include <vespa/storageapi/message/removelocation.h>
 #include <vespa/storageapi/message/stat.h>
@@ -236,11 +237,6 @@ ExternalOperationHandler::makeConcurrentMutationRejectionReply(api::StorageComma
 }
 
 bool ExternalOperationHandler::allowMutation(const SequencingHandle& handle) const {
-    const auto& config(_op_ctx.distributor_config());
-    if (!config.getSequenceMutatingOperations()) {
-        // Sequencing explicitly disabled, so always allow.
-        return true;
-    }
     return handle.valid();
 }
 

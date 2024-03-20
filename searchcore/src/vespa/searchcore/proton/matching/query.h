@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #pragma once
 
@@ -23,14 +23,17 @@ class Query
 private:
     using Blueprint = search::queryeval::Blueprint;
     using GlobalFilter = search::queryeval::GlobalFilter;
-    search::query::Node::UP _query_tree;
-    Blueprint::UP           _blueprint;
-    Blueprint::UP           _whiteListBlueprint;
-    std::vector<search::common::GeoLocationSpec> _locations;
+    using ExecuteInfo = search::queryeval::ExecuteInfo;
+    using IRequestContext = search::queryeval::IRequestContext;
+    using GeoLocationSpec = search::common::GeoLocationSpec;
+    search::query::Node::UP      _query_tree;
+    Blueprint::UP                _blueprint;
+    Blueprint::UP                _whiteListBlueprint;
+    std::vector<GeoLocationSpec> _locations;
 
 public:
     /** Convenience typedef. */
-    using GeoLocationSpecPtrs = std::vector<const search::common::GeoLocationSpec *>;
+    using GeoLocationSpecPtrs = std::vector<const GeoLocationSpec *>;
 
     Query();
     ~Query();
@@ -54,12 +57,15 @@ public:
     bool buildTree(vespalib::stringref stack,
                    const vespalib::string &location,
                    const ViewResolver &resolver,
-                   const search::fef::IIndexEnvironment &idxEnv,
-                   bool split_unpacking_iterators);
+                   const search::fef::IIndexEnvironment &idxEnv)
+    {
+        return buildTree(stack, location, resolver, idxEnv, false);
+    }
     bool buildTree(vespalib::stringref stack,
                    const vespalib::string &location,
                    const ViewResolver &resolver,
-                   const search::fef::IIndexEnvironment &idxEnv);
+                   const search::fef::IIndexEnvironment &idxEnv,
+                   bool always_mark_phrase_expensive);
 
     /**
      * Extract query terms from the query tree; to be used to build
@@ -85,7 +91,7 @@ public:
      * @param context search context
      * @param mdl match data layout
      **/
-    void reserveHandles(const search::queryeval::IRequestContext & requestContext,
+    void reserveHandles(const IRequestContext & requestContext,
                         ISearchContext &context,
                         search::fef::MatchDataLayout &mdl);
 
@@ -97,12 +103,12 @@ public:
      * testing becomes harder. Not calling this function enables the
      * test to verify the original query without optimization.
      **/
-    void optimize();
-    void fetchPostings(const vespalib::Doom & doom);
+    void optimize(bool sort_by_cost);
+    void fetchPostings(const ExecuteInfo & executeInfo) ;
 
-    void handle_global_filter(const vespalib::Doom & doom, uint32_t docid_limit,
+    void handle_global_filter(const IRequestContext & requestContext, uint32_t docid_limit,
                               double global_filter_lower_limit, double global_filter_upper_limit,
-                              vespalib::ThreadBundle &thread_bundle, search::engine::Trace& trace);
+                              search::engine::Trace& trace, bool sort_by_cost);
 
     /**
      * Calculates and handles the global filter if needed by the blueprint tree.

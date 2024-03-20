@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.config.model.api;
 
 import com.yahoo.component.Version;
@@ -27,8 +27,6 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
 
-import static com.yahoo.config.provision.NodeResources.Architecture;
-
 /**
  * Model context containing state provided to model factories.
  *
@@ -46,7 +44,7 @@ public interface ModelContext {
     ExecutorService getExecutor();
     default Optional<? extends Reindexing> reindexing() { return Optional.empty(); }
     Properties properties();
-    default Optional<File> appDir() { return Optional.empty();}
+    default Optional<File> appDir() { return Optional.empty(); }
     OnnxModelCost onnxModelCost();
 
     /** The Docker image repo we want to use for images for this deployment (optional, will use default if empty) */
@@ -74,7 +72,7 @@ public interface ModelContext {
      *  - Remove all flag data files from hosted-feature-flag repository
      */
     interface FeatureFlags {
-        @ModelFeatureFlag(owners = {"baldersheim"}, comment = "Revisit in May or June 2023") default double defaultTermwiseLimit() { throw new UnsupportedOperationException("TODO specify default value"); }
+        @ModelFeatureFlag(owners = {"baldersheim"}, comment = "Revisit in May or June 2024") default double defaultTermwiseLimit() { throw new UnsupportedOperationException("TODO specify default value"); }
         @ModelFeatureFlag(owners = {"baldersheim"}, comment = "Select sequencer type use while feeding") default String feedSequencerType() { return "THROUGHPUT"; }
         @ModelFeatureFlag(owners = {"baldersheim"}) default String responseSequencerType() { throw new UnsupportedOperationException("TODO specify default value"); }
         @ModelFeatureFlag(owners = {"baldersheim"}) default String queryDispatchPolicy() { return "adaptive"; }
@@ -106,21 +104,14 @@ public interface ModelContext {
         @ModelFeatureFlag(owners = {"arnej"}) default boolean useV8GeoPositions() { return false; }
         @ModelFeatureFlag(owners = {"baldersheim", "geirst", "toregge"}) default int maxCompactBuffers() { return 1; }
         @ModelFeatureFlag(owners = {"arnej", "andreer"}) default List<String> ignoredHttpUserAgents() { return List.of(); }
-        @ModelFeatureFlag(owners = {"hmusum"}) default Architecture adminClusterArchitecture() { return Architecture.getDefault(); }
         @ModelFeatureFlag(owners = {"tokle"}) default boolean enableProxyProtocolMixedMode() { return true; }
         @ModelFeatureFlag(owners = {"arnej"}) default String logFileCompressionAlgorithm(String defVal) { return defVal; }
-        @ModelFeatureFlag(owners = {"tokle"}, removeAfter = "8.210") default boolean useRestrictedDataPlaneBindings() { return true; }
-        @ModelFeatureFlag(owners = {"arnej, bjorncs"}) default boolean enableGlobalPhase() { return true; }
         @ModelFeatureFlag(owners = {"baldersheim"}, comment = "Select summary decode type") default String summaryDecodePolicy() { return "eager"; }
-        @ModelFeatureFlag(owners = {"hmusum"}, removeAfter = "8.219") default boolean allowMoreThanOneContentGroupDown(ClusterSpec.Id id) { return true; }
-        @ModelFeatureFlag(owners = {"vekterli", "havardpe"}, removeAfter = "8.207") default boolean enableConditionalPutRemoveWriteRepair() { return true; }
-        @ModelFeatureFlag(owners = {"mortent", "olaa"}, removeAfter = "8.227") default boolean enableDataplaneProxy() { return false; }
-        @ModelFeatureFlag(owners = {"baldersheim"}) default boolean enableNestedMultivalueGrouping() { return false; }
-        @ModelFeatureFlag(owners = {"jonmv"}) default boolean useReconfigurableDispatcher() { return false; }
         @ModelFeatureFlag(owners = {"vekterli"}) default int contentLayerMetadataFeatureLevel() { return 0; }
-        @ModelFeatureFlag(owners = {"bjorncs"}) default boolean dynamicHeapSize() { return false; }
-        @ModelFeatureFlag(owners = {"hmusum"}) default String unknownConfigDefinition() { return "log"; }
+        @ModelFeatureFlag(owners = {"hmusum"}) default String unknownConfigDefinition() { return "warn"; }
         @ModelFeatureFlag(owners = {"hmusum"}) default int searchHandlerThreadpool() { return 2; }
+        @ModelFeatureFlag(owners = {"baldersheim"}) default boolean alwaysMarkPhraseExpensive() { return false; }
+        @ModelFeatureFlag(owners = {"baldersheim"}) default boolean sortBlueprintsByCost() { return false; }
     }
 
     /** Warning: As elsewhere in this package, do not make backwards incompatible changes that will break old config models! */

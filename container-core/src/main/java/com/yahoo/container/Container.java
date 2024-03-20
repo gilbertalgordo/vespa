@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.container;
 
 import com.yahoo.component.AbstractComponent;
@@ -95,18 +95,11 @@ public class Container {
     }
 
     // Only intended for use by the Server instance.
-    public void setupFileAcquirer(QrConfig.Filedistributor filedistributorConfig) {
+    public void setupFileAcquirer() {
         if (usingCustomFileAcquirer)
             return;
 
-        if (filedistributorConfig.configid().isEmpty()) {
-            if (fileAcquirer != null)
-                logger.warning("Disabling file distribution");
-            fileAcquirer = null;
-        } else {
-            fileAcquirer = FileAcquirerFactory.create(filedistributorConfig.configid());
-        }
-
+        fileAcquirer = FileAcquirerFactory.create();
         setPathAcquirer(fileAcquirer);
     }
 

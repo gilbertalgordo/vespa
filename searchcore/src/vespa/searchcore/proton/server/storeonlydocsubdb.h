@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 #pragma once
 
 #include "idocumentsubdb.h"
@@ -106,7 +106,7 @@ public:
         bucketdb::IBucketDBHandlerInitializer &_bucketDBHandlerInitializer;
         DocumentDBTaggedMetrics &_metrics;
         std::mutex &_configMutex;
-        const HwInfo &_hwInfo;
+        const vespalib::HwInfo &_hwInfo;
 
         Context(IDocumentSubDBOwner &owner,
                 search::transactionlog::SyncProxy &tlSyncer,
@@ -118,7 +118,7 @@ public:
                 bucketDBHandlerInitializer,
                 DocumentDBTaggedMetrics &metrics,
                 std::mutex &configMutex,
-                const HwInfo &hwInfo);
+                const vespalib::HwInfo &hwInfo);
         ~Context();
     };
 
@@ -145,14 +145,14 @@ protected:
     vespalib::VarHolder<ISearchHandler::SP> _iSearchView;
     vespalib::VarHolder<IFeedView::SP>      _iFeedView;
     std::mutex                             &_configMutex;
-    HwInfo                                  _hwInfo;
+    vespalib::HwInfo                        _hwInfo;
     const IGetSerialNum                    &_getSerialNum;
 private:
     TlsSyncer                                  _tlsSyncer;
     DocumentMetaStoreFlushTarget::SP           _dmsFlushTarget;
     std::shared_ptr<ShrinkLidSpaceFlushTarget> _dmsShrinkTarget;
     std::shared_ptr<PendingLidTrackerBase>     _pendingLidsForCommit;
-    bool                                       _nodeRetired;
+    bool                                       _node_retired_or_maintenance;
     vespalib::datastore::CompactionStrategy    _lastConfiguredCompactionStrategy;
 
     IFlushTargetList getFlushTargets() override;
@@ -239,7 +239,7 @@ public:
     void tearDownReferences(IDocumentDBReferenceResolver &resolver) override;
     PendingLidTrackerBase & getUncommittedLidsTracker() override { return *_pendingLidsForCommit; }
     vespalib::datastore::CompactionStrategy computeCompactionStrategy(vespalib::datastore::CompactionStrategy strategy) const;
-    bool isNodeRetired() const { return _nodeRetired; }
+    bool is_node_retired_or_maintenance() const { return _node_retired_or_maintenance; }
     TransientResourceUsage get_transient_resource_usage() const override;
 
 };

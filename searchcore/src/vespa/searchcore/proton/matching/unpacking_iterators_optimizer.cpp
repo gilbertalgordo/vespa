@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include "unpacking_iterators_optimizer.h"
 
@@ -62,6 +62,7 @@ struct TermExpander : QueryVisitor {
     void visit(TrueQueryNode &) override {}
     void visit(FalseQueryNode &) override {}
     void visit(FuzzyTerm &) override {}
+    void visit(InTerm&) override {}
 
     void flush(Intermediate &parent) {
         for (Node::UP &term: terms) {
@@ -73,21 +74,22 @@ struct TermExpander : QueryVisitor {
 
 struct NodeTraverser : TemplateTermVisitor<NodeTraverser, ProtonNodeTypes>
 {
-    bool split_unpacking_iterators;
-
-    NodeTraverser(bool split_unpacking_iterators_in)
-        : split_unpacking_iterators(split_unpacking_iterators_in) {}
+    bool _always_mark_phrase_expensive;
+    NodeTraverser(bool always_mark_phrase_expensive) : _always_mark_phrase_expensive(always_mark_phrase_expensive) {}
     template <class TermNode> void visitTerm(TermNode &) {}
     void visit(ProtonNodeTypes::And &n) override {
         for (Node *child: n.getChildren()) {
             child->accept(*this);
         }
-        if (split_unpacking_iterators) {
-            TermExpander expander;
-            for (Node *child: n.getChildren()) {
-                child->accept(expander);
-            }
-            expander.flush(n);
+        TermExpander expander;
+        for (Node *child: n.getChildren()) {
+            child->accept(expander);
+        }
+        expander.flush(n);
+    }
+    void visit(Phrase &n) override {
+        if (_always_mark_phrase_expensive) {
+            n.set_expensive(true);
         }
     }
 };
@@ -95,15 +97,11 @@ struct NodeTraverser : TemplateTermVisitor<NodeTraverser, ProtonNodeTypes>
 } // namespace proton::matching::<unnamed>
 
 search::query::Node::UP
-UnpackingIteratorsOptimizer::optimize(search::query::Node::UP root,
-                                      bool has_white_list,
-                                      bool split_unpacking_iterators)
+UnpackingIteratorsOptimizer::optimize(search::query::Node::UP root, bool has_white_list, bool always_mark_phrase_expensive)
 {
-    if (split_unpacking_iterators) {
-        NodeTraverser traverser(split_unpacking_iterators);
-        root->accept(traverser);
-    }
-    if (has_white_list && split_unpacking_iterators) {
+    NodeTraverser traverser(always_mark_phrase_expensive);
+    root->accept(traverser);
+    if (has_white_list) {
         TermExpander expander;
         root->accept(expander);
         if (!expander.terms.empty()) {

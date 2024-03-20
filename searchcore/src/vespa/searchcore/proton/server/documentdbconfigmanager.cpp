@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include "documentdbconfigmanager.h"
 #include "bootstrapconfig.h"
@@ -11,17 +11,17 @@
 #include <vespa/config-ranking-constants.h>
 #include <vespa/config-ranking-expressions.h>
 #include <vespa/config-summary.h>
-#include <vespa/config/common/exceptions.h>
 #include <vespa/config/common/configcontext.h>
 #include <vespa/config/retriever/configretriever.h>
 #include <vespa/config/helper/legacy.h>
 #include <vespa/searchcommon/common/schemaconfigurer.h>
 #include <vespa/searchcore/proton/common/alloc_config.h>
-#include <vespa/searchcore/proton/common/hw_info.h>
 #include <vespa/searchlib/fef/ranking_assets_builder.h>
 #include <vespa/searchlib/index/schemautil.h>
 #include <vespa/searchsummary/config/config-juniperrc.h>
 #include <vespa/config/retriever/configsnapshot.hpp>
+#include <vespa/vespalib/util/hw_info.h>
+#include <vespa/config.h>
 #include <thread>
 #include <cassert>
 #include <cinttypes>
@@ -53,7 +53,7 @@ using vespalib::datastore::CompactionStrategy;
 
 namespace proton {
 
-const ConfigKeySet
+ConfigKeySet
 DocumentDBConfigManager::createConfigKeySet() const
 {
     ConfigKeySet set;
@@ -166,7 +166,7 @@ derive(ProtonConfig::Summary::Cache::UpdateStrategy strategy) {
 }
 
 DocumentStore::Config
-getStoreConfig(const ProtonConfig::Summary::Cache & cache, const HwInfo & hwInfo)
+getStoreConfig(const ProtonConfig::Summary::Cache & cache, const vespalib::HwInfo & hwInfo)
 {
     size_t maxBytes = (cache.maxbytes < 0)
                       ? (hwInfo.memory().sizeBytes()*std::min(INT64_C(50), -cache.maxbytes))/100l
@@ -176,7 +176,7 @@ getStoreConfig(const ProtonConfig::Summary::Cache & cache, const HwInfo & hwInfo
 }
 
 LogDocumentStore::Config
-deriveConfig(const ProtonConfig::Summary & summary, const HwInfo & hwInfo) {
+deriveConfig(const ProtonConfig::Summary & summary, const vespalib::HwInfo & hwInfo) {
     DocumentStore::Config config(getStoreConfig(summary.cache, hwInfo));
     const ProtonConfig::Summary::Log & log(summary.log);
     const ProtonConfig::Summary::Log::Chunk & chunk(log.chunk);
@@ -190,7 +190,7 @@ deriveConfig(const ProtonConfig::Summary & summary, const HwInfo & hwInfo) {
     return {config, logConfig};
 }
 
-search::LogDocumentStore::Config buildStoreConfig(const ProtonConfig & proton, const HwInfo & hwInfo) {
+search::LogDocumentStore::Config buildStoreConfig(const ProtonConfig & proton, const vespalib::HwInfo & hwInfo) {
     return deriveConfig(proton.summary, hwInfo);
 }
 
@@ -223,13 +223,31 @@ find_document_db_config_entry(const ProtonConfig::DocumentdbVector& document_dbs
     return default_document_db_config_entry;
 }
 
-const AllocConfig
-build_alloc_config(const ProtonConfig& proton_config, const vespalib::string& doc_type_name)
+[[nodiscard]] bool
+use_hw_memory_presized_target_num_docs([[maybe_unused]] ProtonConfig::Documentdb::Mode mode) noexcept {
+    // If sanitizers are enabled, mmap-allocations may be intercepted and allocated pages
+    // may be implicitly touched+committed. This tends to explode when testing locally, so
+    // fall back to configured initial num-docs if this is the case.
+#ifndef VESPA_USE_SANITIZER
+    return (mode != ProtonConfig::Documentdb::Mode::INDEX);
+#else
+    return false;
+#endif
+}
+
+AllocConfig
+build_alloc_config(const vespalib::HwInfo & hwInfo, const ProtonConfig& proton_config, const vespalib::string& doc_type_name)
 {
+    // This is an approximate number based on observation of a node using 33G memory with 765M docs
+    constexpr uint64_t MIN_MEMORY_COST_PER_DOCUMENT = 46;
+
     auto& document_db_config_entry = find_document_db_config_entry(proton_config.documentdb, doc_type_name);
     auto& alloc_config = document_db_config_entry.allocation;
+    uint32_t target_numdocs = use_hw_memory_presized_target_num_docs(document_db_config_entry.mode)
+            ? (hwInfo.memory().sizeBytes() / (MIN_MEMORY_COST_PER_DOCUMENT * proton_config.distribution.searchablecopies))
+            : alloc_config.initialnumdocs;
     auto& distribution_config = proton_config.distribution;
-    search::GrowStrategy grow_strategy(alloc_config.initialnumdocs, alloc_config.growfactor, alloc_config.growbias, alloc_config.initialnumdocs, alloc_config.multivaluegrowfactor);
+    search::GrowStrategy grow_strategy(target_numdocs, alloc_config.growfactor, alloc_config.growbias, target_numdocs, alloc_config.multivaluegrowfactor);
     CompactionStrategy compaction_strategy(alloc_config.maxDeadBytesRatio, alloc_config.maxDeadAddressSpaceRatio, alloc_config.maxCompactBuffers, alloc_config.activeBuffersRatio);
     return AllocConfig(AllocStrategy(grow_strategy, compaction_strategy, alloc_config.amortizecount),
                        distribution_config.redundancy, distribution_config.searchablecopies);
@@ -341,7 +359,7 @@ DocumentDBConfigManager::update(FNET_Transport & transport, const ConfigSnapshot
                                  newMaintenanceConfig,
                                  storeConfig,
                                  ThreadingServiceConfig::make(_bootstrapConfig->getProtonConfig()),
-                                 build_alloc_config(_bootstrapConfig->getProtonConfig(), _docTypeName),
+                                 build_alloc_config(_bootstrapConfig->getHwInfo(), _bootstrapConfig->getProtonConfig(), _docTypeName),
                                  _configId,
                                  _docTypeName);
     assert(newSnapshot->valid());

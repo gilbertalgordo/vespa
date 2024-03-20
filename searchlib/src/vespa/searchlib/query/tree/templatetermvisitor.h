@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #pragma once
 
@@ -58,6 +58,8 @@ class TemplateTermVisitor : public CustomTypeTermVisitor<NodeTypes> {
     // term's children, unless this member function is overridden
     // to do so.
     void visit(typename NodeTypes::SameElement &n) override { myVisit(n); }
+
+    void visit(typename NodeTypes::InTerm& n) override { myVisit(n); }
 };
 
 }

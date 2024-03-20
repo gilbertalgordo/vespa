@@ -1,7 +1,8 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #pragma once
 
+#include "flow.h"
 #include "field_spec.h"
 #include "unpackinfo.h"
 #include "executeinfo.h"
@@ -27,6 +28,13 @@ class SearchIterator;
 class ExecuteInfo;
 class MatchingElementsSearch;
 class LeafBlueprint;
+class IntermediateBlueprint;
+class SourceBlenderBlueprint;
+class WeakAndBlueprint;
+class AndBlueprint;
+class AndNotBlueprint;
+class OrBlueprint;
+class EmptyBlueprint;
 
 /**
  * A Blueprint is an intermediate representation of a search. More
@@ -44,6 +52,31 @@ public:
     using UP = std::unique_ptr<Blueprint>;
     using Children = std::vector<Blueprint::UP>;
     using SearchIteratorUP = std::unique_ptr<SearchIterator>;
+
+    enum class OptimizePass { FIRST, LAST };
+
+    class Options {
+    private:
+        bool _sort_by_cost;
+        bool _allow_force_strict;
+    public:
+        constexpr Options() noexcept 
+          : _sort_by_cost(false),
+            _allow_force_strict(false) {}
+        constexpr bool sort_by_cost() const noexcept { return _sort_by_cost; }
+        constexpr Options &sort_by_cost(bool value) noexcept {
+            _sort_by_cost = value;
+            return *this;
+        }
+        constexpr bool allow_force_strict() const noexcept { return _allow_force_strict; }
+        constexpr Options &allow_force_strict(bool value) noexcept {
+            _allow_force_strict = value;
+            return *this;
+        }
+        static constexpr Options all() noexcept {
+            return Options().sort_by_cost(true).allow_force_strict(true);
+        }
+    };
 
     struct HitEstimate {
         uint32_t estHits;
@@ -79,8 +112,8 @@ public:
         static constexpr uint8_t COST_TIER_MAX = 255;
 
         State() noexcept;
-        State(FieldSpecBase field) noexcept;
-        State(FieldSpecBaseList fields_in) noexcept;
+        explicit State(FieldSpecBase field) noexcept;
+        explicit State(FieldSpecBaseList fields_in) noexcept;
         State(const State &rhs) = delete;
         State(State &&rhs) noexcept = default;
         State &operator=(const State &rhs) = delete;
@@ -105,12 +138,13 @@ public:
             _estimateHits = est.estHits;
             _estimateEmpty = est.empty;
         }
-        HitEstimate estimate() const noexcept { return HitEstimate(_estimateHits, _estimateEmpty); }
+        //TODO replace use of estimate by using empty/estHits directly and then have a real estimate here
+        HitEstimate estimate() const noexcept { return {_estimateHits, _estimateEmpty}; }
+
         double hit_ratio(uint32_t docid_limit) const noexcept {
-            uint32_t total_hits = _estimateHits;
-            uint32_t total_docs = std::max(total_hits, docid_limit);
-            return (total_docs == 0) ? 0.0 : double(total_hits) / double(total_docs);
+            return abs_to_rel_est(_estimateHits, docid_limit);
         }
+
         void tree_size(uint32_t value) noexcept {
             assert(value < 0x100000);
             _tree_size = value;
@@ -123,6 +157,12 @@ public:
         void cost_tier(uint8_t value) noexcept { _cost_tier = value; }
         uint8_t cost_tier() const noexcept { return _cost_tier; }
     };
+    
+    // converts from an absolute to a relative estimate
+    static double abs_to_rel_est(uint32_t est, uint32_t docid_limit) noexcept {
+        uint32_t total_docs = std::max(est, docid_limit);
+        return (total_docs == 0) ? 0.0 : double(est) / double(total_docs);
+    }
 
     // utility that just takes maximum estimate
     static HitEstimate max(const std::vector<HitEstimate> &data);
@@ -162,6 +202,7 @@ public:
 
 private:
     Blueprint *_parent;
+    FlowStats  _flow_stats;
     uint32_t   _sourceId;
     uint32_t   _docid_limit;
     bool       _frozen;
@@ -206,10 +247,15 @@ public:
     uint32_t get_docid_limit() const noexcept { return _docid_limit; }
 
     static Blueprint::UP optimize(Blueprint::UP bp);
-    virtual void optimize(Blueprint* &self) = 0;
-    virtual void optimize_self();
+    virtual double sort(InFlow in_flow, const Options &opts) = 0;
+    static Blueprint::UP optimize_and_sort(Blueprint::UP bp, InFlow in_flow, const Options &opts) {
+        auto result = optimize(std::move(bp));
+        result->sort(in_flow, opts);
+        return result;
+    }
+    virtual void optimize(Blueprint* &self, OptimizePass pass) = 0;
+    virtual void optimize_self(OptimizePass pass);
     virtual Blueprint::UP get_replacement();
-    virtual bool should_optimize_children() const { return true; }
 
     virtual bool supports_termwise_children() const { return false; }
     virtual bool always_needs_unpack() const { return false; }
@@ -228,7 +274,35 @@ public:
     virtual const State &getState() const = 0;
     const Blueprint &root() const;
 
-    double hit_ratio() const noexcept { return getState().hit_ratio(_docid_limit); }
+    double hit_ratio() const { return getState().hit_ratio(_docid_limit); }
+
+    // The flow statistics for a blueprint is calculated during the
+    // LAST optimize pass (just prior to sorting). After being
+    // calculated, each value is available through a simple accessor
+    // function. Since the optimize process is performed bottom-up, a
+    // blueprint can expect all children to already have these values
+    // calculated when the calculate_flow_stats function is called.
+    //
+    // Note that values are not automatically available for blueprints
+    // used inside complex leafs since they are not part of the tree
+    // seen by optimize. When the calculate_flow_stats function is
+    // called on a complex leaf, it can call the update_flow_stats
+    // function directly (the function that is normally called by
+    // optimize) on internal blueprints to make these values available
+    // before using them to calculate its own flow stats.
+    //
+    //    'estimate': relative estimate in the range [0,1]
+    //        'cost': cost of non-strict evaluation: multiply by non-strict in-flow
+    // 'strict_cost': cost of strict evaluation: assuming strict in-flow of 1.0
+    double estimate() const noexcept { return _flow_stats.estimate; }
+    double cost() const noexcept { return _flow_stats.cost; }
+    double strict_cost() const noexcept { return _flow_stats.strict_cost; }
+    virtual FlowStats calculate_flow_stats(uint32_t docid_limit) const = 0;
+    void update_flow_stats(uint32_t docid_limit) {
+        _flow_stats = calculate_flow_stats(docid_limit);
+    }
+    static FlowStats default_flow_stats(uint32_t docid_limit, uint32_t abs_est, size_t child_cnt);
+    static FlowStats default_flow_stats(size_t child_cnt);
 
     virtual void fetchPostings(const ExecuteInfo &execInfo) = 0;
     virtual void freeze() = 0;
@@ -249,16 +323,23 @@ public:
     vespalib::slime::Cursor & asSlime(const vespalib::slime::Inserter & cursor) const;
     virtual vespalib::string getClassName() const;
     virtual void visitMembers(vespalib::ObjectVisitor &visitor) const;
-    virtual bool isEquiv() const { return false; }
-    virtual bool isWhiteList() const { return false; }
-    virtual bool isIntermediate() const { return false; }
-    virtual LeafBlueprint * asLeaf() noexcept { return nullptr; }
-    virtual bool isAnd() const { return false; }
-    virtual bool isAndNot() const { return false; }
-    virtual bool isOr() const { return false; }
-    virtual bool isSourceBlender() const { return false; }
-    virtual bool isRank() const { return false; }
-    virtual const attribute::ISearchContext *get_attribute_search_context() const { return nullptr; }
+    virtual bool isEquiv() const noexcept { return false; }
+    virtual bool isWhiteList() const noexcept { return false; }
+    virtual IntermediateBlueprint * asIntermediate() noexcept { return nullptr; }
+    const IntermediateBlueprint * asIntermediate() const noexcept { return const_cast<Blueprint *>(this)->asIntermediate(); }
+    virtual const LeafBlueprint * asLeaf() const noexcept { return nullptr; }
+    virtual AndBlueprint * asAnd() noexcept { return nullptr; }
+    bool isAnd() const noexcept { return const_cast<Blueprint *>(this)->asAnd() != nullptr; }
+    virtual AndNotBlueprint * asAndNot() noexcept { return nullptr; }
+    bool isAndNot() const noexcept { return const_cast<Blueprint *>(this)->asAndNot() != nullptr; }
+    virtual OrBlueprint * asOr() noexcept { return nullptr; }
+    virtual SourceBlenderBlueprint * asSourceBlender() noexcept { return nullptr; }
+    virtual WeakAndBlueprint * asWeakAnd() noexcept { return nullptr; }
+    virtual bool isRank() const noexcept { return false; }
+    virtual const attribute::ISearchContext *get_attribute_search_context() const noexcept { return nullptr; }
+
+    // to avoid replacing an empty blueprint with another empty blueprint
+    virtual EmptyBlueprint *as_empty() noexcept { return nullptr; }
 
     // For document summaries with matched-elements-only set.
     virtual std::unique_ptr<MatchingElementsSearch> create_matching_elements_search(const MatchingElementsFields &fields) const;
@@ -298,13 +379,13 @@ class IntermediateBlueprint : public blueprint::StateCache
 private:
     Children _children;
     HitEstimate calculateEstimate() const;
-    uint8_t calculate_cost_tier() const;
+    virtual uint8_t calculate_cost_tier() const;
     uint32_t calculate_tree_size() const;
     bool infer_allow_termwise_eval() const;
     bool infer_want_global_filter() const;
 
     size_t count_termwise_nodes(const UnpackInfo &unpack) const;
-    virtual double computeNextHitRate(const Blueprint & child, double hitRate) const;
+    virtual AnyFlow my_flow(InFlow in_flow) const = 0;
 
 protected:
     // returns an empty collection if children have empty or
@@ -326,7 +407,8 @@ public:
 
     void setDocIdLimit(uint32_t limit) noexcept final;
 
-    void optimize(Blueprint* &self) final;
+    void optimize(Blueprint* &self, OptimizePass pass) final;
+    double sort(InFlow in_flow, const Options &opts) override;
     void set_global_filter(const GlobalFilter &global_filter, double estimated_hit_ratio) override;
 
     IndexList find(const IPredicate & check) const;
@@ -337,11 +419,12 @@ public:
     IntermediateBlueprint & insertChild(size_t n, Blueprint::UP child);
     IntermediateBlueprint &addChild(Blueprint::UP child);
     Blueprint::UP removeChild(size_t n);
+    Blueprint::UP removeLastChild() { return removeChild(childCnt() - 1); }
     SearchIteratorUP createSearch(fef::MatchData &md, bool strict) const override;
-
+    
     virtual HitEstimate combine(const std::vector<HitEstimate> &data) const = 0;
     virtual FieldSpecBaseList exposeFields() const = 0;
-    virtual void sort(Children &children) const = 0;
+    virtual void sort(Children &children, bool strict, bool sort_by_cost) const = 0;
     virtual bool inheritStrict(size_t i) const = 0;
     virtual SearchIteratorUP
     createIntermediateSearch(MultiSearch::Children subSearches,
@@ -352,7 +435,7 @@ public:
     void freeze() final;
 
     UnpackInfo calculateUnpackInfo(const fef::MatchData & md) const;
-    bool isIntermediate() const override { return true; }
+    IntermediateBlueprint * asIntermediate() noexcept final { return this; }
 };
 
 
@@ -361,7 +444,8 @@ class LeafBlueprint : public Blueprint
 private:
     State _state;
 protected:
-    void optimize(Blueprint* &self) final;
+    void optimize(Blueprint* &self, OptimizePass pass) final;
+    double sort(InFlow in_flow, const Options &opts) override;
     void setEstimate(HitEstimate est) {
         _state.estimate(est);
         notifyChange();
@@ -374,7 +458,7 @@ protected:
     void set_want_global_filter(bool value);
     void set_tree_size(uint32_t value);
 
-    LeafBlueprint(bool allow_termwise_eval) noexcept
+    explicit LeafBlueprint(bool allow_termwise_eval) noexcept
         : _state()
     {
         _state.allow_termwise_eval(allow_termwise_eval);
@@ -394,11 +478,10 @@ protected:
 public:
     ~LeafBlueprint() override = default;
     const State &getState() const final { return _state; }
-    void setDocIdLimit(uint32_t limit) noexcept final { Blueprint::setDocIdLimit(limit); }
     void fetchPostings(const ExecuteInfo &execInfo) override;
     void freeze() final;
     SearchIteratorUP createSearch(fef::MatchData &md, bool strict) const override;
-    LeafBlueprint * asLeaf() noexcept final { return this; }
+    const LeafBlueprint * asLeaf() const noexcept final { return this; }
 
     virtual bool getRange(vespalib::string & from, vespalib::string & to) const;
     virtual SearchIteratorUP createLeafSearch(const fef::TermFieldMatchDataArray &tfmda, bool strict) const = 0;

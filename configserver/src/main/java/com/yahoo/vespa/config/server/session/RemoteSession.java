@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.config.server.session;
 
 import com.yahoo.config.provision.TenantName;
@@ -55,7 +55,7 @@ public class RemoteSession extends Session {
 
     @Override
     public String toString() {
-        return super.toString() + ",application set=" + applicationVersions;
+        return super.toString() + ", application versions=" + applicationVersions;
     }
 
 }

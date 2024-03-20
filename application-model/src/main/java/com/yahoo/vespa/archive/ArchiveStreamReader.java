@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.archive;
 
 import com.yahoo.path.Path;
@@ -15,7 +15,6 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.UncheckedIOException;
 import java.util.Objects;
-import java.util.OptionalLong;
 import java.util.function.Predicate;
 import java.util.zip.GZIPInputStream;
 
@@ -26,13 +25,13 @@ import java.util.zip.GZIPInputStream;
  */
 public class ArchiveStreamReader implements AutoCloseable {
 
-    private final ArchiveInputStream archiveInputStream;
+    private final ArchiveInputStream<? extends ArchiveEntry> archiveInputStream;
     private final Options options;
 
     private long totalRead = 0;
     private long entriesRead = 0;
 
-    private ArchiveStreamReader(ArchiveInputStream archiveInputStream, Options options) {
+    private <T extends ArchiveEntry> ArchiveStreamReader(ArchiveInputStream<T> archiveInputStream, Options options) {
         this.archiveInputStream = Objects.requireNonNull(archiveInputStream);
         this.options = Objects.requireNonNull(options);
     }
@@ -56,10 +55,10 @@ public class ArchiveStreamReader implements AutoCloseable {
         try {
             while ((entry = archiveInputStream.getNextEntry()) != null) {
                 Path path = Path.fromString(requireNormalized(entry.getName(), options.allowDotSegment));
-                if (isSymlink(entry)) throw new IllegalArgumentException("Archive entry " + path + " is a symbolic link, which is unsupported");
+                if (isSymlink(entry)) throw new IllegalArgumentException(archiveType() + " entry " + path + " is a symbolic link, which is unsupported");
                 if (entry.isDirectory()) continue;
                 if (!options.pathPredicate.test(path.toString())) continue;
-                if (++entriesRead > options.maxEntries) throw new IllegalArgumentException("Attempted to read more entries than entry limit of " + options.maxEntries);
+                if (++entriesRead > options.maxEntries) throw new IllegalArgumentException(archiveType() + " contains more files than the limit of " + options.maxEntries);
 
                 long size = 0;
                 byte[] buffer = new byte[2048];
@@ -67,9 +66,9 @@ public class ArchiveStreamReader implements AutoCloseable {
                 while ((read = archiveInputStream.read(buffer)) != -1) {
                     totalRead += read;
                     size += read;
-                    if (totalRead > options.maxSize) throw new IllegalArgumentException("Total size of archive exceeds size limit of " + options.maxSize + " bytes");
+                    if (totalRead > options.maxSize) throw new IllegalArgumentException("Total size of " + archiveType() + " exceeds size limit of " + options.maxSize + " bytes");
                     if (read > options.maxEntrySize) {
-                        if (!options.truncateEntry) throw new IllegalArgumentException("Size of entry " + path + " exceeded entry size limit of " + options.maxEntrySize + " bytes");
+                        if (!options.truncateEntry) throw new IllegalArgumentException("Size of " + archiveType() + " entry " + path + " exceeded entry size limit of " + options.maxEntrySize + " bytes");
                     } else {
                         outputStream.write(buffer, 0, read);
                     }
@@ -85,6 +84,10 @@ public class ArchiveStreamReader implements AutoCloseable {
     @Override
     public void close() {
         Exceptions.uncheck(archiveInputStream::close);
+    }
+
+    private String archiveType() {
+        return archiveInputStream instanceof TarArchiveInputStream ? "TAR" : "ZIP";
     }
 
     /** Information about a file extracted from a compressed archive */

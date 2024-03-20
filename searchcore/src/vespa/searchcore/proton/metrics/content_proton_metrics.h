@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #pragma once
 
@@ -26,18 +26,18 @@ struct ContentProtonMetrics : metrics::MetricSet
         ExecutorMetrics match;
         ExecutorMetrics docsum;
         ExecutorMetrics shared;
-        ExecutorMetrics warmup;
+        ExecutorMetrics warmup; //TODO not used anymore, remove
         ExecutorMetrics field_writer;
 
-        ProtonExecutorMetrics(metrics::MetricSet *parent);
-        ~ProtonExecutorMetrics();
+        explicit ProtonExecutorMetrics(metrics::MetricSet *parent);
+        ~ProtonExecutorMetrics() override;
     };
 
     struct SessionCacheMetrics : metrics::MetricSet {
         SessionManagerMetrics search;
         SessionManagerMetrics grouping;
 
-        SessionCacheMetrics(metrics::MetricSet *parent);
+        explicit SessionCacheMetrics(metrics::MetricSet *parent);
         ~SessionCacheMetrics() override;
     };
 

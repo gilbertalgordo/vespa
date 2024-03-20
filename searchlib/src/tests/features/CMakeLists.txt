@@ -1,4 +1,4 @@
-# Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+# Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 vespa_add_executable(searchlib_prod_features_test_app TEST
     SOURCES
     prod_features_test.cpp
@@ -17,5 +17,6 @@ vespa_add_executable(searchlib_featurebenchmark_app
     featurebenchmark.cpp
     DEPENDS
     searchlib
+    searchlib_test
 )
 vespa_add_test(NAME searchlib_featurebenchmark_app COMMAND searchlib_featurebenchmark_app BENCHMARK)

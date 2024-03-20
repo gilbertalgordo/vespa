@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #pragma once
 
@@ -8,7 +8,11 @@
 #include <vespa/vespalib/util/rcuvector.h>
 #include <optional>
 
+namespace search { class BufferWriter; }
+
 namespace search::predicate {
+
+class ISaver;
 
 template <typename Key = uint64_t, typename DocId = uint32_t>
 struct SimpleIndexDeserializeObserver {
@@ -17,9 +21,9 @@ struct SimpleIndexDeserializeObserver {
 };
 
 template <typename Posting>
-struct PostingSerializer {
-    virtual ~PostingSerializer() {}
-    virtual void serialize(const Posting &posting, vespalib::DataBuffer &buffer) const = 0;
+struct PostingSaver {
+    virtual ~PostingSaver() {}
+    virtual void save(const Posting &posting, BufferWriter& writer) const = 0;
 };
 
 template <typename Posting>
@@ -175,8 +179,6 @@ public:
         : _generation_holder(generation_holder), _config(config), _limit_provider(provider) {}
     ~SimpleIndex();
 
-    void serialize(vespalib::DataBuffer &buffer,
-                   const PostingSerializer<Posting> &serializer) const;
     void deserialize(vespalib::DataBuffer &buffer,
                      PostingDeserializer<Posting> &deserializer,
                      SimpleIndexDeserializeObserver<Key, DocId> &observer, uint32_t version);
@@ -215,6 +217,8 @@ public:
         return optional<VectorIterator>();
 
     }
+
+    std::unique_ptr<ISaver> make_saver(std::unique_ptr<PostingSaver<Posting>> subsaver) const;
 };
 
 template<typename Posting, typename Key, typename DocId>

@@ -1,8 +1,10 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include "teststorageapp.h"
 #include <vespa/storage/common/content_bucket_db_options.h>
 #include <vespa/storage/config/config-stor-server.h>
+#include <vespa/storage/config/config-stor-distributormanager.h>
+#include <vespa/storage/config/config-stor-visitordispatcher.h>
 #include <vespa/config-stor-distribution.h>
 #include <vespa/config-fleetcontroller.h>
 #include <vespa/persistence/dummyimpl/dummypersistence.h>

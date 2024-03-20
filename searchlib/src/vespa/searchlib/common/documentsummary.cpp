@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include "documentsummary.h"
 #include <vespa/fastlib/io/bufferedfile.h>
@@ -40,7 +40,7 @@ bool
 DocumentSummary::writeDocIdLimit(const vespalib::string &dir, uint32_t count)
 {
     vespalib::string qcntname = dir + "/docsum.qcnt";
-    Fast_BufferedFile qcntfile(new FastOS_File);
+    Fast_BufferedFile qcntfile(4_Ki);
 
     qcntfile.WriteOpen(qcntname.c_str());
     if (!qcntfile.IsOpened()) {

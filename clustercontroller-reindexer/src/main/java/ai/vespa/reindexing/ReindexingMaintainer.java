@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package ai.vespa.reindexing;
 
 import ai.vespa.reindexing.Reindexer.Cluster;
@@ -16,7 +16,7 @@ import com.yahoo.net.HostName;
 import com.yahoo.vespa.config.content.AllClustersBucketSpacesConfig;
 import com.yahoo.vespa.config.content.reindexing.ReindexingConfig;
 import com.yahoo.vespa.curator.Curator;
-import com.yahoo.vespa.zookeeper.VespaZooKeeperServer;
+import com.yahoo.vespa.zookeeper.server.VespaZooKeeperServer;
 
 import java.time.Clock;
 import java.time.Duration;

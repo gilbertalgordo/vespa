@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #pragma once
 
@@ -63,8 +63,9 @@ private:
 
     void deleteSourceOnlyNodes(const BucketDatabase::Entry& currentState,
                                DistributorStripeMessageSender& sender);
-    bool is_global_bucket_merge() const noexcept;
-    bool all_involved_nodes_support_unordered_merge_chaining() const noexcept;
+    [[nodiscard]] bool is_global_bucket_merge() const noexcept;
+    [[nodiscard]] bool all_involved_nodes_support_unordered_merge_chaining() const noexcept;
+    [[nodiscard]] uint32_t estimate_merge_memory_footprint_upper_bound(const std::vector<MergeMetaData>& nodes) const noexcept;
     MergeBucketMetricSet* get_merge_metrics();
 };
 

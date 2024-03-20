@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 
 #include "create_blueprint_visitor_helper.h"
@@ -87,19 +87,31 @@ CreateBlueprintVisitorHelper::createWeightedSet(std::unique_ptr<WS> bp, NODE &n)
     bp->complete(estimate);
     setResult(std::move(bp));
 }
+
 void
-CreateBlueprintVisitorHelper::visitWeightedSetTerm(query::WeightedSetTerm &n) {
+CreateBlueprintVisitorHelper::visitWeightedSetTerm(query::WeightedSetTerm &n)
+{
     createWeightedSet(std::make_unique<WeightedSetTermBlueprint>(_field), n);
 }
+
 void
-CreateBlueprintVisitorHelper::visitDotProduct(query::DotProduct &n) {
+CreateBlueprintVisitorHelper::visitDotProduct(query::DotProduct &n)
+{
     createWeightedSet(std::make_unique<DotProductBlueprint>(_field), n);
 }
+
 void
-CreateBlueprintVisitorHelper::visitWandTerm(query::WandTerm &n) {
+CreateBlueprintVisitorHelper::visitWandTerm(query::WandTerm &n)
+{
     createWeightedSet(std::make_unique<ParallelWeakAndBlueprint>(_field, n.getTargetNumHits(),
                                                                  n.getScoreThreshold(), n.getThresholdBoostFactor()),
                       n);
+}
+
+void
+CreateBlueprintVisitorHelper::visitInTerm(query::InTerm &n)
+{
+    createWeightedSet(std::make_unique<WeightedSetTermBlueprint>(_field), n);
 }
 
 void CreateBlueprintVisitorHelper::visit(query::TrueQueryNode &) {

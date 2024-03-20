@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.jdisc.http.ssl.impl;
 
 import com.yahoo.component.AbstractComponent;
@@ -21,7 +21,7 @@ public abstract class TlsContextBasedProvider extends AbstractComponent implemen
     public void configureSsl(ConnectorSsl ssl, String name, int port) {
         TlsContext tlsContext = getTlsContext(name, port);
         SSLParameters parameters = tlsContext.parameters();
-        ssl.setSslContext(tlsContext.context());
+        ssl.setSslContext(tlsContext.sslContext().context());
         ssl.setEnabledProtocolVersions(List.of(parameters.getProtocols()));
         ssl.setEnabledCipherSuites(List.of(parameters.getCipherSuites()));
         if (parameters.getNeedClientAuth()) {

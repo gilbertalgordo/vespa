@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 #pragma once
 
 #include "cmdq.h"
@@ -47,7 +47,6 @@ private:
     void handleChildDeaths();
     void handleRestarts();
 
-    void updateMetrics();
     void terminateServices(bool catchable, bool printDebug = false);
     void doConfigure();
 public:

@@ -1,10 +1,13 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.config.server.tenant;
 
 import com.yahoo.config.model.api.TenantSecretStore;
 import com.yahoo.config.provision.SystemName;
 import com.yahoo.config.provision.TenantName;
+import com.yahoo.container.jdisc.secretstore.SecretNotFoundException;
 import com.yahoo.container.jdisc.secretstore.SecretStore;
+import com.yahoo.vespa.config.server.http.InvalidApplicationException;
+
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -19,10 +22,14 @@ public class SecretStoreExternalIdRetriever {
         return tenantSecretStores.stream()
                 .map(tenantSecretStore -> {
                     var secretName = secretName(tenant, system, tenantSecretStore.getName());
-                    String secret = secretStore.getSecret(secretName);
-                    if (secret == null)
-                     throw new RuntimeException("No secret found in secret store for " + secretName);
-                    return tenantSecretStore.withExternalId(secret);
+                    try {
+                        String secret = secretStore.getSecret(secretName);
+                        if (secret == null)
+                            throw new InvalidApplicationException("No secret found in secret store for " + secretName);
+                        return tenantSecretStore.withExternalId(secret);
+                    } catch (SecretNotFoundException e) {
+                        throw new InvalidApplicationException("Could not find externalId for secret store: %s".formatted(tenantSecretStore.getName()));
+                    }
                 })
                 .toList();
     }

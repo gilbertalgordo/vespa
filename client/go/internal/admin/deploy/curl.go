@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 // vespa-deploy command
 // Author: arnej
 
@@ -14,7 +14,7 @@ import (
 
 	"github.com/vespa-engine/vespa/client/go/internal/admin/trace"
 	"github.com/vespa-engine/vespa/client/go/internal/curl"
-	"github.com/vespa-engine/vespa/client/go/internal/util"
+	"github.com/vespa-engine/vespa/client/go/internal/osutil"
 	"github.com/vespa-engine/vespa/client/go/internal/vespa"
 )
 
@@ -60,20 +60,20 @@ func urlWithoutQuery(url string) string {
 func newCurlCommand(url string, args []string) *curl.Command {
 	tls, err := vespa.LoadTlsConfig()
 	if err != nil {
-		util.JustExitWith(err)
+		osutil.ExitErr(err)
 	}
 	if tls != nil && strings.HasPrefix(url, "http:") {
 		url = "https:" + url[5:]
 	}
 	cmd, err := curl.RawArgs(url, args...)
 	if err != nil {
-		util.JustExitWith(err)
+		osutil.ExitErr(err)
 	}
 	if tls != nil {
 		if tls.DisableHostnameValidation {
 			cmd, err = curl.RawArgs(url, append(args, "--insecure")...)
 			if err != nil {
-				util.JustExitWith(err)
+				osutil.ExitErr(err)
 			}
 		}
 		cmd.PrivateKey = tls.Files.PrivateKey
@@ -89,7 +89,7 @@ func runCurl(cmd *curl.Command, stdout io.Writer) error {
 	if err != nil {
 		if ee, ok := err.(*exec.ExitError); ok {
 			if ee.ProcessState.ExitCode() == 7 {
-				return fmt.Errorf("HTTP request failed. Could not connect to %s", cmd.GetUrlPrefix())
+				return fmt.Errorf("HTTP request failed. Could not connect to %s", cmd.URLPrefix())
 			}
 		}
 		return fmt.Errorf("HTTP request failed with curl %s", err.Error())
@@ -110,10 +110,6 @@ func commonCurlArgs() []string {
 func curlPutArgs() []string {
 	return append(commonCurlArgs(),
 		"--write-out", "\n%{http_code}")
-}
-
-func curlGetArgs() []string {
-	return commonCurlArgs()
 }
 
 func curlPostArgs() []string {

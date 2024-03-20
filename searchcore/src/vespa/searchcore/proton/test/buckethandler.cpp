@@ -1,4 +1,4 @@
-// Copyright Yahoo. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
+// Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include "buckethandler.h"
 #include <cassert>
@@ -23,16 +23,14 @@ BucketHandler::addBucketStateChangedHandler(IBucketStateChangedHandler *handler)
 }
 
 void
-BucketHandler::removeBucketStateChangedHandler(IBucketStateChangedHandler *
-                                               handler)
+BucketHandler::removeBucketStateChangedHandler(IBucketStateChangedHandler * handler)
 {
     _handlers.erase(handler);
 }
 
 void
 BucketHandler::notifyBucketStateChanged(const document::BucketId &bucketId,
-                                        storage::spi::BucketInfo::ActiveState
-                                        newState)
+                                        storage::spi::BucketInfo::ActiveState newState)
 {
     for (auto &handler : _handlers) {
         handler->notifyBucketStateChanged(bucketId, newState);
