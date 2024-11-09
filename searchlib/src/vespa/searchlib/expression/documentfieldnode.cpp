@@ -21,7 +21,7 @@ IMPLEMENT_EXPRESSIONNODE(DocumentFieldNode,    DocumentAccessorNode);
 IMPLEMENT_EXPRESSIONNODE(GetYMUMChecksumFunctionNode,           DocumentAccessorNode);
 IMPLEMENT_EXPRESSIONNODE(GetDocIdNamespaceSpecificFunctionNode, DocumentAccessorNode);
 
-const vespalib::string DocumentAccessorNode::_S_docId("documentid");
+const std::string DocumentAccessorNode::_S_docId("documentid");
 
 DocumentFieldNode::~DocumentFieldNode() = default;
 
@@ -48,7 +48,7 @@ DocumentFieldNode::operator = (const DocumentFieldNode & rhs)
 }
 
 std::unique_ptr<ResultNode>
-deduceResultNode(vespalib::stringref fieldName, const FieldValue & fv, bool preserveAccurateTypes, bool nestedMultiValue)
+deduceResultNode(std::string_view fieldName, const FieldValue & fv, bool preserveAccurateTypes, bool nestedMultiValue)
 {
     std::unique_ptr<ResultNode> value;
     if (fv.isA(FieldValue::Type::BYTE) || fv.isA(FieldValue::Type::INT) || fv.isA(FieldValue::Type::LONG)) {
@@ -99,11 +99,11 @@ deduceResultNode(vespalib::stringref fieldName, const FieldValue & fv, bool pres
             value.reset(new RawResultNodeVector());
         } else {
             throw std::runtime_error(make_string("Can not deduce correct resultclass for documentfield '%s' in based on class '%s'. It nests down to %s which is not expected",
-                                                 vespalib::string(fieldName).c_str(), fv.className(), rInfo.name()));
+                                                 std::string(fieldName).c_str(), fv.className(), rInfo.name()));
         }
     } else {
         throw std::runtime_error(make_string("Can not deduce correct resultclass for documentfield '%s' in based on class '%s'",
-                                             vespalib::string(fieldName).c_str(), fv.className()));
+                                             std::string(fieldName).c_str(), fv.className()));
     }
     return value;
 }
@@ -264,7 +264,7 @@ DocumentFieldNode::visitMembers(vespalib::ObjectVisitor &visitor) const
 class String2ResultNode : public ResultNode
 {
 public:
-    String2ResultNode(vespalib::stringref s) : _s(s) { }
+    String2ResultNode(std::string_view s) : _s(s) { }
     int64_t onGetInteger(size_t index) const override { (void) index; return strtoul(_s.c_str(), nullptr, 0); }
     double  onGetFloat(size_t index)   const override { (void) index; return vespalib::locale::c::strtod(_s.c_str(), nullptr); }
     ConstBufferRef onGetString(size_t index, BufferRef buf) const override { (void) index; (void) buf; return ConstBufferRef(_s.c_str(), _s.size()); }
@@ -272,7 +272,7 @@ private:
     String2ResultNode * clone() const override { return new String2ResultNode(_s); }
     void set(const ResultNode&) override;
     size_t hash() const override { return 0; }
-    vespalib::string _s;
+    std::string _s;
 };
 
 void String2ResultNode::set(const ResultNode&)
@@ -287,7 +287,7 @@ void GetDocIdNamespaceSpecificFunctionNode::onDoc(const Document & doc)
 }
 
 namespace {
-const vespalib::string _G_valueField("value");
+const std::string _G_valueField("value");
 }
 
 Serializer & GetDocIdNamespaceSpecificFunctionNode::onSerialize(Serializer & os) const
@@ -307,7 +307,7 @@ GetDocIdNamespaceSpecificFunctionNode::visitMembers(vespalib::ObjectVisitor &vis
 
 void GetYMUMChecksumFunctionNode::onDoc(const Document & doc)
 {
-    const vespalib::string & ymumid = doc.getId().getScheme().getNamespaceSpecific();
+    std::string ymumid(doc.getId().getScheme().getNamespaceSpecific());
 
     try {
         char decoded[20];

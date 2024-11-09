@@ -109,7 +109,7 @@ private:
 };
 
 class TickingThreadPoolImpl final : public TickingThreadPool {
-    const vespalib::string               _name;
+    const std::string               _name;
     const vespalib::duration             _waitTime;
     const vespalib::duration             _maxProcessTime;
     const uint32_t                       _ticksBeforeWait;
@@ -135,7 +135,7 @@ class TickingThreadPoolImpl final : public TickingThreadPool {
     };
 
 public:
-    TickingThreadPoolImpl(vespalib::stringref name, vespalib::duration waitTime,
+    TickingThreadPoolImpl(std::string_view name, vespalib::duration waitTime,
                           int ticksBeforeWait, vespalib::duration maxProcessTime)
         : _name(name),
           _waitTime(waitTime),
@@ -160,7 +160,7 @@ public:
             ost << _name.c_str() << " thread " << i;
             _threads.push_back(std::shared_ptr<Thread>(pool.startThread(
                     *_tickers[i],
-                    ost.str(),
+                    ost.view(),
                     _waitTime,
                     _maxProcessTime,
                     _ticksBeforeWait, std::nullopt)));
@@ -187,8 +187,8 @@ public:
         }
     }
 
-    vespalib::string getStatus() override {
-        vespalib::string result(_tickers.size(), ' ');
+    std::string getStatus() override {
+        std::string result(_tickers.size(), ' ');
         for (uint32_t i=0, n=_tickers.size(); i<n; ++i) {
             result[i] = _tickers[i]->getState();
         }
@@ -211,7 +211,7 @@ private:
 
 TickingThreadPool::UP
 TickingThreadPool::createDefault(
-        vespalib::stringref name,
+        std::string_view name,
         vespalib::duration waitTime,
         int ticksBeforeWait,
         vespalib::duration maxProcessTime)
@@ -220,7 +220,7 @@ TickingThreadPool::createDefault(
 }
 
 TickingThreadPool::UP
-TickingThreadPool::createDefault(vespalib::stringref name, vespalib::duration waitTime)
+TickingThreadPool::createDefault(std::string_view name, vespalib::duration waitTime)
 {
     return createDefault(name, waitTime, 1, 5s);
 }

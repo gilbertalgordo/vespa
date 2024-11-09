@@ -2,7 +2,6 @@
 install_jar(vespaclient-java-jar-with-dependencies.jar)
 
 vespa_install_script(src/main/sh/vespa-crypto-cli.sh vespa-crypto-cli bin)
-vespa_install_script(src/main/sh/vespa-document-statistics.sh vespa-document-statistics bin)
 vespa_install_script(src/main/sh/vespa-stat.sh vespa-stat bin)
 vespa_install_script(src/main/sh/vespa-query-profile-dump-tool.sh vespa-query-profile-dump-tool bin)
 vespa_install_script(src/main/sh/vespa-summary-benchmark.sh vespa-summary-benchmark bin)
@@ -13,4 +12,5 @@ vespa_install_script(src/main/sh/vespa-visit.sh vespa-visit bin)
 vespa_install_script(src/main/sh/vespa-visit-target.sh vespa-visit-target bin)
 vespa_install_script(src/main/sh/vespa-feed-perf vespa-feed-perf bin)
 vespa_install_script(src/main/sh/vespa-status-filedistribution.sh vespa-status-filedistribution bin)
+vespa_install_script(src/main/sh/vespa-significance.sh vespa-significance bin)
 vespa_install_script(src/main/sh/vespa-curl-wrapper vespa-curl-wrapper libexec/vespa)

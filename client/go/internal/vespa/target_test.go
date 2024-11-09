@@ -20,7 +20,7 @@ func TestLocalTarget(t *testing.T) {
 	client := &mock.HTTPClient{}
 	lt := LocalTarget(client, TLSOptions{}, 0)
 	assertServiceURL(t, "http://127.0.0.1:19071", lt, "deploy")
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		response := `
 {
   "services": [
@@ -83,7 +83,7 @@ func TestCustomTargetWait(t *testing.T) {
 	client.NextStatus(500)
 	assertService(t, true, target, "", 0)
 	// Fails multiple times
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		client.NextStatus(500)
 		client.NextResponseError(io.EOF)
 	}
@@ -115,6 +115,22 @@ func TestCustomTargetAwaitDeployment(t *testing.T) {
 	convergedID, err := target.AwaitDeployment(42, 0)
 	assert.Nil(t, err)
 	assert.Equal(t, int64(42), convergedID)
+}
+
+func TestCustomTargetCompatibleWith(t *testing.T) {
+	client := &mock.HTTPClient{}
+	target := CustomTarget(client, "http://192.0.2.42", TLSOptions{}, 0)
+	for range 3 {
+		client.NextResponse(mock.HTTPResponse{
+			URI:    "/state/v1/version",
+			Status: 200,
+			Body:   []byte(`{"version": "1.2.3"}`),
+		})
+	}
+	assert.Nil(t, target.CompatibleWith(version.MustParse("1.2.2")))
+	assert.Nil(t, target.CompatibleWith(version.MustParse("1.2.3")))
+	assert.NotNil(t, target.CompatibleWith(version.MustParse("1.2.4")))
+	assert.True(t, client.Consumed())
 }
 
 func TestCloudTargetWait(t *testing.T) {
@@ -231,14 +247,14 @@ func TestLog(t *testing.T) {
 	assert.Equal(t, expected, buf.String())
 }
 
-func TestCheckVersion(t *testing.T) {
+func TestCloudCompatibleWith(t *testing.T) {
 	target, client := createCloudTarget(t, io.Discard)
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		client.NextResponse(mock.HTTPResponse{URI: "/cli/v1/", Status: 200, Body: []byte(`{"minVersion":"8.0.0"}`)})
 	}
-	assert.Nil(t, target.CheckVersion(version.MustParse("8.0.0")))
-	assert.Nil(t, target.CheckVersion(version.MustParse("8.1.0")))
-	assert.NotNil(t, target.CheckVersion(version.MustParse("7.0.0")))
+	assert.Nil(t, target.CompatibleWith(version.MustParse("8.0.0")))
+	assert.Nil(t, target.CompatibleWith(version.MustParse("8.1.0")))
+	assert.NotNil(t, target.CompatibleWith(version.MustParse("7.0.0")))
 }
 
 func createCloudTarget(t *testing.T, logWriter io.Writer) (Target, *mock.HTTPClient) {

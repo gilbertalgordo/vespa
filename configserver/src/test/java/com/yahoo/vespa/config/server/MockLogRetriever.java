@@ -1,6 +1,7 @@
 // Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.config.server;
 
+import ai.vespa.http.HttpURL;
 import com.yahoo.container.jdisc.HttpResponse;
 import com.yahoo.vespa.config.server.http.LogRetriever;
 
@@ -15,14 +16,23 @@ import java.util.Optional;
  */
 public class MockLogRetriever extends LogRetriever {
 
+    private final int statuCode;
+    private final String logLine;
+
+    public MockLogRetriever() { this(200, "log line"); }
+
+    public MockLogRetriever(int statusCode, String logLine) {
+        this.statuCode = statusCode;
+        this.logLine = logLine;
+    }
+
     @Override
-    public HttpResponse getLogs(String logServerUri, Optional<Instant>deployTime ) {
-        return new HttpResponse(200) {
+    public HttpResponse getLogs(HttpURL logServerUri, Optional<Instant> deployTime) {
+        return new HttpResponse(statuCode) {
             @Override
             public void render(OutputStream outputStream) throws IOException {
-                outputStream.write("log line".getBytes(StandardCharsets.UTF_8));
+                outputStream.write(logLine.getBytes(StandardCharsets.UTF_8));
             }
-
         };
     }
 

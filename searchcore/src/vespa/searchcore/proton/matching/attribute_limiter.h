@@ -2,11 +2,11 @@
 
 #pragma once
 
-#include <vespa/vespalib/stllike/string.h>
-#include <vector>
+#include <atomic>
 #include <memory>
 #include <mutex>
-#include <atomic>
+#include <string>
+#include <vector>
 
 namespace search::queryeval {
     class Searchable;
@@ -36,24 +36,24 @@ public:
     AttributeLimiter(const RangeQueryLocator & _rangeQueryLocator,
                      search::queryeval::Searchable &searchable_attributes,
                      const search::queryeval::IRequestContext & requestContext,
-                     const vespalib::string &attribute_name, bool descending,
-                     const vespalib::string &diversity_attribute,
+                     const std::string &attribute_name, bool descending,
+                     const std::string &diversity_attribute,
                      double diversityCutoffFactor,
                      DiversityCutoffStrategy diversityCutoffStrategy);
     ~AttributeLimiter();
     std::unique_ptr<SearchIterator> create_search(size_t want_hits, size_t max_group_size, double hit_rate, bool strictSearch);
     bool was_used() const;
     ssize_t getEstimatedHits() const;
-    static DiversityCutoffStrategy toDiversityCutoffStrategy(vespalib::stringref strategy);
+    static DiversityCutoffStrategy toDiversityCutoffStrategy(std::string_view strategy);
 private:
     using BlueprintAndMatchData = std::pair<search::queryeval::Blueprint &, search::fef::MatchData &>;
     BlueprintAndMatchData create_match_data(size_t want_hits, size_t max_group_size, double hit_rate, bool strictSearch);
     search::queryeval::Searchable                      & _searchable_attributes;
     const search::queryeval::IRequestContext           & _requestContext;
     const RangeQueryLocator                            & _rangeQueryLocator;
-    vespalib::string                                     _attribute_name;
+    std::string                                     _attribute_name;
     bool                                                 _descending;
-    vespalib::string                                     _diversity_attribute;
+    std::string                                     _diversity_attribute;
     std::mutex                                           _lock;
     std::vector<std::unique_ptr<search::fef::MatchData>> _match_datas;
     std::unique_ptr<search::queryeval::Blueprint>        _blueprint;

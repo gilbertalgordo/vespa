@@ -133,11 +133,9 @@ public class DynamicThrottlePolicy extends StaticThrottlePolicy {
             // No need to increase window when we're this close to max.
             // TODO jonmv: Not so sure — what if we're too high, and should back off?
         } else if (throughput > localMaxThroughput) {
-            localMaxThroughput = throughput;
             windowSize += weight * windowSizeIncrement;
-            if (log.isLoggable(Level.FINE)) {
-                log.log(Level.FINE, "windowSize " + windowSize + " throughput " + throughput + " local max " + localMaxThroughput);
-            }
+            log.log(Level.FINE, () -> "windowSize " + windowSize + " throughput " + throughput + " local max " + localMaxThroughput);
+            localMaxThroughput = throughput;
         } else {
             // scale up/down throughput for comparing to window size
             double period = 1;
@@ -154,9 +152,7 @@ public class DynamicThrottlePolicy extends StaticThrottlePolicy {
             } else {
                 windowSize += weight * windowSizeIncrement;
             }
-            if (log.isLoggable(Level.FINE)) {
-                log.log(Level.FINE, "windowSize " + windowSize + " throughput " + throughput + " local max " + localMaxThroughput + " efficiency " + efficiency);
-            }
+            log.log(Level.FINE, () ->"windowSize " + windowSize + " throughput " + throughput + " local max " + localMaxThroughput + " efficiency " + efficiency);
         }
         windowSize = Math.max(minWindowSize, windowSize);
         windowSize = Math.min(maxWindowSize, windowSize);
@@ -171,10 +167,10 @@ public class DynamicThrottlePolicy extends StaticThrottlePolicy {
     }
 
     /**
-     * Determines where on each latency level the attractor sits. 2 is at the very end, and makes this to *boom*.
+     * Determines where on each latency level the attractor sits. 2 is at the very end, and makes this go *boom*.
      * 0.2 is at the very start, and makes the algorithm more conservative. Probably fine to stay away from this.
      */
-    // Original javadoc is non-sense, but kept for historical reasons.
+    // Original javadoc is nonsense, but kept for historical reasons.
     /*
      * Sets the lower efficiency threshold at which the algorithm should perform window size back off. Efficiency is
      * the correlation between throughput and window size. The algorithm will increase the window size until efficiency

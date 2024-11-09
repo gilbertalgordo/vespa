@@ -37,17 +37,17 @@ public class ParenthesisTestCase {
     public void requireThatExpressionCanBeVerified() {
         Expression exp = new ParenthesisExpression(SimpleExpression.newConversion(DataType.INT, DataType.STRING));
         assertVerify(DataType.INT, exp, DataType.STRING);
-        assertVerifyThrows(null, exp, "Expected int input, but no input is specified");
-        assertVerifyThrows(DataType.STRING, exp, "Expected int input, got string");
+        assertVerifyThrows("Invalid expression '(SimpleExpression)': Expected int input, but no input is specified", null, exp);
+        assertVerifyThrows("Invalid expression '(SimpleExpression)': Expected int input, got string", DataType.STRING, exp);
     }
 
     @Test
     public void requireThatNestedExpressionIsRun() {
         ExecutionContext ctx = new ExecutionContext(new SimpleTestAdapter(new Field("in", DataType.STRING)));
-        ctx.setOutputValue(null, "in", new StringFieldValue("69"));
+        ctx.setFieldValue("in", new StringFieldValue("69"), null);
         new ParenthesisExpression(new InputExpression("in")).execute(ctx);
 
-        assertTrue(ctx.getValue() instanceof StringFieldValue);
-        assertEquals("69", ((StringFieldValue)ctx.getValue()).getString());
+        assertTrue(ctx.getCurrentValue() instanceof StringFieldValue);
+        assertEquals("69", ((StringFieldValue)ctx.getCurrentValue()).getString());
     }
 }

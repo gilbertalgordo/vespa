@@ -22,18 +22,18 @@ public:
     using VsmfieldsConfig = vespa::config::search::vsm::VsmfieldsConfig;
     using VsmsummaryConfig = vespa::config::search::vsm::VsmsummaryConfig;
 private:
-    using StringSet = vespalib::hash_set<vespalib::string>;
-    using StringSetMap = vespalib::hash_map<vespalib::string, StringSet>;
+    using StringSet = vespalib::hash_set<std::string>;
+    using StringSetMap = vespalib::hash_map<std::string, StringSet>;
     StringSetMap _view_map;  // document field    -> views
     StringSetMap _field_map; // vsm summary field -> document fields
     void populate_view_map(VsmfieldsConfig& vsm_fields_config);
     void populate_field_map(VsmsummaryConfig& vsm_summary_config);
-    void populate_views(StringSet& views, const vespalib::string& field) const;
+    void populate_views(StringSet& views, std::string_view field) const;
 public:
     QueryTermFilterFactory(VsmfieldsConfig& vsm_fields_config,
                             VsmsummaryConfig& vsm_summary_config);
     ~QueryTermFilterFactory() override;
-    std::shared_ptr<const search::docsummary::IQueryTermFilter> make(vespalib::stringref input_field) const override;
+    std::shared_ptr<const search::docsummary::IQueryTermFilter> make(std::string_view input_field) const override;
 };
 
 }

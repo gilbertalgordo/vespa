@@ -27,7 +27,7 @@ import java.util.List;
 
 /**
  * Enumeration of the possible types of fields. Since arrays and weighted sets may be defined for any types, including
- * themselves, this enumeration is open ended.
+ * themselves, this enumeration is open-ended.
  *
  * @author bratseth
  */
@@ -159,9 +159,14 @@ public abstract class DataType extends Identifiable implements Comparable<DataTy
 
     public abstract boolean isValueCompatible(FieldValue value);
 
-    public final boolean isAssignableFrom(DataType dataType) {
+    public boolean isAssignableFrom(DataType dataType) {
         // TODO: Reverse this so that isValueCompatible() uses this instead.
         return isValueCompatible(dataType.createFieldValue());
+    }
+
+    /** The reverse of isAssignableFrom */
+    public boolean isAssignableTo(DataType dataType) {
+        return dataType.isAssignableFrom(this);
     }
 
     /**
@@ -291,9 +296,10 @@ public abstract class DataType extends Identifiable implements Comparable<DataTy
      *
      * @return primitive data type, or null
      */
-    public PrimitiveDataType getPrimitiveType() {
-        return null;
-    }
+    public PrimitiveDataType getPrimitiveType() { return null; }
+
+    /** Returns the nested type of this if it is a collection type, null otherwise. */
+    public DataType getNestedType() { return null; }
 
     @Override
     public void visitMembers(ObjectVisitor visitor) {

@@ -68,7 +68,7 @@ using search::queryeval::ParallelWeakAndSearch;
 using search::queryeval::PostingInfo;
 using search::queryeval::SearchIterator;
 using std::vector;
-using vespalib::string;
+using std::string;
 using vespalib::make_string;
 using namespace search::attribute;
 using namespace search;
@@ -94,7 +94,7 @@ public:
         _other = attr;
     }
 
-    AttributeGuard::UP getAttribute(const string &name) const override {
+    AttributeGuard::UP getAttribute(std::string_view name) const override {
         if (name == field) {
             return std::make_unique<AttributeGuard>(_attribute_vector);
         } else if (name == other) {
@@ -105,7 +105,7 @@ public:
     }
 
     std::unique_ptr<attribute::AttributeReadGuard>
-    getAttributeReadGuard(const string &name, bool stableEnumGuard) const override {
+    getAttributeReadGuard(std::string_view name, bool stableEnumGuard) const override {
         if (name == field && _attribute_vector) {
             return _attribute_vector->makeReadGuard(stableEnumGuard);
         } else if (name == other && _other) {
@@ -123,7 +123,7 @@ public:
         return IAttributeContext::UP();
     }
 
-    std::shared_ptr<attribute::ReadableAttributeVector> readable_attribute_vector(const string& name) const override {
+    std::shared_ptr<attribute::ReadableAttributeVector> readable_attribute_vector(std::string_view name) const override {
         if (name == field) {
             return _attribute_vector;
         } else if (name == other) {
@@ -132,7 +132,7 @@ public:
         return {};
     }
 
-    void asyncForAttribute(const vespalib::string &name, std::unique_ptr<IAttributeFunctor> func) const override;
+    void asyncForAttribute(std::string_view name, std::unique_ptr<IAttributeFunctor> func) const override;
 };
 
 struct Result {
@@ -153,7 +153,7 @@ struct Result {
     int64_t wand_initial_threshold;
     double wand_boost_factor;
     std::vector<Hit> hits;
-    vespalib::string iterator_dump;
+    std::string iterator_dump;
 
     Result(size_t est_hits_in, bool est_empty_in);
     ~Result();
@@ -191,7 +191,7 @@ MyAttributeManager::MyAttributeManager(AttributeVector::SP attr)
 MyAttributeManager::~MyAttributeManager() = default;
 
 void
-MyAttributeManager::asyncForAttribute(const vespalib::string &, std::unique_ptr<IAttributeFunctor>) const {
+MyAttributeManager::asyncForAttribute(std::string_view, std::unique_ptr<IAttributeFunctor>) const {
 
 }
 
@@ -223,8 +223,9 @@ Result do_search(IAttributeManager &attribute_manager, const Node &node, bool st
     Blueprint::UP bp = source.createBlueprint(requestContext, FieldSpec(field, fieldId, handle), node);
     ASSERT_TRUE(bp);
     Result result(bp->getState().estimate().estHits, bp->getState().estimate().empty);
-    bp->fetchPostings(queryeval::ExecuteInfo::createForTest(strict));
-    SearchIterator::UP iterator = bp->createSearch(*match_data, strict);
+    bp->basic_plan(strict, 100);
+    bp->fetchPostings(queryeval::ExecuteInfo::FULL);
+    SearchIterator::UP iterator = bp->createSearch(*match_data);
     ASSERT_TRUE(iterator);
     iterator->initRange(1, num_docs);
     extract_posting_info(result, iterator->getPostingInfo());
@@ -393,9 +394,9 @@ TEST("require that optimized location search works with wrapped bounding box (no
     EXPECT_EQUAL(1u, result1.hits.size());
     EXPECT_EQUAL(0u, result2.hits.size());
     EXPECT_EQUAL(0u, result3.hits.size());
-    EXPECT_TRUE(result1.iterator_dump.find("LocationPreFilterIterator") != vespalib::string::npos);
-    EXPECT_TRUE(result2.iterator_dump.find("EmptySearch") != vespalib::string::npos);
-    EXPECT_TRUE(result3.iterator_dump.find("EmptySearch") != vespalib::string::npos);
+    EXPECT_TRUE(result1.iterator_dump.find("LocationPreFilterIterator") != std::string::npos);
+    EXPECT_TRUE(result2.iterator_dump.find("EmptySearch") != std::string::npos);
+    EXPECT_TRUE(result3.iterator_dump.find("EmptySearch") != std::string::npos);
 }
 
 void set_weights(StringAttribute *attr, uint32_t docid,
@@ -484,8 +485,8 @@ TEST("require that single weighted set turns filter on filter fields") {
         SimpleStringTerm node("foo", "", 0, Weight(1));
         Result result = do_search(attribute_manager, node, strict);
         EXPECT_EQUAL(3u, result.est_hits);
-        EXPECT_TRUE(result.iterator_dump.find("DocidWithWeightSearchIterator") == vespalib::string::npos);
-        EXPECT_TRUE(result.iterator_dump.find("FilterAttributePostingListIteratorT") != vespalib::string::npos);
+        EXPECT_TRUE(result.iterator_dump.find("DocidWithWeightSearchIterator") == std::string::npos);
+        EXPECT_TRUE(result.iterator_dump.find("FilterAttributePostingListIteratorT") != std::string::npos);
         ASSERT_EQUAL(3u, result.hits.size());
         EXPECT_FALSE(result.est_empty);
         EXPECT_EQUAL(20u, result.hits[0].docid);
@@ -514,7 +515,7 @@ TEST("require that attribute parallel wand works") {
             EXPECT_EQUAL(num_docs * 3, result.est_hits);
         }
         if (EXPECT_EQUAL(2u, result.hits.size())) {
-            if (result.iterator_dump.find("MonitoringDumpIterator") == vespalib::string::npos) {
+            if (result.iterator_dump.find("MonitoringDumpIterator") == std::string::npos) {
                 EXPECT_EQUAL(10u, result.wand_hits);
                 EXPECT_EQUAL(500, result.wand_initial_threshold);
                 EXPECT_EQUAL(1.5, result.wand_boost_factor);
@@ -544,9 +545,9 @@ TEST("require that attribute weighted set term works") {
         Result result = do_search(attribute_manager, node, strict);
         EXPECT_FALSE(result.est_empty);
         ASSERT_EQUAL(5u, result.hits.size());
-        if (fast_search && result.iterator_dump.find("MonitoringDumpIterator") == vespalib::string::npos) {
+        if (fast_search && result.iterator_dump.find("MonitoringDumpIterator") == std::string::npos) {
             fprintf(stderr, "DUMP: %s\n", result.iterator_dump.c_str());
-            EXPECT_TRUE(result.iterator_dump.find("PostingIteratorPack") != vespalib::string::npos);
+            EXPECT_TRUE(result.iterator_dump.find("PostingIteratorPack") != std::string::npos);
         }
         EXPECT_EQUAL(10u, result.hits[0].docid);
         EXPECT_EQUAL(20, result.hits[0].match_weight);
@@ -575,9 +576,9 @@ TEST("require that attribute in term works") {
         Result result = do_search(attribute_manager, node, strict);
         EXPECT_FALSE(result.est_empty);
         ASSERT_EQUAL(5u, result.hits.size());
-        if (fast_search && result.iterator_dump.find("MonitoringDumpIterator") == vespalib::string::npos) {
+        if (fast_search && result.iterator_dump.find("MonitoringDumpIterator") == std::string::npos) {
             fprintf(stderr, "DUMP: %s\n", result.iterator_dump.c_str());
-            EXPECT_TRUE(result.iterator_dump.find("PostingIteratorPack") != vespalib::string::npos);
+            EXPECT_TRUE(result.iterator_dump.find("PostingIteratorPack") != std::string::npos);
         }
         EXPECT_EQUAL(10u, result.hits[0].docid);
         EXPECT_EQUAL(1, result.hits[0].match_weight);
@@ -650,7 +651,7 @@ void set_attr_value(AttributeVector &attr, uint32_t docid, size_t value) {
         float_attr->commit();
     } else if (string_attr != nullptr) {
         ASSERT_LESS(value, size_t(27*26 + 26));
-        vespalib::string str;
+        std::string str;
         str.push_back('a' + value / 27);
         str.push_back('a' + value % 27);
         string_attr->update(docid, str);
@@ -680,13 +681,13 @@ MyAttributeManager make_diversity_setup(BasicType::Type field_type, bool field_f
     return attribute_manager;
 }
 
-size_t diversity_hits(IAttributeManager &manager, const vespalib::string &term, bool strict) {
+size_t diversity_hits(IAttributeManager &manager, const std::string &term, bool strict) {
     SimpleRangeTerm node(term, "", 0, Weight(1));
     Result result = do_search(manager, node, strict);
     return result.hits.size();
 }
 
-std::pair<size_t,size_t> diversity_docid_range(IAttributeManager &manager, const vespalib::string &term, bool strict) {
+std::pair<size_t,size_t> diversity_docid_range(IAttributeManager &manager, const std::string &term, bool strict) {
     SimpleRangeTerm node(term, "", 0, Weight(1));
     Result result = do_search(manager, node, strict);
     std::pair<size_t, size_t> range(0, 0);

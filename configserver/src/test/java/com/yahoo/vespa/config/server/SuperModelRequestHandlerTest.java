@@ -10,7 +10,6 @@ import com.yahoo.vespa.config.server.application.Application;
 import com.yahoo.vespa.config.server.application.ApplicationVersions;
 import com.yahoo.vespa.config.server.monitoring.MetricUpdater;
 import com.yahoo.vespa.curator.mock.MockCurator;
-import com.yahoo.vespa.flags.InMemoryFlagSource;
 import com.yahoo.vespa.model.VespaModel;
 import org.junit.Before;
 import org.junit.Rule;
@@ -21,7 +20,6 @@ import org.xml.sax.SAXException;
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
 
@@ -47,7 +45,7 @@ public class SuperModelRequestHandlerTest {
     public void setup() {
         counter = new SuperModelGenerationCounter(new MockCurator());
         ConfigserverConfig configserverConfig = new ConfigserverConfig(new ConfigserverConfig.Builder());
-        manager = new SuperModelManager(configserverConfig, Zone.defaultZone(), counter, new InMemoryFlagSource());
+        manager = new SuperModelManager(configserverConfig, Zone.defaultZone(), counter);
         controller = new SuperModelRequestHandler(new TestConfigDefinitionRepo(), configserverConfig, manager);
     }
 
@@ -88,7 +86,7 @@ public class SuperModelRequestHandlerTest {
         assertTrue(controller.getHandler().getSuperModel().applicationModels().keySet().containsAll(List.of(foo, bar, baz)));
         controller.removeApplication(bar);
         assertEquals(2, controller.getHandler().getSuperModel().applicationModels().size());
-        assertEquals(Arrays.asList(foo, baz), new ArrayList<>(controller.getHandler().getSuperModel().applicationModels().keySet()));
+        assertEquals(List.of(foo, baz), new ArrayList<>(controller.getHandler().getSuperModel().applicationModels().keySet()));
         assertEquals(gen + 5, controller.getHandler().getGeneration());
     }
 
@@ -97,7 +95,7 @@ public class SuperModelRequestHandlerTest {
         ApplicationId foo = applicationId("a", "foo");
         long masterGen = 10;
         ConfigserverConfig configserverConfig = new ConfigserverConfig(new ConfigserverConfig.Builder().masterGeneration(masterGen));
-        manager = new SuperModelManager(configserverConfig, Zone.defaultZone(), counter, new InMemoryFlagSource());
+        manager = new SuperModelManager(configserverConfig, Zone.defaultZone(), counter);
         controller = new SuperModelRequestHandler(new TestConfigDefinitionRepo(), configserverConfig, manager);
 
         long gen = counter.get();

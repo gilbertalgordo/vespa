@@ -1,13 +1,14 @@
 // Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
-#include <vespa/vespalib/stllike/string.h>
-#include <vespa/vespalib/testkit/testapp.h>
+#include <vespa/vespalib/testkit/test_kit.h>
 #include <vespa/vespalib/test/memory_allocator_observer.h>
+#include <vespa/vespalib/testkit/test_master.hpp>
 #include <vespa/vespalib/util/array.hpp>
 #include <vespa/vespalib/util/round_up_to_page_size.h>
 #include <vespa/vespalib/util/size_literals.h>
-#include <deque>
 #include <atomic>
+#include <deque>
+#include <string>
 
 using namespace vespalib;
 
@@ -37,7 +38,7 @@ using AllocStats = MyMemoryAllocator::Stats;
 class Clever {
 public:
     Clever() : _counter(&_global) { (*_counter)++; }
-    Clever(std::atomic<size_t> * counter) :
+    explicit Clever(std::atomic<size_t> * counter) :
         _counter(counter)
     {
         (*_counter)++;
@@ -106,13 +107,12 @@ testArray(const T & a, const T & b)
 TEST("test basic array functionality")
 {
     testArray<int>(7, 9);
-    testArray<vespalib::string>("7", "9");
-    const char * longS1 = "more than 48 bytes bytes that are needed to avoid the small string optimisation in vespalib::string";
-    const char * longS2 = "even more more than 48 bytes bytes that are needed to avoid the small string optimisation in vespalib::string";
-    EXPECT_EQUAL(64ul, sizeof(vespalib::string));
-    EXPECT_TRUE(strlen(longS1) > sizeof(vespalib::string));
-    EXPECT_TRUE(strlen(longS2) > sizeof(vespalib::string));
-    testArray<vespalib::string>(longS1, longS2);
+    testArray<std::string>("7", "9");
+    const char * longS1 = "more than 48 bytes bytes that are needed to avoid the small string optimisation in std::string";
+    const char * longS2 = "even more more than 48 bytes bytes that are needed to avoid the small string optimisation in std::string";
+    EXPECT_TRUE(strlen(longS1) > sizeof(std::string));
+    EXPECT_TRUE(strlen(longS2) > sizeof(std::string));
+    testArray<std::string>(longS1, longS2);
     Array<int> a(2);
     a[0] = 8;
     a[1] = 13;
@@ -224,7 +224,7 @@ testBeginEnd(T & v)
     EXPECT_EQUAL(1u, *(v.begin()));
     EXPECT_EQUAL(3u, *(v.end() - 1));
 
-    typename T::iterator i(v.begin());
+    auto i(v.begin());
     EXPECT_EQUAL(1u, *i);
     EXPECT_EQUAL(2u, *(i+1));
     EXPECT_EQUAL(1u, *i++);
@@ -249,7 +249,7 @@ testBeginEnd(T & v)
     EXPECT_EQUAL(3u, *(v.rbegin()));
     EXPECT_EQUAL(1u, *(v.rend() - 1));
 
-    typename T::reverse_iterator r(v.rbegin());
+    auto r(v.rbegin());
     EXPECT_EQUAL(3u, *r);
     EXPECT_EQUAL(2u, *(r+1));
     EXPECT_EQUAL(3u, *r++);

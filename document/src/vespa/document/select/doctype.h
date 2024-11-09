@@ -17,10 +17,10 @@ namespace document::select {
 class DocType : public Node
 {
 private:
-    vespalib::string _doctype;
+    std::string _doctype;
 
 public:
-    DocType(vespalib::stringref doctype);
+    DocType(std::string_view doctype);
 
     ResultList contains(const Context&) const override;
     ResultList trace(const Context&, std::ostream& trace) const override;

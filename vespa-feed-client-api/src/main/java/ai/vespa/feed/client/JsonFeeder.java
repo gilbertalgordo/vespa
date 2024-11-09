@@ -302,9 +302,11 @@ public class JsonFeeder implements Closeable {
             int offset = (int) (tail % size);
             int newOffset = (int) (tail % newSize);
             int toWrite = size - offset;
+            // exactly doubling the buffer size ensures there is room in the new buffer
             System.arraycopy(data, offset, newData, newOffset, toWrite);
-            if (toWrite < size)
-                System.arraycopy(data, 0, newData, newOffset + toWrite, size - toWrite);
+            // the wrapped data ends up either after the first part, or at the start of the new buffer
+            newOffset = (newOffset + toWrite) % newSize;
+            System.arraycopy(data, 0, newData, newOffset, offset);
             size = newSize;
             data = newData;
             lock.notify();
@@ -414,7 +416,7 @@ public class JsonFeeder implements Closeable {
         abstract String getDocumentJson(long start, long end);
 
         OperationParseException parseException(String error) {
-            JsonLocation location = parser.getTokenLocation();
+            JsonLocation location = parser.currentLocation();
             return new OperationParseException(error + " at offset " + location.getByteOffset() +
                                                " (line " + location.getLineNr() + ", column " + location.getColumnNr() + ")");
         }
@@ -444,13 +446,13 @@ public class JsonFeeder implements Closeable {
                             case "create":    parameters = parameters.createIfNonExistent(readBoolean()); break;
                             case "fields": {
                                 expect(START_OBJECT);
-                                start = parser.getTokenLocation().getByteOffset();
+                                start = parser.currentTokenLocation().getByteOffset();
                                 int depth = 1;
                                 while (depth > 0) switch (parser.nextToken()) {
                                     case START_OBJECT: ++depth; break;
                                     case END_OBJECT:   --depth; break;
                                 }
-                                end = parser.getTokenLocation().getByteOffset() + 1;
+                                end = parser.currentTokenLocation().getByteOffset() + 1;
                                 break;
                             }
                             default: throw parseException("Unexpected field name '" + parser.getText() + "'");
@@ -470,7 +472,7 @@ public class JsonFeeder implements Closeable {
                 if (end >= start)
                     throw parseException("Illegal 'fields' object for remove operation");
                 else
-                    start = end = parser.getTokenLocation().getByteOffset(); // getDocumentJson advances buffer overwrite head.
+                    start = end = parser.currentTokenLocation().getByteOffset(); // getDocumentJson advances buffer overwrite head.
             }
             else if (end < start)
                 throw parseException("No 'fields' object for document");
@@ -486,14 +488,14 @@ public class JsonFeeder implements Closeable {
 
         private void expect(JsonToken token) throws IOException {
             if (parser.nextToken() != token)
-                throw new OperationParseException("Expected '" + token + "' at offset " + parser.getTokenLocation().getByteOffset() +
+                throw new OperationParseException("Expected '" + token + "' at offset " + parser.currentTokenLocation().getByteOffset() +
                         ", but found '" + parser.currentToken() + "' (" + parser.getText() + ")");
         }
 
         private String readString() throws IOException {
             String value = parser.nextTextValue();
             if (value == null)
-                throw new OperationParseException("Expected '" + JsonToken.VALUE_STRING + "' at offset " + parser.getTokenLocation().getByteOffset() +
+                throw new OperationParseException("Expected '" + JsonToken.VALUE_STRING + "' at offset " + parser.currentTokenLocation().getByteOffset() +
                                                   ", but found '" + parser.currentToken() + "' (" + parser.getText() + ")");
 
             return value;
@@ -502,7 +504,7 @@ public class JsonFeeder implements Closeable {
         private boolean readBoolean() throws IOException {
             Boolean value = parser.nextBooleanValue();
             if (value == null)
-                throw new OperationParseException("Expected '" + JsonToken.VALUE_FALSE + "' or '" + JsonToken.VALUE_TRUE + "' at offset " + parser.getTokenLocation().getByteOffset() +
+                throw new OperationParseException("Expected '" + JsonToken.VALUE_FALSE + "' or '" + JsonToken.VALUE_TRUE + "' at offset " + parser.currentTokenLocation().getByteOffset() +
                                                   ", but found '" + parser.currentToken() + "' (" + parser.getText() + ")");
 
             return value;

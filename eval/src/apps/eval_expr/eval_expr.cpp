@@ -17,6 +17,8 @@
 #include <vespa/eval/eval/test/test_io.h>
 #include <vespa/vespalib/util/stringfmt.h>
 #include <vespa/vespalib/util/time.h>
+#include <vespa/vespalib/io/mapped_file_input.h>
+#include <cctype>
 
 #include <histedit.h>
 
@@ -29,6 +31,8 @@ using vespalib::Slime;
 using vespalib::slime::JsonFormat;
 using vespalib::slime::Inspector;
 using vespalib::slime::Cursor;
+using vespalib::Input;
+using vespalib::Memory;
 
 using CostProfile = std::vector<std::pair<size_t,vespalib::duration>>;
 
@@ -89,14 +93,14 @@ int overflow(int cnt, int max) {
 class Context
 {
 private:
-    std::vector<vespalib::string> _param_names;
-    std::vector<ValueType>        _param_types;
-    std::vector<Value::UP>        _param_values;
-    std::vector<Value::CREF>      _param_refs;
-    bool                          _verbose;
-    vespalib::string              _error;
-    CTFMetaData                   _meta;
-    CostProfile                   _cost;
+    std::vector<std::string> _param_names;
+    std::vector<ValueType>   _param_types;
+    std::vector<Value::UP>   _param_values;
+    std::vector<Value::CREF> _param_refs;
+    bool                     _verbose;
+    std::string              _error;
+    CTFMetaData              _meta;
+    CostProfile              _cost;
 
     void clear_state() {
         _error.clear();
@@ -112,10 +116,10 @@ public:
     bool verbose() const { return _verbose; }
 
     size_t size() const { return _param_names.size(); }
-    const vespalib::string &name(size_t idx) const { return _param_names[idx]; }
+    const std::string &name(size_t idx) const { return _param_names[idx]; }
     const ValueType &type(size_t idx) const { return _param_types[idx]; }
 
-    Value::UP eval(const vespalib::string &expr) {
+    Value::UP eval(const std::string &expr) {
         clear_state();
         SimpleObjectParams params(_param_refs);
         auto fun = Function::parse(_param_names, expr, FeatureNameExtractor());
@@ -151,27 +155,28 @@ public:
         return result;
     }
 
-    const vespalib::string &error() const { return _error; }
+    const std::string &error() const { return _error; }
     const CTFMetaData &meta() const { return _meta; }
     const CostProfile &cost() const { return _cost; }
 
-    void save(const vespalib::string &name, Value::UP value) {
+    bool save(const std::string &name, Value::UP value) {
         REQUIRE(value);
         for (size_t i = 0; i < _param_names.size(); ++i) {
             if (_param_names[i] == name) {
                 _param_types[i] = value->type();
                 _param_values[i] = std::move(value);
                 _param_refs[i] = *_param_values[i];
-                return;
+                return true;
             }
         }
         _param_names.push_back(name);
         _param_types.push_back(value->type());
         _param_values.push_back(std::move(value));
         _param_refs.emplace_back(*_param_values.back());
+        return false;
     }
 
-    bool remove(const vespalib::string &name) {
+    bool remove(const std::string &name) {
         for (size_t i = 0; i < _param_names.size(); ++i) {
             if (_param_names[i] == name) {
                 _param_names.erase(_param_names.begin() + i);
@@ -186,11 +191,11 @@ public:
 };
 Context::~Context() = default;
 
-void print_error(const vespalib::string &error) {
+void print_error(const std::string &error) {
     fprintf(stderr, "error: %s\n", error.c_str());
 }
 
-void print_value(const Value &value, const vespalib::string &name, const CTFMetaData &meta, const CostProfile &cost) {
+void print_value(const Value &value, const std::string &name, const CTFMetaData &meta, const CostProfile &cost) {
     bool with_name = !name.empty();
     bool with_meta = !meta.steps.empty();
     auto spec = spec_from_value(value);
@@ -219,8 +224,8 @@ void print_value(const Value &value, const vespalib::string &name, const CTFMeta
 }
 
 void handle_message(Context &ctx, const Inspector &req, Cursor &reply) {
-    vespalib::string expr = req["expr"].asString().make_string();
-    vespalib::string name = req["name"].asString().make_string();
+    std::string expr = req["expr"].asString().make_string();
+    std::string name = req["name"].asString().make_string();
     ctx.verbose(req["verbose"].asBool());
     if (expr.empty()) {
         reply.setString("error", "missing expression (field name: 'expr')");
@@ -245,24 +250,106 @@ void handle_message(Context &ctx, const Inspector &req, Cursor &reply) {
     }
 }
 
-bool is_only_whitespace(const vespalib::string &str) {
-    for (auto c: str) {
-        if (!isspace(c)) {
+bool is_hash_bang(const std::string &str) {
+    if (str.size() > 2) {
+        return str[0] == '#' && str[1] == '!';
+    }
+    return false;
+}
+
+bool is_only_whitespace(const std::string &str) {
+    for (auto c : str) {
+        if (!std::isspace(static_cast<unsigned char>(c))) {
             return false;
         }
     }
     return true;
 }
 
+class Script {
+private:
+    std::unique_ptr<Input> _input;
+    LineReader _reader;
+    bool _script_only = false;
+public:
+    Script(std::unique_ptr<Input> input)
+      : _input(std::move(input)), _reader(*_input) {}
+    static auto empty() {
+        struct EmptyInput : Input {
+            Memory obtain() override { return Memory(); }
+            Input &evict(size_t) override { return *this; }
+        };
+        return std::make_unique<Script>(std::make_unique<EmptyInput>());
+    }
+    static auto from_file(const std::string &file_name) {
+        auto input = std::make_unique<vespalib::MappedFileInput>(file_name);
+        if (!input->valid()) {
+            fprintf(stderr, "warning: could not read script: %s\n", file_name.c_str());
+        }
+        return std::make_unique<Script>(std::move(input));
+    }
+    Script &script_only(bool value) {
+        _script_only = value;
+        return *this;
+    }
+    bool script_only() const { return _script_only; }
+    bool read_line(std::string &line) { return _reader.read_line(line); }
+};
+
+class Collector {
+private:
+    Slime _slime;
+    Cursor &_obj;
+    Cursor &_arr;
+    bool _enabled;
+    std::string _error;
+public:
+    Collector()
+      : _slime(), _obj(_slime.setObject()), _arr(_obj.setArray("f")), _enabled(false) {}
+    void enable() {
+        _enabled = true;
+    }
+    void fail(const std::string &msg) {
+        if (_error.empty()) {
+            _error = msg;
+        }
+    }
+    const std::string &error() const {
+        return _error;
+    }
+    void comment(const std::string &text) {
+        if (_enabled) {
+            Cursor &f = _arr.addObject();
+            f.setString("op", "c");
+            Cursor &p = f.setObject("p");
+            p.setString("t", text);
+        }
+    }
+    void expr(const std::string &name, const std::string &expr) {
+        if (_enabled) {
+            Cursor &f = _arr.addObject();
+            f.setString("op", "e");
+            Cursor &p = f.setObject("p");
+            p.setString("n", name);
+            p.setString("e", expr);
+        }
+    }
+    std::string toString() const {
+        return _slime.toString();
+    }
+};
+
 struct EditLineWrapper {
     EditLine *my_el;
     History *my_hist;
     HistEvent ignore;
-    static vespalib::string prompt;
+    Script &script;
+    static std::string prompt;
     static char *prompt_fun(EditLine *) { return &prompt[0]; }
-    EditLineWrapper()
+    EditLineWrapper(Script &script_in)
       : my_el(el_init("vespa-eval-expr", stdin, stdout, stderr)),
-        my_hist(history_init())
+        my_hist(history_init()),
+        script(script_in)
     {
         memset(&ignore, 0, sizeof(ignore));
         el_set(my_el, EL_EDITOR, "emacs");
@@ -271,18 +358,28 @@ struct EditLineWrapper {
         el_set(my_el, EL_HIST, history, my_hist);
     }
     ~EditLineWrapper();
-    bool read_line(vespalib::string &line_out) {
+    bool read_line(std::string &line_out) {
+        bool from_script = false;
         do {
-            int line_len = 0;
-            const char *line = el_gets(my_el, &line_len);
-            if (line == nullptr) {
-                return false;
+            from_script = script.read_line(line_out);
+            if (!from_script) {
+                if (script.script_only()) {
+                    return false;
+                }
+                int line_len = 0;
+                const char *line = el_gets(my_el, &line_len);
+                if (line == nullptr) {
+                    return false;
+                }
+                line_out.assign(line, line_len);
             }
-            line_out.assign(line, line_len);
             if ((line_out.size() > 0) && (line_out[line_out.size() - 1] == '\n')) {
                 line_out.pop_back();
             }
-        } while (is_only_whitespace(line_out));
+        } while (is_hash_bang(line_out) || is_only_whitespace(line_out));
+        if (from_script) {
+            fprintf(stdout, "%s%s\n", prompt.c_str(), line_out.c_str());
+        }
         history(my_hist, &ignore, H_ENTER, line_out.c_str());
         return true;
     }
@@ -293,18 +390,19 @@ EditLineWrapper::~EditLineWrapper()
     history_end(my_hist);
     el_end(my_el);
 }
-vespalib::string EditLineWrapper::prompt("> ");
+std::string EditLineWrapper::prompt("> ");
 
-const vespalib::string exit_cmd("exit");
-const vespalib::string help_cmd("help");
-const vespalib::string list_cmd("list");
-const vespalib::string verbose_cmd("verbose ");
-const vespalib::string def_cmd("def ");
-const vespalib::string undef_cmd("undef ");
+const std::string exit_cmd("exit");
+const std::string help_cmd("help");
+const std::string list_cmd("list");
+const std::string verbose_cmd("verbose ");
+const std::string def_cmd("def ");
+const std::string undef_cmd("undef ");
+const std::string ignore_cmd("#");
 
-int interactive_mode(Context &ctx) {
-    EditLineWrapper input;
-    vespalib::string line;
+int interactive_mode(Context &ctx, Script &script, Collector &collector) {
+    EditLineWrapper input(script);
+    std::string line;
     while (input.read_line(line)) {
         if (line == exit_cmd) {
             return 0;
@@ -319,6 +417,10 @@ int interactive_mode(Context &ctx) {
             }
             continue;
         }
+        if (line.find(ignore_cmd) == 0) {
+            collector.comment(line.substr(ignore_cmd.size()));
+            continue;
+        }
         if (line.find(verbose_cmd) == 0) {
             auto flag_str = line.substr(verbose_cmd.size());
             bool flag = (flag_str == "true");
@@ -331,7 +433,7 @@ int interactive_mode(Context &ctx) {
             }
             continue;
         }
-        vespalib::string name;
+        std::string name;
         if (line.find(undef_cmd) == 0) {
             name = line.substr(undef_cmd.size());
             if (ctx.remove(name)) {
@@ -339,9 +441,10 @@ int interactive_mode(Context &ctx) {
             } else {
                 fprintf(stdout, "value not found: '%s'\n", name.c_str());
             }
+            collector.fail("undef operation not supported");
             continue;
         }
-        vespalib::string expr;
+        std::string expr;
         if (line.find(def_cmd) == 0) {
             auto name_size = (line.find(" ", def_cmd.size()) - def_cmd.size());
             name = line.substr(def_cmd.size(), name_size);
@@ -357,12 +460,16 @@ int interactive_mode(Context &ctx) {
                 fprintf(stderr, " -> '%s'\n", name.c_str());
             }
         }
+        collector.expr(name, expr);
         if (auto value = ctx.eval(expr)) {
             print_value(*value, name, ctx.meta(), ctx.cost());
             if (!name.empty()) {
-                ctx.save(name, std::move(value));
+                if (ctx.save(name, std::move(value))) {
+                    collector.fail("value redefinition not supported");
+                }
             }
         } else {
+            collector.fail("sub-expression evaluation failed");
             print_error(ctx.error());
         }
     }
@@ -394,7 +501,7 @@ int json_repl_mode(Context &ctx) {
 }
 
 int main(int argc, char **argv) {
-    bool verbose = ((argc > 1) && (vespalib::string(argv[1]) == "--verbose"));
+    bool verbose = ((argc > 1) && (std::string(argv[1]) == "--verbose"));
     int expr_idx = verbose ? 2 : 1;
     int expr_cnt = (argc - expr_idx);
     int expr_max = ('z' - 'a') + 1;
@@ -405,15 +512,37 @@ int main(int argc, char **argv) {
         return overflow(expr_cnt, expr_max);
     }
     Context ctx;
-    if ((expr_cnt == 1) && (vespalib::string(argv[expr_idx]) == "interactive")) {
+    if ((expr_cnt == 1) && (std::string(argv[expr_idx]) == "interactive")) {
         setlocale(LC_ALL, "");
-        return interactive_mode(ctx);
+        Collector ignored;
+        return interactive_mode(ctx, *Script::empty(), ignored);
     }
-    if ((expr_cnt == 1) && (vespalib::string(argv[expr_idx]) == "json-repl")) {
+    if ((expr_cnt == 2) && (std::string(argv[expr_idx]) == "interactive")) {
+        setlocale(LC_ALL, "");
+        Collector ignored;
+        return interactive_mode(ctx, *Script::from_file(argv[expr_idx + 1]), ignored);
+    }
+    if ((expr_cnt == 3) &&
+        (std::string(argv[expr_idx]) == "interactive") &&
+        (std::string(argv[expr_idx + 2]) == "convert"))
+    {
+        setlocale(LC_ALL, "");
+        Collector collector;
+        collector.enable();
+        interactive_mode(ctx, Script::from_file(argv[expr_idx + 1])->script_only(true), collector);
+        if (collector.error().empty()) {
+            fprintf(stdout, "%s\n", collector.toString().c_str());
+            return 0;
+        } else {
+            fprintf(stderr, "conversion failed: %s\n", collector.error().c_str());
+            return 3;
+        }
+    }
+    if ((expr_cnt == 1) && (std::string(argv[expr_idx]) == "json-repl")) {
         return json_repl_mode(ctx);
     }
     ctx.verbose(verbose);
-    vespalib::string name("a");
+    std::string name("a");
     for (int i = expr_idx; i < argc; ++i) {
         if (auto value = ctx.eval(argv[i])) {
             if (expr_cnt > 1) {
@@ -421,7 +550,7 @@ int main(int argc, char **argv) {
                 ctx.save(name, std::move(value));
                 ++name[0];
             } else {
-                vespalib::string no_name;
+                std::string no_name;
                 print_value(*value, no_name, ctx.meta(), ctx.cost());
             }
         } else {

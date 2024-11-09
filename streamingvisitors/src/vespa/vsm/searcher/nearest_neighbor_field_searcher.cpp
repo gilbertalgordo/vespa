@@ -131,7 +131,7 @@ NearestNeighborFieldSearcher::onValue(const document::FieldValue& fv)
             _attr->add(*tfv->getAsTensorPtr(), 1);
             for (auto& elem : _calcs) {
                 double distance_limit = elem->heap.distanceLimit();
-                double distance = elem->calc->calc_with_limit(scratch_docid, distance_limit);
+                double distance = elem->calc->calc_with_limit<false>(scratch_docid, distance_limit);
                 if (distance <= distance_limit) {
                     elem->node->set_distance(distance);
                 }
@@ -141,11 +141,11 @@ NearestNeighborFieldSearcher::onValue(const document::FieldValue& fv)
 }
 
 DistanceMetric
-NearestNeighborFieldSearcher::distance_metric_from_string(vespalib::stringref value)
+NearestNeighborFieldSearcher::distance_metric_from_string(std::string_view value)
 {
     // Valid string values must match the definition of DistanceMetric in
     // config-model/src/main/java/com/yahoo/schema/document/Attribute.java
-    vespalib::string v = value;
+    std::string v(value);
     std::transform(v.begin(), v.end(), v.begin(),
                    [](unsigned char c) { return std::tolower(c); });
     try {

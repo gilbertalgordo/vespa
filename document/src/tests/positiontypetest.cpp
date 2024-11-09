@@ -7,7 +7,7 @@ namespace document {
 TEST(PositionTypeTest, requireThatNameIsCorrect)
 {
     const StructDataType &type = PositionDataType::getInstance();
-    EXPECT_EQ(vespalib::string("position"), type.getName());
+    EXPECT_EQ(std::string("position"), type.getName());
 }
 
 TEST(PositionTypeTest, requireThatExpectedFieldsAreThere)
@@ -22,12 +22,12 @@ TEST(PositionTypeTest, requireThatExpectedFieldsAreThere)
 
 TEST(PositionTypeTest, requireThatZCurveFieldMatchesJava)
 {
-    EXPECT_EQ(vespalib::string("foo_zcurve"), PositionDataType::getZCurveFieldName("foo"));
+    EXPECT_EQ(std::string("foo_zcurve"), PositionDataType::getZCurveFieldName("foo"));
     EXPECT_TRUE( ! PositionDataType::isZCurveFieldName("foo"));
     EXPECT_TRUE( ! PositionDataType::isZCurveFieldName("_zcurve"));
     EXPECT_TRUE( PositionDataType::isZCurveFieldName("x_zcurve"));
     EXPECT_TRUE( ! PositionDataType::isZCurveFieldName("x_zcurvex"));
-    EXPECT_EQ(vespalib::stringref("x"), PositionDataType::cutZCurveFieldName("x_zcurve"));
+    EXPECT_EQ(std::string_view("x"), PositionDataType::cutZCurveFieldName("x_zcurve"));
 }
 
 } // document

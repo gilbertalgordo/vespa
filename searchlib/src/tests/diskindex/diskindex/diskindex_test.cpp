@@ -50,6 +50,8 @@ using LookupResult = DiskIndex::LookupResult;
 
 namespace {
 
+std::string test_dir("index");
+
 SimpleStringTerm
 makeTerm(const std::string & term)
 {
@@ -104,13 +106,16 @@ struct IOSettings
 {
     bool _use_directio;
     bool _use_mmap;
+    bool _use_posting_list_cache;
     IOSettings()
         : _use_directio(false),
-          _use_mmap(false)
+          _use_mmap(false),
+          _use_posting_list_cache(false)
     {
     }
     IOSettings use_directio() && { _use_directio = true; return *this; }
     IOSettings use_mmap() && { _use_mmap = true; return *this; }
+    IOSettings use_posting_list_cache() && { _use_posting_list_cache = true; return *this; }
 };
 
 class DiskIndexTest : public ::testing::Test, public TestDiskIndex {
@@ -118,6 +123,10 @@ private:
     FakeRequestContext _requestContext;
 
 protected:
+    DiskIndexTest();
+    ~DiskIndexTest() override;
+    static void SetUpTestSuite();
+    static void TearDownTestSuite();
     void requireThatLookupIsWorking(const EmptySettings& empty_settings);
     void requireThatWeCanReadPostingList();
     void require_that_we_can_get_field_length_info();
@@ -125,17 +134,31 @@ protected:
     void requireThatBlueprintIsCreated();
     void requireThatBlueprintCanCreateSearchIterators();
     void requireThatSearchIteratorsConforms();
+    void require_that_get_stats_works();
     void build_index(const IOSettings& io_settings, const EmptySettings& empty_settings);
     void test_empty_settings(const EmptySettings& empty_settings);
     void test_io_settings(const IOSettings& io_settings);
-public:
-    DiskIndexTest();
-    ~DiskIndexTest();
 };
 
 DiskIndexTest::DiskIndexTest() = default;
 
 DiskIndexTest::~DiskIndexTest() = default;
+
+void
+DiskIndexTest::SetUpTestSuite()
+{
+    DummyFileHeaderContext::setCreator("diskindex_test");
+    std::filesystem::path index_path(test_dir);
+    std::filesystem::remove_all(index_path);
+    std::filesystem::create_directory(index_path);
+}
+
+void
+DiskIndexTest::TearDownTestSuite()
+{
+    std::filesystem::path index_path(test_dir);
+    std::filesystem::remove_all(index_path);
+}
 
 void
 DiskIndexTest::requireThatSearchIteratorsConforms()
@@ -179,45 +202,44 @@ DiskIndexTest::requireThatLookupIsWorking(const EmptySettings& empty_settings)
     uint32_t f1(_schema.getIndexFieldId("f1"));
     uint32_t f2(_schema.getIndexFieldId("f2"));
     uint32_t f3(_schema.getIndexFieldId("f3"));
-    LookupResult::UP r;
-    r = _index->lookup(f1, "not");
-    EXPECT_TRUE(!r || r->counts._numDocs == 0);
+    auto r = _index->lookup(f1, "not");
+    EXPECT_EQ(0, r.counts._numDocs);
     r = _index->lookup(f1, "w1not");
-    EXPECT_TRUE(!r || r->counts._numDocs == 0);
+    EXPECT_EQ(0, r.counts._numDocs);
     r = _index->lookup(f1, "wnot");
-    EXPECT_TRUE(!r || r->counts._numDocs == 0);
+    EXPECT_EQ(0, r.counts._numDocs);
     { // field 'f1'
         r = _index->lookup(f1, "w1");
         if (wordEmpty || fieldEmpty || docEmpty) {
-            EXPECT_TRUE(!r || r->counts._numDocs == 0);
+            EXPECT_EQ(0, r.counts._numDocs);
         } else {
-            EXPECT_EQ(1u, r->wordNum);
-            EXPECT_EQ(2u, r->counts._numDocs);
+            EXPECT_EQ(1u, r.wordNum);
+            EXPECT_EQ(2u, r.counts._numDocs);
         }
         r = _index->lookup(f1, "w2");
-        EXPECT_TRUE(!r || r->counts._numDocs == 0);
+        EXPECT_EQ(0, r.counts._numDocs);
     }
     { // field 'f2'
         r = _index->lookup(f2, "w1");
         if (wordEmpty || fieldEmpty || docEmpty) {
-            EXPECT_TRUE(!r || r->counts._numDocs == 0);
+            EXPECT_EQ(0, r.counts._numDocs);
         } else {
-            EXPECT_EQ(1u, r->wordNum);
-            EXPECT_EQ(3u, r->counts._numDocs);
+            EXPECT_EQ(1u, r.wordNum);
+            EXPECT_EQ(3u, r.counts._numDocs);
         }
         r = _index->lookup(f2, "w2");
         if (wordEmpty || fieldEmpty || docEmpty) {
-            EXPECT_TRUE(!r || r->counts._numDocs == 0);
+            EXPECT_EQ(0, r.counts._numDocs);
         } else {
-            EXPECT_EQ(2u, r->wordNum);
-            EXPECT_EQ(17u, r->counts._numDocs);
+            EXPECT_EQ(2u, r.wordNum);
+            EXPECT_EQ(17u, r.counts._numDocs);
         }
     }
     { // field 'f3' doesn't exist
         r = _index->lookup(f3, "w1");
-        EXPECT_TRUE(!r || r->counts._numDocs == 0);
+        EXPECT_EQ(0, r.counts._numDocs);
         r = _index->lookup(f3, "w2");
-        EXPECT_TRUE(!r || r->counts._numDocs == 0);
+        EXPECT_EQ(0, r.counts._numDocs);
     }
 }
 
@@ -226,9 +248,9 @@ DiskIndexTest::requireThatWeCanReadPostingList()
 {
     TermFieldMatchDataArray mda;
     { // field 'f1'
-        LookupResult::UP r = _index->lookup(0, "w1");
-        PostingListHandle::UP h = _index->readPostingList(*r);
-        auto sb = h->createIterator(r->counts, mda);
+        auto r = _index->lookup(0, "w1");
+        auto h = _index->readPostingList(r);
+        auto sb = _index->create_iterator(r, h, mda);
         EXPECT_EQ(SimpleResult({1,3}), SimpleResult().search(*sb));
     }
 }
@@ -251,17 +273,16 @@ void
 DiskIndexTest::requireThatWeCanReadBitVector()
 {
     { // word 'w1'
-        LookupResult::UP r = _index->lookup(1, "w1");
+        auto r = _index->lookup(1, "w1");
         // not bit vector for 'w1'
-        EXPECT_TRUE(_index->readBitVector(*r).get() == NULL);
+        EXPECT_TRUE(_index->readBitVector(r).get() == NULL);
     }
     { // word 'w2'
         BitVector::UP exp(BitVector::create(32));
         for (uint32_t docId = 1; docId < 18; ++docId) exp->setBit(docId);
         { // field 'f2'
-            LookupResult::UP r =
-                _index->lookup(1, "w2");
-            BitVector::UP bv = _index->readBitVector(*r);
+            auto r = _index->lookup(1, "w2");
+            BitVector::UP bv = _index->readBitVector(r);
             EXPECT_TRUE(bv.get() != NULL);
             EXPECT_TRUE(*bv == *exp);
         }
@@ -313,49 +334,53 @@ DiskIndexTest::requireThatBlueprintCanCreateSearchIterators()
     auto upper_bound = Blueprint::FilterConstraint::UPPER_BOUND;
     { // bit vector due to isFilter
         b = _index->createBlueprint(_requestContext, FieldSpec("f2", 0, 0, true), makeTerm("w2"));
-        b->fetchPostings(search::queryeval::ExecuteInfo::TRUE);
+        b->basic_plan(true, 1000);
+        b->fetchPostings(search::queryeval::ExecuteInfo::FULL);
         auto& leaf_b = dynamic_cast<LeafBlueprint&>(*b);
-        s = leaf_b.createLeafSearch(mda, true);
+        s = leaf_b.createLeafSearch(mda);
         EXPECT_TRUE(dynamic_cast<BitVectorIterator *>(s.get()) != NULL);
         EXPECT_EQ(result_f2_w2, SimpleResult().search(*s));
-        EXPECT_EQ(result_f2_w2, SimpleResult().search(*leaf_b.createFilterSearch(true, upper_bound)));
+        EXPECT_EQ(result_f2_w2, SimpleResult().search(*leaf_b.createFilterSearch(upper_bound)));
     }
     { // bit vector due to no ranking needed
         b = _index->createBlueprint(_requestContext, FieldSpec("f2", 0, 0, false), makeTerm("w2"));
-        b->fetchPostings(ExecuteInfo::TRUE);
+        b->basic_plan(true, 1000);
+        b->fetchPostings(ExecuteInfo::FULL);
         auto& leaf_b = dynamic_cast<LeafBlueprint&>(*b);
-        s = leaf_b.createLeafSearch(mda, true);
+        s = leaf_b.createLeafSearch(mda);
         EXPECT_FALSE(dynamic_cast<BitVectorIterator *>(s.get()) != NULL);
         TermFieldMatchData md2;
         md2.tagAsNotNeeded();
         TermFieldMatchDataArray mda2;
         mda2.add(&md2);
         EXPECT_TRUE(mda2[0]->isNotNeeded());
-        s = (dynamic_cast<LeafBlueprint *>(b.get()))->createLeafSearch(mda2, true);
+        s = (dynamic_cast<LeafBlueprint *>(b.get()))->createLeafSearch(mda2);
         EXPECT_TRUE(dynamic_cast<BitVectorIterator *>(s.get()) != NULL);
         EXPECT_EQ(result_f2_w2, SimpleResult().search(*s));
-        EXPECT_EQ(result_f2_w2, SimpleResult().search(*leaf_b.createFilterSearch(true, upper_bound)));
+        EXPECT_EQ(result_f2_w2, SimpleResult().search(*leaf_b.createFilterSearch(upper_bound)));
     }
     { // fake bit vector
         b = _index->createBlueprint(_requestContext, FieldSpec("f1", 0, 0, true), makeTerm("w2"));
 //        std::cerr << "BP = " << typeid(*b).name() << std::endl;
-        b->fetchPostings(ExecuteInfo::TRUE);
+        b->basic_plan(true, 1000);
+        b->fetchPostings(ExecuteInfo::FULL);
         auto& leaf_b = dynamic_cast<LeafBlueprint&>(*b);
-        s = leaf_b.createLeafSearch(mda, true);
+        s = leaf_b.createLeafSearch(mda);
 //        std::cerr << "SI = " << typeid(*s).name() << std::endl;
         EXPECT_TRUE((dynamic_cast<BooleanMatchIteratorWrapper *>(s.get()) != NULL) ||
                     dynamic_cast<EmptySearch *>(s.get()));
         EXPECT_EQ(result_f1_w2, SimpleResult().search(*s));
-        EXPECT_EQ(result_f1_w2, SimpleResult().search(*leaf_b.createFilterSearch(true, upper_bound)));
+        EXPECT_EQ(result_f1_w2, SimpleResult().search(*leaf_b.createFilterSearch(upper_bound)));
     }
     { // posting list iterator
         b = _index->createBlueprint(_requestContext, FieldSpec("f1", 0, 0), makeTerm("w1"));
-        b->fetchPostings(ExecuteInfo::TRUE);
+        b->basic_plan(true, 1000);
+        b->fetchPostings(ExecuteInfo::FULL);
         auto& leaf_b = dynamic_cast<LeafBlueprint&>(*b);
-        s = leaf_b.createLeafSearch(mda, true);
+        s = leaf_b.createLeafSearch(mda);
         ASSERT_TRUE((dynamic_cast<ZcRareWordPosOccIterator<true, false> *>(s.get()) != NULL));
         EXPECT_EQ(result_f1_w1, SimpleResult().search(*s));
-        EXPECT_EQ(result_f1_w1, SimpleResult().search(*leaf_b.createFilterSearch(true, upper_bound)));
+        EXPECT_EQ(result_f1_w1, SimpleResult().search(*leaf_b.createFilterSearch(upper_bound)));
     }
 }
 
@@ -370,7 +395,10 @@ DiskIndexTest::build_index(const IOSettings& io_settings, const EmptySettings& e
     if (io_settings._use_mmap) {
         io_settings_num += 2;
     }
-    name << "index/" << io_settings_num;
+    if (io_settings._use_posting_list_cache) {
+        io_settings_num += 4;
+    }
+    name << test_dir << "/" << io_settings_num;
     if (empty_settings._empty_field) {
         name << "fe";
     } else {
@@ -382,8 +410,25 @@ DiskIndexTest::build_index(const IOSettings& io_settings, const EmptySettings& e
     if (empty_settings._empty_word) {
         name << "we";
     }
-    openIndex(name.str(), io_settings._use_directio, io_settings._use_mmap, empty_settings._empty_field,
+    openIndex(std::string(name.view()), io_settings._use_directio, io_settings._use_mmap, io_settings._use_posting_list_cache,
+              empty_settings._empty_field,
               empty_settings._empty_doc, empty_settings._empty_word);
+}
+
+void
+DiskIndexTest::require_that_get_stats_works()
+{
+    auto stats = getIndex().get_stats();
+    auto& schema = getIndex().getSchema();
+    EXPECT_LT(0, stats.sizeOnDisk());
+    auto field_stats = stats.get_field_stats();
+    EXPECT_EQ(schema.getNumIndexFields(), field_stats.size());
+    for (auto& field : schema.getIndexFields()) {
+        auto& field_name = field.getName();
+        ASSERT_TRUE(field_stats.contains(field_name));
+        EXPECT_LT(0, field_stats[field_name].size_on_disk());
+        EXPECT_GT(stats.sizeOnDisk(), field_stats[field_name].size_on_disk());
+    }
 }
 
 void
@@ -391,6 +436,7 @@ DiskIndexTest::test_empty_settings(const EmptySettings& empty_settings)
 {
     build_index(IOSettings(), empty_settings);
     requireThatLookupIsWorking(empty_settings);
+    require_that_get_stats_works();
 }
 
 void
@@ -404,6 +450,16 @@ DiskIndexTest::test_io_settings(const IOSettings& io_settings)
     requireThatWeCanReadBitVector();
     requireThatBlueprintIsCreated();
     requireThatBlueprintCanCreateSearchIterators();
+    require_that_get_stats_works();
+    auto posting_list_cache = getIndex().get_posting_list_cache();
+    if (io_settings._use_posting_list_cache) {
+        ASSERT_TRUE(posting_list_cache);
+        auto stats = posting_list_cache->get_stats();
+        EXPECT_EQ(2, stats.misses);
+        EXPECT_EQ(1, stats.hits);
+    } else {
+        ASSERT_FALSE(posting_list_cache);
+    }
 }
 
 TEST_F(DiskIndexTest, empty_settings_empty_field_empty_doc_empty_word)
@@ -461,6 +517,11 @@ TEST_F(DiskIndexTest, io_settings_directio_mmap)
     test_io_settings(IOSettings().use_directio().use_mmap());
 }
 
+TEST_F(DiskIndexTest, io_settings_directio_posting_list_cache)
+{
+    test_io_settings(IOSettings().use_directio().use_posting_list_cache());
+}
+
 TEST_F(DiskIndexTest, search_iterators_conformance)
 {
     requireThatSearchIteratorsConforms();
@@ -468,17 +529,4 @@ TEST_F(DiskIndexTest, search_iterators_conformance)
 
 }
 
-int
-main(int argc, char* argv[])
-{
-    if (argc > 0) {
-        DummyFileHeaderContext::setCreator(argv[0]);
-    }
-    ::testing::InitGoogleTest(&argc, argv);
-    std::filesystem::path index_path("index");
-    std::filesystem::remove_all(index_path);
-    std::filesystem::create_directory(index_path);
-    auto rval = RUN_ALL_TESTS();
-    std::filesystem::remove_all(index_path);
-    return rval;
-}
+GTEST_MAIN_RUN_ALL_TESTS()

@@ -14,7 +14,7 @@
 #include <vespa/document/fieldvalue/weightedsetfieldvalue.h>
 #include <vespa/searchcommon/common/undefinedvalues.h>
 #include <vespa/searchcore/proton/attribute/document_field_extractor.h>
-#include <vespa/vespalib/testkit/testapp.h>
+#include <vespa/vespalib/gtest/gtest.h>
 
 using document::Field;
 using document::DataType;
@@ -43,7 +43,7 @@ const ArrayDataType arrayTypeString(*DataType::STRING);
 const WeightedSetDataType weightedSetTypeInt(*DataType::INT, false, false);
 const WeightedSetDataType weightedSetTypeString(*DataType::STRING, false, false);
 const int32_t noInt(search::attribute::getUndefined<int32_t>());
-const vespalib::string noString("");
+const std::string noString("");
 
 std::unique_ptr<FieldValue>
 makeIntArray(const std::vector<int32_t> &array)
@@ -56,7 +56,7 @@ makeIntArray(const std::vector<int32_t> &array)
 }
 
 std::unique_ptr<FieldValue>
-makeStringArray(const std::vector<vespalib::string> &array)
+makeStringArray(const std::vector<std::string> &array)
 {
     auto result = std::make_unique<ArrayFieldValue>(arrayTypeString);
     for (const auto &elem : array) {
@@ -76,13 +76,42 @@ makeIntWeightedSet(const std::vector<std::pair<int32_t, int32_t>> &array)
 }
 
 std::unique_ptr<FieldValue>
-makeStringWeightedSet(const std::vector<std::pair<vespalib::string, int32_t>> &array)
+makeStringWeightedSet(const std::vector<std::pair<std::string, int32_t>> &array)
 {
     auto result = std::make_unique<WeightedSetFieldValue>(weightedSetTypeString);
     for (const auto &elem : array) {
         result->add(StringFieldValue(elem.first), elem.second);
     }
     return result;
+}
+
+struct WrapValue {
+    std::unique_ptr<FieldValue> _value;
+    WrapValue()
+        : _value()
+    {
+    }
+
+    WrapValue(std::unique_ptr<FieldValue> value)
+        : _value(std::move(value))
+    {
+    }
+
+    bool operator==(const WrapValue& rhs) const {
+        if (_value) {
+            return rhs._value && *_value == *rhs._value;
+        } else {
+            return !rhs._value;
+        }
+    }
+};
+
+void PrintTo(const WrapValue& value, std::ostream *os) {
+    if (value._value) {
+        *os << *value._value;
+    } else {
+        *os << "null";
+    }
 }
 
 }
@@ -115,7 +144,7 @@ struct FixtureBase
     }
 
     FieldPath
-    makeFieldPath(const vespalib::string &path)
+    makeFieldPath(const std::string &path)
     {
         FieldPath fieldPath;
         try {
@@ -129,17 +158,11 @@ struct FixtureBase
         return fieldPath;
     }
 
-    void
-    assertExtracted(const vespalib::string &path,
-                    std::unique_ptr<FieldValue> expected) {
+    WrapValue
+    extract(const std::string& path) {
         FieldPath fieldPath(makeFieldPath(path));
         std::unique_ptr<FieldValue> fv = extractor->getFieldValue(fieldPath);
-        if (expected) {
-            ASSERT_TRUE(fv);
-            EXPECT_EQUAL(*expected, *fv);
-        } else {
-            EXPECT_TRUE(!fv);
-        }
+        return fv;
     }
 };
 
@@ -155,13 +178,14 @@ struct SimpleFixture : public FixtureBase
     }
 };
 
-TEST_F("require that simple fields give simple values", SimpleFixture)
+TEST(DocumentFieldExtractorTest, require_that_simple_fields_give_simple_values)
 {
+    SimpleFixture f;
     auto doc = f.makeDoc();
     doc->setValue(f.weightField, IntFieldValue(200));
     doc->setValue(f.nameField, StringFieldValue("name200b"));
-    TEST_DO(f.assertExtracted("weight", IntFieldValue::make(200)));
-    TEST_DO(f.assertExtracted("name", StringFieldValue::make("name200b")));
+    EXPECT_EQ(WrapValue(IntFieldValue::make(200)), f.extract("weight"));
+    EXPECT_EQ(WrapValue(StringFieldValue::make("name200b")), f.extract("name"));
 }
 
 struct ArrayFixture : public FixtureBase
@@ -187,13 +211,14 @@ struct ArrayFixture : public FixtureBase
 
 ArrayFixture::~ArrayFixture() = default;
 
-TEST_F("require that array fields give array values", ArrayFixture)
+TEST(DocumentFieldExtractorTest, require_that_array_fields_give_array_values)
 {
+    ArrayFixture f;
     auto doc = f.makeDoc();
     doc->setValue(f.weightArrayField, *makeIntArray({ 300, 301 }));
     doc->setValue(f.valueArrayField, *makeStringArray({"v500", "v502"}));
-    TEST_DO(f.assertExtracted("weight", makeIntArray({ 300, 301})));
-    TEST_DO(f.assertExtracted("val", makeStringArray({"v500", "v502"})));
+    EXPECT_EQ(WrapValue(makeIntArray({ 300, 301})), f.extract("weight"));
+    EXPECT_EQ(WrapValue(makeStringArray({"v500", "v502"})), f.extract("val"));
 }
 
 struct WeightedSetFixture : public FixtureBase
@@ -219,13 +244,14 @@ struct WeightedSetFixture : public FixtureBase
 
 WeightedSetFixture::~WeightedSetFixture() = default;
 
-TEST_F("require that weighted set fields give weighted set values", WeightedSetFixture)
+TEST(DocumentFieldExtractorTest, require_that_weighted_set_fields_give_weighted_set_values)
 {
+    WeightedSetFixture f;
     auto doc = f.makeDoc();
     doc->setValue(f.weightWeightedSetField, *makeIntWeightedSet({{400, 10}, { 401, 13}}));
     doc->setValue(f.valueWeightedSetField, *makeStringWeightedSet({{"600", 17}, {"604", 19}}));
-    TEST_DO(f.assertExtracted("weight", makeIntWeightedSet({{ 400, 10}, {401, 13}})));
-    TEST_DO(f.assertExtracted("val", makeStringWeightedSet({{"600", 17}, {"604", 19}})));
+    EXPECT_EQ(WrapValue(makeIntWeightedSet({{ 400, 10}, {401, 13}})), f.extract("weight"));
+    EXPECT_EQ(WrapValue(makeStringWeightedSet({{"600", 17}, {"604", 19}})), f.extract("val"));
 }
 
 struct StructFixtureBase : public FixtureBase
@@ -247,7 +273,7 @@ struct StructFixtureBase : public FixtureBase
     }
 
     std::unique_ptr<StructFieldValue>
-    makeStruct(int weight, const vespalib::string &value)
+    makeStruct(int weight, const std::string &value)
     {
         auto ret = makeStruct();
         ret->setValue(weightField, IntFieldValue(weight));
@@ -264,7 +290,7 @@ struct StructFixtureBase : public FixtureBase
     }
 
     std::unique_ptr<StructFieldValue>
-    makeStruct(const vespalib::string &value)
+    makeStruct(const std::string &value)
     {
         auto ret = makeStruct();
         ret->setValue(nameField, StringFieldValue(value));
@@ -290,16 +316,17 @@ struct StructArrayFixture : public StructFixtureBase
 
 StructArrayFixture::~StructArrayFixture() = default;
 
-TEST_F("require that struct array field gives array values", StructArrayFixture)
+TEST(DocumentFieldExtractorTest, require_that_struct_array_field_gives_array_values)
 {
+    StructArrayFixture f;
     auto doc = f.makeDoc();
     ArrayFieldValue structArrayFieldValue(f.structArrayFieldType);
     structArrayFieldValue.add(*f.makeStruct(1, "name1"));
     structArrayFieldValue.add(*f.makeStruct(2));
     structArrayFieldValue.add(*f.makeStruct("name3"));
     doc->setValue(f.structArrayField, structArrayFieldValue);
-    TEST_DO(f.assertExtracted("s.weight", makeIntArray({ 1, 2, noInt })));
-    TEST_DO(f.assertExtracted("s.name", makeStringArray({ "name1", noString, "name3" })));
+    EXPECT_EQ(WrapValue(makeIntArray({ 1, 2, noInt })), f.extract("s.weight"));
+    EXPECT_EQ(WrapValue(makeStringArray({ "name1", noString, "name3" })), f.extract("s.name"));
 }
 
 struct StructMapFixture : public StructFixtureBase
@@ -320,8 +347,9 @@ struct StructMapFixture : public StructFixtureBase
 
 StructMapFixture::~StructMapFixture() = default;
 
-TEST_F("require that struct map field gives array values", StructMapFixture)
+TEST(DocumentFieldExtractorTest, require_that_struct_map_field_gives_array_values)
 {
+    StructMapFixture f;
     auto doc = f.makeDoc();
     MapFieldValue structMapFieldValue(f.structMapFieldType);
     structMapFieldValue.put(StringFieldValue("m0"), *f.makeStruct(10, "name10"));
@@ -329,16 +357,16 @@ TEST_F("require that struct map field gives array values", StructMapFixture)
     structMapFieldValue.put(StringFieldValue("m2"), *f.makeStruct("name12"));
     structMapFieldValue.put(StringFieldValue("m3"), *f.makeStruct());
     doc->setValue(f.structMapField, structMapFieldValue);
-    TEST_DO(f.assertExtracted("s.key", makeStringArray({ "m0", "m1", "m2", "m3" })));
-    TEST_DO(f.assertExtracted("s.value.weight", makeIntArray({ 10, 11, noInt, noInt })));
-    TEST_DO(f.assertExtracted("s.value.name", makeStringArray({ "name10", noString, "name12", noString })));
+    EXPECT_EQ(WrapValue(makeStringArray({ "m0", "m1", "m2", "m3" })), f.extract("s.key"));
+    EXPECT_EQ(WrapValue(makeIntArray({ 10, 11, noInt, noInt })), f.extract("s.value.weight"));
+    EXPECT_EQ(WrapValue(makeStringArray({ "name10", noString, "name12", noString })), f.extract("s.value.name"));
 }
 
 struct PrimitiveMapFixture : public FixtureBase
 {
     MapDataType mapFieldType;
     Field mapField;
-    using MapVector = std::vector<std::pair<vespalib::string, int>>;
+    using MapVector = std::vector<std::pair<std::string, int>>;
 
     PrimitiveMapFixture()
         : FixtureBase(false),
@@ -362,20 +390,19 @@ struct PrimitiveMapFixture : public FixtureBase
 
 };
 
-TEST_F("require that primitive map field gives array values", PrimitiveMapFixture)
+TEST(DocumentFieldExtractorTest, require_that_primitive_map_field_gives_array_values)
 {
+    PrimitiveMapFixture f;
     f.makeDoc({ {"foo", 10}, {"", 20}, {"bar", noInt} });
-    TEST_DO(f.assertExtracted("map.key", makeStringArray({ "foo", "", "bar" })));
-    TEST_DO(f.assertExtracted("map.value", makeIntArray({ 10, 20, noInt })));
+    EXPECT_EQ(WrapValue(makeStringArray({ "foo", "", "bar" })), f.extract("map.key"));
+    EXPECT_EQ(WrapValue(makeIntArray({ 10, 20, noInt })), f.extract("map.value"));
 }
 
-TEST_F("require that unknown field gives null value", FixtureBase(false))
+TEST(DocumentFieldExtractorTest, require_that_unknown_field_gives_null_value)
 {
+    FixtureBase f(false);
     f.makeDoc();
-    TEST_DO(f.assertExtracted("unknown", std::unique_ptr<FieldValue>()));
+    EXPECT_EQ(WrapValue(), f.extract("unknown"));
 }
 
-TEST_MAIN()
-{
-    TEST_RUN_ALL();
-}
+GTEST_MAIN_RUN_ALL_TESTS()

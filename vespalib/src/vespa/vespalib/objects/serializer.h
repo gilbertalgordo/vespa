@@ -1,9 +1,9 @@
 // Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 #pragma once
 
-#include <vespa/vespalib/stllike/string.h>
-#include <vector>
 #include <cstdint>
+#include <string>
+#include <vector>
 
 namespace vespalib {
 
@@ -20,7 +20,7 @@ public:
     virtual Serializer & put(uint64_t value) = 0;
     virtual Serializer & put(float value) = 0;
     virtual Serializer & put(double value) = 0;
-    virtual Serializer & put(stringref value) = 0;
+    virtual Serializer & put(std::string_view value) = 0;
 
     virtual Serializer & put(const Identifiable & value);
     virtual Serializer & put(int8_t value);
@@ -39,7 +39,7 @@ public:
     Serializer & operator << (int64_t  value) { return put(value); }
     Serializer & operator << (float value)    { return put(value); }
     Serializer & operator << (double value)   { return put(value); }
-    Serializer & operator << (stringref value) { return put(value); }
+    Serializer & operator << (std::string_view value) { return put(value); }
     template <typename T>
     Serializer & operator << (const std::vector<T> & v);
 };

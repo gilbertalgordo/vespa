@@ -3,8 +3,9 @@ vespa_define_module(
     DEPENDS
     vespalog
     vespalib
-    config_cloudconfig
+    vespa_config
 
     APPS
     src/apps/vespa-logforwarder-start
+    src/apps/vespa-otelcol-start
 )

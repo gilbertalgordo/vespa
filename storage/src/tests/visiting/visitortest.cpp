@@ -1,5 +1,9 @@
 // Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
+#include <tests/common/dummystoragelink.h>
+#include <tests/common/storage_config_set.h>
+#include <tests/common/testhelper.h>
+#include <tests/common/teststorageapp.h>
 #include <vespa/config/common/exceptions.h>
 #include <vespa/config/helper/configgetter.hpp>
 #include <vespa/document/fieldvalue/intfieldvalue.h>
@@ -14,9 +18,6 @@
 #include <vespa/storage/visiting/visitormanager.h>
 #include <vespa/storageapi/message/datagram.h>
 #include <vespa/storageapi/message/persistence.h>
-#include <tests/common/testhelper.h>
-#include <tests/common/teststorageapp.h>
-#include <tests/common/dummystoragelink.h>
 #include <tests/storageserver/testvisitormessagesession.h>
 #include <vespa/persistence/spi/docentry.h>
 #include <vespa/vespalib/gtest/gtest.h>
@@ -55,10 +56,24 @@ struct TestParams {
     mbus::Error _autoReplyError;
 };
 
+struct MessageMeta {
+    std::vector<Document::SP> docs;
+    std::vector<DocumentId>   docIds;
+    std::vector<std::string>  infoMessages;
+
+    MessageMeta();
+    ~MessageMeta();
+};
+
+MessageMeta::MessageMeta() = default;
+MessageMeta::~MessageMeta() = default;
+
 }
 
 struct VisitorTest : Test {
     static uint32_t docCount;
+
+    std::unique_ptr<StorageConfigSet> _config;
     std::vector<Document::SP> _documents;
     std::unique_ptr<TestVisitorMessageSessionFactory> _messageSessionFactory;
     std::unique_ptr<TestServiceLayerApp> _node;
@@ -77,7 +92,7 @@ struct VisitorTest : Test {
 
         VisitorOptions() {}
 
-        VisitorOptions& withVisitorType(vespalib::stringref type) {
+        VisitorOptions& withVisitorType(std::string_view type) {
             visitorType = type;
             return *this;
         }
@@ -96,17 +111,15 @@ struct VisitorTest : Test {
             int checkStatsBytesVisited = -1,
             uint64_t* message_id_out = nullptr);
     void getMessagesAndReply(
-            int expectedCount,
+            size_t expectedCount,
             TestVisitorMessageSession& session,
-            std::vector<Document::SP> & docs,
-            std::vector<DocumentId>& docIds,
-            std::vector<std::string>& infoMessages,
+            MessageMeta& meta,
             api::ReturnCode::Result returnCode = api::ReturnCode::OK);
     uint32_t getMatchingDocuments(std::vector<Document::SP>& docs);
 
 protected:
     void doTestVisitorInstanceHasConsistencyLevel(
-            vespalib::stringref visitorType,
+            std::string_view visitorType,
             spi::ReadConsistency expectedConsistency);
 
     template <typename T>
@@ -146,31 +159,20 @@ VisitorTest::~VisitorTest() = default;
 void
 VisitorTest::initializeTest(const TestParams& params)
 {
-    vdstestlib::DirConfig config(getStandardConfig(true, "visitortest"));
-    config.getConfig("stor-visitor").set("visitorthreads", "1");
-    config.getConfig("stor-visitor").set(
-            "defaultparalleliterators",
-            std::to_string(params._parallelBuckets));
-    config.getConfig("stor-visitor").set(
-            "visitor_memory_usage_limit",
-            std::to_string(params._maxVisitorMemoryUsage));
-
-    std::string rootFolder = getRootFolder(config);
-
-    ::chmod(rootFolder.c_str(), 0755);
-    std::filesystem::remove_all(std::filesystem::path(rootFolder));
-    std::filesystem::create_directories(std::filesystem::path(vespalib::make_string("%s/disks/d0", rootFolder.c_str())));
-    std::filesystem::create_directories(std::filesystem::path(vespalib::make_string("%s/disks/d1", rootFolder.c_str())));
+    _config = StorageConfigSet::make_storage_node_config();
+    _config->visitor_config().visitorthreads = 1;
+    _config->visitor_config().defaultparalleliterators = params._parallelBuckets;
+    _config->visitor_config().visitorMemoryUsageLimit = params._maxVisitorMemoryUsage;
 
     _messageSessionFactory = std::make_unique<TestVisitorMessageSessionFactory>();
     if (params._autoReplyError.getCode() != mbus::ErrorCode::NONE) {
         _messageSessionFactory->_autoReplyError = params._autoReplyError;
         _messageSessionFactory->_createAutoReplyVisitorSessions = true;
     }
-    _node = std::make_unique<TestServiceLayerApp>(config.getConfigId());
+    _node = std::make_unique<TestServiceLayerApp>(_config->config_uri());
     _top = std::make_unique<DummyStorageLink>();
     using vespa::config::content::core::StorVisitorConfig;
-    auto bootstrap_cfg = config_from<StorVisitorConfig>(config::ConfigUri(config.getConfigId()));
+    auto bootstrap_cfg = config_from<StorVisitorConfig>(_config->config_uri());
     _top->push_back(std::unique_ptr<StorageLink>(_manager
             = new VisitorManager(*bootstrap_cfg, _node->getComponentRegister(), *_messageSessionFactory)));
     _bottom = new DummyStorageLink();
@@ -217,14 +219,12 @@ VisitorTest::initializeTest(const TestParams& params)
     _documents.clear();
     for (uint32_t i=0; i<docCount; ++i) {
         std::ostringstream uri;
-        uri << "id:test:testdoctype1:n=" << i % 10 << ":http://www.ntnu.no/"
-            << i << ".html";
+        uri << "id:test:testdoctype1:n=" << i % 10 << ":http://www.ntnu.no/" << i << ".html";
 
         _documents.push_back(Document::SP(
                 _node->getTestDocMan().createDocument(content, uri.str())));
         const document::DocumentType& type(_documents.back()->getType());
-        _documents.back()->setValue(type.getField("headerval"),
-                                    document::IntFieldValue(i % 4));
+        _documents.back()->setValue(type.getField("headerval"), document::IntFieldValue(i % 4));
     }
 }
 
@@ -279,14 +279,12 @@ VisitorTest::getSession(uint32_t n)
 
 void
 VisitorTest::getMessagesAndReply(
-        int expectedCount,
+        size_t expectedCount,
         TestVisitorMessageSession& session,
-        std::vector<Document::SP >& docs,
-        std::vector<DocumentId>& docIds,
-        std::vector<std::string>& infoMessages,
+        MessageMeta& meta,
         api::ReturnCode::Result result)
 {
-    for (int i = 0; i < expectedCount; i++) {
+    for (size_t i = 0; i < expectedCount; i++) {
         session.waitForMessages(1);
         mbus::Reply::UP reply;
         {
@@ -297,14 +295,18 @@ VisitorTest::getMessagesAndReply(
             ASSERT_LT(msg->getPriority(), 16);
 
             switch (msg->getType()) {
-            case documentapi::DocumentProtocol::MESSAGE_PUTDOCUMENT:
-                docs.push_back(dynamic_cast<documentapi::PutDocumentMessage&>(*msg).getDocumentSP());
+            case documentapi::DocumentProtocol::MESSAGE_PUTDOCUMENT: {
+                const auto& as_put = dynamic_cast<documentapi::PutDocumentMessage&>(*msg);
+                meta.docs.emplace_back(as_put.getDocumentSP());
                 break;
-            case documentapi::DocumentProtocol::MESSAGE_REMOVEDOCUMENT:
-                docIds.push_back(dynamic_cast<documentapi::RemoveDocumentMessage&>(*msg).getDocumentId());
+            }
+            case documentapi::DocumentProtocol::MESSAGE_REMOVEDOCUMENT: {
+                const auto& as_remove = dynamic_cast<documentapi::RemoveDocumentMessage&>(*msg);
+                meta.docIds.emplace_back(as_remove.getDocumentId());
                 break;
+            }
             case documentapi::DocumentProtocol::MESSAGE_VISITORINFO:
-                infoMessages.push_back(dynamic_cast<documentapi::VisitorInfoMessage&>(*msg).getErrorMessage());
+                meta.infoMessages.push_back(dynamic_cast<documentapi::VisitorInfoMessage&>(*msg).getErrorMessage());
                 break;
             default:
                 break;
@@ -442,7 +444,7 @@ VisitorTest::fetchSingleCommand(DummyStorageLink& link, std::shared_ptr<T>& msg_
 std::shared_ptr<api::CreateVisitorCommand>
 VisitorTest::makeCreateVisitor(const VisitorOptions& options)
 {
-    static vespalib::string _storage("storage");
+    static std::string _storage("storage");
     api::StorageMessageAddress address(&_storage, lib::NodeType::STORAGE, 0);
     auto cmd = std::make_shared<api::CreateVisitorCommand>(
             makeBucketSpace(), options.visitorType, "testvis", "");
@@ -483,12 +485,10 @@ TEST_F(VisitorTest, normal_usage) {
 
     sendGetIterReply(*getIterCmd);
 
-    std::vector<Document::SP> docs;
-    std::vector<DocumentId> docIds;
-    std::vector<std::string> infoMessages;
-    getMessagesAndReply(_documents.size(), getSession(0), docs, docIds, infoMessages);
-    ASSERT_EQ(0, infoMessages.size());
-    ASSERT_EQ(0, docIds.size());
+    MessageMeta meta;
+    getMessagesAndReply(_documents.size(), getSession(0), meta);
+    ASSERT_EQ(0, meta.infoMessages.size());
+    ASSERT_EQ(0, meta.docIds.size());
 
     DestroyIteratorCommand::SP destroyIterCmd;
     ASSERT_NO_FATAL_FAILURE(fetchSingleCommand<DestroyIteratorCommand>(*_bottom, destroyIterCmd));
@@ -549,13 +549,10 @@ TEST_F(VisitorTest, document_api_client_error) {
         sendGetIterReply(*getIterCmd, api::ReturnCode(api::ReturnCode::OK), 1);
     }
 
-    std::vector<Document::SP> docs;
-    std::vector<DocumentId> docIds;
-    std::vector<std::string> infoMessages;
-    getMessagesAndReply(1, getSession(0), docs, docIds, infoMessages,
-                        api::ReturnCode::INTERNAL_FAILURE);
+    MessageMeta meta;
+    getMessagesAndReply(1, getSession(0), meta, api::ReturnCode::INTERNAL_FAILURE);
     // INTERNAL_FAILURE is critical, so no visitor info sent
-    ASSERT_EQ(0, infoMessages.size());
+    ASSERT_EQ(0, meta.infoMessages.size());
 
     std::this_thread::sleep_for(100ms);
 
@@ -589,17 +586,13 @@ TEST_F(VisitorTest, no_document_api_resending_for_failed_visitor) {
         sendGetIterReply(*getIterCmd, api::ReturnCode(api::ReturnCode::OK), 2, true);
     }
 
-    std::vector<Document::SP> docs;
-    std::vector<DocumentId> docIds;
-    std::vector<std::string> infoMessages;
+    MessageMeta meta;
     // Use non-critical result. Visitor info message should be received
     // after we send a NOT_CONNECTED reply. Failing this message as well
     // should cause the entire visitor to fail.
-    getMessagesAndReply(3, getSession(0), docs, docIds, infoMessages,
-                        api::ReturnCode::NOT_CONNECTED);
-    ASSERT_EQ(1, infoMessages.size());
-    EXPECT_EQ("[From content node 0] NOT_CONNECTED: Generic error",
-              infoMessages[0]);
+    getMessagesAndReply(3, getSession(0), meta, api::ReturnCode::NOT_CONNECTED);
+    ASSERT_EQ(1, meta.infoMessages.size());
+    EXPECT_EQ("[From content node 0] NOT_CONNECTED: Generic error", meta.infoMessages[0]);
 
     DestroyIteratorCommand::SP destroyIterCmd;
     ASSERT_NO_FATAL_FAILURE(fetchSingleCommand<DestroyIteratorCommand>(*_bottom, destroyIterCmd));
@@ -655,10 +648,7 @@ TEST_F(VisitorTest, failed_document_api_send) {
     GetIterCommand::SP getIterCmd;
     ASSERT_NO_FATAL_FAILURE(fetchSingleCommand<GetIterCommand>(*_bottom, getIterCmd));
     ASSERT_EQ(spi::IteratorId(1234), getIterCmd->getIteratorId());
-    sendGetIterReply(*getIterCmd,
-                     api::ReturnCode(api::ReturnCode::OK),
-                     2,
-                     true);
+    sendGetIterReply(*getIterCmd, api::ReturnCode(api::ReturnCode::OK), 2, true);
 
     DestroyIteratorCommand::SP destroyIterCmd;
     ASSERT_NO_FATAL_FAILURE(fetchSingleCommand<DestroyIteratorCommand>(*_bottom, destroyIterCmd));
@@ -692,36 +682,28 @@ TEST_F(VisitorTest, no_visitor_notification_for_transient_failures) {
     ASSERT_NO_FATAL_FAILURE(initializeTest());
     ASSERT_NO_FATAL_FAILURE(sendInitialCreateVisitorAndGetIterRound());
 
-    std::vector<Document::SP> docs;
-    std::vector<DocumentId> docIds;
-    std::vector<std::string> infoMessages;
+    MessageMeta meta;
     // Have to make sure time increases in visitor thread so that resend
     // times are reached.
     _node->getClock().setFakeCycleMode();
     // Should not get info message for BUCKET_DELETED, but resend of Put.
-    getMessagesAndReply(1, getSession(0), docs, docIds, infoMessages,
-                        api::ReturnCode::BUCKET_DELETED);
-    ASSERT_EQ(0, infoMessages.size());
+    getMessagesAndReply(1, getSession(0), meta, api::ReturnCode::BUCKET_DELETED);
+    ASSERT_EQ(0, meta.infoMessages.size());
     // Should not get info message for BUCKET_NOT_FOUND, but resend of Put.
-    getMessagesAndReply(1, getSession(0), docs, docIds, infoMessages,
-                        api::ReturnCode::BUCKET_NOT_FOUND);
-    ASSERT_EQ(0, infoMessages.size());
+    getMessagesAndReply(1, getSession(0), meta, api::ReturnCode::BUCKET_NOT_FOUND);
+    ASSERT_EQ(0, meta.infoMessages.size());
     // MessageBus error codes guaranteed to fit in return code result.
     // Should not get info message for SESSION_BUSY, but resend of Put.
-    getMessagesAndReply(1, getSession(0), docs, docIds, infoMessages,
-                        static_cast<api::ReturnCode::Result>(
-                                mbus::ErrorCode::SESSION_BUSY));
-    ASSERT_EQ(0, infoMessages.size());
+    getMessagesAndReply(1, getSession(0), meta, static_cast<api::ReturnCode::Result>(mbus::ErrorCode::SESSION_BUSY));
+    ASSERT_EQ(0, meta.infoMessages.size());
     // WRONG_DISTRIBUTION should not be reported, as it will happen all the
     // time when initiating remote migrations et al.
-    getMessagesAndReply(1, getSession(0), docs, docIds, infoMessages,
-                        api::ReturnCode::WRONG_DISTRIBUTION);
-    ASSERT_EQ(0, infoMessages.size());
+    getMessagesAndReply(1, getSession(0), meta, api::ReturnCode::WRONG_DISTRIBUTION);
+    ASSERT_EQ(0, meta.infoMessages.size());
 
     // Complete message successfully to finish the visitor.
-    getMessagesAndReply(1, getSession(0), docs, docIds, infoMessages,
-                        api::ReturnCode::OK);
-    ASSERT_EQ(0, infoMessages.size());
+    getMessagesAndReply(1, getSession(0), meta, api::ReturnCode::OK);
+    ASSERT_EQ(0, meta.infoMessages.size());
 
     DestroyIteratorCommand::SP cmd;
     ASSERT_NO_FATAL_FAILURE(fetchSingleCommand<DestroyIteratorCommand>(*_bottom, cmd));
@@ -736,22 +718,18 @@ TEST_F(VisitorTest, notification_sent_if_transient_error_retried_many_times) {
     ASSERT_NO_FATAL_FAILURE(initializeTest());
     sendInitialCreateVisitorAndGetIterRound();
 
-    std::vector<Document::SP> docs;
-    std::vector<DocumentId> docIds;
-    std::vector<std::string> infoMessages;
+    MessageMeta meta;
     // Have to make sure time increases in visitor thread so that resend
     // times are reached.
     _node->getClock().setFakeCycleMode();
     for (size_t attempt = 0; attempt < retries; ++attempt) {
-        getMessagesAndReply(1, getSession(0), docs, docIds, infoMessages,
-                            api::ReturnCode::WRONG_DISTRIBUTION);
-        ASSERT_EQ(0, infoMessages.size());
+        getMessagesAndReply(1, getSession(0), meta, api::ReturnCode::WRONG_DISTRIBUTION);
+        ASSERT_EQ(0, meta.infoMessages.size());
     }
     // Should now have a client notification along for the ride.
     // This has to be ACKed as OK or the visitor will fail.
-    getMessagesAndReply(2, getSession(0), docs, docIds, infoMessages,
-                        api::ReturnCode::OK);
-    ASSERT_EQ(1, infoMessages.size());
+    getMessagesAndReply(2, getSession(0), meta, api::ReturnCode::OK);
+    ASSERT_EQ(1, meta.infoMessages.size());
     // TODO(vekterli) ideally we'd want to test that this happens only once
     // per message, but this seems frustratingly complex to do currently.
     DestroyIteratorCommand::SP cmd;
@@ -771,15 +749,10 @@ VisitorTest::doCompleteVisitingSession(
 
     GetIterCommand::SP getIterCmd;
     ASSERT_NO_FATAL_FAILURE(fetchSingleCommand<GetIterCommand>(*_bottom, getIterCmd));
-    sendGetIterReply(*getIterCmd,
-                     api::ReturnCode(api::ReturnCode::OK),
-                     1,
-                     true);
+    sendGetIterReply(*getIterCmd, api::ReturnCode(api::ReturnCode::OK), 1, true);
 
-    std::vector<Document::SP> docs;
-    std::vector<DocumentId> docIds;
-    std::vector<std::string> infoMessages;
-    getMessagesAndReply(1, getSession(0), docs, docIds, infoMessages);
+    MessageMeta meta;
+    getMessagesAndReply(1, getSession(0), meta);
 
     DestroyIteratorCommand::SP destroyIterCmd;
     ASSERT_NO_FATAL_FAILURE(fetchSingleCommand<DestroyIteratorCommand>(*_bottom, destroyIterCmd));
@@ -822,9 +795,7 @@ TEST_F(VisitorTest, no_more_iterators_sent_while_memory_used_above_limit) {
 
     GetIterCommand::SP getIterCmd;
     ASSERT_NO_FATAL_FAILURE(fetchSingleCommand<GetIterCommand>(*_bottom, getIterCmd));
-    sendGetIterReply(*getIterCmd,
-                     api::ReturnCode(api::ReturnCode::OK),
-                     1);
+    sendGetIterReply(*getIterCmd, api::ReturnCode(api::ReturnCode::OK), 1);
 
     // Pending Document API message towards client; memory usage should prevent
     // visitor from sending down additional GetIter messages until the pending
@@ -837,19 +808,14 @@ TEST_F(VisitorTest, no_more_iterators_sent_while_memory_used_above_limit) {
     std::this_thread::sleep_for(100ms);
     ASSERT_EQ(0, _bottom->getNumCommands());
 
-    std::vector<Document::SP> docs;
-    std::vector<DocumentId> docIds;
-    std::vector<std::string> infoMessages;
-    getMessagesAndReply(1, getSession(0), docs, docIds, infoMessages);
+    MessageMeta meta;
+    getMessagesAndReply(1, getSession(0), meta);
 
     // 2nd round of GetIter now allowed. Send reply indicating completion.
     ASSERT_NO_FATAL_FAILURE(fetchSingleCommand<GetIterCommand>(*_bottom, getIterCmd));
-    sendGetIterReply(*getIterCmd,
-                     api::ReturnCode(api::ReturnCode::OK),
-                     1,
-                     true);
+    sendGetIterReply(*getIterCmd, api::ReturnCode(api::ReturnCode::OK), 1, true);
 
-    getMessagesAndReply(1, getSession(0), docs, docIds, infoMessages);
+    getMessagesAndReply(1, getSession(0), meta);
 
     DestroyIteratorCommand::SP destroyIterCmd;
     ASSERT_NO_FATAL_FAILURE(fetchSingleCommand<DestroyIteratorCommand>(*_bottom, destroyIterCmd));
@@ -860,7 +826,7 @@ TEST_F(VisitorTest, no_more_iterators_sent_while_memory_used_above_limit) {
 
 void
 VisitorTest::doTestVisitorInstanceHasConsistencyLevel(
-        vespalib::stringref visitorType,
+        std::string_view visitorType,
         spi::ReadConsistency expectedConsistency)
 {
     ASSERT_NO_FATAL_FAILURE(initializeTest());
@@ -900,10 +866,8 @@ struct ReindexingVisitorTest : VisitorTest {
 
     void respond_to_client_put(api::ReturnCode::Result result) {
         // Reply to the Put from "client" back to the visitor
-        std::vector<Document::SP> docs;
-        std::vector<DocumentId> doc_ids;
-        std::vector<std::string> info_messages;
-        getMessagesAndReply(1, getSession(0), docs, doc_ids, info_messages, result);
+        MessageMeta meta;
+        getMessagesAndReply(1, getSession(0), meta, result);
     }
 
     void complete_visitor() {

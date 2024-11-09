@@ -1,5 +1,6 @@
 // Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
+#include <tests/common/storage_config_set.h>
 #include <vespa/persistence/spi/test.h>
 #include <tests/persistence/persistencetestutils.h>
 #include <tests/persistence/common/persistenceproviderwrapper.h>
@@ -15,17 +16,17 @@ struct ProviderErrorWrapperTest : PersistenceTestUtils {
 namespace {
 
 struct MockErrorListener : ProviderErrorListener {
-    void on_fatal_error(vespalib::stringref message) override {
+    void on_fatal_error(std::string_view message) override {
         _seen_fatal_error = true;
         _fatal_error = message;
     }
-    void on_resource_exhaustion_error(vespalib::stringref message) override {
+    void on_resource_exhaustion_error(std::string_view message) override {
         _seen_resource_exhaustion_error = true;
         _resource_exhaustion_error = message;
     }
 
-    vespalib::string _fatal_error;
-    vespalib::string _resource_exhaustion_error;
+    std::string _fatal_error;
+    std::string _resource_exhaustion_error;
     bool _seen_fatal_error{false};
     bool _seen_resource_exhaustion_error{false};
 };
@@ -33,13 +34,15 @@ struct MockErrorListener : ProviderErrorListener {
 struct Fixture {
     // We wrap the wrapper. It's turtles all the way down!
     PersistenceProviderWrapper providerWrapper;
+    std::unique_ptr<StorageConfigSet> config;
     TestServiceLayerApp app;
     ServiceLayerComponent component;
     ProviderErrorWrapper errorWrapper;
 
     Fixture(spi::PersistenceProvider& provider)
         : providerWrapper(provider),
-          app(),
+          config(StorageConfigSet::make_storage_node_config()),
+          app(config->config_uri()),
           component(app.getComponentRegister(), "dummy"),
           errorWrapper(providerWrapper)
     {
@@ -72,7 +75,7 @@ TEST_F(ProviderErrorWrapperTest, fatal_error_invokes_listener) {
 
     EXPECT_FALSE(listener->_seen_resource_exhaustion_error);
     EXPECT_TRUE(listener->_seen_fatal_error);
-    EXPECT_EQ(vespalib::string("eject! eject!"), listener->_fatal_error);
+    EXPECT_EQ(std::string("eject! eject!"), listener->_fatal_error);
 }
 
 TEST_F(ProviderErrorWrapperTest, resource_exhaustion_error_invokes_listener) {
@@ -86,7 +89,7 @@ TEST_F(ProviderErrorWrapperTest, resource_exhaustion_error_invokes_listener) {
 
     EXPECT_FALSE(listener->_seen_fatal_error);
     EXPECT_TRUE(listener->_seen_resource_exhaustion_error);
-    EXPECT_EQ(vespalib::string("out of juice"), listener->_resource_exhaustion_error);
+    EXPECT_EQ(std::string("out of juice"), listener->_resource_exhaustion_error);
 }
 
 TEST_F(ProviderErrorWrapperTest, listener_not_invoked_on_success) {

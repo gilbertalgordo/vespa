@@ -4,7 +4,7 @@
 #include "allocatedbitvector.h"
 #include "partialbitvector.h"
 #include <vespa/searchlib/util/file_settings.h>
-#include <vespa/vespalib/hwaccelrated/iaccelrated.h>
+#include <vespa/vespalib/hwaccelerated/iaccelerated.h>
 #include <vespa/vespalib/util/exceptions.h>
 #include <vespa/vespalib/util/thread_bundle.h>
 #include <vespa/vespalib/util/size_literals.h>
@@ -18,8 +18,7 @@ LOG_SETUP(".searchlib.common.bitvector");
 
 using vespalib::make_string;
 using vespalib::IllegalArgumentException;
-using vespalib::hwaccelrated::IAccelrated;
-using vespalib::Optimized;
+using vespalib::hwaccelerated::IAccelerated;
 using vespalib::alloc::Alloc;
 
 namespace {
@@ -38,26 +37,26 @@ bool BitVector::_enable_range_check = false;
 
 struct BitVector::OrParts : vespalib::Runnable
 {
-    OrParts(vespalib::ConstArrayRef<BitVector *> vectors, BitVector::Index offset, BitVector::Index size) noexcept
+    OrParts(std::span<BitVector* const> vectors, BitVector::Index offset, BitVector::Index size) noexcept
         : _vectors(vectors),
           _offset(offset),
           _byte_size((size + 7)/8)
     {}
     void run() override {
-        const auto & accelrator = IAccelrated::getAccelerator();
+        const auto & accelrator = IAccelerated::getAccelerator();
         BitVector * master = _vectors[0];
         Word * destination = master->getWordIndex(_offset);
         for (uint32_t i(1); i < _vectors.size(); i++) {
             accelrator.orBit(destination, _vectors[i]->getWordIndex(_offset), _byte_size);
         }
     }
-    vespalib::ConstArrayRef<BitVector *> _vectors;
+    std::span<BitVector* const> _vectors;
     BitVector::Index _offset;
     BitVector::Index _byte_size;
 };
 
 void
-BitVector::parallellOr(vespalib::ThreadBundle & thread_bundle, vespalib::ConstArrayRef<BitVector *> vectors) {
+BitVector::parallellOr(vespalib::ThreadBundle & thread_bundle, std::span<BitVector* const> vectors) {
     constexpr uint32_t MIN_BITS_PER_THREAD = 128_Ki;
     constexpr uint32_t ALIGNMENT_BITS = 8_Ki;
     if (vectors.size() < 2) return;
@@ -206,17 +205,17 @@ BitVector::countInterval(Range range_in) const
     Word *bitValues = _words;
 
     if (startw == endw) {
-        return Optimized::popCount(load(bitValues[startw]) & ~(startBits(range.start()) | endBits(last)));
+        return std::popcount(load(bitValues[startw]) & ~(startBits(range.start()) | endBits(last)));
     }
     Index res = 0;
     // Limit to full words
     if ((range.start() & (WordLen - 1)) != 0) {
-        res += Optimized::popCount(load(bitValues[startw]) & ~startBits(range.start()));
+        res += std::popcount(load(bitValues[startw]) & ~startBits(range.start()));
         ++startw;
     }
     // Align start to 16 bytes
     while (startw < endw && (startw & 3) != 0) {
-        res += Optimized::popCount(load(bitValues[startw]));
+        res += std::popcount(load(bitValues[startw]));
         ++startw;
     }
     bool partialEnd = (last & (WordLen - 1)) != (WordLen - 1);
@@ -224,10 +223,10 @@ BitVector::countInterval(Range range_in) const
         ++endw;
     }
     if (startw < endw) {
-        res += IAccelrated::getAccelerator().populationCount(bitValues + startw, endw - startw);
+        res += IAccelerated::getAccelerator().populationCount(bitValues + startw, endw - startw);
     }
     if (partialEnd) {
-        res += Optimized::popCount(load(bitValues[endw]) & ~endBits(last));
+        res += std::popcount(load(bitValues[endw]) & ~endBits(last));
     }
 
     return res;
@@ -242,12 +241,12 @@ BitVector::orWith(const BitVector & right)
     if (right.size() < size()) {
         ssize_t commonBytes = numActiveBytes(range.start(), range.end()) - sizeof(Word);
         if (commonBytes > 0) {
-            IAccelrated::getAccelerator().orBit(getWordIndex(range.start()), right.getWordIndex(range.start()), commonBytes);
+            IAccelerated::getAccelerator().orBit(getWordIndex(range.start()), right.getWordIndex(range.start()), commonBytes);
         }
         Index last(range.end() - 1);
         store(getWordIndex(last)[0], getWordIndex(last)[0] | (load(right.getWordIndex(last)[0]) & ~endBits(last)));
     } else {
-        IAccelrated::getAccelerator().orBit(getWordIndex(range.start()), right.getWordIndex(range.start()), getActiveBytes());
+        IAccelerated::getAccelerator().orBit(getWordIndex(range.start()), right.getWordIndex(range.start()), getActiveBytes());
     }
     repairEnds();
     invalidateCachedCount();
@@ -276,7 +275,7 @@ BitVector::andWith(const BitVector & right)
     }
 
     uint32_t commonBytes = std::min(getActiveBytes(), numActiveBytes(getStartIndex(), right.size()));
-    IAccelrated::getAccelerator().andBit(getActiveStart(), right.getWordIndex(getStartIndex()), commonBytes);
+    IAccelerated::getAccelerator().andBit(getActiveStart(), right.getWordIndex(getStartIndex()), commonBytes);
     if (right.size() < size()) {
         clearInterval(right.size(), size());
     }
@@ -295,12 +294,12 @@ BitVector::andNotWith(const BitVector& right)
     if (right.size() < size()) {
         ssize_t commonBytes = numActiveBytes(range.start(), range.end()) - sizeof(Word);
         if (commonBytes > 0) {
-            IAccelrated::getAccelerator().andNotBit(getWordIndex(range.start()), right.getWordIndex(range.start()), commonBytes);
+            IAccelerated::getAccelerator().andNotBit(getWordIndex(range.start()), right.getWordIndex(range.start()), commonBytes);
         }
         Index last(range.end() - 1);
         store(getWordIndex(last)[0], getWordIndex(last)[0] & ~(load(right.getWordIndex(last)[0]) & ~endBits(last)));
     } else {
-        IAccelrated::getAccelerator().andNotBit(getWordIndex(range.start()), right.getWordIndex(range.start()), getActiveBytes());
+        IAccelerated::getAccelerator().andNotBit(getWordIndex(range.start()), right.getWordIndex(range.start()), getActiveBytes());
     }
 
     repairEnds();
@@ -309,7 +308,7 @@ BitVector::andNotWith(const BitVector& right)
 
 void
 BitVector::notSelf() {
-    IAccelrated::getAccelerator().notBit(getActiveStart(), getActiveBytes());
+    IAccelerated::getAccelerator().notBit(getActiveStart(), getActiveBytes());
     setGuardBit();
     invalidateCachedCount();
 }

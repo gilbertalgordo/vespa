@@ -12,7 +12,6 @@
 #include <vespa/vespalib/geo/zcurve.h>
 #include <vespa/vespalib/util/issue.h>
 #include <vespa/vespalib/util/stash.h>
-#include <cmath>
 #include <limits>
 
 #include <vespa/log/log.h>
@@ -34,7 +33,7 @@ private:
     }
 public:
     ConvertRawscoreToDistance(const fef::IQueryEnvironment &env, uint32_t fieldId);
-    ConvertRawscoreToDistance(const fef::IQueryEnvironment &env, const vespalib::string &label);
+    ConvertRawscoreToDistance(const fef::IQueryEnvironment &env, const std::string &label);
     void execute(uint32_t docId) override;
 };
 
@@ -44,7 +43,7 @@ ConvertRawscoreToDistance::ConvertRawscoreToDistance(const fef::IQueryEnvironmen
 {
 }
 
-ConvertRawscoreToDistance::ConvertRawscoreToDistance(const fef::IQueryEnvironment &env, const vespalib::string &label)
+ConvertRawscoreToDistance::ConvertRawscoreToDistance(const fef::IQueryEnvironment &env, const std::string &label)
   : _bundle(env, std::nullopt, label, "distance"),
     _md(nullptr)
 {
@@ -62,7 +61,7 @@ ConvertRawscoreToDistance::execute(uint32_t docId)
             feature_t converted = elem.calc ? elem.calc->function().to_distance(invdist) : ((1.0 / invdist) - 1.0);
             min_distance = std::min(min_distance, converted);
         } else if (elem.calc) {
-            feature_t invdist = elem.calc->calc_raw_score(docId);
+            feature_t invdist = elem.calc->calc_raw_score<false>(docId);
             feature_t converted = elem.calc->function().to_distance(invdist);
             min_distance = std::min(min_distance, converted);
         }
@@ -130,7 +129,10 @@ GeoGCDExecutor::GeoGCDExecutor(GeoLocationSpecPtrs locations, const attribute::I
     : FeatureExecutor(),
       _locations(),
       _pos(pos),
-      _intBuf()
+      _intBuf(),
+      _best_index(0.0),
+      _best_lat(0.0),
+      _best_lng(0.0)
 {
     if (_pos == nullptr) {
         return;
@@ -140,7 +142,7 @@ GeoGCDExecutor::GeoGCDExecutor(GeoLocationSpecPtrs locations, const attribute::I
         if (p && p->location.valid() && p->location.has_point) {
             double lat = p->location.point.y / 1.0e6;
             double lng = p->location.point.x / 1.0e6;
-            _locations.emplace_back(search::common::GeoGcd{lat, lng});
+            _locations.emplace_back(lat, lng);
         }
     }
 }
@@ -189,7 +191,7 @@ DistanceBlueprint::createInstance() const
 }
 
 bool
-DistanceBlueprint::setup_geopos(const vespalib::string &attr)
+DistanceBlueprint::setup_geopos(const std::string &attr)
 {
     _attr_name = attr;
     _use_geo_pos = true;
@@ -202,7 +204,7 @@ DistanceBlueprint::setup_geopos(const vespalib::string &attr)
 }
 
 bool
-DistanceBlueprint::setup_nns(const vespalib::string &attr)
+DistanceBlueprint::setup_nns(const std::string &attr)
 {
     _attr_name = attr;
     _use_nns_tensor = true;
@@ -215,7 +217,7 @@ DistanceBlueprint::setup(const IIndexEnvironment & env,
                          const ParameterList & params)
 {
     // params[0] = attribute name
-    vespalib::string arg = params[0].getValue();
+    std::string arg = params[0].getValue();
     if (params.size() == 2) {
         // params[0] = field / label
         // params[1] = attribute name / label value
@@ -232,7 +234,7 @@ DistanceBlueprint::setup(const IIndexEnvironment & env,
         }
     }
     _field_name = arg;
-    vespalib::string z = document::PositionDataType::getZCurveFieldName(arg);
+    std::string z = document::PositionDataType::getZCurveFieldName(arg);
     const FieldInfo *fi = env.getFieldByName(z);
     if (fi != nullptr && fi->hasAttribute()) {
         // can't check anything here because streaming has wrong information

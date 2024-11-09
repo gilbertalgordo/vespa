@@ -12,7 +12,6 @@
 #include "stripe_host_info_notifier.h"
 #include "throttlingoperationstarter.h"
 #include <vespa/document/bucket/fixed_bucket_spaces.h>
-#include <vespa/storage/common/global_bucket_space_distribution_converter.h>
 #include <vespa/storage/common/node_identity.h>
 #include <vespa/storage/common/nodestateupdater.h>
 #include <vespa/storage/distributor/maintenance/simplebucketprioritydatabase.h>
@@ -21,6 +20,7 @@
 #include <vespa/storage/config/distributorconfiguration.h>
 #include <vespa/storageframework/generic/status/xmlstatusreporter.h>
 #include <vespa/vdslib/distribution/distribution.h>
+#include <vespa/vdslib/distribution/global_bucket_space_distribution_converter.h>
 #include <vespa/vespalib/util/memoryusage.h>
 #include <algorithm>
 
@@ -233,7 +233,14 @@ DistributorStripe::handleReply(const std::shared_ptr<api::StorageReply>& reply)
     }
 
     if (_maintenanceOperationOwner.handleReply(reply)) {
-        _scanner->prioritizeBucket(bucket);
+        // If a maintenance operation reply comes from a node that went down after its original
+        // request was sent _and_ cancelling is enabled, the operation will be present in
+        // _maintenanceOperationOwner but _not_ in _pendingMessageTracker. The latter returns
+        // the zero bucket (including an invalid bucket space) if no mapping could be found,
+        // which is not accepted by prioritizeBucket().
+        if (bucket.getBucketId() != document::BucketId(0)) {
+            _scanner->prioritizeBucket(bucket);
+        }
         return true;
     }
 
@@ -545,7 +552,7 @@ DistributorStripe::checkBucketForSplit(document::BucketSpace bucketSpace, const 
 void
 DistributorStripe::propagateDefaultDistribution(std::shared_ptr<const lib::Distribution> distribution)
 {
-    auto global_distr = GlobalBucketSpaceDistributionConverter::convert_to_global(*distribution);
+    auto global_distr = lib::GlobalBucketSpaceDistributionConverter::convert_to_global(*distribution);
     for (auto* repo : {_bucketSpaceRepo.get(), _readOnlyBucketSpaceRepo.get()}) {
         repo->get(document::FixedBucketSpaces::default_space()).setDistribution(distribution);
         repo->get(document::FixedBucketSpaces::global_space()).setDistribution(global_distr);
@@ -554,7 +561,7 @@ DistributorStripe::propagateDefaultDistribution(std::shared_ptr<const lib::Distr
 
 // Only called when stripe is in rendezvous freeze
 void
-DistributorStripe::update_distribution_config(const BucketSpaceDistributionConfigs& new_configs) {
+DistributorStripe::update_distribution_config(const lib::BucketSpaceDistributionConfigs& new_configs) {
     auto default_distr = new_configs.get_or_nullptr(document::FixedBucketSpaces::default_space());
     auto global_distr  = new_configs.get_or_nullptr(document::FixedBucketSpaces::global_space());
     assert(default_distr && global_distr);
@@ -701,7 +708,7 @@ toBucketSpacesStats(const NodeMaintenanceStatsTracker &maintenanceStats)
 {
     PerNodeBucketSpacesStats result;
     for (const auto &entry : maintenanceStats.perNodeStats()) {
-        auto bucketSpace = document::FixedBucketSpaces::to_string(entry.first.bucketSpace());
+        const std::string & bucketSpace(document::FixedBucketSpaces::to_string(entry.first.bucketSpace()));
         result[entry.first.node()][bucketSpace] = toBucketSpaceStats(entry.second);
     }
     return result;

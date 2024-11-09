@@ -1,7 +1,7 @@
 // Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.hosted.provision.provisioning;
 
-import com.yahoo.config.provision.ApplicationId;
+import com.yahoo.config.provision.CapacityPolicies;
 import com.yahoo.config.provision.ClusterSpec;
 import com.yahoo.config.provision.Environment;
 import com.yahoo.config.provision.NodeResources;
@@ -27,23 +27,24 @@ public class NodeResourceLimits {
 
     /** Validates the resources applications ask for (which are in "advertised" resource space) */
     public void ensureWithinAdvertisedLimits(String type, NodeResources requested, ClusterSpec cluster) {
-        boolean exclusive = nodeRepository.exclusiveAllocation(cluster);
+        boolean exclusive = nodeRepository.exclusivity().allocation(cluster);
         if (! requested.vcpuIsUnspecified() && requested.vcpu() < minAdvertisedVcpu(cluster, exclusive))
             illegal(type, "vcpu", "", cluster, requested.vcpu(), minAdvertisedVcpu(cluster, exclusive));
-        if (! requested.memoryGbIsUnspecified() && requested.memoryGb() < minAdvertisedMemoryGb(cluster, exclusive))
-            illegal(type, "memoryGb", "Gb", cluster, requested.memoryGb(), minAdvertisedMemoryGb(cluster, exclusive));
-        if (! requested.diskGbIsUnspecified() && requested.diskGb() < minAdvertisedDiskGb(requested, exclusive))
+        if (! requested.memoryIsUnspecified() && requested.memoryGiB() < minAdvertisedMemoryGb(cluster, exclusive))
+            illegal(type, "memoryGb", "Gb", cluster, requested.memoryGiB(), minAdvertisedMemoryGb(cluster, exclusive));
+        if (! requested.diskIsUnspecified() && requested.diskGb() < minAdvertisedDiskGb(requested, exclusive))
             illegal(type, "diskGb", "Gb", cluster, requested.diskGb(), minAdvertisedDiskGb(requested, exclusive));
     }
 
     // TODO: Remove this when we are ready to fail, not just warn on this. */
     public boolean isWithinAdvertisedDiskLimits(NodeResources requested, ClusterSpec cluster) {
-        if (requested.diskGbIsUnspecified() || requested.memoryGbIsUnspecified()) return true;
-        return requested.diskGb() >= minAdvertisedDiskGb(requested, cluster);
+        if (requested.diskIsUnspecified() || requested.memoryIsUnspecified()) return true;
+        // Override disk limit to be able to use more flavors as content nodes
+        return requested.diskGb() >= minAdvertisedDiskGb(requested, cluster, 2.9);
     }
 
     /** Returns whether the real resources we'll end up with on a given tenant node are within limits */
-    public boolean isWithinRealLimits(NodeCandidate candidateNode, ApplicationId applicationId, ClusterSpec cluster) {
+    public boolean isWithinRealLimits(NodeCandidate candidateNode, ClusterSpec cluster) {
         if (candidateNode.type() != NodeType.tenant) return true; // Resource limits only apply to tenant nodes
         return isWithinRealLimits(nodeRepository.resourcesCalculator().realResourcesOf(candidateNode, nodeRepository),
                                   cluster);
@@ -54,7 +55,7 @@ public class NodeResourceLimits {
         if (realResources.isUnspecified()) return true;
 
         if (realResources.vcpu() < minRealVcpu(cluster)) return false;
-        if (realResources.memoryGb() < minRealMemoryGb(cluster)) return false;
+        if (realResources.memoryGiB() < minRealMemoryGb(cluster)) return false;
         if (realResources.diskGb() < minRealDiskGb()) return false;
        return true;
     }
@@ -66,7 +67,7 @@ public class NodeResourceLimits {
             requested = requested.withDiskGb(Math.max(minAdvertisedDiskGb(requested, cluster), requested.diskGb()));
 
         return requested.withVcpu(Math.max(minAdvertisedVcpu(cluster, exclusive), requested.vcpu()))
-                        .withMemoryGb(Math.max(minAdvertisedMemoryGb(cluster, exclusive), requested.memoryGb()))
+                        .withMemoryGiB(Math.max(minAdvertisedMemoryGb(cluster, exclusive), requested.memoryGiB()))
                         .withDiskGb(Math.max(minAdvertisedDiskGb(requested, exclusive), requested.diskGb()));
     }
 
@@ -88,8 +89,12 @@ public class NodeResourceLimits {
 
     // TODO: Move this check into the above when we are ready to fail, not just warn on this. */
     private static double minAdvertisedDiskGb(NodeResources requested, ClusterSpec cluster) {
-        return requested.memoryGb() * switch (cluster.type()) {
-            case combined, content -> 3;
+        return minAdvertisedDiskGb(requested, cluster, 3);
+    }
+
+    private static double minAdvertisedDiskGb(NodeResources requested, ClusterSpec cluster, double contentNodeDiskToMemoryRatio) {
+        return requested.memoryGiB() * switch (cluster.type()) {
+            case combined, content -> contentNodeDiskToMemoryRatio;
             case container -> 2;
             default -> 0; // No constraint on other types
         };
@@ -104,7 +109,7 @@ public class NodeResourceLimits {
     }
 
     private double minRealVcpu(ClusterSpec cluster) {
-        return minAdvertisedVcpu(cluster, nodeRepository.exclusiveAllocation(cluster));
+        return minAdvertisedVcpu(cluster, nodeRepository.exclusivity().allocation(cluster));
     }
 
     private static double minRealMemoryGb(ClusterSpec cluster) {

@@ -77,8 +77,8 @@ public:
     FieldIndex(const index::Schema& schema, uint32_t fieldId, const index::FieldLengthInfo& info);
     ~FieldIndex();
 
-    typename PostingList::Iterator find(const vespalib::stringref word) const;
-    typename PostingList::ConstIterator findFrozen(const vespalib::stringref word) const;
+    typename PostingList::Iterator find(const std::string_view word) const;
+    typename PostingList::ConstIterator findFrozen(const std::string_view word) const;
 
     void compactFeatures() override;
 
@@ -87,21 +87,15 @@ public:
     vespalib::MemoryUsage getMemoryUsage() const override;
     PostingListStore &getPostingListStore() { return _postingListStore; }
 
-    void commit() override {
-        _remover.flush();
-        freeze();
-        assign_generation();
-        incGeneration();
-        reclaim_memory();
-    }
+    void commit() override;
 
     /**
      * Should only by used by unit tests.
      */
-    queryeval::SearchIterator::UP make_search_iterator(const vespalib::string& term, uint32_t field_id,
+    queryeval::SearchIterator::UP make_search_iterator(const std::string& term, uint32_t field_id,
                                                        fef::TermFieldMatchDataArray match_data) const;
 
-    std::unique_ptr<queryeval::SimpleLeafBlueprint> make_term_blueprint(const vespalib::string& term,
+    std::unique_ptr<queryeval::SimpleLeafBlueprint> make_term_blueprint(const std::string& term,
                                                                         const queryeval::FieldSpec& field,
                                                                         uint32_t field_id) override;
 };

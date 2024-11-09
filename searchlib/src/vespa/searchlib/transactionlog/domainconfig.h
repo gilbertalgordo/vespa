@@ -33,8 +33,8 @@ struct PartInfo {
     SerialNumRange range;
     size_t numEntries;
     size_t byteSize;
-    vespalib::string file;
-    PartInfo(SerialNumRange range_in, size_t numEntries_in, size_t byteSize_in, vespalib::stringref file_in)
+    std::string file;
+    PartInfo(SerialNumRange range_in, size_t numEntries_in, size_t byteSize_in, std::string_view file_in)
         : range(range_in),
           numEntries(numEntries_in),
           byteSize(byteSize_in),
@@ -55,6 +55,6 @@ struct DomainInfo {
             : range(), numEntries(0), byteSize(0), maxSessionRunTime(), parts() {}
 };
 
-using DomainStats = std::map<vespalib::string, DomainInfo>;
+using DomainStats = std::map<std::string, DomainInfo>;
 
 }

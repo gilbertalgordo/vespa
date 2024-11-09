@@ -152,7 +152,6 @@ public class SlobrokMonitorManagerImpl extends AbstractComponent implements Slob
             case "logserver":
             case "metricsproxy":
             case "slobrok":
-            case "transactionlogserver":
                 return Optional.empty();
 
             case "qrserver":

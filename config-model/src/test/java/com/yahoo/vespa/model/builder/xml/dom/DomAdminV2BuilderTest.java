@@ -17,8 +17,8 @@ import com.yahoo.vespa.model.admin.monitoring.Monitoring;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.w3c.dom.Element;
+
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -112,7 +112,7 @@ public class DomAdminV2BuilderTest extends DomBuilderTest {
 
     @Test
     void multitenant() {
-        List<ConfigServerSpec> configServerSpecs = Arrays.asList(
+        List<ConfigServerSpec> configServerSpecs = List.of(
                 new TestProperties.Spec("test1", 19070, 2181),
                 new TestProperties.Spec("test2", 19070, 2181),
                 new TestProperties.Spec("test3", 19070, 2181));
@@ -197,14 +197,21 @@ public class DomAdminV2BuilderTest extends DomBuilderTest {
         assertEquals(1, admin.getConfigservers().size());
     }
 
+    @Test
+    void containerOnLogserver() {
+        Admin admin = buildAdmin(servicesAdminNoAdminServerOrConfigServer());
+        assertTrue(admin.getLogServerContainerCluster().isPresent());
+        assertEquals("logs", admin.getLogServerContainerCluster().get().getName());
+    }
+
     private Admin buildAdmin(Element xml) {
         return buildAdmin(xml, false, new ArrayList<>());
     }
 
     private Admin buildAdmin(Element xml, boolean multitenant, List<ConfigServerSpec> configServerSpecs) {
         DeployState deployState = DeployState.createTestState();
-        final DomAdminV2Builder domAdminBuilder =
-                new DomAdminV2Builder(ConfigModelContext.ApplicationType.DEFAULT, multitenant, configServerSpecs);
+        ConfigModelContext context = ConfigModelContext.create(deployState, null, (m) -> {}, root, "foo");
+        DomAdminV2Builder domAdminBuilder = new DomAdminV2Builder(context, multitenant, configServerSpecs);
         Admin admin = domAdminBuilder.build(deployState, root, xml);
         admin.addPerHostServices(root.hostSystem().getHosts(), deployState);
         return admin;

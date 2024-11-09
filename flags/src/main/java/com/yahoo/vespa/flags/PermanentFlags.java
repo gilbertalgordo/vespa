@@ -2,6 +2,7 @@
 package com.yahoo.vespa.flags;
 
 import com.yahoo.vespa.flags.custom.ClusterCapacity;
+import com.yahoo.vespa.flags.custom.RoleList;
 import com.yahoo.vespa.flags.custom.SharedHost;
 
 import java.time.Instant;
@@ -14,13 +15,16 @@ import java.util.function.Predicate;
 import java.util.regex.Pattern;
 
 import static com.yahoo.vespa.flags.Dimension.APPLICATION;
+import static com.yahoo.vespa.flags.Dimension.ARCHITECTURE;
 import static com.yahoo.vespa.flags.Dimension.CERTIFICATE_PROVIDER;
+import static com.yahoo.vespa.flags.Dimension.CLAVE;
 import static com.yahoo.vespa.flags.Dimension.CLOUD_ACCOUNT;
-import static com.yahoo.vespa.flags.Dimension.INSTANCE_ID;
 import static com.yahoo.vespa.flags.Dimension.CLUSTER_ID;
 import static com.yahoo.vespa.flags.Dimension.CLUSTER_TYPE;
 import static com.yahoo.vespa.flags.Dimension.CONSOLE_USER_EMAIL;
+import static com.yahoo.vespa.flags.Dimension.FLAVOR;
 import static com.yahoo.vespa.flags.Dimension.HOSTNAME;
+import static com.yahoo.vespa.flags.Dimension.INSTANCE_ID;
 import static com.yahoo.vespa.flags.Dimension.NODE_TYPE;
 import static com.yahoo.vespa.flags.Dimension.TENANT_ID;
 import static com.yahoo.vespa.flags.Dimension.VESPA_VERSION;
@@ -156,7 +160,7 @@ public class PermanentFlags {
             INSTANCE_ID);
 
     public static final UnboundStringFlag METRIC_SET = defineStringFlag(
-            "metric-set", "Vespa",
+            "metric-set", "Vespa9",
             "Determines which metric set we should use for the given application",
             "Takes effect on next host admin tick",
             INSTANCE_ID);
@@ -175,7 +179,7 @@ public class PermanentFlags {
             HOSTNAME, NODE_TYPE, TENANT_ID, INSTANCE_ID, CLUSTER_TYPE, CLUSTER_ID, VESPA_VERSION);
 
     public static final UnboundStringFlag ZOOKEEPER_SERVER_VERSION = defineStringFlag(
-            "zookeeper-server-version", "3.9.1",
+            "zookeeper-server-version", "3.9.2",
             "ZooKeeper server version, a jar file zookeeper-server-<ZOOKEEPER_SERVER_VERSION>-jar-with-dependencies.jar must exist",
             "Takes effect on restart of Docker container",
             NODE_TYPE, INSTANCE_ID, HOSTNAME);
@@ -192,15 +196,15 @@ public class PermanentFlags {
             "Takes effect on next api request"
     );
 
-    public static final UnboundBooleanFlag JVM_OMIT_STACK_TRACE_IN_FAST_THROW = defineFeatureFlag(
-            "jvm-omit-stack-trace-in-fast-throw", true,
-            "Controls JVM option OmitStackTraceInFastThrow (default feature flag value is true, which is the default JVM option value as well)",
-            "takes effect on JVM restart",
-            CLUSTER_TYPE, INSTANCE_ID);
-
     public static final UnboundIntFlag MAX_TRIAL_TENANTS = defineIntFlag(
             "max-trial-tenants", -1,
             "The maximum nr. of tenants with trial plan, -1 is unlimited",
+            "Takes effect immediately"
+    );
+
+    public static final UnboundIntFlag MAX_TENANTS_PER_USER = defineIntFlag(
+            "max-tenants-per-user", 3,
+            "The maximum nr. of tenants a user can create",
             "Takes effect immediately"
     );
 
@@ -276,10 +280,19 @@ public class PermanentFlags {
 
     // This must be set in a feature flag to avoid flickering between the new and old value during config server upgrade
     public static final UnboundDoubleFlag HOST_MEMORY = defineDoubleFlag(
-            "host-memory", 0.6,
-            "The memory in GB required by a host's management processes.",
-            "Takes effect immediately"
-    );
+            "host-memory", -1.0,
+            "The memory in GB required by a host's management processes. " +
+            "A negative value falls back to hard-coded defaults.",
+            "Affects future deployments, JVM settings for new config server Podman containers, auto scaling modelling.",
+            ARCHITECTURE, CLAVE, CLOUD_ACCOUNT, FLAVOR);
+
+    // This must be set in a feature flag to avoid flickering between the new and old value during config server upgrade
+    public static final UnboundDoubleFlag HOST_MEMORY_RATIO = defineDoubleFlag(
+            "host-memory-ratio", -1.0,
+            "The ratio of MemTotal reserved for Linux or host processes, and not available to the Podman containers. " +
+            "A value outside the range [0.0, 1.0] will use a hard-coded ratio.",
+            "Affects future deployments, JVM settings for new config server Podman containers, auto scaling modelling.",
+            ARCHITECTURE, CLAVE, CLOUD_ACCOUNT, FLAVOR);
 
     public static final UnboundBooleanFlag FORWARD_ISSUES_AS_ERRORS = defineFeatureFlag(
             "forward-issues-as-errors", true,
@@ -323,6 +336,12 @@ public class PermanentFlags {
             value -> Set.of("any", "arm64", "x86_64").contains(value),
             INSTANCE_ID);
 
+    public static final UnboundDoubleFlag LOGSERVER_NODE_MEMORY = defineDoubleFlag(
+            "logserver-node-memory", 0.0,
+            "Amount of memory (in GiB) to allocate for logserver nodes",
+            "Takes effect on allocation from node repository",
+            INSTANCE_ID);
+
     public static final UnboundListFlag<String> CLOUD_ACCOUNTS = defineListFlag(
             "cloud-accounts", List.of(), String.class,
             "A list of 12-digit AWS account IDs that are valid for the given tenant",
@@ -360,6 +379,13 @@ public class PermanentFlags {
             "Takes effect immediately"
     );
 
+    public static final UnboundLongFlag CONFIG_SERVER_SESSION_LIFETIME = defineLongFlag(
+            "config-server-session-lifetime", 3600,
+            "Lifetime / expiry time in seconds for config sessions. " +
+            "This can be lowered if there are incidents/bugs where one needs to delete sessions quickly",
+            "Takes effect immediately"
+    );
+
     public static final UnboundBooleanFlag NOTIFICATION_DISPATCH_FLAG = defineFeatureFlag(
             "dispatch-notifications", true,
             "Whether we should send notification for a given tenant",
@@ -392,10 +418,21 @@ public class PermanentFlags {
             "Takes effect immediately",
             INSTANCE_ID);
 
+    public static final UnboundBooleanFlag AUTOSCALING_DETAILED_LOGGING = defineFeatureFlag(
+            "autoscaling-detailed-logging", false,
+            "Whether to log autoscaling decision data",
+            "Takes effect immediately",
+            INSTANCE_ID);
+
     public static final UnboundIntFlag MAX_HOSTS_PER_HOUR = defineIntFlag(
             "max-hosts-per-hour", 40,
             "The number of hosts that can be provisioned per hour in a zone, before throttling is " +
             "triggered",
+            "Takes effect immediately");
+
+    public static final UnboundIntFlag MAX_CERTIFICATES_PER_HOUR = defineIntFlag(
+            "max-certificates-per-hour", 10,
+            "The number of certificates can be provisioned per hour, before throttling is triggered",
             "Takes effect immediately");
 
     public static final UnboundBooleanFlag DROP_CACHES = defineFeatureFlag(
@@ -430,6 +467,48 @@ public class PermanentFlags {
             "Affects generated terraform code, and ip allocation on host provisioning",
             CLOUD_ACCOUNT
     );
+
+    public static final UnboundStringFlag REFRESH_IDENTITY_BOUNDARY = defineStringFlag(
+            "refresh-identity-after", "",
+            "Refresh the identity document and certificates issued before this timestamp. Timestamp in ISO8601 format",
+            "Takes effect on next host admin tick",
+            HOSTNAME
+    );
+
+    public static final UnboundListFlag<String> LOG_REQUEST_CONTENT = defineListFlag(
+            "log-request-content", List.of(), String.class,
+            "Include request content in access log for paths starting with any of these prefixes",
+            "Takes effect on next redeployment",
+            list -> list.stream().allMatch(s -> s.matches("^[a-zA-Z/.0-9-]+:(0(\\.\\d+)?|1(\\.0+)?):\\d+(B|kB|MB|GB)?$")),
+            INSTANCE_ID);
+
+    public static final UnboundIntFlag ZOOKEEPER_JUTE_MAX_BUFFER = defineIntFlag(
+            "zookeeper-jute-max-buffer", 104857600,
+            "Jute maxbuffer. Used by zookeeper to determine max buffer when serializing/deserializing." +
+                    "Values used in server and client must correspond (so if decreasing this one must be sure" +
+                    "that no node has stored more bytes than this)",
+            "Takes effect on next reboot of config server");
+
+    public static UnboundJacksonFlag<RoleList> ROLE_DEFINITIONS = defineJacksonFlag(
+            "role-definitions", RoleList.empty(), RoleList.class,
+            "Role definitions for the system",
+            "Takes effect on next iteration of UserManagementMaintainer");
+
+    public static final UnboundBooleanFlag FORWARD_ALL_LOG_LEVELS = defineFeatureFlag(
+            "forward-all-log-levels", true,
+            "Forward all log levels from nodes to logserver (debug and spam levels will be forwarded only if this flag is enabled)",
+            "Takes effect at redeployment");
+
+    public static final UnboundStringFlag UNKNOWN_CONFIG_DEFINITION = defineStringFlag(
+            "unknown-config-definition", "warn",
+            "How to handle user config referencing unknown config definitions. Valid values are 'warn' and 'fail'",
+            "Takes effect at redeployment",
+            INSTANCE_ID);
+
+    public static final UnboundListFlag<String> ALLOWED_ATHENZ_PROXY_IDENTITIES = defineListFlag(
+            "allowed-athenz-proxy-identities", List.of(), String.class,
+            "Allowed Athenz proxy identities",
+            "takes effect at redeployment");
 
     private PermanentFlags() {}
 
@@ -471,6 +550,11 @@ public class PermanentFlags {
     private static <T> UnboundListFlag<T> defineListFlag(
             String flagId, List<T> defaultValue, Class<T> elementClass, String description, String modificationEffect, Dimension... dimensions) {
         return Flags.defineListFlag(flagId, defaultValue, elementClass, OWNERS, toString(CREATED_AT), toString(EXPIRES_AT), description, modificationEffect, dimensions);
+    }
+
+    private static <T> UnboundListFlag<T> defineListFlag(
+            String flagId, List<T> defaultValue, Class<T> elementClass, String description, String modificationEffect, Predicate<List<T>> validator, Dimension... dimensions) {
+        return Flags.defineListFlag(flagId, defaultValue, elementClass, OWNERS, toString(CREATED_AT), toString(EXPIRES_AT), description, modificationEffect, validator, dimensions);
     }
 
     private static String toString(Instant instant) { return DateTimeFormatter.ISO_DATE.withZone(ZoneOffset.UTC).format(instant); }

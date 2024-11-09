@@ -58,7 +58,7 @@ protected:
     virtual void mergeMemoryStats(vespalib::MemoryUsage & total) { (void) total; }
 
 public:
-    MultiValueEnumAttribute(const vespalib::string & baseFileName, const AttributeVector::Config & cfg);
+    MultiValueEnumAttribute(const std::string & baseFileName, const AttributeVector::Config & cfg);
 
     void onCommit() override;
     void onUpdateStat() override;
@@ -95,7 +95,7 @@ public:
         return valueCount;
     }
 
-    std::unique_ptr<AttributeSaver> onInitSave(vespalib::stringref fileName) override;
+    std::unique_ptr<AttributeSaver> onInitSave(std::string_view fileName) override;
 };
 
 } // namespace search

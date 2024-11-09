@@ -2,32 +2,20 @@
 
 #pragma once
 
-#include "memory_usage_metrics.h"
-#include <map>
+#include "attribute_metrics_entry.h"
+#include "field_metrics.h"
 
 namespace proton {
 
-class AttributeMetrics
+/*
+ * Class containing metrics for the attribute aspect of multiple fields, i.e.
+ * attribute vectors.
+ */
+class AttributeMetrics : public FieldMetrics<AttributeMetricsEntry>
 {
 public:
-    struct Entry : public metrics::MetricSet {
-        using SP = std::shared_ptr<Entry>;
-        MemoryUsageMetrics memoryUsage;
-        Entry(const vespalib::string &attrName);
-    };
-private:
-    using Map = std::map<vespalib::string, Entry::SP>;
-
-    metrics::MetricSet *_parent;
-    Map _attributes;
-
-public:
-    AttributeMetrics(metrics::MetricSet *parent);
-    Entry::SP add(const vespalib::string &attrName);
-    Entry::SP get(const vespalib::string &attrName) const;
-    Entry::SP remove(const vespalib::string &attrName);
-    std::vector<Entry::SP> release();
-    metrics::MetricSet *parent() { return _parent; }
+    AttributeMetrics(metrics::MetricSet* parent);
+    ~AttributeMetrics();
 };
 
 } // namespace proton

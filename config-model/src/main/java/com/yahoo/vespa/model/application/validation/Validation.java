@@ -17,11 +17,12 @@ import com.yahoo.vespa.model.application.validation.change.GlobalDocumentChangeV
 import com.yahoo.vespa.model.application.validation.change.IndexedSearchClusterChangeValidator;
 import com.yahoo.vespa.model.application.validation.change.IndexingModeChangeValidator;
 import com.yahoo.vespa.model.application.validation.change.NodeResourceChangeValidator;
-import com.yahoo.vespa.model.application.validation.change.RedundancyIncreaseValidator;
 import com.yahoo.vespa.model.application.validation.change.ResourcesReductionValidator;
+import com.yahoo.vespa.model.application.validation.change.RestartOnDeployForLocalLLMValidator;
 import com.yahoo.vespa.model.application.validation.change.RestartOnDeployForOnnxModelChangesValidator;
 import com.yahoo.vespa.model.application.validation.change.StartupCommandChangeValidator;
 import com.yahoo.vespa.model.application.validation.change.StreamingSearchClusterChangeValidator;
+import com.yahoo.vespa.model.application.validation.change.VespaRestartAction;
 import com.yahoo.vespa.model.application.validation.first.RedundancyValidator;
 import com.yahoo.yolean.Exceptions;
 
@@ -107,6 +108,7 @@ public class Validation {
         new InfrastructureDeploymentValidator().validate(execution);
         new EndpointCertificateSecretsValidator().validate(execution);
         new CloudClientsValidator().validate(execution);
+        new PagedAttributesRemoteStorageValidator().validate(execution);
     }
 
     private static void validateFirstTimeDeployment(Execution execution) {
@@ -125,10 +127,10 @@ public class Validation {
         new ResourcesReductionValidator().validate(execution);
         new ContainerRestartValidator().validate(execution);
         new NodeResourceChangeValidator().validate(execution);
-        new RedundancyIncreaseValidator().validate(execution);
         new CertificateRemovalChangeValidator().validate(execution);
         new RedundancyValidator().validate(execution);
         new RestartOnDeployForOnnxModelChangesValidator().validate(execution);
+        new RestartOnDeployForLocalLLMValidator().validate(execution);
     }
 
     public interface Context {
@@ -213,6 +215,9 @@ public class Validation {
 
         @Override
         public void require(ConfigChangeAction action) {
+            if (action instanceof VespaRestartAction && action.getServices().isEmpty())
+                throw new IllegalStateException("restart actions must have services specified");
+
             actions.add(action);
             action.validationId().ifPresent(id -> invalid(id, action.getMessage()));
         }

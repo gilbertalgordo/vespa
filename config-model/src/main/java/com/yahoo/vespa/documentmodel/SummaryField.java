@@ -3,10 +3,13 @@ package com.yahoo.vespa.documentmodel;
 
 import com.yahoo.document.DataType;
 import com.yahoo.document.Field;
-import com.yahoo.schema.document.TypedKey;
+import com.yahoo.vespa.objects.FieldBase;
 
 import java.io.Serializable;
-import java.util.*;
+import java.util.Collection;
+import java.util.Iterator;
+import java.util.LinkedHashSet;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 import static com.yahoo.text.Lowercase.toLowerCase;
@@ -16,7 +19,7 @@ import static com.yahoo.text.Lowercase.toLowerCase;
  *
  * @author bratseth
  */
-public class SummaryField extends Field implements Cloneable, TypedKey {
+public class SummaryField extends FieldBase implements Cloneable {
 
     /** A source (field name). */
     public static class Source implements Serializable {
@@ -53,6 +56,7 @@ public class SummaryField extends Field implements Cloneable, TypedKey {
 
     /** The command used per field in vsmsummary */
     private VsmCommand vsmCommand = VsmCommand.NONE;
+    private DataType dataType;
 
     /**
      * The data sources for this output summary field, in prioritized order
@@ -62,7 +66,7 @@ public class SummaryField extends Field implements Cloneable, TypedKey {
      */
     private Set<Source> sources = new java.util.LinkedHashSet<>();
 
-    private Set<String> destinations  =new java.util.LinkedHashSet<>();
+    private Set<String> destinations  = new java.util.LinkedHashSet<>();
 
     /** True if this field was defined implicitly */
     private boolean implicit = false;
@@ -84,8 +88,9 @@ public class SummaryField extends Field implements Cloneable, TypedKey {
     }
 
     public SummaryField(String name, DataType type, SummaryTransform transform) {
-        super(name, type);
+        super(name);
         this.transform=transform;
+        this.dataType = type;
     }
 
     public static SummaryField createWithUnresolvedType(String name) {
@@ -105,6 +110,10 @@ public class SummaryField extends Field implements Cloneable, TypedKey {
     public boolean isImplicit() { return implicit; }
 
     public boolean hasUnresolvedType() { return unresolvedType; }
+
+    public DataType getDataType() {
+        return dataType;
+    }
 
     public void setTransform(SummaryTransform transform) {
         this.transform = transform;
@@ -194,7 +203,7 @@ public class SummaryField extends Field implements Cloneable, TypedKey {
         if (merge.getTransform() != getTransform())
             throw new IllegalArgumentException(merge + " conflicts with " + this + ": different transforms");
 
-        if (!merge.getDataType().equals(getDataType()))
+        if (!merge.dataType.equals(dataType))
             throw new IllegalArgumentException(merge + " conflicts with " + this + ": different types");
 
         setImplicit(false);
@@ -250,7 +259,7 @@ public class SummaryField extends Field implements Cloneable, TypedKey {
 
     /** Returns a string which aids locating this field in the source search definition */
     public String toLocateString() {
-        return "summary " + getName() + " type " + toLowerCase(getDataType().getName()) + " in " + getDestinationString();
+        return "summary " + getName() + " type " + toLowerCase(dataType.getName()) + " in " + getDestinationString();
     }
 
     @Override
@@ -290,9 +299,6 @@ public class SummaryField extends Field implements Cloneable, TypedKey {
 
     public void setResolvedDataType(DataType type) {
         this.dataType = type;
-        if (!hasForcedId()) {
-            this.fieldId = calculateIdV7(null);
-        }
         unresolvedType = false;
     }
 

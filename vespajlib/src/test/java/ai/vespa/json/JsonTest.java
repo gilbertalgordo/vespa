@@ -2,7 +2,13 @@ package ai.vespa.json;
 
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
+import java.util.Optional;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -129,5 +135,82 @@ class JsonTest {
                 .build()
                 .toJson(true);
         assertEquals(expected, json);
+    }
+
+    @Test
+    void add_all() {
+        var expected =
+                """
+                [
+                  1,
+                  2,
+                  3,
+                  4,
+                  5,
+                  6
+                ]
+                """;
+        var json = Json.Builder.newArray()
+                .addAll(Json.Builder.Array.newArray().add(1).add(2).add(3))
+                .add(4)
+                .addAll(Json.Builder.Array.newArray().add(5))
+                .add(6)
+                .build()
+                .toJson(true);
+        assertEquals(expected, json);
+    }
+
+    @Test
+    void collectors() {
+        var expected = Json.Builder.Array.newArray()
+                .add(1).add(2).add(3).add(4).add(5).add(6)
+                .build()
+                .toJson(false);
+        var actual = Stream.of(1, 2, 3, 4, 5, 6)
+                .collect(Json.Collectors.toArray(Json.Builder.Array::add))
+                .toJson(false);
+        assertEquals(expected, actual);
+    }
+
+    @Test
+    void create_builder_from_existing_json() {
+        var jsonArray = Json.Builder.newArray()
+                .add(1)
+                .add(2)
+                .add(3)
+                .build();
+        var jsonArrayCopy = Json.Builder.fromArray(jsonArray).build();
+        assertEquals(jsonArray.toJson(false), jsonArrayCopy.toJson(false));
+
+        var jsonObject = Json.Builder.newObject()
+                .set("foo", "bar")
+                .set("baz", Json.Builder.newArray().add("qux"))
+                .build();
+        var jsonObjectCopy = Json.Builder.fromObject(jsonObject).build();
+        assertEquals(jsonObject.toJson(false), jsonObjectCopy.toJson(false));
+    }
+
+    @Test
+    void handles_null_fields() {
+        var json = Json.of("{\"foo\": null}");
+        var foo = json.f("foo");
+        var bar = json.f("bar");
+
+        assertTrue(foo.isMissing());
+        assertFalse(foo.isPresent());
+        assertFalse(foo.isObject());
+        assertFalse(foo.isArray());
+        assertEquals(Optional.empty(), foo.asOptionalString());
+        assertTrue(foo.isExplicitNull());
+        assertFalse(bar.isExplicitNull());
+    }
+
+    @Test
+    void is_equal_to() {
+        assertTrue(Json.of("{\"foo\": \"bar\"}").isEqualTo(Json.of("{\"foo\": \"bar\"}")));
+        assertTrue(Json.of("{\"foo\": [\"bar\"]}").isEqualTo(Json.of("{\"foo\": [\"bar\"]}")));
+        assertFalse(Json.of("{\"foo\": \"bar\"}").isEqualTo(Json.of("{\"foo\": \"foo\"}")));
+        assertFalse(Json.of("{\"foo\": \"bar\"}").isEqualTo(Json.of("{\"foo\": [\"bar\"]}")));
+        assertTrue(Json.of("{\"foo\": 1, \"bar\": 2}").isEqualTo(Json.of("{\"bar\": 2, \"foo\": 1}")));
     }
 }

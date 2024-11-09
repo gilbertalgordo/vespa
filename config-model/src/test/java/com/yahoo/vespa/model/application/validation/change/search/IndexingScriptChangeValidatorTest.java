@@ -12,7 +12,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.Test;
 
-import java.util.Arrays;
 import java.util.List;
 
 public class IndexingScriptChangeValidatorTest {
@@ -40,6 +39,21 @@ public class IndexingScriptChangeValidatorTest {
         }
     }
 
+    private static class ComplexFixture extends ContentClusterFixture {
+        IndexingScriptChangeValidator validator;
+        public ComplexFixture(String currentSd, String nextSd) throws Exception {
+            super(createClusterFromEntireSd(currentSd), createClusterFromEntireSd(nextSd));
+            validator = new IndexingScriptChangeValidator(ClusterSpec.Id.from("test"),
+                    currentDb().getDerivedConfiguration().getSchema(),
+                    nextDb().getDerivedConfiguration().getSchema());
+        }
+
+        @Override
+        public List<VespaConfigChangeAction> validate() {
+            return validator.validate();
+        }
+    }
+
     private static class ScriptFixture {
 
         private final ScriptExpression currentScript;
@@ -57,6 +71,9 @@ public class IndexingScriptChangeValidatorTest {
 
     private static final String FIELD = "field f1 type string";
     private static final String FIELD_F2 = "field f2 type string";
+    private static final String TENSOR_FIELD_F1 = "field f1 type tensor(x[2])";
+    private static final String TENSOR_FIELD_F2 = "field f2 type tensor(x[2])";
+    private static final String TENSOR_FIELD_F3 = "field f3 type tensor(x[2])";
 
     private static VespaConfigChangeAction expectedReindexingAction(String changedMsg, String fromScript, String toScript) {
         return expectedReindexingAction("f1", changedMsg, fromScript, toScript);
@@ -116,6 +133,28 @@ public class IndexingScriptChangeValidatorTest {
     }
 
     @Test
+    void requireThatAddingIndexAspectForExtraTensorFieldWithChangedInputRequireReindexing() throws Exception {
+        new ComplexFixture(joinLines("schema test {",
+                "  document test {",
+                "    " + TENSOR_FIELD_F1 + " { }",
+                "    " + TENSOR_FIELD_F2 + " { }",
+                "  }",
+                "  " + TENSOR_FIELD_F3 + " { indexing: input f1 | attribute }",
+                "}"),
+                joinLines("schema test {",
+                        "  document test {",
+                        "    " + TENSOR_FIELD_F1 + " { }",
+                        "    " + TENSOR_FIELD_F2 + " { }",
+                        "  }",
+                        "  " + TENSOR_FIELD_F3 + " { indexing: input f2 | index | attribute }",
+                        "}")).
+                assertValidation(List.of(expectedReindexingAction("f3", "add index aspect",
+                                "{ input f1 | attribute f3; }",
+                                "{ input f2 | index f3 | attribute f3; }")));
+    }
+
+
+    @Test
     void requireThatSettingDynamicSummaryIsOk() throws Exception {
         new Fixture(FIELD + " { indexing: summary }",
                 FIELD + " { indexing: summary \n summary: dynamic }").
@@ -126,7 +165,7 @@ public class IndexingScriptChangeValidatorTest {
     void requireThatMultipleChangesRequireReindexing() throws Exception {
         new Fixture(FIELD + " { indexing: index } " + FIELD_F2 + " { indexing: index }",
                 FIELD + " { indexing: index \n stemming: none } " + FIELD_F2 + " { indexing: index \n normalizing: none }").
-                assertValidation(Arrays.asList(expectedReindexingAction("f1", "stemming: 'best' -> 'none'",
+                assertValidation(List.of(expectedReindexingAction("f1", "stemming: 'best' -> 'none'",
                 "{ input f1 | tokenize normalize stem:\"BEST\" | index f1; }",
                 "{ input f1 | tokenize normalize | index f1; }"),
                 expectedReindexingAction("f2", "normalizing: 'ACCENT' -> 'NONE'",

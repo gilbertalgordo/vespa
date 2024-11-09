@@ -2,7 +2,7 @@
 #include <vespa/searchlib/transactionlog/translogclient.h>
 #include <vespa/searchlib/transactionlog/translogserver.h>
 #include <vespa/searchlib/test/directory_handler.h>
-#include <vespa/vespalib/testkit/testapp.h>
+#include <vespa/vespalib/testkit/test_kit.h>
 #include <vespa/vespalib/objects/identifiable.h>
 #include <vespa/searchlib/index/dummyfileheadercontext.h>
 #include <vespa/document/util/bytebuffer.h>
@@ -30,23 +30,23 @@ using search::transactionlog::client::Callback;
 
 namespace {
 
-bool createDomainTest(TransLogClient & tls, const vespalib::string & name, size_t preExistingDomains=0);
-std::unique_ptr<Session> openDomainTest(TransLogClient & tls, const vespalib::string & name);
-bool fillDomainTest(Session * s1, const vespalib::string & name);
+bool createDomainTest(TransLogClient & tls, const std::string & name, size_t preExistingDomains=0);
+std::unique_ptr<Session> openDomainTest(TransLogClient & tls, const std::string & name);
+bool fillDomainTest(Session * s1, const std::string & name);
 void fillDomainTest(Session * s1, size_t numPackets, size_t numEntries);
 void fillDomainTest(Session * s1, size_t numPackets, size_t numEntries, size_t entrySize);
 uint32_t countFiles(const std::string& dir);
 void checkFilledDomainTest(Session &s1, size_t numEntries);
-bool visitDomainTest(TransLogClient & tls, Session * s1, const vespalib::string & name);
-void createAndFillDomain(const vespalib::string & dir, const vespalib::string & name, Encoding encoding, size_t preExistingDomains);
-void verifyDomain(const vespalib::string & dir, const vespalib::string & name);
+bool visitDomainTest(TransLogClient & tls, Session * s1, const std::string & name);
+void createAndFillDomain(const std::string & dir, const std::string & name, Encoding encoding, size_t preExistingDomains);
+void verifyDomain(const std::string & dir, const std::string & name);
 
-vespalib::string
+std::string
 myhex(const void * b, size_t sz)
 {
     static const char * hextab="0123456789ABCDEF";
     const auto * c = static_cast<const unsigned char *>(b);
-    vespalib::string s;
+    std::string s;
     s.reserve(sz*2);
     for (size_t i=0; i < sz; i++) {
         s += hextab[c[i] >> 4];
@@ -260,10 +260,10 @@ IMPLEMENT_IDENTIFIABLE(TestIdentifiable, Identifiable);
 constexpr size_t DEFAULT_PACKET_SIZE = 0xf000;
 
 bool
-createDomainTest(TransLogClient & tls, const vespalib::string & name, size_t preExistingDomains)
+createDomainTest(TransLogClient & tls, const std::string & name, size_t preExistingDomains)
 {
     bool retval(true);
-    std::vector<vespalib::string> dir;
+    std::vector<std::string> dir;
     tls.listDomains(dir);
     EXPECT_EQUAL (dir.size(), preExistingDomains);
     auto s1 = tls.open(name);
@@ -278,7 +278,7 @@ createDomainTest(TransLogClient & tls, const vespalib::string & name, size_t pre
 }
 
 std::unique_ptr<Session>
-openDomainTest(TransLogClient & tls, const vespalib::string & name)
+openDomainTest(TransLogClient & tls, const std::string & name)
 {
     auto s1 = tls.open(name);
     ASSERT_TRUE (s1);
@@ -286,7 +286,7 @@ openDomainTest(TransLogClient & tls, const vespalib::string & name)
 }
 
 bool
-fillDomainTest(Session * s1, const vespalib::string & name)
+fillDomainTest(Session * s1, const std::string & name)
 {
     bool retval(true);
     Packet::Entry e1(1, 1, vespalib::ConstBufferRef("Content in buffer A", 20));
@@ -344,7 +344,7 @@ fillDomainTest(Session * s1, size_t numPackets, size_t numEntries)
 }
 
 void
-fillDomainTest(IDestructorCallback::SP onDone, TransLogServer & tls, const vespalib::string & domain, size_t numPackets, size_t numEntries)
+fillDomainTest(IDestructorCallback::SP onDone, TransLogServer & tls, const std::string & domain, size_t numPackets, size_t numEntries)
 {
     size_t value(0);
     auto domainWriter = tls.getWriter(domain);
@@ -365,7 +365,7 @@ fillDomainTest(IDestructorCallback::SP onDone, TransLogServer & tls, const vespa
 }
 
 void
-fillDomainTest(TransLogServer & tls, const vespalib::string & domain, size_t numPackets, size_t numEntries) {
+fillDomainTest(TransLogServer & tls, const std::string & domain, size_t numPackets, size_t numEntries) {
     vespalib::Gate gate;
     fillDomainTest(std::make_shared<vespalib::GateCallback>(gate), tls, domain, numPackets, numEntries);
     gate.await();
@@ -415,7 +415,7 @@ checkFilledDomainTest(Session &s1, size_t numEntries)
 }
 
 bool
-visitDomainTest(TransLogClient & tls, Session * s1, const vespalib::string & name)
+visitDomainTest(TransLogClient & tls, Session * s1, const std::string & name)
 {
     bool retval(true);
 
@@ -470,7 +470,7 @@ visitDomainTest(TransLogClient & tls, Session * s1, const vespalib::string & nam
 }
 
 double
-getMaxSessionRunTime(TransLogServer &tls, const vespalib::string &domain)
+getMaxSessionRunTime(TransLogServer &tls, const std::string &domain)
 {
     return tls.getDomainStats()[domain].maxSessionRunTime.count();
 }
@@ -478,7 +478,7 @@ getMaxSessionRunTime(TransLogServer &tls, const vespalib::string &domain)
 struct TLS {
     FNET_Transport transport;
     TransLogServer tls;
-    TLS(const vespalib::string &name, int listenPort, const vespalib::string &baseDir,
+    TLS(const std::string &name, int listenPort, const std::string &baseDir,
         const common::FileHeaderContext &fileHeaderContext, const DomainConfig & cfg, size_t maxThreads = 4)
         : transport(),
           tls(transport, name, listenPort, baseDir, fileHeaderContext, cfg, maxThreads)
@@ -492,7 +492,7 @@ struct TLS {
 };
 
 void
-createAndFillDomain(const vespalib::string & dir, const vespalib::string & name, Encoding encoding, size_t preExistingDomains)
+createAndFillDomain(const std::string & dir, const std::string & name, Encoding encoding, size_t preExistingDomains)
 {
     DummyFileHeaderContext fileHeaderContext;
     TLS tlss(dir, 18377, ".", fileHeaderContext,
@@ -505,7 +505,7 @@ createAndFillDomain(const vespalib::string & dir, const vespalib::string & name,
 }
 
 void
-verifyDomain(const vespalib::string & dir, const vespalib::string & name) {
+verifyDomain(const std::string & dir, const std::string & name) {
     DummyFileHeaderContext fileHeaderContext;
     TLS tlss(dir, 18377, ".", fileHeaderContext, createDomainConfig(0x1000000));
     TransLogClient tls(tlss.transport, "tcp/localhost:18377");
@@ -516,36 +516,36 @@ verifyDomain(const vespalib::string & dir, const vespalib::string & name) {
 
 
 void
-testVisitOverGeneratedDomain(const vespalib::string & testDir) {
+testVisitOverGeneratedDomain(const std::string & testDir) {
     DummyFileHeaderContext fileHeaderContext;
     TLS tlss(testDir, 18377, ".", fileHeaderContext, createDomainConfig(0x10000));
     TransLogClient tls(tlss.transport, "tcp/localhost:18377");
 
-    vespalib::string name("test1");
+    std::string name("test1");
     createDomainTest(tls, name);
     auto s1 = openDomainTest(tls, name);
     fillDomainTest(s1.get(), name);
-    EXPECT_EQUAL(0, getMaxSessionRunTime(tlss.tls, "test1"));
+    EXPECT_EQUAL(0.0, getMaxSessionRunTime(tlss.tls, "test1"));
     visitDomainTest(tls, s1.get(), name);
     double maxSessionRunTime = getMaxSessionRunTime(tlss.tls, "test1");
     LOG(info, "testVisitOverGeneratedDomain(): maxSessionRunTime=%f", maxSessionRunTime);
-    EXPECT_GREATER(maxSessionRunTime, 0);
+    EXPECT_GREATER(maxSessionRunTime, 0.0);
 }
 
 void
-testVisitOverPreExistingDomain(const vespalib::string & testDir) {
+testVisitOverPreExistingDomain(const std::string & testDir) {
     // Depends on Test::testVisitOverGeneratedDomain()
     DummyFileHeaderContext fileHeaderContext;
     TLS tlss(testDir, 18377, ".", fileHeaderContext, createDomainConfig(0x10000));
     TransLogClient tls(tlss.transport, "tcp/localhost:18377");
 
-    vespalib::string name("test1");
+    std::string name("test1");
     auto s1 = openDomainTest(tls, name);
     visitDomainTest(tls, s1.get(), name);
 }
 
 void
-partialUpdateTest(const vespalib::string & testDir) {
+partialUpdateTest(const std::string & testDir) {
     DummyFileHeaderContext fileHeaderContext;
     TLS tlss(testDir, 18377, ".", fileHeaderContext, createDomainConfig(0x10000));
     TransLogClient tls(tlss.transport, "tcp/localhost:18377");
@@ -612,7 +612,7 @@ TEST("testCrcVersions") {
         createAndFillDomain(testDir.getDir(),"ccitt_crc32", Encoding(Encoding::Crc::ccitt_crc32, Encoding::Compression::none), 0);
         ASSERT_TRUE(false);
     } catch (vespalib::IllegalArgumentException & e) {
-        EXPECT_TRUE(e.getMessage().find("Compression:none is not allowed for the tls") != vespalib::string::npos);
+        EXPECT_TRUE(e.getMessage().find("Compression:none is not allowed for the tls") != std::string::npos);
     }
     createAndFillDomain(testDir.getDir(), "xxh64", Encoding(Encoding::Crc::xxh64, Encoding::Compression::zstd), 0);
 
@@ -625,7 +625,7 @@ TEST("testRemove") {
     TLS tlss(testDir.getDir(), 18377, ".", fileHeaderContext, createDomainConfig(0x10000));
     TransLogClient tls(tlss.transport, "tcp/localhost:18377");
 
-    vespalib::string name("test-delete");
+    std::string name("test-delete");
     createDomainTest(tls, name);
     auto s1 = openDomainTest(tls, name);
     fillDomainTest(s1.get(), name);
@@ -636,7 +636,7 @@ TEST("testRemove") {
 namespace {
 
 void
-assertVisitStats(TransLogClient &tls, const vespalib::string &domain,
+assertVisitStats(TransLogClient &tls, const std::string &domain,
                  SerialNum visitStart, SerialNum visitEnd,
                  SerialNum expFirstSerial, SerialNum expLastSerial,
                  uint64_t expCount, uint64_t expInOrder)
@@ -667,11 +667,11 @@ assertStatus(Session &s, SerialNum expFirstSerial, SerialNum expLastSerial, uint
 
 
 void
-testSendingAlotOfDataSync(const vespalib::string & testDir) {
+testSendingAlotOfDataSync(const std::string & testDir) {
     const unsigned int NUM_PACKETS = 1000;
     const unsigned int NUM_ENTRIES = 100;
     const unsigned int TOTAL_NUM_ENTRIES = NUM_PACKETS * NUM_ENTRIES;
-    const vespalib::string MANY("many");
+    const std::string MANY("many");
     {
         DummyFileHeaderContext fileHeaderContext;
         TLS tlss(testDir, 18377, ".", fileHeaderContext, createDomainConfig(0x80000));
@@ -736,11 +736,11 @@ testSendingAlotOfDataSync(const vespalib::string & testDir) {
     }
 }
 
-void testSendingAlotOfDataAsync(const vespalib::string & testDir) {
+void testSendingAlotOfDataAsync(const std::string & testDir) {
     const unsigned int NUM_PACKETS = 1000;
     const unsigned int NUM_ENTRIES = 100;
     const unsigned int TOTAL_NUM_ENTRIES = NUM_PACKETS * NUM_ENTRIES;
-    const vespalib::string MANY("many-async");
+    const std::string MANY("many-async");
     {
         DummyFileHeaderContext fileHeaderContext;
         TLS tlss(testDir, 18377, ".", fileHeaderContext, createDomainConfig(0x80000));
@@ -957,9 +957,9 @@ TEST("test truncation after short read") {
     const unsigned int TOTAL_NUM_ENTRIES = NUM_PACKETS * NUM_ENTRIES;
     const unsigned int ENTRYSIZE = 4080;
     test::DirectoryHandler topdir("test10");
-    vespalib::string domain("truncate");
-    vespalib::string dir(topdir.getDir() + "/" + domain);
-    vespalib::string tlsspec("tcp/localhost:18377");
+    std::string domain("truncate");
+    std::string dir(topdir.getDir() + "/" + domain);
+    std::string tlsspec("tcp/localhost:18377");
 
 
     DomainConfig domainConfig = createDomainConfig(0x10000);
@@ -986,7 +986,7 @@ TEST("test truncation after short read") {
     }
     EXPECT_EQUAL(2u, countFiles(dir));
     {
-        vespalib::string filename(dir + "/truncate-0000000000000017");
+        std::string filename(dir + "/truncate-0000000000000017");
         FastOS_File trfile(filename.c_str());
         EXPECT_TRUE(trfile.OpenReadWrite(nullptr));
         trfile.SetSize(trfile.getSize() - 1);

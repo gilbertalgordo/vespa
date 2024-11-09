@@ -4,10 +4,10 @@
 
 #include <vespa/searchlib/common/converters.h>
 #include <vespa/searchcommon/common/iblobconverter.h>
-#include <vespa/vespalib/stllike/string.h>
 #include <unicode/coll.h>
-#include <vector>
 #include <cassert>
+#include <string>
+#include <vector>
 
 namespace search {
 
@@ -18,20 +18,20 @@ namespace uca {
 
 class UcaConverterFactory : public ConverterFactory {
 public:
-    BlobConverter::UP create(stringref local, stringref strength) const override;
+    BlobConverter::UP create(string_view local, string_view strength) const override;
 };
 
 class UcaConverter : public BlobConverter
 {
 public:
     using Collator = icu::Collator;
-    UcaConverter(vespalib::stringref locale, vespalib::stringref strength);
-    ~UcaConverter();
+    UcaConverter(std::string_view locale, std::string_view strength);
+    ~UcaConverter() override;
     const Collator & getCollator() const { return *_collator; }
 private:
     struct Buffer {
-        vespalib::string _data;
-        uint8_t *ptr() { return (uint8_t *)_data.begin(); }
+        std::string _data;
+        uint8_t *ptr() { return (uint8_t *)_data.data(); }
         int32_t siz() { return _data.size(); }
         Buffer() : _data() {
             reserve(_data.capacity()-8); // do not cause extra malloc() by default

@@ -41,7 +41,7 @@ func TestQuoteFunc(t *testing.T) {
 	var buf []byte = make([]byte, 3)
 	buf[0] = 'a'
 	buf[2] = 'z'
-	for i := 0; i < 256; i++ {
+	for i := range 256 {
 		buf[1] = byte(i)
 		s := string(buf)
 		res := quoteArgForUrl(s)
@@ -61,7 +61,9 @@ func TestRunOneVisit(t *testing.T) {
 	op := func(service *vespa.Service) {
 		vArgs := visitArgs{
 			contentCluster: "fooCC",
+			header:         make(http.Header),
 		}
+		vArgs.header.Set("X-Foo", "Bar")
 		vvo, res := runOneVisit(&vArgs, service, "BBBB")
 		assert.Equal(t, true, res.Success)
 		assert.Equal(t, "visited fooCC", res.Message)
@@ -75,6 +77,7 @@ func TestRunOneVisit(t *testing.T) {
 	}
 	req := withMockClient(t, withResponse, op)
 	assert.Equal(t, "cluster=fooCC&continuation=BBBB", req.URL.RawQuery)
+	assert.Equal(t, "Bar", req.Header.Get("X-Foo"))
 
 	op = func(service *vespa.Service) {
 		vArgs := visitArgs{
@@ -97,7 +100,7 @@ func withMockClient(t *testing.T, prepCli func(*mock.HTTPClient), runOp func(*ve
 	prepCli(client)
 	cli, _, _ := newTestCLI(t)
 	cli.httpClient = client
-	service, err := documentService(cli, 0)
+	service, err := documentService(cli, &Waiter{cli: cli})
 	if err != nil {
 		t.Fatal(err)
 	}

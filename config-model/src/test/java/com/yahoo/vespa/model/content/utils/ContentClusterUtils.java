@@ -16,7 +16,6 @@ import com.yahoo.vespa.model.admin.monitoring.builder.Metrics;
 import com.yahoo.vespa.model.content.cluster.ContentCluster;
 import org.w3c.dom.Document;
 
-import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 
@@ -62,12 +61,13 @@ public class ContentClusterUtils {
                                 new Metrics(),
                                 root.getDeployState().getProperties().multitenant(),
                                 root.getDeployState().isHosted(),
-                                applicationType);
+                                applicationType,
+                                root.getDeployState().featureFlags());
         Document doc = XML.getDocument(clusterXml);
         ConfigModelContext context = ConfigModelContext.create(applicationType, root.getDeployState(),
                                                                null,null, root, null);
 
-        return new ContentCluster.Builder(admin).build(Collections.emptyList(), context, doc.getDocumentElement());
+        return new ContentCluster.Builder(admin).build(List.of(), context, doc.getDocumentElement());
     }
 
     public static ContentCluster createCluster(String clusterXml, List<String> schemas, DeployState.Builder deployStateBuilder) throws Exception {

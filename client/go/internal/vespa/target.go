@@ -3,11 +3,14 @@
 package vespa
 
 import (
+	"bytes"
 	"crypto/tls"
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -36,8 +39,14 @@ const (
 	AnyDeployment int64 = -2
 )
 
-var errWaitTimeout = errors.New("giving up")
 var errAuth = errors.New("auth failed")
+
+var (
+	// ErrWaitTimeout is the error returned when waiting for something times out.
+	ErrWaitTimeout = errors.New("wait deadline reached")
+	// ErrDeployment is the error returned for terminal deployment failures.
+	ErrDeployment = errors.New("deployment failed")
+)
 
 // Authenticator authenticates the given HTTP request.
 type Authenticator interface {
@@ -114,15 +123,18 @@ type Target interface {
 	// PrintLog writes the logs of this deployment using given options to control output.
 	PrintLog(options LogOptions) error
 
-	// CheckVersion verifies whether clientVersion is compatible with this target.
-	CheckVersion(clientVersion version.Version) error
+	// CompatibleWith returns nil if target is compatible with the given version.
+	CompatibleWith(version version.Version) error
 }
 
 // TLSOptions holds the client certificate to use for cloud API or service requests.
 type TLSOptions struct {
-	CACertificate []byte
-	KeyPair       []tls.Certificate
-	TrustAll      bool
+	KeyPair  []tls.Certificate
+	TrustAll bool
+
+	CACertificatePEM []byte
+	CertificatePEM   []byte
+	PrivateKeyPEM    []byte
 
 	CACertificateFile string
 	CertificateFile   string
@@ -143,7 +155,7 @@ type LogOptions struct {
 func (s *Service) Do(request *http.Request, timeout time.Duration) (*http.Response, error) {
 	if !s.customClient {
 		// Do not override TLS config if a custom client has been configured
-		httputil.ConfigureTLS(s.httpClient, s.TLSOptions.KeyPair, s.TLSOptions.CACertificate, s.TLSOptions.TrustAll)
+		httputil.ConfigureTLS(s.httpClient, s.TLSOptions.KeyPair, s.TLSOptions.CACertificatePEM, s.TLSOptions.TrustAll)
 	}
 	if s.auth != nil {
 		if err := s.auth.Authenticate(request); err != nil {
@@ -243,6 +255,64 @@ func isOK(status int) (bool, error) {
 	}
 }
 
+func deployServiceWait(target Target, fn responseFunc, reqFn requestFunc, timeout, retryInterval time.Duration) (int, error) {
+	deployService, err := target.DeployService()
+	if err != nil {
+		return 0, err
+	}
+	return wait(deployService, fn, reqFn, timeout, retryInterval)
+}
+
+func pollLogs(target Target, logsURL string, options LogOptions, retryInterval time.Duration) error {
+	req, err := http.NewRequest("GET", logsURL, nil)
+	if err != nil {
+		return err
+	}
+	lastFrom := options.From
+	requestFunc := func() *http.Request {
+		fromMillis := lastFrom.Unix() * 1000
+		q := req.URL.Query()
+		q.Set("from", strconv.FormatInt(fromMillis, 10))
+		if !options.To.IsZero() {
+			toMillis := options.To.Unix() * 1000
+			q.Set("to", strconv.FormatInt(toMillis, 10))
+		}
+		req.URL.RawQuery = q.Encode()
+		return req
+	}
+	logFunc := func(status int, response []byte) (bool, error) {
+		if ok, err := isOK(status); !ok {
+			return ok, err
+		}
+		logEntries, err := ReadLogEntries(bytes.NewReader(response))
+		if err != nil {
+			return false, err
+		}
+		for _, le := range logEntries {
+			if !le.Time.After(lastFrom) {
+				continue
+			}
+			if LogLevel(le.Level) > options.Level {
+				continue
+			}
+			fmt.Fprintln(options.Writer, le.Format(options.Dequote))
+		}
+		if len(logEntries) > 0 {
+			lastFrom = logEntries[len(logEntries)-1].Time
+		}
+		return false, nil
+	}
+	var timeout time.Duration
+	if options.Follow {
+		timeout = math.MaxInt64 // No timeout
+	}
+	// Ignore wait error because logFunc has no concept of completion, we just want to print log entries until timeout is reached
+	if _, err := deployServiceWait(target, logFunc, requestFunc, timeout, retryInterval); err != nil && !errors.Is(err, ErrWaitTimeout) {
+		return fmt.Errorf("failed to read logs: %s", err)
+	}
+	return nil
+}
+
 // responseFunc returns whether a HTTP request is considered successful, based on its status and response data.
 // Returning false indicates that the operation should be retried. An error is returned if the response is considered
 // terminal and that the request should not be retried.
@@ -290,7 +360,7 @@ func wait(service *Service, okFn responseFunc, reqFn requestFunc, timeout, retry
 		time.Sleep(retryInterval)
 	}
 	if err == nil {
-		return status, errWaitTimeout
+		return status, ErrWaitTimeout
 	}
 	return status, err
 }

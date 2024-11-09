@@ -10,11 +10,11 @@ LOG_SETUP(".fef.matchdatabuilder");
 
 namespace search::fef::test {
 
-MatchDataBuilder::MatchDataBuilder(QueryEnvironment &queryEnv, MatchData &data) :
-    _queryEnv(queryEnv),
-    _data(data),
-    _index(),
-    _match()
+MatchDataBuilder::MatchDataBuilder(QueryEnvironment &queryEnv, MatchData &data)
+    : _queryEnv(queryEnv),
+      _data(data),
+      _index(),
+      _match()
 {
     // reset all match data objects.
     for (TermFieldHandle handle = 0; handle < _data.getNumTermFields(); ++handle) {
@@ -22,7 +22,7 @@ MatchDataBuilder::MatchDataBuilder(QueryEnvironment &queryEnv, MatchData &data) 
     }
 }
 
-MatchDataBuilder::~MatchDataBuilder() {}
+MatchDataBuilder::~MatchDataBuilder() = default;
 
 TermFieldMatchData *
 MatchDataBuilder::getTermFieldMatchData(uint32_t termId, uint32_t fieldId)
@@ -40,7 +40,7 @@ MatchDataBuilder::getTermFieldMatchData(uint32_t termId, uint32_t fieldId)
 
 
 bool
-MatchDataBuilder::setFieldLength(const vespalib::string &fieldName, uint32_t length)
+MatchDataBuilder::setFieldLength(const std::string &fieldName, uint32_t length)
 {
     const FieldInfo *info = _queryEnv.getIndexEnv()->getFieldByName(fieldName);
     if (info == nullptr) {
@@ -52,19 +52,19 @@ MatchDataBuilder::setFieldLength(const vespalib::string &fieldName, uint32_t len
 }
 
 bool
-MatchDataBuilder::addElement(const vespalib::string &fieldName, int32_t weight, uint32_t length)
+MatchDataBuilder::addElement(const std::string &fieldName, int32_t weight, uint32_t length)
 {
     const FieldInfo *info = _queryEnv.getIndexEnv()->getFieldByName(fieldName);
     if (info == nullptr) {
         LOG(error, "Field '%s' does not exist.", fieldName.c_str());
         return false;
     }
-    _index[info->id()].elements.push_back(MyElement(weight, length));
+    _index[info->id()].elements.emplace_back(weight, length);
     return true;
 }
 
 bool
-MatchDataBuilder::addOccurence(const vespalib::string &fieldName, uint32_t termId, uint32_t pos, uint32_t element)
+MatchDataBuilder::addOccurence(const std::string &fieldName, uint32_t termId, uint32_t pos, uint32_t element)
 {
     const FieldInfo *info = _queryEnv.getIndexEnv()->getFieldByName(fieldName);
     if (info == nullptr) {
@@ -77,8 +77,7 @@ MatchDataBuilder::addOccurence(const vespalib::string &fieldName, uint32_t termI
     }
     const ITermFieldData *tfd = _queryEnv.getTerm(termId)->lookupField(info->id());
     if (tfd == nullptr) {
-        LOG(error, "Field '%s' is not searched by the given term.",
-            fieldName.c_str());
+        LOG(error, "Field '%s' is not searched by the given term.", fieldName.c_str());
         return false;
     }
     _match[termId][info->id()].insert(Position(pos, element));
@@ -86,7 +85,7 @@ MatchDataBuilder::addOccurence(const vespalib::string &fieldName, uint32_t termI
 }
 
 bool
-MatchDataBuilder::setWeight(const vespalib::string &fieldName, uint32_t termId, int32_t weight)
+MatchDataBuilder::setWeight(const std::string &fieldName, uint32_t termId, int32_t weight)
 {
     const FieldInfo *info = _queryEnv.getIndexEnv()->getFieldByName(fieldName);
     if (info == nullptr) {
@@ -99,14 +98,13 @@ MatchDataBuilder::setWeight(const vespalib::string &fieldName, uint32_t termId, 
     }
     const ITermFieldData *tfd = _queryEnv.getTerm(termId)->lookupField(info->id());
     if (tfd == nullptr) {
-        LOG(error, "Field '%s' is not searched by the given term.",
-            fieldName.c_str());
+        LOG(error, "Field '%s' is not searched by the given term.", fieldName.c_str());
         return false;
     }
     uint32_t eid = _index[info->id()].elements.size();
     _match[termId][info->id()].clear();
     _match[termId][info->id()].insert(Position(0, eid));
-    _index[info->id()].elements.push_back(MyElement(weight, 1));
+    _index[info->id()].elements.emplace_back(weight, 1);
     return true;
 }
 
@@ -137,24 +135,18 @@ MatchDataBuilder::apply(uint32_t docId)
 
             // For log, attempt to lookup field name.
             const FieldInfo *info = _queryEnv.getIndexEnv()->getField(fieldId);
-            vespalib::string name = info != nullptr ? info->name() : vespalib::make_string("%d", fieldId).c_str();
+            std::string name = info != nullptr ? info->name() : vespalib::make_string("%d", fieldId).c_str();
 
             // For each occurence of that term, in that field, do
             for (const auto& occ : field_elem.second) {
                 // Append a term match position to the term match data.
-                match->appendPosition(TermFieldMatchDataPosition(
-                                              occ.eid,
-                                              occ.pos,
-                                              field.getWeight(occ.eid),
-                                              field.getLength(occ.eid)));
-                LOG(debug,
-                    "Added occurence of term '%u' in field '%s'"
-                    " at position '%u'.",
+                match->appendPosition(TermFieldMatchDataPosition(occ.eid, occ.pos,
+                                                                 field.getWeight(occ.eid),
+                                                                 field.getLength(occ.eid)));
+                LOG(debug, "Added occurence of term '%u' in field '%s' at position '%u'.",
                     termId, name.c_str(), occ.pos);
                 if (occ.pos >= field.getLength(occ.eid)) {
-                    LOG(warning,
-                        "Added occurence of term '%u' in field '%s'"
-                        " at position '%u' >= fieldLen '%u'.",
+                    LOG(warning, "Added occurence of term '%u' in field '%s' at position '%u' >= fieldLen '%u'.",
                         termId, name.c_str(), occ.pos, field.getLength(occ.eid));
                 }
             }

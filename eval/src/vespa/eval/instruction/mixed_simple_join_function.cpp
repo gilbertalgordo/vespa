@@ -6,12 +6,12 @@
 #include <vespa/eval/eval/operation.h>
 #include <vespa/eval/eval/inline_operation.h>
 #include <vespa/vespalib/util/typify.h>
+#include <vespa/vespalib/util/unconstify_span.h>
 #include <optional>
 #include <algorithm>
 
 namespace vespalib::eval {
 
-using vespalib::ArrayRef;
 
 using namespace operation;
 using namespace tensor_function;
@@ -47,7 +47,7 @@ struct JoinParams {
 };
 
 template <typename OCT, bool pri_mut, typename PCT>
-ArrayRef<OCT> make_dst_cells(ConstArrayRef<PCT> pri_cells, Stash &stash) {
+std::span<OCT> make_dst_cells(std::span<const PCT> pri_cells, Stash &stash) {
     if constexpr (pri_mut && std::is_same<PCT,OCT>::value) {
         return unconstify(pri_cells);
     } else {
@@ -70,7 +70,7 @@ void my_simple_join_op(State &state, uint64_t param) {
     size_t offset = 0;
     while (offset < pri_cells.size()) {
         if constexpr (overlap == Overlap::FULL) {
-            apply_op2_vec_vec(&dst_cells[offset], &pri_cells[offset], sec_cells.begin(), subspace_size, my_op);
+            apply_op2_vec_vec(&dst_cells[offset], &pri_cells[offset], sec_cells.data(), subspace_size, my_op);
             offset += subspace_size;
         } else if constexpr (overlap == Overlap::OUTER) {
             size_t factor = params.factor;
@@ -82,7 +82,7 @@ void my_simple_join_op(State &state, uint64_t param) {
             static_assert(overlap == Overlap::INNER);
             size_t factor = params.factor;
             for (size_t i = 0; i < factor; ++i) {
-                apply_op2_vec_vec(&dst_cells[offset], &pri_cells[offset], sec_cells.begin(), sec_cells.size(), my_op);
+                apply_op2_vec_vec(&dst_cells[offset], &pri_cells[offset], sec_cells.data(), sec_cells.size(), my_op);
                 offset += sec_cells.size();
             }
         }

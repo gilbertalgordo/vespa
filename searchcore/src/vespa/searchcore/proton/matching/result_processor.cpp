@@ -26,7 +26,7 @@ ResultProcessor::Result::Result(std::unique_ptr<search::engine::SearchReply> rep
 
 ResultProcessor::Result::~Result() = default;
 
-ResultProcessor::Sort::Sort(uint32_t partitionId, const vespalib::Doom & doom, IAttributeContext &ac, const vespalib::string &ss)
+ResultProcessor::Sort::Sort(uint32_t partitionId, const vespalib::Doom & doom, IAttributeContext &ac, const std::string &ss)
     : sorter(FastS_DefaultResultSorter::instance()),
       _ucaFactory(std::make_unique<search::uca::UcaConverterFactory>()),
       sortSpec(DocumentMetaStoreAttribute::getFixedName(), partitionId, doom, *_ucaFactory)
@@ -60,8 +60,8 @@ ResultProcessor::ResultProcessor(IAttributeContext &attrContext,
                                  const search::IDocumentMetaStore &metaStore,
                                  SessionManager &sessionMgr,
                                  GroupingContext &groupingContext,
-                                 const vespalib::string &sessionId,
-                                 const vespalib::string &sortSpec,
+                                 const std::string &sessionId,
+                                 const std::string &sortSpec,
                                  size_t offset, size_t hits)
     : _attrContext(attrContext),
       _metaStore(metaStore),
@@ -74,7 +74,7 @@ ResultProcessor::ResultProcessor(IAttributeContext &attrContext,
       _wasMerged(false)
 {
     if (!_groupingContext.empty()) {
-        _groupingSession = std::make_unique<GroupingSession>(sessionId, _groupingContext, attrContext);
+        _groupingSession = std::make_unique<GroupingSession>(sessionId, _groupingContext, attrContext, nullptr);
     }
 }
 
@@ -98,7 +98,7 @@ ResultProcessor::createThreadContext(const vespalib::Doom & hardDoom, size_t thr
     auto result = std::make_unique<PartialResult>((_offset + _hits), sort->hasSortData());
     search::grouping::GroupingContext::UP groupingContext;
     if (_groupingSession) {
-        groupingContext = _groupingSession->createThreadContext(thread_id, _attrContext);
+        groupingContext = _groupingSession->createThreadContext(thread_id, _attrContext, nullptr);
     }
     return std::make_unique<Context>(_metaStore.getValidLids(), std::move(sort), std::move(result), std::move(groupingContext));
 }
@@ -127,7 +127,6 @@ ResultProcessor::makeReply(PartialResultUP full_result)
         if (_wasMerged) {
             _groupingSession->getGroupingManager().prune();
         }
-        _groupingSession->getGroupingManager().convertToGlobalId(_metaStore);
         _groupingSession->continueExecution(_groupingContext);
         numFs4Hits = _groupingContext.countFS4Hits();
         _groupingContext.getResult().swap(r.groupResult);
@@ -146,6 +145,8 @@ ResultProcessor::makeReply(PartialResultUP full_result)
         uint32_t docId = src.getDocId();
         if (_metaStore.getGidEvenIfMoved(docId, gid)) {
             dst.gid = gid;
+        } else {
+            LOG(warning, "Missing globalid for hit %u", docId);
         }
         dst.metric = src.getRank();
         LOG(debug, "convertLidToGid: hit[%zu]: lid(%u) -> gid(%s)", i, docId, dst.gid.toString().c_str());

@@ -1,6 +1,7 @@
 // Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.jdisc.http.server.jetty;
 
+import ai.vespa.utils.BytesQuantity;
 import com.google.inject.AbstractModule;
 import com.google.inject.Module;
 import com.yahoo.container.logging.ConnectionLog;
@@ -54,7 +55,6 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
@@ -83,6 +83,7 @@ import static com.yahoo.jdisc.http.server.jetty.SimpleHttpClient.ResponseValidat
 import static com.yahoo.jdisc.http.server.jetty.Utils.createHttp2Client;
 import static com.yahoo.jdisc.http.server.jetty.Utils.createSslTestDriver;
 import static com.yahoo.jdisc.http.server.jetty.Utils.generatePrivateKeyAndCertificate;
+import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.hamcrest.CoreMatchers.containsString;
 import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.CoreMatchers.startsWith;
@@ -667,7 +668,7 @@ public class HttpServerTest {
 
     private ResponseMetricAggregator.StatisticsEntry waitForStatistics(ResponseMetricAggregator
                                                                                       statisticsCollector) {
-        List<ResponseMetricAggregator.StatisticsEntry> entries = Collections.emptyList();
+        List<ResponseMetricAggregator.StatisticsEntry> entries = List.of();
         int tries = 0;
         // Wait up to 30 seconds before giving up
         while (entries.isEmpty() && tries < 300) {
@@ -743,12 +744,26 @@ public class HttpServerTest {
         JettyTestDriver driver = JettyTestDriver.newConfiguredInstance(
                 new EchoRequestHandler(),
                 new ServerConfig.Builder(),
-                new ConnectorConfig.Builder(),
+                new ConnectorConfig.Builder().accessLog(
+                        new ConnectorConfig.AccessLog.Builder()
+                                .content(List.of(
+                                        new ConnectorConfig.AccessLog.Content.Builder()
+                                                .pathPrefix("/search")
+                                                .maxSize(BytesQuantity.ofKB(1).toBytes())
+                                                .sampleRate(1),
+                                        new ConnectorConfig.AccessLog.Content.Builder()
+                                                .pathPrefix("/document/v1")
+                                                .maxSize(BytesQuantity.ofMB(1).toBytes())
+                                                .sampleRate(0.001)
+                                ))),
                 binder -> binder.bind(RequestLog.class).toInstance(requestLogMock));
-        driver.client().newPost("/status.html").setContent("abcdef").execute().expectStatusCode(is(OK));
+        driver.client().newPost("/search/").setContent("abcdef").execute().expectStatusCode(is(OK));
         RequestLogEntry entry = requestLogMock.poll(Duration.ofSeconds(5));
         assertEquals(200, entry.statusCode().getAsInt());
         assertEquals(6, entry.requestSize().getAsLong());
+        assertEquals("text/plain; charset=UTF-8", entry.content().get().type());
+        assertEquals(6, entry.content().get().length());
+        assertEquals("abcdef", new String(entry.content().get().body(), UTF_8));
         assertTrue(driver.close());
     }
 
@@ -895,7 +910,7 @@ public class HttpServerTest {
             final HttpRequest httpRequest = (HttpRequest)request;
             final String connectedAt = String.valueOf(httpRequest.getConnectedAt(TimeUnit.MILLISECONDS));
             final ContentChannel ch = handler.handleResponse(new Response(OK));
-            ch.write(ByteBuffer.wrap(connectedAt.getBytes(StandardCharsets.UTF_8)), null);
+            ch.write(ByteBuffer.wrap(connectedAt.getBytes(UTF_8)), null);
             ch.close(null);
             return null;
         }
@@ -912,7 +927,7 @@ public class HttpServerTest {
         @Override
         public ContentChannel handleRequest(final Request request, final ResponseHandler handler) {
             final HttpResponse response = HttpResponse.newInstance(OK);
-            response.encodeSetCookieHeader(Collections.singletonList(cookie));
+            response.encodeSetCookieHeader(List.of(cookie));
             ResponseDispatch.newInstance(response).dispatch(handler);
             return null;
         }
@@ -922,10 +937,10 @@ public class HttpServerTest {
 
         @Override
         public ContentChannel handleRequest(final Request request, final ResponseHandler handler) {
-            final List<Cookie> cookies = new ArrayList<>(((HttpRequest)request).decodeCookieHeader());
-            Collections.sort(cookies, new CookieComparator());
+            List<Cookie> cookies = new ArrayList<>(((HttpRequest)request).decodeCookieHeader());
+            cookies.sort(new CookieComparator());
             final ContentChannel out = ResponseDispatch.newInstance(Response.Status.OK).connect(handler);
-            out.write(StandardCharsets.UTF_8.encode(cookies.toString()), null);
+            out.write(UTF_8.encode(cookies.toString()), null);
             out.close(null);
             return null;
         }
@@ -939,7 +954,7 @@ public class HttpServerTest {
         public ContentChannel handleRequest(Request request, ResponseHandler handler) {
             Map<String, List<String>> parameters = new TreeMap<>(((HttpRequest)request).parameters());
             ContentChannel responseContentChannel = ResponseDispatch.newInstance(Response.Status.OK).connect(handler);
-            responseContentChannel.write(ByteBuffer.wrap(parameters.toString().getBytes(StandardCharsets.UTF_8)),
+            responseContentChannel.write(ByteBuffer.wrap(parameters.toString().getBytes(UTF_8)),
                                          NULL_COMPLETION_HANDLER);
 
             // Have the request content written back to the response.
@@ -1013,7 +1028,7 @@ public class HttpServerTest {
         @Override
         public ContentChannel handleRequest(Request req, ResponseHandler handler) {
             final ContentChannel ch = handler.handleResponse(new Response(OK));
-            ch.write(ByteBuffer.wrap(req.getUri().toString().getBytes(StandardCharsets.UTF_8)), null);
+            ch.write(ByteBuffer.wrap(req.getUri().toString().getBytes(UTF_8)), null);
             ch.close(null);
             return null;
         }

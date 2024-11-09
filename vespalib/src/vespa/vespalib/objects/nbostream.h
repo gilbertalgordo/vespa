@@ -1,12 +1,12 @@
 // Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 #pragma once
 
-#include <vector>
-#include <vespa/vespalib/stllike/string.h>
+#include "nbo.h"
 #include <vespa/vespalib/util/array.h>
 #include <vespa/vespalib/util/buffer.h>
 #include <vespa/vespalib/util/bfloat16.h>
-#include "nbo.h"
+#include <string>
+#include <vector>
 
 namespace vespalib {
 
@@ -22,7 +22,7 @@ public:
     using Buffer = Array<char>;
     using Alloc = alloc::Alloc;
     enum State { ok=0, eof=0x01, oob=0x02};
-    nbostream(size_t initialSize=1024);
+    explicit nbostream(size_t initialSize=1024);
 protected:
     nbostream(const void * buf, size_t sz, bool longLivedBuffer);
 public:
@@ -61,22 +61,10 @@ public:
     nbostream & operator >> (char & v)     { read1(&v); return *this; }
     nbostream & operator << (bool v)       { write1(&v); return *this; }
     nbostream & operator >> (bool & v)     { read1(&v); return *this; }
-    nbostream & operator << (const std::string & v)      { uint32_t sz(v.size()); (*this) << sz; write(v.c_str(), sz); return *this; }
-    nbostream & operator >> (std::string & v) {
-        uint32_t sz;
-        (*this) >> sz;
-        if (__builtin_expect(left() >= sz, true)) {
-            v.assign(&_rbuf[_rp], sz);
-            _rp += sz;
-        } else {
-            fail(eof);
-        }
-        return *this;
-     }
     nbostream & operator << (const char * v) { uint32_t sz(strlen(v)); (*this) << sz; write(v, sz); return *this; }
-    nbostream & operator << (vespalib::stringref v) { uint32_t sz(v.size()); (*this) << sz; write(v.data(), sz); return *this; }
-    nbostream & operator << (const vespalib::string & v) { uint32_t sz(v.size()); (*this) << sz; write(v.c_str(), sz); return *this; }
-    nbostream & operator >> (vespalib::string & v) {
+    nbostream & operator << (std::string_view v) { uint32_t sz(v.size()); (*this) << sz; write(v.data(), sz); return *this; }
+    nbostream & operator << (const std::string & v) { uint32_t sz(v.size()); (*this) << sz; write(v.c_str(), sz); return *this; }
+    nbostream & operator >> (std::string & v) {
         uint32_t sz; (*this) >> sz;
         if (__builtin_expect(left() >= sz, true)) {
             v.assign(&_rbuf[_rp], sz);
@@ -107,17 +95,13 @@ public:
     }
 
     template <typename T, typename U>
-    nbostream &
-    operator<<(const std::pair<T, U> &val)
-    {
+    nbostream & operator<<(const std::pair<T, U> &val) {
         *this << val.first << val.second;
         return *this;
     }
 
     template <typename T, typename U>
-    nbostream &
-    operator>>(std::pair<T, U> &val)
-    {
+    nbostream & operator>>(std::pair<T, U> &val) {
         *this >> val.first >> val.second;
         return *this;
     }
@@ -186,11 +170,11 @@ public:
             return readValue<uint32_t>() & 0x7fffffff;
         }
     }
-    void writeSmallString(vespalib::stringref value) {
+    void writeSmallString(std::string_view value) {
         putInt1_4Bytes(value.size());
         write(value.data(), value.size());
     }
-    void readSmallString(vespalib::string &value) {
+    void readSmallString(std::string &value) {
         size_t strSize = getInt1_4Bytes();
         const char *cstr = peek();
         value.assign(cstr, strSize);
@@ -220,7 +204,7 @@ public:
 
 class nbostream_longlivedbuf : public nbostream {
 public:
-    nbostream_longlivedbuf(size_t initialSize=1024);
+    explicit nbostream_longlivedbuf(size_t initialSize=1024);
     nbostream_longlivedbuf(const void * buf, size_t sz);
 };
 

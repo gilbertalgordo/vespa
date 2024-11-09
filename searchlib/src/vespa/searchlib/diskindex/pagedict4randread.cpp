@@ -1,8 +1,8 @@
 // Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include "pagedict4randread.h"
-#include <vespa/vespalib/stllike/asciistream.h>
 #include <vespa/vespalib/data/fileheader.h>
+#include <vespa/vespalib/stllike/asciistream.h>
 #include <vespa/fastos/file.h>
 
 #include <vespa/log/log.h>
@@ -10,9 +10,9 @@ LOG_SETUP(".diskindex.pagedict4randread");
 
 namespace {
 
-vespalib::string myPId("PageDict4P.1");
-vespalib::string mySPId("PageDict4SP.1");
-vespalib::string mySSId("PageDict4SS.1");
+std::string myPId("PageDict4P.1");
+std::string mySPId("PageDict4SP.1");
+std::string mySSId("PageDict4SS.1");
 
 }
 
@@ -33,7 +33,8 @@ PageDict4RandRead::PageDict4RandRead()
       _pFileBitSize(0u),
       _ssHeaderLen(0u),
       _spHeaderLen(0u),
-      _pHeaderLen(0u)
+      _pHeaderLen(0u),
+      _mmap_file_size_threshold(32_Mi)
 {
     _ssd.setReadContext(&_ssReadContext);
 }
@@ -143,7 +144,7 @@ PageDict4RandRead::readPHeader()
 
 
 bool
-PageDict4RandRead::lookup(vespalib::stringref word,
+PageDict4RandRead::lookup(std::string_view word,
                           uint64_t &wordNum,
                           PostingListOffsetAndCounts &offsetAndCounts)
 {
@@ -198,12 +199,12 @@ PageDict4RandRead::lookup(vespalib::stringref word,
 
 
 bool
-PageDict4RandRead::open(const vespalib::string &name,
+PageDict4RandRead::open(const std::string &name,
                         const TuneFileRandRead &tuneFileRead)
 {
-    vespalib::string pname = name + ".pdat";
-    vespalib::string spname = name + ".spdat";
-    vespalib::string ssname = name + ".ssdat";
+    std::string pname = name + ".pdat";
+    std::string spname = name + ".spdat";
+    std::string ssname = name + ".ssdat";
 
     int mmapFlags(tuneFileRead.getMemoryMapFlags());
     _ssfile->enableMemoryMap(mmapFlags);
@@ -229,14 +230,42 @@ PageDict4RandRead::open(const vespalib::string &name,
     }
 
     uint64_t fileSize = _ssfile->getSize();
+    uint64_t file_units = DC::file_units(fileSize);
     _ssReadContext.setFile(_ssfile.get());
     _ssReadContext.setFileSize(fileSize);
-    _ssReadContext.allocComprBuf((fileSize + sizeof(uint64_t) - 1) / sizeof(uint64_t), 32768u);
-    _ssd.emptyBuffer(0);
-    _ssReadContext.readComprBuffer();
-    assert(_ssReadContext.getBufferEndFilePos() >= fileSize);
+    /*
+     * Limit memory usage spike by using memory mapped .ssdat file if
+     * file size is greater than 32 MiB with padding at end of file.
+     * Note: It might cause higher dictionary lookup latencies when
+     * system is under memory pressure due to pageins.
+     */
+    bool has_read_ss_header = false;
+    if (_ssfile->MemoryMapPtr(0) != nullptr && fileSize >= _mmap_file_size_threshold) {
+        _ssReadContext.reference_compressed_buffer(_ssfile->MemoryMapPtr(0), file_units);
+        assert(_ssd.getReadOffset() == 0u);
+        readSSHeader();
+        has_read_ss_header = true;
+    }
+    if (!has_read_ss_header || !DC::is_padded_for_memory_map(_ssFileBitSize, fileSize)) {
+        /*
+         * Insufficient padding or small .sdat file. Read whole file into
+         * memory.
+         */
+        _ssReadContext.allocComprBuf(file_units, 32768u);
+        _ssd.emptyBuffer(0);
+        _ssReadContext.setBitOffset(0);
+        _ssReadContext.setBufferEndFilePos(0);
+        _ssfile->SetPosition(0);
+        _ssReadContext.readComprBuffer();
+        assert(_ssReadContext.getBufferEndFilePos() >= fileSize);
+        assert(_ssd.getReadOffset() == 0u);
+        if (has_read_ss_header) {
+            _ssReadContext.setPosition(_ssHeaderLen * 8);
+        } else {
+            readSSHeader();
+        }
+    }
 
-    readSSHeader();
     readSPHeader();
     readPHeader();
 

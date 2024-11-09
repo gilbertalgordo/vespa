@@ -17,7 +17,7 @@ StackDumpQueryCreatorHelper::populateMultiTerm(SimpleQueryStackDumpIterator &que
         ParseItem::ItemType type = queryStack.getType();
         switch (type) {
             case ParseItem::ITEM_PURE_WEIGHTED_LONG:
-                mt.addTerm(queryStack.getIntergerTerm(), queryStack.GetWeight());
+                mt.addTerm(queryStack.getIntegerTerm(), queryStack.GetWeight());
                 break;
             case ParseItem::ITEM_PURE_WEIGHTED_STRING:
                 mt.addTerm(queryStack.getTerm(), queryStack.GetWeight());
@@ -34,7 +34,7 @@ StackDumpQueryCreatorHelper::populateMultiTerm(SimpleQueryStackDumpIterator &que
 
 void
 StackDumpQueryCreatorHelper::reportError(const SimpleQueryStackDumpIterator &queryStack, const QueryBuilderBase & builder) {
-    vespalib::stringref stack = queryStack.getStack();
+    std::string_view stack = queryStack.getStack();
     Issue::report("Unable to create query tree from stack dump. Failed at position %ld out of %ld bytes %s",
                queryStack.getPosition(), stack.size(), builder.error().c_str());
     LOG(error, "got bad query stack: %s", vespalib::HexDump(stack.data(), stack.size()).toString().c_str());

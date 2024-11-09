@@ -193,7 +193,7 @@ RPCSend::doRequestDone(FRT_RPCRequest *req) {
 }
 
 std::unique_ptr<Reply>
-RPCSend::decode(vespalib::stringref protocolName, const vespalib::Version & version, BlobRef payload, Error & error) const
+RPCSend::decode(std::string_view protocolName, const vespalib::Version & version, BlobRef payload, Error & error) const
 {
     Reply::UP reply;
     IProtocol * protocol = _net->getOwner().getProtocol(protocolName);
@@ -207,12 +207,12 @@ RPCSend::decode(vespalib::stringref protocolName, const vespalib::Version & vers
             }
         } else {
             error = Error(ErrorCode::DECODE_ERROR,
-                          make_string("Protocol '%s' failed to decode routable.", vespalib::string(protocolName).c_str()));
+                          make_string("Protocol '%s' failed to decode routable.", std::string(protocolName).c_str()));
         }
 
     } else {
         error = Error(ErrorCode::UNKNOWN_PROTOCOL,
-                      make_string("Protocol '%s' is not known by %s.", vespalib::string(protocolName).c_str(), _serverIdent.c_str()));
+                      make_string("Protocol '%s' is not known by %s.", std::string(protocolName).c_str(), _serverIdent.c_str()));
     }
     return reply;
 }
@@ -261,7 +261,7 @@ RPCSend::doRequest(FRT_RPCRequest *req)
     if (protocol == nullptr) {
         replyError(req, params->getVersion(), params->getTraceLevel(),
                    Error(ErrorCode::UNKNOWN_PROTOCOL, make_string("Protocol '%s' is not known by %s.",
-                                                                  vespalib::string(params->getProtocol()).c_str(), _serverIdent.c_str())));
+                                                                  std::string(params->getProtocol()).c_str(), _serverIdent.c_str())));
         return;
     }
     Routable::UP routable = protocol->decode(params->getVersion(), params->getPayload());
@@ -269,7 +269,7 @@ RPCSend::doRequest(FRT_RPCRequest *req)
     if ( ! routable ) {
         replyError(req, params->getVersion(), params->getTraceLevel(),
                    Error(ErrorCode::DECODE_ERROR,
-                         make_string("Protocol '%s' failed to decode routable.", vespalib::string(params->getProtocol()).c_str())));
+                         make_string("Protocol '%s' failed to decode routable.", std::string(params->getProtocol()).c_str())));
         return;
     }
     if (routable->isReply()) {
@@ -278,7 +278,7 @@ RPCSend::doRequest(FRT_RPCRequest *req)
         return;
     }
     Message::UP msg(static_cast<Message*>(routable.release()));
-    vespalib::stringref route = params->getRoute();
+    std::string_view route = params->getRoute();
     if (!route.empty()) {
         msg->setRoute(Route::parse(route));
     }

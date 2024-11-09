@@ -12,9 +12,7 @@ import com.yahoo.vespa.indexinglanguage.ScriptParserContext;
 import com.yahoo.vespa.indexinglanguage.parser.IndexingInput;
 import com.yahoo.vespa.indexinglanguage.parser.ParseException;
 
-import java.util.Arrays;
 import java.util.Collection;
-import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -26,11 +24,11 @@ import java.util.Objects;
 public final class ScriptExpression extends ExpressionList<StatementExpression> {
 
     public ScriptExpression() {
-        this(Collections.emptyList());
+        this(List.of());
     }
 
     public ScriptExpression(StatementExpression... statements) {
-        this(Arrays.asList(statements));
+        this(List.of(statements));
     }
 
     public ScriptExpression(Collection<? extends StatementExpression> statements) {
@@ -46,29 +44,48 @@ public final class ScriptExpression extends ExpressionList<StatementExpression> 
     }
 
     @Override
-    protected void doExecute(ExecutionContext context) {
-        FieldValue input = context.getValue();
-        for (StatementExpression statement : this) {
-            if (context.isComplete() ||
-                (statement.getInputFields().isEmpty() || containsAtLeastOneInputFrom(statement.getInputFields(), context))) {
-                context.setValue(input).execute(statement);
-            }
-        }
-        context.setValue(input);
+    public DataType setInputType(DataType inputType, VerificationContext context) {
+        super.setInputType(inputType, context);
+        DataType currentOutput = null;
+        for (var expression : expressions())
+            currentOutput = expression.setInputType(inputType, context);
+        return currentOutput != null ? currentOutput : getOutputType(context);
     }
 
-    private boolean containsAtLeastOneInputFrom(List<String> inputFields, ExecutionContext context) {
-        for (String inputField : inputFields)
-            if (context.getInputValue(inputField) != null)
-                return true;
-        return false;
+    @Override
+    public DataType setOutputType(DataType outputType, VerificationContext context) {
+        super.setOutputType(outputType, context);
+        DataType currentInput = null;
+        for (var expression : expressions())
+            currentInput = expression.setOutputType(outputType, context);
+        return currentInput != null ? currentInput : getInputType(context);
     }
 
     @Override
     protected void doVerify(VerificationContext context) {
-        DataType input = context.getValueType();
+        DataType input = context.getCurrentType();
         for (Expression exp : this)
-            context.setValueType(input).execute(exp);
+            context.setCurrentType(input).verify(exp);
+    }
+
+    @Override
+    protected void doExecute(ExecutionContext context) {
+        FieldValue input = context.getCurrentValue();
+        for (StatementExpression statement : this) {
+            if (context.isComplete() ||
+                (statement.getInputFields().isEmpty() || containsAtLeastOneInputFrom(statement.getInputFields(), context))) {
+                context.setCurrentValue(input);
+                context.execute(statement);
+            }
+        }
+        context.setCurrentValue(input);
+    }
+
+    private boolean containsAtLeastOneInputFrom(List<String> inputFields, ExecutionContext context) {
+        for (String inputField : inputFields)
+            if (context.getFieldValue(inputField) != null)
+                return true;
+        return false;
     }
 
     private static DataType resolveInputType(Collection<? extends StatementExpression> list) {

@@ -30,7 +30,7 @@ import static com.yahoo.document.json.readers.JsonParserHelpers.expectArrayStart
  * valid JSON representation of a feed.
  *
  * @author Steinar Knutsen
- * @author dybis
+ * @author Haakon Dybdahl
  */
 public class JsonReader {
 
@@ -105,7 +105,7 @@ public class JsonReader {
             String condition = null;
             ParsedDocumentOperation operation = null;
             while (JsonToken.END_OBJECT != parser.nextValue()) {
-                switch (parser.getCurrentName()) {
+                switch (parser.currentName()) {
                     case FIELDS -> {
                         documentParseInfo.fieldsBuffer = new LazyTokenBuffer(parser);
                         VespaJsonDocumentReader vespaJsonDocumentReader = new VespaJsonDocumentReader(typeManager.getIgnoreUndefinedFields());
@@ -177,7 +177,7 @@ public class JsonReader {
             state = END_OF_FEED;
             throw new IllegalArgumentException(r);
         }
-        if ( ! documentParseInfo.isPresent()) {
+        if (documentParseInfo.isEmpty()) {
             state = END_OF_FEED;
             return null;
         }

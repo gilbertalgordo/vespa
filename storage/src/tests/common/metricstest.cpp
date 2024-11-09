@@ -1,5 +1,9 @@
 // Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
+#include <tests/common/dummystoragelink.h>
+#include <tests/common/storage_config_set.h>
+#include <tests/common/teststorageapp.h>
+#include <tests/common/testhelper.h>
 #include <vespa/storageapi/message/persistence.h>
 #include <vespa/storageframework/defaultimplementation/clock/fakeclock.h>
 #include <vespa/storage/bucketdb/bucketmanager.h>
@@ -7,9 +11,6 @@
 #include <vespa/storage/persistence/filestorage/filestormanager.h>
 #include <vespa/storage/persistence/filestorage/filestormetrics.h>
 #include <vespa/storage/visiting/visitormetrics.h>
-#include <tests/common/teststorageapp.h>
-#include <tests/common/testhelper.h>
-#include <tests/common/dummystoragelink.h>
 #include <vespa/metrics/metricmanager.h>
 #include <vespa/config/common/exceptions.h>
 #include <vespa/vespalib/gtest/gtest.h>
@@ -26,10 +27,10 @@ namespace storage {
 
 struct MetricsTest : public Test {
     framework::defaultimplementation::FakeClock* _clock;
+    std::unique_ptr<StorageConfigSet> _config;
     std::unique_ptr<TestServiceLayerApp> _node;
     std::unique_ptr<DummyStorageLink> _top;
     std::unique_ptr<StatusMetricConsumer> _metricsConsumer;
-    std::unique_ptr<vdstestlib::DirConfig> _config;
     std::unique_ptr<metrics::MetricSet> _topSet;
     std::unique_ptr<metrics::MetricManager> _metricManager;
     std::shared_ptr<FileStorMetrics> _filestorMetrics;
@@ -66,17 +67,13 @@ MetricsTest::MetricsTest()
 MetricsTest::~MetricsTest() = default;
 
 void MetricsTest::SetUp() {
-    _config = std::make_unique<vdstestlib::DirConfig>(getStandardConfig(true, "metricstest"));
-    std::filesystem::remove_all(std::filesystem::path(getRootFolder(*_config)));
-    try {
-        _node = std::make_unique<TestServiceLayerApp>(NodeIndex(0), _config->getConfigId());
-        _node->setupDummyPersistence();
-        _clock = &_node->getClock();
-        _clock->setAbsoluteTimeInSeconds(1000000);
-        _top = std::make_unique<DummyStorageLink>();
-    } catch (config::InvalidConfigException& e) {
-        fprintf(stderr, "%s\n", e.what());
-    }
+    _config = StorageConfigSet::make_storage_node_config();
+    _node = std::make_unique<TestServiceLayerApp>(NodeIndex(0), _config->config_uri());
+    _node->setupDummyPersistence();
+    _clock = &_node->getClock();
+    _clock->setAbsoluteTimeInSeconds(1000000);
+    _top = std::make_unique<DummyStorageLink>();
+
     _metricManager = std::make_unique<metrics::MetricManager>(std::make_unique<MetricClock>(*_clock));
     _topSet.reset(new metrics::MetricSet("vds", {}, ""));
     {
@@ -96,7 +93,7 @@ void MetricsTest::SetUp() {
     _visitorMetrics = std::make_shared<VisitorMetrics>();
     _visitorMetrics->initThreads(4);
     _topSet->registerMetric(*_visitorMetrics);
-    _metricManager->init(config::ConfigUri(_config->getConfigId()));
+    _metricManager->init(_config->config_uri());
 }
 
 void MetricsTest::TearDown() {
@@ -207,7 +204,7 @@ TEST_F(MetricsTest, filestor_metrics) {
     } else { \
         std::ostringstream valueost; \
         valueost << metric << " count=" << count; \
-        ASSERT_TRUE(s.find(valueost.str()) != std::string::npos) \
+        ASSERT_TRUE(s.find(valueost.view()) != std::string::npos) \
                 << "Did not find value " + valueost.str() + " in metric dump " + s; \
     } \
 }

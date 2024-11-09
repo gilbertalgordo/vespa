@@ -10,6 +10,7 @@
 #include <vespa/vespalib/io/fileutil.h>
 #include <vespa/vespalib/util/error.h>
 #include <filesystem>
+#include <string>
 
 #include <vespa/log/log.h>
 LOG_SETUP(".diskindex.indexbuilder");
@@ -38,7 +39,7 @@ public:
     FileHandle();
     ~FileHandle();
 
-    void open(vespalib::stringref dir,
+    void open(std::string_view dir,
               const SchemaUtil::IndexIterator &index,
               uint32_t docIdLimit, uint64_t numWordIds,
               const FieldLengthInfo &field_length_info,
@@ -62,12 +63,12 @@ public:
                 const TuneFileSeqWrite &tuneFileWrite, const FileHeaderContext &fileHeaderContext);
     ~FieldHandle();
 
-    void new_word(vespalib::stringref word);
+    void new_word(std::string_view word);
     void add_document(const index::DocIdAndFeatures &features);
 
     const Schema::IndexField &getSchemaField();
-    const vespalib::string &getName();
-    vespalib::string getDir();
+    const std::string &getName();
+    std::string getDir();
     void close();
     uint32_t getIndexId() const noexcept { return _fieldId; }
 };
@@ -78,12 +79,12 @@ public:
                       uint64_t numWordIds, const IFieldLengthInspector & field_length_inspector,
                       const TuneFileSeqWrite &tuneFileWrite, const FileHeaderContext &fileHeaderContext);
     ~FieldIndexBuilder() override;
-    void startWord(vespalib::stringref word) override;
+    void startWord(std::string_view word) override;
     void endWord() override;
     void add_document(const DocIdAndFeatures &features) override;
 private:
     FieldHandle          _field;
-    vespalib::string     _curWord;
+    std::string     _curWord;
     uint32_t             _curDocId;
     bool                 _inWord;
 
@@ -108,7 +109,7 @@ FieldIndexBuilder::FieldIndexBuilder(const Schema &schema, uint32_t fieldId, Ind
 FieldIndexBuilder::~FieldIndexBuilder() = default;
 
 void
-FieldIndexBuilder::startWord(vespalib::stringref word)
+FieldIndexBuilder::startWord(std::string_view word)
 {
     assert(!_inWord);
     // TODO: Check sort order
@@ -139,7 +140,7 @@ FileHandle::FileHandle()
 FileHandle::~FileHandle() = default;
 
 void
-FileHandle::open(vespalib::stringref dir,
+FileHandle::open(std::string_view dir,
                  const SchemaUtil::IndexIterator &index,
                  uint32_t docIdLimit, uint64_t numWordIds,
                  const FieldLengthInfo &field_length_info,
@@ -148,7 +149,7 @@ FileHandle::open(vespalib::stringref dir,
 {
     assert( ! _fieldWriter);
 
-    _fieldWriter = std::make_shared<FieldWriter>(docIdLimit, numWordIds, dir + "/");
+    _fieldWriter = std::make_shared<FieldWriter>(docIdLimit, numWordIds, std::string(dir) + "/");
 
     if (!_fieldWriter->open(64, 262144u, false,
                             index.use_interleaved_features(),
@@ -156,7 +157,7 @@ FileHandle::open(vespalib::stringref dir,
                             field_length_info,
                             tuneFileWrite, fileHeaderContext)) {
         LOG(error, "Could not open term writer %s for write (%s)",
-            vespalib::string(dir).c_str(), getLastErrorString().c_str());
+            std::string(dir).c_str(), getLastErrorString().c_str());
         LOG_ABORT("should not be reached");
     }
 }
@@ -195,7 +196,7 @@ FieldHandle::~FieldHandle() {
 }
 
 void
-FieldHandle::new_word(vespalib::stringref word)
+FieldHandle::new_word(std::string_view word)
 {
     _file.writer()->newWord(word);
 }
@@ -212,13 +213,13 @@ FieldHandle::getSchemaField()
     return _schema.getIndexField(_fieldId);
 }
 
-const vespalib::string &
+const std::string &
 FieldHandle::getName()
 {
     return getSchemaField().getName();
 }
 
-vespalib::string
+std::string
 FieldHandle::getDir()
 {
     return _builder.appendToPrefix(getName());
@@ -247,7 +248,7 @@ extractFields(const Schema &schema) {
     return fields;
 }
 
-IndexBuilder::IndexBuilder(const Schema &schema, vespalib::stringref prefix, uint32_t docIdLimit,
+IndexBuilder::IndexBuilder(const Schema &schema, std::string_view prefix, uint32_t docIdLimit,
                            uint64_t numWordIds, const index::IFieldLengthInspector &field_length_inspector,
                            const TuneFileIndexing &tuneFileIndexing, const search::common::FileHeaderContext &fileHeaderContext)
     : index::IndexBuilder(schema),
@@ -262,7 +263,7 @@ IndexBuilder::IndexBuilder(const Schema &schema, vespalib::stringref prefix, uin
     if (!_prefix.empty()) {
         std::filesystem::create_directory(std::filesystem::path(_prefix));
     }
-    vespalib::string schemaFile = appendToPrefix("schema.txt");
+    std::string schemaFile = appendToPrefix("schema.txt");
     if (!_schema.saveToFile(schemaFile)) {
         LOG(error, "Cannot save schema to \"%s\"", schemaFile.c_str());
         LOG_ABORT("should not be reached");
@@ -287,13 +288,13 @@ IndexBuilder::startField(uint32_t fieldId) {
     return {};
 }
 
-vespalib::string
-IndexBuilder::appendToPrefix(vespalib::stringref name) const
+std::string
+IndexBuilder::appendToPrefix(std::string_view name) const
 {
     if (_prefix.empty()) {
-        return name;
+        return std::string(name);
     }
-    return _prefix + "/" + name;
+    return _prefix + "/" + std::string(name);
 }
 
 }

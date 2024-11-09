@@ -15,12 +15,11 @@ import java.security.cert.X509Certificate;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.LongSupplier;
 import java.util.function.Supplier;
-import java.util.logging.Logger;
 
 import static ai.vespa.feed.client.FeedClientBuilder.Compression.auto;
 import static java.util.Objects.requireNonNull;
@@ -32,8 +31,6 @@ import static java.util.Objects.requireNonNull;
  * @author jonmv
  */
 public class FeedClientBuilderImpl implements FeedClientBuilder {
-
-    private static final Logger log = Logger.getLogger(FeedClientBuilderImpl.class.getName());
 
     static final FeedClient.RetryStrategy defaultRetryStrategy = new FeedClient.RetryStrategy() { };
 
@@ -61,10 +58,9 @@ public class FeedClientBuilderImpl implements FeedClientBuilder {
     Compression compression = auto;
     URI proxy;
     Duration connectionTtl = Duration.ZERO;
+    LongSupplier nanoClock = System::nanoTime;
 
-
-    public FeedClientBuilderImpl() {
-    }
+    public FeedClientBuilderImpl() { }
 
     FeedClientBuilderImpl(List<URI> endpoints) {
         this();
@@ -198,7 +194,7 @@ public class FeedClientBuilderImpl implements FeedClientBuilder {
     /** Sets client SSL certificate/key */
     @Override
     public FeedClientBuilderImpl setCertificate(X509Certificate certificate, PrivateKey privateKey) {
-        return setCertificate(Collections.singletonList(certificate), privateKey);
+        return setCertificate(List.of(certificate), privateKey);
     }
 
     @Override
@@ -253,6 +249,11 @@ public class FeedClientBuilderImpl implements FeedClientBuilder {
     @Override
     public FeedClientBuilderImpl setCompression(Compression compression) {
         this.compression = requireNonNull(compression);
+        return this;
+    }
+
+    FeedClientBuilderImpl setNanoClock(LongSupplier nanoClock) {
+        this.nanoClock = requireNonNull(nanoClock);
         return this;
     }
 

@@ -5,6 +5,7 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -29,19 +30,22 @@ func newDeployCmd(cli *CLI) *cobra.Command {
 		Short: "Deploy (prepare and activate) an application package",
 		Long: `Deploy (prepare and activate) an application package.
 
-When this returns successfully the application package has been validated
-and activated on config servers. The process of applying it on individual nodes
-has started but may not have completed.
+An application package defines a deployable Vespa application. See
+https://docs.vespa.ai/en/reference/application-packages-reference.html for
+details about the files contained in this package.
+
+To get started, 'vespa clone' can be used to download a sample application.
+
+This command deploys an application package. When deploy returns successfully
+the application package has been validated and activated on config servers. The
+process of applying it on individual nodes has started but may not have
+completed.
 
 If application directory is not specified, it defaults to working directory.
 
-When deploying to Vespa Cloud the system can be overridden by setting the
-environment variable VESPA_CLI_CLOUD_SYSTEM. This is intended for internal use
-only.
-
-In Vespa Cloud you may override the Vespa runtime version for your deployment.
-This option should only be used if you have a reason for using a specific
-version. By default Vespa Cloud chooses a suitable version for you.
+In Vespa Cloud you may override the Vespa runtime version (--version) for your
+deployment. This option should only be used if you have a reason for using a
+specific version. By default Vespa Cloud chooses a suitable version for you.
 `,
 		Example: `$ vespa deploy .
 $ vespa deploy -t cloud
@@ -59,7 +63,6 @@ $ vespa deploy -t cloud -z perf.aws-us-east-1c`,
 			if err != nil {
 				return err
 			}
-			timeout := time.Duration(waitSecs) * time.Second
 			opts := vespa.DeploymentOptions{ApplicationPackage: pkg, Target: target}
 			if versionArg != "" {
 				version, err := version.Parse(versionArg)
@@ -69,19 +72,26 @@ $ vespa deploy -t cloud -z perf.aws-us-east-1c`,
 				opts.Version = version
 			}
 			if target.Type() == vespa.TargetCloud {
-				if err := maybeCopyCertificate(copyCert, true, cli, target, pkg); err != nil {
+				if err := requireCertificate(copyCert, true, cli, target, pkg); err != nil {
 					return err
 				}
 			}
-			waiter := cli.waiter(timeout)
+			waiter := cli.waiter(time.Duration(waitSecs)*time.Second, cmd)
 			if _, err := waiter.DeployService(target); err != nil {
 				return err
 			}
 			var result vespa.PrepareResult
-			if err := cli.spinner(cli.Stderr, "Uploading application package...", func() error {
+			err = cli.spinner(cli.Stderr, "Uploading application package...", func() error {
 				result, err = vespa.Deploy(opts)
 				return err
-			}); err != nil {
+			})
+			if err != nil {
+				if target.IsCloud() && errors.Is(err, vespa.ErrUnauthorized) {
+					return errHint(err,
+						"You do not have access to the tenant "+color.CyanString(target.Deployment().Application.Tenant),
+						"You may need to create the tenant at "+color.CyanString(target.Deployment().System.ConsoleURL+"/tenant"),
+						"If the tenant already exists you may need to run 'vespa auth login' to gain access to it")
+				}
 				return err
 			}
 			log.Println()
@@ -95,7 +105,7 @@ $ vespa deploy -t cloud -z perf.aws-us-east-1c`,
 				log.Printf("\nUse %s for deployment status, or follow this deployment at", color.CyanString("vespa status deployment"))
 				log.Print(color.CyanString(opts.Target.Deployment().System.ConsoleRunURL(opts.Target.Deployment(), result.ID)))
 			}
-			return waitForDeploymentReady(cli, target, result.ID, timeout)
+			return waitForVespaReady(target, result.ID, waiter)
 		},
 	}
 	cmd.Flags().StringVarP(&logLevelArg, "log-level", "l", "error", `Log level for Vespa logs. Must be "error", "warning", "info" or "debug"`)
@@ -157,8 +167,7 @@ func newActivateCmd(cli *CLI) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			timeout := time.Duration(waitSecs) * time.Second
-			waiter := cli.waiter(timeout)
+			waiter := cli.waiter(time.Duration(waitSecs)*time.Second, cmd)
 			if _, err := waiter.DeployService(target); err != nil {
 				return err
 			}
@@ -168,23 +177,33 @@ func newActivateCmd(cli *CLI) *cobra.Command {
 				return err
 			}
 			cli.printSuccess("Activated application with session ", sessionID)
-			return waitForDeploymentReady(cli, target, sessionID, timeout)
+			return waitForVespaReady(target, sessionID, waiter)
 		},
 	}
 	cli.bindWaitFlag(cmd, 0, &waitSecs)
 	return cmd
 }
 
-func waitForDeploymentReady(cli *CLI, target vespa.Target, sessionOrRunID int64, timeout time.Duration) error {
-	if timeout == 0 {
-		return nil
+func waitForVespaReady(target vespa.Target, sessionOrRunID int64, waiter *Waiter) error {
+	fastWait := waiter.FastWaitOn(target)
+	hasTimeout := waiter.Timeout > 0
+	if fastWait || hasTimeout {
+		// Wait for deployment convergence
+		if _, err := waiter.Deployment(target, sessionOrRunID); err != nil {
+			if fastWait && errors.Is(err, vespa.ErrWaitTimeout) {
+				return nil // // Do not report fast wait timeout as an error
+			}
+			return err
+		}
+		// Wait for healthy services where we expect them to be reachable (cloud and local). When using a custom target,
+		// we do not wait for services as there is no guarantee that they are reachable from the machine executing
+		// deploy.
+		if hasTimeout && (target.IsCloud() || target.Type() == vespa.TargetLocal) {
+			_, err := waiter.Services(target)
+			return err
+		}
 	}
-	waiter := cli.waiter(timeout)
-	if _, err := waiter.Deployment(target, sessionOrRunID); err != nil {
-		return err
-	}
-	_, err := waiter.Services(target)
-	return err
+	return nil
 }
 
 func printPrepareLog(stderr io.Writer, result vespa.PrepareResult) {

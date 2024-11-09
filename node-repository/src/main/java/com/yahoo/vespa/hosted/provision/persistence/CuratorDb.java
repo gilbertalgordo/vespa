@@ -10,10 +10,13 @@ import com.yahoo.concurrent.UncheckedTimeoutException;
 import com.yahoo.config.provision.ApplicationId;
 import com.yahoo.config.provision.ApplicationLockException;
 import com.yahoo.config.provision.ApplicationTransaction;
+import com.yahoo.config.provision.CloudAccount;
 import com.yahoo.config.provision.HostName;
 import com.yahoo.config.provision.NodeFlavors;
 import com.yahoo.config.provision.NodeType;
 import com.yahoo.path.Path;
+import com.yahoo.slime.Slime;
+import com.yahoo.slime.SlimeUtils;
 import com.yahoo.transaction.NestedTransaction;
 import com.yahoo.transaction.Transaction;
 import com.yahoo.vespa.curator.Curator;
@@ -25,11 +28,13 @@ import com.yahoo.vespa.hosted.provision.LockedNodeList;
 import com.yahoo.vespa.hosted.provision.Node;
 import com.yahoo.vespa.hosted.provision.applications.Application;
 import com.yahoo.vespa.hosted.provision.archive.ArchiveUris;
+import com.yahoo.vespa.hosted.provision.backup.Snapshot;
 import com.yahoo.vespa.hosted.provision.lb.LoadBalancer;
 import com.yahoo.vespa.hosted.provision.lb.LoadBalancerId;
 import com.yahoo.vespa.hosted.provision.node.Agent;
 import com.yahoo.vespa.hosted.provision.node.Status;
 import com.yahoo.vespa.hosted.provision.os.OsVersionChange;
+import com.yahoo.yolean.Exceptions;
 
 import java.time.Clock;
 import java.time.Duration;
@@ -76,6 +81,7 @@ public class CuratorDb {
     private static final Path osVersionsPath = root.append("osVersions");
     private static final Path firmwareCheckPath = root.append("firmwareCheck");
     private static final Path archiveUrisPath = root.append("archiveUri");
+    private static final Path snapshotsPath = root.append("snapshots");
 
     private static final Duration defaultLockTimeout = Duration.ofMinutes(1);
 
@@ -85,17 +91,19 @@ public class CuratorDb {
     private final CuratorCounter provisionIndexCounter;
     private final CuratorCounter loadBalancerPoolHead;
     private final CuratorCounter loadBalancerPoolTail;
+    private final CloudAccount systemAccount;
 
     /** Simple cache for deserialized node objects, based on their ZK node version. */
     private final Cache<Path, Pair<Integer, Node>> cachedNodes = CacheBuilder.newBuilder().recordStats().build();
 
-    public CuratorDb(NodeFlavors flavors, Curator curator, Clock clock, boolean useCache) {
-        this.nodeSerializer = new NodeSerializer(flavors);
+    public CuratorDb(NodeFlavors flavors, Curator curator, Clock clock, boolean useCache, CloudAccount systemAccount) {
+        this.nodeSerializer = new NodeSerializer(flavors, systemAccount);
         this.db = new CachingCurator(curator, root, useCache);
         this.clock = clock;
         this.provisionIndexCounter = new CuratorCounter(curator, root.append("provisionIndexCounter"));
         this.loadBalancerPoolHead = new CuratorCounter(curator, root.append("loadBalancerPoolHead"));
         this.loadBalancerPoolTail = new CuratorCounter(curator, root.append("loadBalancerPoolTail"));
+        this.systemAccount = systemAccount;
         initZK();
     }
 
@@ -113,6 +121,7 @@ public class CuratorDb {
         db.create(firmwareCheckPath);
         db.create(archiveUrisPath);
         db.create(loadBalancersPath);
+        db.create(snapshotsPath);
         provisionIndexCounter.initialize(100);
         loadBalancerPoolHead.initialize(1);
         loadBalancerPoolTail.initialize(1);
@@ -157,7 +166,7 @@ public class CuratorDb {
      * @return the nodes in their persisted state
      */
     public List<Node> writeTo(List<Node> nodes, Agent agent, Optional<String> reason) {
-        if (nodes.isEmpty()) return Collections.emptyList();
+        if (nodes.isEmpty()) return List.of();
 
         List<Node> writtenNodes = new ArrayList<>(nodes.size());
 
@@ -191,7 +200,7 @@ public class CuratorDb {
     }
 
     public Node writeTo(Node.State toState, Node node, Agent agent, Optional<String> reason) {
-        return writeTo(toState, Collections.singletonList(node), agent, reason).get(0);
+        return writeTo(toState, List.of(node), agent, reason).get(0);
     }
 
     /**
@@ -426,6 +435,31 @@ public class CuratorDb {
     public Lock lockMaintenance(ApplicationId application) {
         return db.lock(lockPath.append("maintenanceDeployment").append(application.serializedForm()),
                        Duration.ofSeconds(3));
+    }
+
+    // Snapshots ----------------------------------------------------------------
+
+    public Lock lockSnapshots(String hostname) {
+        return db.lock(lockPath.append("snapshots").append(hostname), Duration.ofSeconds(3));
+    }
+
+    public void writeSnapshots(String hostname, List<Snapshot> snapshots, NestedTransaction transaction) {
+        Path path = snapshotsPath.append(hostname);
+        Slime serializedSnapshots = SnapshotSerializer.toSlime(snapshots);
+        CuratorTransaction curatorTransaction = db.newCuratorTransactionIn(transaction);
+        curatorTransaction.add(createOrSet(path, Exceptions.uncheck(() -> SlimeUtils.toJsonBytes(serializedSnapshots))));
+    }
+
+    public List<Snapshot> readSnapshots(String hostname) {
+        return read(snapshotsPath.append(hostname), (data) -> SnapshotSerializer.listFromSlime(SlimeUtils.jsonToSlime(data), systemAccount)).orElseGet(List::of);
+    }
+
+    public List<Snapshot> readSnapshots() {
+        List<Snapshot> snapshots = new ArrayList<>();
+        for (var hostname : db.getChildren(snapshotsPath)) {
+            snapshots.addAll(readSnapshots(hostname));
+        }
+        return snapshots;
     }
 
     // Load balancers -----------------------------------------------------------

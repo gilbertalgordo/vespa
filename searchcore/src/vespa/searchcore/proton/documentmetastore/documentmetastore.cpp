@@ -59,8 +59,8 @@ namespace proton {
 
 namespace documentmetastore {
 
-vespalib::string DOCID_LIMIT("docIdLimit");
-vespalib::string VERSION("version");
+std::string DOCID_LIMIT("docIdLimit");
+std::string VERSION("version");
 
 class Reader {
 private:
@@ -116,6 +116,8 @@ public:
                 sizeof(uint8_t) + sizeof(Timestamp::Type) +
                 ((_version == NO_DOCUMENT_SIZE_TRACKING_VERSION) ? 0 : 3));
     }
+
+    uint64_t size_on_disk() const noexcept { return _datFile.size_on_disk(); }
 };
 
 Reader::Reader(std::unique_ptr<FastOS_FileInterface> datFile)
@@ -261,7 +263,7 @@ DocumentMetaStore::reclaim_memory(generation_t oldest_used_gen)
 }
 
 std::unique_ptr<search::AttributeSaver>
-DocumentMetaStore::onInitSave(vespalib::stringref fileName)
+DocumentMetaStore::onInitSave(std::string_view fileName)
 {
     GenerationHandler::Guard guard(getGuard());
     return std::make_unique<DocumentMetaStoreSaver>
@@ -325,6 +327,7 @@ DocumentMetaStore::onLoad(vespalib::Executor *)
 
     setNumDocs(_metaDataStore.size());
     setCommittedDocIdLimit(_metaDataStore.size());
+    set_size_on_disk(reader.size_on_disk());
 
     return true;
 }
@@ -411,11 +414,11 @@ DocumentMetaStore::DocumentMetaStore(BucketDBOwnerSP bucketDB)
     : DocumentMetaStore(std::move(bucketDB), getFixedName())
 {}
 
-DocumentMetaStore::DocumentMetaStore(BucketDBOwnerSP bucketDB, const vespalib::string &name)
+DocumentMetaStore::DocumentMetaStore(BucketDBOwnerSP bucketDB, const std::string &name)
     : DocumentMetaStore(std::move(bucketDB), name, search::GrowStrategy())
 {}
 DocumentMetaStore::DocumentMetaStore(BucketDBOwnerSP bucketDB,
-                                     const vespalib::string &name,
+                                     const std::string &name,
                                      const GrowStrategy &grow,
                                      SubDbType subDbType)
     : DocumentMetaStoreAttribute(name),
@@ -711,6 +714,7 @@ DocumentMetaStore::getGid(DocId lid, GlobalId &gid) const
 bool
 DocumentMetaStore::getGidEvenIfMoved(DocId lid, GlobalId &gid) const
 {
+    static GlobalId empty = GlobalId();
     if (!validButMaybeUnusedLid(lid)) {
         return false;
     }
@@ -720,6 +724,9 @@ DocumentMetaStore::getGidEvenIfMoved(DocId lid, GlobalId &gid) const
         if (!getLid(gid, newLid)) {
             return false;
         }
+    }
+    if (gid == empty) {
+        LOG(warning, "empty GlobalId for local docid=%u", lid);
     }
     return true;
 }

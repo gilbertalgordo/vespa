@@ -76,11 +76,11 @@ SimpleIndexConfig createSimpleIndexConfig(const search::attribute::Config &confi
 
 }  // namespace
 
-PredicateAttribute::PredicateAttribute(const vespalib::string &base_file_name)
+PredicateAttribute::PredicateAttribute(const std::string &base_file_name)
     : PredicateAttribute(base_file_name, Config(BasicType::PREDICATE))
 {}
 
-PredicateAttribute::PredicateAttribute(const vespalib::string &base_file_name, const Config &config)
+PredicateAttribute::PredicateAttribute(const std::string &base_file_name, const Config &config)
     : NotImplementedAttribute(base_file_name, config),
       _limit_provider(*this),
       _index(std::make_unique<PredicateIndex>(getGenerationHolder(), _limit_provider,
@@ -145,7 +145,7 @@ PredicateAttribute::before_inc_generation(generation_t current_gen)
 }
 
 std::unique_ptr<AttributeSaver>
-PredicateAttribute::onInitSave(vespalib::stringref fileName)
+PredicateAttribute::onInitSave(std::string_view fileName)
 {
     auto guard(getGenerationHandler().takeGuard());
     auto header = this->createAttributeHeader(fileName);
@@ -240,6 +240,7 @@ PredicateAttribute::onLoad(vespalib::Executor *)
     _index->adjustDocIdLimit(highest_doc_id);
     setNumDocs(highest_doc_id + 1);
     setCommittedDocIdLimit(highest_doc_id + 1);
+    set_size_on_disk(loaded_buffer->size_on_disk());
     _index->onDeserializationCompleted();
     return true;
 }

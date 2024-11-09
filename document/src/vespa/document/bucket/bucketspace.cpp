@@ -2,9 +2,10 @@
 
 #include "bucketspace.h"
 #include <vespa/vespalib/stllike/asciistream.h>
+#include <ostream>
 
 namespace document {
-vespalib::string BucketSpace::toString() const
+std::string BucketSpace::toString() const
 {
     vespalib::asciistream os;
     os << *this;

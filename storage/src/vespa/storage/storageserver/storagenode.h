@@ -100,7 +100,7 @@ public:
      * is alive, no calls will be made towards the persistence provider.
      */
     virtual ResumeGuard pause() = 0;
-    void requestShutdown(vespalib::stringref reason) override;
+    void requestShutdown(std::string_view reason) override;
     DoneInitializeHandler& getDoneInitializeHandler() { return *this; }
 
     void configure(std::unique_ptr<StorServerConfig> config);
@@ -119,9 +119,9 @@ private:
 
     StorageNodeContext& _context;
     ApplicationGenerationFetcher& _generationFetcher;
-    vespalib::string _rootFolder;
+    std::string _rootFolder;
     std::atomic<bool> _attemptedStopped;
-    vespalib::string _pidFile;
+    std::string _pidFile;
 
     // First components that doesn't depend on others
     std::unique_ptr<StatusWebServer>           _statusWebServer;
@@ -135,6 +135,10 @@ private:
     // Depends on metric manager
     std::unique_ptr<StateReporter>             _stateReporter;
     std::unique_ptr<StateManager>              _stateManager;
+    // Node subclasses may take ownership of _stateManager in order to infuse it into
+    // their own storage link chain, but they MUST ensure its lifetime is maintained.
+    // We need to remember the original pointer in order to update its config.
+    StateManager*                              _state_manager_ptr;
 
     // The storage chain can depend on anything.
     std::unique_ptr<StorageLink>               _chain;

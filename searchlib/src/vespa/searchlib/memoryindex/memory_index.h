@@ -45,7 +45,7 @@ class MemoryIndex : public queryeval::Searchable {
 private:
     using ISequencedTaskExecutor = vespalib::ISequencedTaskExecutor;
     using LidVector = std::vector<uint32_t>;
-    using OnWriteDoneType = const std::shared_ptr<vespalib::IDestructorCallback> &;
+    using OnWriteDoneType = std::shared_ptr<vespalib::IDestructorCallback>;
     index::Schema     _schema;
     ISequencedTaskExecutor &_invertThreads;
     ISequencedTaskExecutor &_pushThreads;
@@ -57,7 +57,7 @@ private:
     std::atomic<uint32_t> _numDocs;
     mutable std::mutex  _lock;
     std::vector<bool>   _hiddenFields;
-    index::Schema::SP   _prunedSchema;
+    std::shared_ptr<const index::Schema> _prunedSchema;
     vespalib::hash_set<uint32_t> _indexedDocs; // documents in memory index
     const uint64_t      _staticMemoryFootprint;
 
@@ -111,7 +111,7 @@ public:
      * If the document is already in the index, the old version will be removed first.
      * This function is async. commit() must be called for changes to take effect.
      */
-    void insertDocument(uint32_t docId, const document::Document &doc, OnWriteDoneType on_write_done);
+    void insertDocument(uint32_t docId, const document::Document &doc, const OnWriteDoneType& on_write_done);
 
     /**
      * Remove a document from the underlying field indexes.
@@ -125,7 +125,7 @@ public:
      *
      * When commit is completed, 'on_write_done' goes out of scope, scheduling completion callback.
      */
-    void commit(OnWriteDoneType on_write_done);
+    void commit(const OnWriteDoneType& on_write_done);
 
     /**
      * Freeze this index.
@@ -147,10 +147,7 @@ public:
 
     std::unique_ptr<queryeval::Blueprint> createBlueprint(const queryeval::IRequestContext & requestContext,
                                                           const queryeval::FieldSpecList &fields,
-                                                          const query::Node &term) override
-    {
-        return queryeval::Searchable::createBlueprint(requestContext, fields, term);
-    }
+                                                          const query::Node &term) override;
 
     virtual uint32_t getDocIdLimit() const {
         // Used to get docId range.
@@ -165,7 +162,7 @@ public:
 
     void pruneRemovedFields(const index::Schema &schema);
 
-    index::Schema::SP getPrunedSchema() const;
+    std::shared_ptr<const index::Schema> getPrunedSchema() const;
 
     /**
      * Gets an approximation of how much memory the index uses.
@@ -174,7 +171,7 @@ public:
 
     uint64_t getStaticMemoryFootprint() const { return _staticMemoryFootprint; }
 
-    index::FieldLengthInfo get_field_length_info(const vespalib::string& field_name) const;
+    index::FieldLengthInfo get_field_length_info(const std::string& field_name) const;
 
     void insert_write_context_state(vespalib::slime::Cursor& object) const;
 };

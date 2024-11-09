@@ -5,7 +5,7 @@
 #include <vespa/searchlib/predicate/simple_index_saver.hpp>
 #include <vespa/searchlib/predicate/nbo_write.h>
 #include <vespa/searchlib/util/data_buffer_writer.h>
-#include <vespa/vespalib/testkit/testapp.h>
+#include <vespa/vespalib/testkit/test_kit.h>
 #include <vespa/searchlib/attribute/predicate_attribute.h>
 #include <vespa/vespalib/btree/btree.hpp>
 #include <vespa/vespalib/btree/btreeroot.hpp>
@@ -15,9 +15,6 @@
 #include <vespa/vespalib/datastore/buffer_type.hpp>
 #include <vespa/vespalib/util/rcuvector.hpp>
 #include <map>
-
-#include <vespa/log/log.h>
-LOG_SETUP("simple_index_test");
 
 using namespace search;
 using namespace search::predicate;
@@ -342,5 +339,3 @@ TEST_F("require that vector contains correct postings", Fixture) {
 }
 
 }  // namespace
-
-TEST_MAIN() { TEST_RUN_ALL(); }

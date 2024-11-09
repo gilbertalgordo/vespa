@@ -18,8 +18,7 @@ import static ai.vespa.metricsproxy.metric.ExternalMetrics.VESPA_NODE_SERVICE_ID
 import static ai.vespa.metricsproxy.metric.model.DimensionId.toDimensionId;
 import static ai.vespa.metricsproxy.metric.model.MetricId.toMetricId;
 import static ai.vespa.metricsproxy.metric.model.json.JacksonUtil.objectMapper;
-import static java.util.Collections.emptyList;
-import static java.util.Collections.singletonList;
+
 import static java.util.logging.Level.WARNING;
 import static java.util.stream.Collectors.toList;
 
@@ -51,7 +50,7 @@ public class GenericJsonUtil {
 
     public static GenericJsonModel toGenericJsonModel(List<MetricsPacket> metricsPackets, Node node) {
         Map<ServiceId, List<MetricsPacket>> packetsByService = metricsPackets.stream()
-                .collect(Collectors.groupingBy(packet -> packet.service, LinkedHashMap::new, toList()));
+                .collect(Collectors.groupingBy(MetricsPacket::service, LinkedHashMap::new, toList()));
 
         var jsonModel = new GenericJsonModel();
         if (node != null) {
@@ -67,13 +66,13 @@ public class GenericJsonUtil {
                     .toList();
             var genericService = packets.stream().findFirst()
                     .map(firstPacket -> new GenericService(serviceId.id,
-                                                           firstPacket.timestamp,
-                                                           StatusCode.values()[firstPacket.statusCode],
-                                                           firstPacket.statusMessage,
+                                                           firstPacket.timestamp(),
+                                                           StatusCode.values()[firstPacket.statusCode()],
+                                                           firstPacket.statusMessage(),
                                                            genericMetricsList))
                     .get();
             if (VESPA_NODE_SERVICE_ID.equals(serviceId)) {
-                jsonModel.node = new GenericNode(genericService.timestamp, genericService.metrics);
+                jsonModel.node = new GenericNode(genericService.timeAsInstant(), genericService.metrics);
             } else {
                 genericServices.add(genericService);
 
@@ -90,7 +89,7 @@ public class GenericJsonUtil {
             return toMetricsPackets(jsonModel);
         } catch (IOException e) {
             log.log(WARNING, "Could not create metrics packet from string:\n" + jsonString, e);
-            return emptyList();
+            return List.of();
         }
     }
 
@@ -106,15 +105,15 @@ public class GenericJsonUtil {
         if (node == null) return packets;
 
         if (node.metrics == null || node.metrics.isEmpty()) {
-            return singletonList(new MetricsPacket.Builder(VESPA_NODE_SERVICE_ID)
+            return List.of(new MetricsPacket.Builder(VESPA_NODE_SERVICE_ID)
                                          .statusCode(StatusCode.UP.ordinal())
-                                         .timestamp(node.timestamp));
+                                         .timestamp(node.timeAsInstant()));
         }
 
         for (var genericMetrics : node.metrics) {
             var packet = new MetricsPacket.Builder(VESPA_NODE_SERVICE_ID)
                     .statusCode(StatusCode.UP.ordinal())
-                    .timestamp(node.timestamp);
+                    .timestamp(node.timeAsInstant());
             addMetrics(genericMetrics, packet);
             packets.add(packet);
         }
@@ -124,7 +123,7 @@ public class GenericJsonUtil {
     private static List<MetricsPacket.Builder> toServicePackets(GenericService service) {
         List<MetricsPacket.Builder> packets = new ArrayList<>();
         if (service.metrics == null || service.metrics.isEmpty())
-            return singletonList(newServicePacket(service));
+            return List.of(newServicePacket(service));
 
         for (var genericMetrics : service.metrics) {
             var packet = newServicePacket(service);
@@ -139,7 +138,7 @@ public class GenericJsonUtil {
         return new MetricsPacket.Builder(ServiceId.toServiceId(service.name))
                 .statusCode(StatusCode.fromString(service.status.code).ordinal())
                 .statusMessage(service.status.description)
-                .timestamp(service.timestamp);
+                .timestamp(service.timeAsInstant());
     }
 
     private static void addMetrics(GenericMetrics genericMetrics, MetricsPacket.Builder packet) {

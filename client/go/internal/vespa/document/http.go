@@ -3,6 +3,7 @@ package document
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"math"
@@ -15,7 +16,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/go-json-experiment/json"
 	"github.com/klauspost/compress/gzip"
 
 	"github.com/vespa-engine/vespa/client/go/internal/httputil"
@@ -43,6 +43,7 @@ type Client struct {
 // ClientOptions specifices the configuration options of a feed client.
 type ClientOptions struct {
 	BaseURL     string
+	Header      http.Header
 	Timeout     time.Duration
 	Route       string
 	TraceLevel  int
@@ -94,48 +95,48 @@ func NewClient(options ClientOptions, httpClients []httputil.Client) (*Client, e
 	}
 	c.gzippers.New = func() any { return gzip.NewWriter(io.Discard) }
 	c.buffers.New = func() any { return &bytes.Buffer{} }
-	for i := 0; i < runtime.NumCPU(); i++ {
+	for range runtime.NumCPU() {
 		go c.preparePending()
 	}
 	return c, nil
 }
 
-func writeQueryParam(sb *bytes.Buffer, start int, escape bool, k, v string) {
-	if sb.Len() == start {
-		sb.WriteString("?")
+func writeQueryParam(buf *bytes.Buffer, start int, escape bool, k, v string) {
+	if buf.Len() == start {
+		buf.WriteString("?")
 	} else {
-		sb.WriteString("&")
+		buf.WriteString("&")
 	}
-	sb.WriteString(k)
-	sb.WriteString("=")
+	buf.WriteString(k)
+	buf.WriteString("=")
 	if escape {
-		sb.WriteString(url.QueryEscape(v))
+		buf.WriteString(url.QueryEscape(v))
 	} else {
-		sb.WriteString(v)
+		buf.WriteString(v)
 	}
 }
 
-func (c *Client) writeDocumentPath(id Id, sb *bytes.Buffer) {
-	sb.WriteString(strings.TrimSuffix(c.options.BaseURL, "/"))
-	sb.WriteString("/document/v1/")
-	sb.WriteString(url.PathEscape(id.Namespace))
-	sb.WriteString("/")
-	sb.WriteString(url.PathEscape(id.Type))
+func (c *Client) writeDocumentPath(id Id, buf *bytes.Buffer) {
+	buf.WriteString(strings.TrimSuffix(c.options.BaseURL, "/"))
+	buf.WriteString("/document/v1/")
+	buf.WriteString(url.PathEscape(id.Namespace))
+	buf.WriteString("/")
+	buf.WriteString(url.PathEscape(id.Type))
 	if id.Number != nil {
-		sb.WriteString("/number/")
+		buf.WriteString("/number/")
 		n := uint64(*id.Number)
-		sb.WriteString(strconv.FormatUint(n, 10))
+		buf.WriteString(strconv.FormatUint(n, 10))
 	} else if id.Group != "" {
-		sb.WriteString("/group/")
-		sb.WriteString(url.PathEscape(id.Group))
+		buf.WriteString("/group/")
+		buf.WriteString(url.PathEscape(id.Group))
 	} else {
-		sb.WriteString("/docid")
+		buf.WriteString("/docid")
 	}
-	sb.WriteString("/")
-	sb.WriteString(url.PathEscape(id.UserSpecific))
+	buf.WriteString("/")
+	buf.WriteString(url.PathEscape(id.UserSpecific))
 }
 
-func (c *Client) methodAndURL(d Document, sb *bytes.Buffer) (string, string) {
+func (c *Client) methodAndURL(d Document, buf *bytes.Buffer) (string, string) {
 	httpMethod := ""
 	switch d.Operation {
 	case OperationPut:
@@ -146,28 +147,28 @@ func (c *Client) methodAndURL(d Document, sb *bytes.Buffer) (string, string) {
 		httpMethod = http.MethodDelete
 	}
 	// Base URL and path
-	c.writeDocumentPath(d.Id, sb)
+	c.writeDocumentPath(d.Id, buf)
 	// Query part
-	queryStart := sb.Len()
+	queryStart := buf.Len()
 	if c.options.Timeout > 0 {
-		writeQueryParam(sb, queryStart, false, "timeout", strconv.FormatInt(c.options.Timeout.Milliseconds(), 10)+"ms")
+		writeQueryParam(buf, queryStart, false, "timeout", strconv.FormatInt(c.options.Timeout.Milliseconds(), 10)+"ms")
 	}
 	if c.options.Route != "" {
-		writeQueryParam(sb, queryStart, true, "route", c.options.Route)
+		writeQueryParam(buf, queryStart, true, "route", c.options.Route)
 	}
 	if c.options.TraceLevel > 0 {
-		writeQueryParam(sb, queryStart, false, "tracelevel", strconv.Itoa(c.options.TraceLevel))
+		writeQueryParam(buf, queryStart, false, "tracelevel", strconv.Itoa(c.options.TraceLevel))
 	}
 	if c.options.Speedtest {
-		writeQueryParam(sb, queryStart, false, "dryRun", "true")
+		writeQueryParam(buf, queryStart, false, "dryRun", "true")
 	}
 	if d.Condition != "" {
-		writeQueryParam(sb, queryStart, true, "condition", d.Condition)
+		writeQueryParam(buf, queryStart, true, "condition", d.Condition)
 	}
 	if d.Create {
-		writeQueryParam(sb, queryStart, false, "create", "true")
+		writeQueryParam(buf, queryStart, false, "create", "true")
 	}
-	return httpMethod, sb.String()
+	return httpMethod, buf.String()
 }
 
 func (c *Client) leastBusyClient() *countingHTTPClient {
@@ -216,12 +217,17 @@ func (c *Client) prepare(document Document) (*http.Request, *bytes.Buffer, error
 	return pd.request, pd.buf, pd.err
 }
 
-func newRequest(method, url string, body io.Reader, gzipped bool) (*http.Request, error) {
+func (c *Client) newRequest(method, url string, body io.Reader, gzipped bool) (*http.Request, error) {
 	req, err := http.NewRequest(method, url, body)
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Content-Type", "application/json; charset=utf-8")
+	for k, v := range c.options.Header {
+		req.Header[k] = v
+	}
+	if method != http.MethodGet {
+		req.Header.Set("Content-Type", "application/json; charset=utf-8")
+	}
 	if gzipped {
 		req.Header.Set("Content-Encoding", "gzip")
 	}
@@ -231,7 +237,7 @@ func newRequest(method, url string, body io.Reader, gzipped bool) (*http.Request
 func (c *Client) createRequest(method, url string, body []byte, buf *bytes.Buffer) (*http.Request, error) {
 	buf.Reset()
 	if len(body) == 0 {
-		return newRequest(method, url, nil, false)
+		return c.newRequest(method, url, nil, false)
 	}
 	useGzip := c.options.Compression == CompressionGzip || (c.options.Compression == CompressionAuto && len(body) > 512)
 	var r io.Reader
@@ -249,7 +255,7 @@ func (c *Client) createRequest(method, url string, body []byte, buf *bytes.Buffe
 	} else {
 		r = bytes.NewReader(body)
 	}
-	return newRequest(method, url, r, useGzip)
+	return c.newRequest(method, url, r, useGzip)
 }
 
 func (c *Client) clientTimeout() time.Duration {
@@ -282,14 +288,17 @@ func (c *Client) Send(document Document) Result {
 }
 
 // Get retrieves document with given ID.
-func (c *Client) Get(id Id) Result {
+func (c *Client) Get(id Id, fieldSet string) Result {
 	start := c.now()
 	buf := c.buffer()
 	defer c.buffers.Put(buf)
 	c.writeDocumentPath(id, buf)
+	if fieldSet != "" {
+		writeQueryParam(buf, buf.Len(), true, "fieldSet", fieldSet)
+	}
 	url := buf.String()
 	result := Result{Id: id}
-	req, err := http.NewRequest(http.MethodGet, url, nil)
+	req, err := c.newRequest(http.MethodGet, url, nil, false)
 	if err != nil {
 		return resultWithErr(result, err, 0)
 	}
@@ -328,7 +337,7 @@ func (c *Client) resultWithResponse(resp *http.Response, sentBytes int, result R
 	} else {
 		if result.Success() && c.options.TraceLevel > 0 {
 			var jsonResponse struct {
-				Trace json.RawValue `json:"trace"`
+				Trace json.RawMessage `json:"trace"`
 			}
 			if err := json.Unmarshal(buf.Bytes(), &jsonResponse); err != nil {
 				result = resultWithErr(result, fmt.Errorf("failed to decode json response: %w", err), elapsed)

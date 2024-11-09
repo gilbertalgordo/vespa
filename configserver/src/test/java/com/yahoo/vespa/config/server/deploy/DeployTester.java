@@ -21,8 +21,10 @@ import com.yahoo.config.provision.ApplicationId;
 import com.yahoo.config.provision.Provisioner;
 import com.yahoo.config.provision.TenantName;
 import com.yahoo.config.provision.Zone;
+import com.yahoo.container.jdisc.secretstore.SecretStore;
 import com.yahoo.vespa.config.server.ApplicationRepository;
 import com.yahoo.vespa.config.server.MockProvisioner;
+import com.yahoo.vespa.config.server.MockSecretStore;
 import com.yahoo.vespa.config.server.TimeoutBudget;
 import com.yahoo.vespa.config.server.application.ConfigConvergenceChecker;
 import com.yahoo.vespa.config.server.application.OrchestratorMock;
@@ -53,7 +55,6 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
-import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 
@@ -140,6 +141,13 @@ public class DeployTester {
      * Do the initial "deploy" with the existing API-less code as the deploy API doesn't support first deploys yet.
      */
     public PrepareResult deployApp(String applicationPath, String vespaVersion)  {
+        return deployApp(applicationPath, new PrepareParams.Builder().vespaVersion(vespaVersion));
+    }
+
+    /**
+     * Do the initial "deploy" with the existing API-less code as the deploy API doesn't support first deploys yet.
+     */
+    public PrepareResult deployApp(String applicationPath, PrepareParams.Builder paramsBuilder)  {
         String endpoints = """
                 [
                   {
@@ -152,15 +160,9 @@ public class DeployTester {
                   }
                 ]
                 """;
-        return deployApp(applicationPath, new PrepareParams.Builder().containerEndpoints(endpoints).vespaVersion(vespaVersion));
-    }
-
-    /**
-     * Do the initial "deploy" with the existing API-less code as the deploy API doesn't support first deploys yet.
-     */
-    public PrepareResult deployApp(String applicationPath, PrepareParams.Builder paramsBuilder)  {
-         paramsBuilder.applicationId(applicationId)
-                .timeoutBudget(new TimeoutBudget(clock, Duration.ofSeconds(60)));
+        paramsBuilder.applicationId(applicationId)
+                     .timeoutBudget(new TimeoutBudget(clock, Duration.ofSeconds(60)))
+                     .containerEndpoints(endpoints);
 
         return applicationRepository.deploy(new File(applicationPath), paramsBuilder.build());
     }
@@ -219,7 +221,7 @@ public class DeployTester {
         public ModelCreateResult createAndValidateModel(ModelContext modelContext, ValidationParameters validationParameters) {
             if ( ! validationParameters.ignoreValidationErrors())
                 throw new IllegalArgumentException("Model building fails");
-            return new ModelCreateResult(createModel(modelContext), Collections.emptyList());
+            return new ModelCreateResult(createModel(modelContext), List.of());
         }
 
     }
@@ -276,6 +278,7 @@ public class DeployTester {
         private ConfigserverConfig configserverConfig;
         private Zone zone;
         private Curator curator = new MockCurator();
+        private SecretStore secretStore = new MockSecretStore();
         private Metrics metrics;
         private List<ModelFactory> modelFactories;
         private ConfigConvergenceChecker configConvergenceChecker = new ConfigConvergenceChecker();
@@ -302,6 +305,7 @@ public class DeployTester {
                     .withClock(clock)
                     .withConfigserverConfig(configserverConfig)
                     .withCurator(curator)
+                    .withSecretStore(secretStore)
                     .withFileDistributionFactory(new MockFileDistributionFactory(configserverConfig))
                     .withMetrics(Optional.ofNullable(metrics).orElse(Metrics.createTestMetrics()))
                     .withModelFactoryRegistry((new ModelFactoryRegistry(modelFactories)))
@@ -352,6 +356,11 @@ public class DeployTester {
 
         public Builder curator(Curator curator) {
             this.curator = curator;
+            return this;
+        }
+
+        public Builder secretStore(SecretStore secretStore) {
+            this.secretStore = secretStore;
             return this;
         }
 

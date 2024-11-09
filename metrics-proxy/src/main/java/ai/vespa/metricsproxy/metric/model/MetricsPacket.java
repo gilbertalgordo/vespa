@@ -14,7 +14,6 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.function.Function;
 
-import static java.util.Collections.unmodifiableMap;
 import static java.util.stream.Collectors.joining;
 
 /**
@@ -28,28 +27,32 @@ import static java.util.stream.Collectors.joining;
  */
 public class MetricsPacket {
 
-    public final int statusCode;
-    public final String statusMessage;
-    public final long timestamp;
-    public final ServiceId service;
+    private final int statusCode;
+    private final String statusMessage;
+    private final ServiceId service;
+    private final Instant timestamp;
     private final Map<MetricId, Number> metrics;
     private final Map<DimensionId, String> dimensions;
     private final Set<ConsumerId> consumers;
 
-    private MetricsPacket(int statusCode, String statusMessage, long timestamp, ServiceId service,
+    private MetricsPacket(int statusCode, String statusMessage, Instant timestamp, ServiceId service,
                           Map<MetricId, Number> metrics, Map<DimensionId, String> dimensions, Set<ConsumerId> consumers ) {
         this.statusCode = statusCode;
         this.statusMessage = statusMessage;
         this.timestamp = timestamp;
         this.service = service;
-        this.metrics = metrics;
-        this.dimensions = dimensions;
+        this.metrics = Collections.unmodifiableMap(metrics);  // Retain order for tests
+        this.dimensions = Collections.unmodifiableMap(dimensions); // Retain order for tests
         this.consumers = Set.copyOf(consumers);
     }
 
-    public Map<MetricId, Number> metrics() { return unmodifiableMap(metrics); }
-    public Map<DimensionId, String> dimensions() { return unmodifiableMap(dimensions); }
-    public Set<ConsumerId> consumers() { return consumers;}
+    public Map<MetricId, Number> metrics() { return metrics; }
+    public Map<DimensionId, String> dimensions() { return dimensions; }
+    public Set<ConsumerId> consumers() { return consumers; }
+    public Instant timestamp() { return timestamp; }
+    public ServiceId service() { return service; }
+    public int statusCode() { return statusCode; }
+    public String statusMessage() { return statusMessage; }
 
     @Override
     public String toString() {
@@ -77,10 +80,10 @@ public class MetricsPacket {
         private ServiceId service;
         private int statusCode = 0;
         private String statusMessage = "";
-        private long timestamp = 0L;
+        private Instant timestamp = Instant.EPOCH;
         private Map<MetricId, Number> metrics = new LinkedHashMap<>();
         private final Map<DimensionId, String> dimensions = new LinkedHashMap<>();
-        private Set<ConsumerId> consumers = Collections.emptySet();
+        private Set<ConsumerId> consumers = Set.of();
 
         public Builder(ServiceId service) {
             Objects.requireNonNull(service, "Service cannot be null.");
@@ -103,7 +106,7 @@ public class MetricsPacket {
             return this;
         }
 
-        public Builder timestamp(Long timestamp) {
+        public Builder timestamp(Instant timestamp) {
             if (timestamp != null) this.timestamp = timestamp;
             return this;
         }
@@ -169,7 +172,7 @@ public class MetricsPacket {
             if ((extraConsumers != null) && !extraConsumers.isEmpty()) {
                 if (consumers.isEmpty()) {
                     if (extraConsumers.size() == 1) {
-                        consumers = Collections.singleton(extraConsumers.iterator().next());
+                        consumers = Set.of(extraConsumers.iterator().next());
                         return this;
                     }
                     consumers = new LinkedHashSet<>(extraConsumers.size());
@@ -195,7 +198,7 @@ public class MetricsPacket {
             return ! metrics.isEmpty();
         }
 
-        public Instant getTimestamp() { return Instant.ofEpochSecond(timestamp); }
+        public Instant getTimestamp() { return timestamp; }
 
     }
 

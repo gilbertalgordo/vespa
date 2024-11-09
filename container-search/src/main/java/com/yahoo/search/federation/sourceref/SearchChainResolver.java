@@ -60,21 +60,21 @@ public class SearchChainResolver {
             return addSearchChain(searchChainId, federationOptions, List.of());
         }
 
-        public Builder addSearchChain(ComponentId searchChainId, List<String> documentTypes) {
-            return addSearchChain(searchChainId, new FederationOptions(), documentTypes);
+        public Builder addSearchChain(ComponentId searchChainId, List<String> schemas) {
+            return addSearchChain(searchChainId, new FederationOptions(), schemas);
         }
 
         public Builder addSearchChain(ComponentId searchChainId,
                                       FederationOptions federationOptions,
-                                      List<String> documentTypes) {
-            registerTarget(new SingleTarget(searchChainId,
-                                            new SearchChainInvocationSpec(searchChainId,
-                                                                          null,
-                                                                          null,
-                                                                          federationOptions,
-                                                                          documentTypes),
-                                            false));
+                                      List<String> schemas) {
+            addSearchChain(new SearchChainInvocationSpec(searchChainId, federationOptions, schemas));
             return this;
+        }
+        private Builder addSearchChain(SearchChainInvocationSpec invocationSpec) {
+            return registerTarget(new SingleTarget(invocationSpec.searchChainId, invocationSpec, false));
+        }
+        public Builder addSearchChain(ComponentId id, SearchChainInvocationSpec invocationSpec) {
+            return registerTarget(new SingleTarget(id, invocationSpec, false));
         }
 
         private Builder registerTarget(SingleTarget singleTarget) {
@@ -87,9 +87,8 @@ public class SearchChainResolver {
 
         public Builder addSourceForProvider(ComponentId sourceId, ComponentId providerId, ComponentId searchChainId,
                                             boolean isDefaultProviderForSource, FederationOptions federationOptions,
-                                            List<String> documentTypes) {
-            SearchChainInvocationSpec searchChainInvocationSpec =
-                    new SearchChainInvocationSpec(searchChainId, sourceId, providerId, federationOptions, documentTypes);
+                                            List<String> schemas) {
+            var searchChainInvocationSpec = new SearchChainInvocationSpec(searchChainId, sourceId, providerId, federationOptions, schemas);
 
             SourcesTarget sourcesTarget = getOrRegisterSourceTarget(sourceId);
             sourcesTarget.addSource(providerId, searchChainInvocationSpec, isDefaultProviderForSource);
@@ -128,19 +127,13 @@ public class SearchChainResolver {
         this.defaultTargets = Collections.unmodifiableSortedSet(defaultTargets);
     }
 
-    public SearchChainInvocationSpec resolve(ComponentSpecification sourceRef, Properties sourceToProviderMap)
-            throws UnresolvedSearchChainException {
+    public ResolveResult resolve(ComponentSpecification sourceRef, Properties sourceToProviderMap) {
 
-        Target target = resolveTarget(sourceRef);
-        return target.responsibleSearchChain(sourceToProviderMap);
-    }
-
-    private Target resolveTarget(ComponentSpecification sourceRef) throws UnresolvedSearchChainException {
         Target target = targets.getComponent(sourceRef);
         if (target == null) {
-            throw UnresolvedSourceRefException.createForMissingSourceRef(sourceRef);
+            return new ResolveResult(SourceRefResolver.createForMissingSourceRef(sourceRef));
         }
-        return target;
+        return target.responsibleSearchChain(sourceToProviderMap);
     }
 
     public SortedSet<Target> allTopLevelTargets() {

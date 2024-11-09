@@ -67,7 +67,7 @@ UpdateBucketDatabaseProcessor::UpdateBucketDatabaseProcessor(const framework::Cl
     : BucketDatabase::EntryUpdateProcessor(),
       _clock(clock),
       _changed_nodes(changed_nodes),
-      _ideal_nodes(ideal_nodes.cbegin(), ideal_nodes.cend()),
+      _ideal_nodes(ideal_nodes.begin(), ideal_nodes.end()),
       _reset_trusted(reset_trusted)
 {
 }
@@ -241,7 +241,7 @@ DistributorStripeComponent::node_supported_features_repo() const noexcept
 }
 
 std::unique_ptr<document::select::Node>
-DistributorStripeComponent::parse_selection(const vespalib::string& selection) const
+DistributorStripeComponent::parse_selection(const std::string& selection) const
 {
     document::select::Parser parser(*getTypeRepo()->documentTypeRepo, getBucketIdFactory());
     return parser.parse(selection);

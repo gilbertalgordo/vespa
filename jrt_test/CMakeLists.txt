@@ -3,9 +3,9 @@ vespa_define_module(
     DEPENDS
     vespalog
     vespalib
-    fnet
-    slobrok
-    configdefinitions
+    vespa_fnet
+    vespa_slobrok
+    vespa_configdefinitions
 
     APPS
     src/binref

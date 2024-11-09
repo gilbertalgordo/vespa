@@ -21,22 +21,24 @@ using vespalib::eval::TensorSpec;
 using vespalib::eval::Value;
 using vespalib::eval::ValueType;
 
+using namespace std::literals;
+
 namespace search {
 
-std::vector<char> as_vector(vespalib::stringref value) {
+std::vector<char> as_vector(std::string_view value) {
     return {value.data(), value.data() + value.size()};
 }
 
-std::vector<char> as_vector(vespalib::ConstArrayRef<char> value) {
+std::vector<char> as_vector(std::span<const char> value) {
     return {value.data(), value.data() + value.size()};
 }
 
-std::vector<double> as_vector(vespalib::ConstArrayRef<double> value) {
+std::vector<double> as_vector(std::span<const double> value) {
     return {value.data(), value.data() + value.size()};
 }
 
-vespalib::string vec_2d_spec("tensor(x[2])");
-vespalib::string vec_mixed_2d_spec("tensor(a{},x[2])");
+std::string vec_2d_spec("tensor(x[2])");
+std::string vec_mixed_2d_spec("tensor(a{},x[2])");
 
 TensorSpec
 vec_2d(double x0, double x1)
@@ -51,7 +53,7 @@ vec_mixed_2d(std::vector<std::vector<double>> val)
     for (uint32_t a = 0; a < val.size(); ++a) {
         vespalib::asciistream a_stream;
         a_stream << a;
-        vespalib::string a_as_string = a_stream.str();
+        std::string a_as_string = a_stream.str();
         for (uint32_t x = 0; x < val[a].size(); ++x) {
             spec.add({{"a", a_as_string.c_str()},{"x", x}}, val[a][x]);
 	}
@@ -197,18 +199,18 @@ void ExtendAttributeTest::testExtendRaw(AttributeVector& attr)
     auto* ext_attr = attr.getExtendInterface();
     EXPECT_NE(nullptr, ext_attr);
     add_doc(attr, 0);
-    ext_attr->add(as_vector("1.7"));
+    ext_attr->add(as_vector("1.7"sv));
     auto buf = attr.get_raw(0);
-    EXPECT_EQ(as_vector("1.7"), as_vector(buf));
-    ext_attr->add(vespalib::ConstArrayRef<char>(as_vector("2.3")));
+    EXPECT_EQ(as_vector("1.7"sv), as_vector(buf));
+    ext_attr->add(std::span<const char>(as_vector("2.3"sv)));
     buf = attr.get_raw(0);
-    EXPECT_EQ(as_vector("2.3"), as_vector(buf));
+    EXPECT_EQ(as_vector("2.3"sv), as_vector(buf));
     add_doc(attr, 1);
-    ext_attr->add(as_vector("3.6"));
+    ext_attr->add(as_vector("3.6"sv));
     buf = attr.get_raw(1);
-    EXPECT_EQ(as_vector("3.6"), as_vector(buf));
+    EXPECT_EQ(as_vector("3.6"sv), as_vector(buf));
     buf = attr.get_raw(0);
-    EXPECT_EQ(as_vector("2.3"), as_vector(buf));
+    EXPECT_EQ(as_vector("2.3"sv), as_vector(buf));
     add_doc(attr, 2);
     ext_attr->add(zeros);
     buf = attr.get_raw(2);
@@ -224,7 +226,7 @@ void ExtendAttributeTest::testExtendRaw(AttributeVector& attr)
 
 void ExtendAttributeTest::testExtendTensor(AttributeVector& attr)
 {
-    std::vector<double> empty_cells{0.0, 0.0};
+    std::vector<double> empty_cells{0, 0};
     std::vector<double> spec0_dense_cells{1.0, 2.0};
     std::vector<double> spec0_mixed_cells0{3.0, 4.0};
     std::vector<double> spec0_mixed_cells1{5.0, 6.0};

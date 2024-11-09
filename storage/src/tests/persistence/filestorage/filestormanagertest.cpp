@@ -1,6 +1,7 @@
 // Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include <tests/common/dummystoragelink.h>
+#include <tests/common/storage_config_set.h>
 #include <tests/common/testhelper.h>
 #include <tests/common/teststorageapp.h>
 #include <tests/persistence/filestorage/forwardingmessagesender.h>
@@ -41,8 +42,8 @@
 #include <vespa/log/log.h>
 LOG_SETUP(".filestormanagertest");
 
-using std::unique_ptr;
 using document::Document;
+using document::BucketId;
 using namespace storage::api;
 using storage::spi::test::makeSpiBucket;
 using document::test::makeDocumentBucket;
@@ -70,8 +71,8 @@ namespace storage {
 
 namespace {
 
-vespalib::string _cluster("cluster");
-vespalib::string _storage("storage");
+std::string _cluster("cluster");
+std::string _storage("storage");
 api::StorageMessageAddress _storage2(&_storage, lib::NodeType::STORAGE, 2);
 api::StorageMessageAddress _storage3(&_storage, lib::NodeType::STORAGE, 3);
 api::StorageMessageAddress _cluster1(&_cluster, lib::NodeType::STORAGE, 1);
@@ -90,10 +91,8 @@ make_bucket_for_doc(const document::DocumentId& docid)
 
 struct FileStorTestBase : Test {
     enum {LONG_WAITTIME=60};
-    unique_ptr<TestServiceLayerApp> _node;
-    std::unique_ptr<vdstestlib::DirConfig> config;
-    std::unique_ptr<vdstestlib::DirConfig> config2;
-    std::unique_ptr<vdstestlib::DirConfig> smallConfig;
+    std::unique_ptr<StorageConfigSet> _config;
+    std::unique_ptr<TestServiceLayerApp> _node;
     const int32_t _waitTime;
     const document::DocumentType* _testdoctype1;
 
@@ -164,29 +163,10 @@ struct FileStorTestBase : Test {
 
     void setupDisks() {
         std::string rootOfRoot = "filestormanagertest";
-        config = std::make_unique<vdstestlib::DirConfig>(getStandardConfig(true, rootOfRoot));
+        _config = StorageConfigSet::make_storage_node_config();
 
-        config2 = std::make_unique<vdstestlib::DirConfig>(*config);
-        config2->getConfig("stor-server").set("root_folder", rootOfRoot + "-vdsroot.2");
-        config2->getConfig("stor-devices").set("root_folder", rootOfRoot + "-vdsroot.2");
-        config2->getConfig("stor-server").set("node_index", "1");
-
-        smallConfig = std::make_unique<vdstestlib::DirConfig>(*config);
-        vdstestlib::DirConfig::Config& c(smallConfig->getConfig("stor-filestor", true));
-        c.set("initial_index_read", "128");
-        c.set("use_direct_io", "false");
-        c.set("maximum_gap_to_read_through", "64");
-
-        assert(system(vespalib::make_string("rm -rf %s", getRootFolder(*config).c_str()).c_str()) == 0);
-        assert(system(vespalib::make_string("rm -rf %s", getRootFolder(*config2).c_str()).c_str()) == 0);
-        assert(system(vespalib::make_string("mkdir -p %s/disks/d0", getRootFolder(*config).c_str()).c_str()) == 0);
-        assert(system(vespalib::make_string("mkdir -p %s/disks/d0", getRootFolder(*config2).c_str()).c_str()) == 0);
-        try {
-            _node = std::make_unique<TestServiceLayerApp>(NodeIndex(0), config->getConfigId());
-            _node->setupDummyPersistence();
-        } catch (config::InvalidConfigException& e) {
-            fprintf(stderr, "%s\n", e.what());
-        }
+        _node = std::make_unique<TestServiceLayerApp>(NodeIndex(0), _config->config_uri());
+        _node->setupDummyPersistence();
         _testdoctype1 = _node->getTypeRepo()->getDocumentType("testdoctype1");
     }
 
@@ -226,11 +206,10 @@ struct TestFileStorComponents {
     DummyStorageLink top;
     FileStorManager* manager;
 
-    explicit TestFileStorComponents(FileStorTestBase& test, bool use_small_config = false)
+    explicit TestFileStorComponents(FileStorTestBase& test)
         : manager(nullptr)
     {
-        auto config_uri = config::ConfigUri((use_small_config ? test.smallConfig : test.config)->getConfigId());
-        auto config = config_from<StorFilestorConfig>(config_uri);
+        auto config = config_from<StorFilestorConfig>(test._config->config_uri());
         auto fsm = std::make_unique<FileStorManager>(*config, test._node->getPersistenceProvider(),
                                                      test._node->getComponentRegister(), *test._node, test._node->get_host_info());
         manager = fsm.get();
@@ -403,6 +382,38 @@ TEST_F(FileStorManagerTest, put) {
         EXPECT_EQ(ReturnCode(ReturnCode::OK), reply->getResult());
         EXPECT_EQ(1, reply->getBucketInfo().getDocumentCount());
     }
+}
+
+TEST_F(FileStorManagerTest, feed_op_batch_updates_bucket_db_and_reply_bucket_info) {
+    PersistenceHandlerComponents c(*this);
+    c.filestorHandler->set_max_feed_op_batch_size(10);
+    BucketId bucket_id(16, 1);
+    createBucket(bucket_id);
+    constexpr uint32_t n = 10;
+    // No persistence thread started yet, so no chance of racing
+    for (uint32_t i = 0; i < n; ++i) {
+        auto put = make_put_command(120, vespalib::make_string("id:foo:testdoctype1:n=1:%u", i), Timestamp(1000) + i);
+        put->setAddress(_storage3);
+        c.filestorHandler->schedule(put);
+    }
+    auto pt = c.make_disk_thread();
+    c.filestorHandler->flush(true);
+    c.top.waitForMessages(n, _waitTime);
+    c.executor.sync_all(); // Ensure all async reply processing tasks must have completed.
+    api::BucketInfo expected_bucket_info;
+    {
+        StorBucketDatabase::WrappedEntry entry(_node->getStorageBucketDatabase().get(bucket_id, "foo"));
+        ASSERT_TRUE(entry.exists());
+        EXPECT_EQ(entry->getBucketInfo().getDocumentCount(), n);
+        expected_bucket_info = entry->getBucketInfo();
+    }
+    // All replies should have the _same_ bucket info due to being processed in the same batch.
+    auto replies = c.top.getRepliesOnce();
+    for (auto& reply : replies) {
+        auto actual_bucket_info = dynamic_cast<api::PutReply&>(*reply).getBucketInfo();
+        EXPECT_EQ(actual_bucket_info, expected_bucket_info);
+    }
+    c.filestorHandler->close(); // Ensure persistence thread is no longer in message fetch code
 }
 
 TEST_F(FileStorManagerTest, running_task_against_unknown_bucket_fails) {
@@ -726,7 +737,7 @@ TEST_F(FileStorManagerTest, handler_timeout) {
         filestorHandler.schedule(cmd);
     }
 
-    std::this_thread::sleep_for(51ms);
+    _node->getClock().addMilliSecondsToTime(51);
     for (;;) {
         auto lock = filestorHandler.getNextMessage(stripeId);
         if (lock.lock.get()) {
@@ -1222,7 +1233,7 @@ createIterator(DummyStorageLink& link,
 }
 
 TEST_F(FileStorManagerTest, visiting) {
-    TestFileStorComponents c(*this, true);
+    TestFileStorComponents c(*this);
     auto& top = c.top;
     // Adding documents to two buckets which we are going to visit
     // We want one bucket in one slotfile, and one bucket with a file split
@@ -1376,8 +1387,7 @@ TEST_F(FileStorManagerTest, remove_location) {
 TEST_F(FileStorManagerTest, delete_bucket) {
     TestFileStorComponents c(*this);
 
-    auto config_uri = config::ConfigUri(config->getConfigId());
-    StorFilestorConfigBuilder my_config(*config_from<StorFilestorConfig>(config_uri));
+    auto my_config = *config_from<StorFilestorConfig>(_config->config_uri());
     c.manager->on_configure(my_config);
 
     auto& top = c.top;

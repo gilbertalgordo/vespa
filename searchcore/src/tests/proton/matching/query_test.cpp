@@ -30,11 +30,8 @@
 #include <vespa/document/datatype/positiondatatype.h>
 #include <vespa/vespalib/stllike/asciistream.h>
 #include <vespa/vespalib/util/thread_bundle.h>
-#include <vespa/vespalib/testkit/testapp.h>
 #include <vespa/searchlib/query/tree/querytreecreator.h>
-
-#include <vespa/log/log.h>
-LOG_SETUP("query_test");
+#include <vespa/vespalib/gtest/gtest.h>
 
 using document::PositionDataType;
 using search::fef::FieldInfo;
@@ -124,6 +121,7 @@ InitializeGlobals globals;
 
 struct Fixture {
     Fixture();
+    ~Fixture();
     SearchIterator::UP getIterator(Node &node, ISearchContext &context);
     MatchData::UP _match_data;
     Blueprint::UP _blueprint;
@@ -137,6 +135,8 @@ Fixture::Fixture()
 {
 }
 
+Fixture::~Fixture() = default;
+
 SearchIterator::UP
 Fixture::getIterator(Node &node, ISearchContext &context) {
     MatchDataLayout mdl;
@@ -145,23 +145,23 @@ Fixture::getIterator(Node &node, ISearchContext &context) {
     _match_data = mdl.createMatchData();
 
     _blueprint = BlueprintBuilder::build(_requestContext, node, context);
-
-    _blueprint->fetchPostings(ExecuteInfo::TRUE);
-    SearchIterator::UP search(_blueprint->createSearch(*_match_data, true));
+    _blueprint->basic_plan(true, 1000);
+    _blueprint->fetchPostings(ExecuteInfo::FULL);
+    SearchIterator::UP search(_blueprint->createSearch(*_match_data));
     search->initFullRange();
     return search;
 }
 
 vespalib::ThreadBundle &ttb() { return vespalib::ThreadBundle::trivial(); }
 
-vespalib::string
+std::string
 termAsString(const search::query::Range &term) {
     vespalib::asciistream os;
     return (os << term).str();
 }
 
-const vespalib::string &
-termAsString(const vespalib::string & term) {
+const std::string &
+termAsString(const std::string & term) {
     return term;
 }
 
@@ -202,7 +202,8 @@ Node::UP buildSameElementQueryTree(const ViewResolver &resolver,
     return node;
 }
 
-TEST("requireThatMatchDataIsReserved") {
+TEST(QueryTest, requireThatMatchDataIsReserved)
+{
     Node::UP node = buildQueryTree(ViewResolver(), plain_index_env);
 
     MatchDataLayout mdl;
@@ -210,7 +211,7 @@ TEST("requireThatMatchDataIsReserved") {
     node->accept(visitor);
     MatchData::UP match_data = mdl.createMatchData();
 
-    EXPECT_EQUAL(term_count, match_data->getNumTermFields());
+    EXPECT_EQ(term_count, match_data->getNumTermFields());
 }
 
 ViewResolver getViewResolver() {
@@ -220,7 +221,8 @@ ViewResolver getViewResolver() {
     return resolver;
 }
 
-TEST("requireThatMatchDataIsReservedForEachFieldInAView") {
+TEST(QueryTest, requireThatMatchDataIsReservedForEachFieldInAView)
+{
     Node::UP node = buildQueryTree(getViewResolver(), resolved_index_env);
 
     MatchDataLayout mdl;
@@ -228,7 +230,7 @@ TEST("requireThatMatchDataIsReservedForEachFieldInAView") {
     node->accept(visitor);
     MatchData::UP match_data = mdl.createMatchData();
 
-    EXPECT_EQUAL(term_count * 2, match_data->getNumTermFields());
+    EXPECT_EQ(term_count * 2, match_data->getNumTermFields());
 }
 
 class LookupTestCheckerVisitor : public CustomTypeTermVisitor<ProtonNodeTypes>
@@ -236,8 +238,9 @@ class LookupTestCheckerVisitor : public CustomTypeTermVisitor<ProtonNodeTypes>
 public:
     template <class TermType>
     void checkNode(const TermType &n, int estimatedHitCount, bool empty) {
-        EXPECT_EQUAL(empty, (estimatedHitCount == 0));
-        EXPECT_EQUAL((double)estimatedHitCount / doc_count, n.field(0).getDocFreq());
+        EXPECT_EQ(empty, (estimatedHitCount == 0));
+        EXPECT_EQ(static_cast<uint64_t>(estimatedHitCount), n.field(0).get_doc_freq().frequency);
+        EXPECT_EQ(static_cast<uint64_t>(doc_count), n.field(0).get_doc_freq().count);
     }
 
     void visit(ProtonNumberTerm &n) override { checkNode(n, 1, false); }
@@ -258,7 +261,8 @@ public:
     void visit(ProtonInTerm&) override {}
 };
 
-TEST("requireThatTermsAreLookedUp") {
+TEST(QueryTest, requireThatTermsAreLookedUp)
+{
     FakeRequestContext requestContext;
     Node::UP node = buildQueryTree(ViewResolver(), plain_index_env);
 
@@ -289,10 +293,11 @@ TEST("requireThatTermsAreLookedUp") {
     Blueprint::UP blueprint = BlueprintBuilder::build(requestContext, *node, context);
 
     LookupTestCheckerVisitor checker;
-    TEST_DO(node->accept(checker));
+    node->accept(checker);
 }
 
-TEST("requireThatTermsAreLookedUpInMultipleFieldsFromAView") {
+TEST(QueryTest, requireThatTermsAreLookedUpInMultipleFieldsFromAView)
+{
     Node::UP node = buildQueryTree(getViewResolver(), resolved_index_env);
 
     FakeRequestContext requestContext;
@@ -325,10 +330,11 @@ TEST("requireThatTermsAreLookedUpInMultipleFieldsFromAView") {
     Blueprint::UP blueprint = BlueprintBuilder::build(requestContext, *node, context);
 
     LookupTestCheckerVisitor checker;
-    TEST_DO(node->accept(checker));
+    node->accept(checker);
 }
 
-TEST("requireThatAttributeTermsAreLookedUpInAttributeSource") {
+TEST(QueryTest, requireThatAttributeTermsAreLookedUpInAttributeSource)
+{
     const string term = "bar";
     ProtonStringTerm node(term, field, 1, Weight(2));
     node.resolve(ViewResolver(), attribute_index_env);
@@ -344,10 +350,11 @@ TEST("requireThatAttributeTermsAreLookedUpInAttributeSource") {
 
     Blueprint::UP blueprint = BlueprintBuilder::build(requestContext, node, context);
     EXPECT_TRUE(!blueprint->getState().estimate().empty);
-    EXPECT_EQUAL(1u, blueprint->getState().estimate().estHits);
+    EXPECT_EQ(1u, blueprint->getState().estimate().estHits);
 }
 
-TEST("requireThatAttributeTermDataHandlesAreAllocated") {
+TEST(QueryTest, requireThatAttributeTermDataHandlesAreAllocated)
+{
     const string term = "bar";
     ProtonStringTerm node(term, field, 1, Weight(2));
     node.resolve(ViewResolver(), attribute_index_env);
@@ -361,7 +368,7 @@ TEST("requireThatAttributeTermDataHandlesAreAllocated") {
 
     Blueprint::UP blueprint = BlueprintBuilder::build(requestContext, node, context);
     MatchData::UP match_data = mdl.createMatchData();
-    EXPECT_EQUAL(1u, match_data->getNumTermFields());
+    EXPECT_EQ(1u, match_data->getNumTermFields());
     EXPECT_TRUE(node.field(0).attribute_field);
 }
 
@@ -377,15 +384,16 @@ public:
 
     void visit(ProtonStringTerm &n) override {
         const ITermData &term_data = n;
-        EXPECT_EQUAL(string_weight.percent(), term_data.getWeight().percent());
-        EXPECT_EQUAL(1u, term_data.getPhraseLength());
-        EXPECT_EQUAL(string_id, term_data.getUniqueId());
-        EXPECT_EQUAL(term_data.numFields(), n.numFields());
+        EXPECT_EQ(string_weight.percent(), term_data.getWeight().percent());
+        EXPECT_EQ(1u, term_data.getPhraseLength());
+        EXPECT_EQ(string_id, term_data.getUniqueId());
+        EXPECT_EQ(term_data.numFields(), n.numFields());
         for (size_t i = 0; i < term_data.numFields(); ++i) {
             const ITermFieldData &term_field_data = term_data.field(i);
-            EXPECT_APPROX(2.0 / doc_count, term_field_data.getDocFreq(), 1.0e-6);
+            EXPECT_EQ(2u, term_field_data.get_doc_freq().frequency);
+            EXPECT_EQ(static_cast<uint64_t>(doc_count), term_field_data.get_doc_freq().count);
             EXPECT_TRUE(!n.field(i).attribute_field);
-            EXPECT_EQUAL(field_id + i, term_field_data.getFieldId());
+            EXPECT_EQ(field_id + i, term_field_data.getFieldId());
         }
     }
 
@@ -393,7 +401,7 @@ public:
     void visit(ProtonSuffixTerm &) override {}
     void visit(ProtonPhrase &n) override {
         const ITermData &term_data = n;
-        EXPECT_EQUAL(2u, term_data.getPhraseLength());
+        EXPECT_EQ(2u, term_data.getPhraseLength());
     }
     void visit(ProtonWeightedSetTerm &) override {}
     void visit(ProtonDotProduct &) override {}
@@ -405,7 +413,8 @@ public:
     void visit(ProtonInTerm&) override { }
 };
 
-TEST("requireThatTermDataIsFilledIn") {
+TEST(QueryTest, requireThatTermDataIsFilledIn)
+{
     Node::UP node = buildQueryTree(getViewResolver(), resolved_index_env);
 
     FakeRequestContext requestContext;
@@ -421,10 +430,8 @@ TEST("requireThatTermDataIsFilledIn") {
 
     Blueprint::UP blueprint = BlueprintBuilder::build(requestContext, *node, context);
 
-    TEST_DO(
-            SetUpTermDataTestCheckerVisitor checker;
-            node->accept(checker);
-    );
+    SetUpTermDataTestCheckerVisitor checker;
+    node->accept(checker);
 }
 
 FakeIndexSearchable getFakeSearchable(const string &term, int doc1, int doc2) {
@@ -434,7 +441,9 @@ FakeIndexSearchable getFakeSearchable(const string &term, int doc1, int doc2) {
     return source;
 }
 
-TEST_F("requireThatSingleIndexCanUseBlendingAsBlacklisting", Fixture) {
+TEST(QueryTest, requireThatSingleIndexCanUseBlendingAsBlacklisting)
+{
+    Fixture f;
     QueryBuilder<ProtonNodeTypes> builder;
     builder.addStringTerm(string_term, field, 1, Weight(2))
         .resolve(ViewResolver(), plain_index_env);
@@ -453,7 +462,9 @@ TEST_F("requireThatSingleIndexCanUseBlendingAsBlacklisting", Fixture) {
     iterator->unpack(5);
 }
 
-TEST_F("requireThatIteratorsAreBuiltWithBlending", Fixture) {
+TEST(QueryTest, requireThatIteratorsAreBuiltWithBlending)
+{
+    Fixture f;
     QueryBuilder<ProtonNodeTypes> builder;
     builder.addStringTerm(string_term, field, 1, Weight(2))
         .resolve(ViewResolver(), plain_index_env);
@@ -476,7 +487,9 @@ TEST_F("requireThatIteratorsAreBuiltWithBlending", Fixture) {
     EXPECT_TRUE(iterator->seek(7));
 }
 
-TEST_F("requireThatIteratorsAreBuiltForAllTermNodes", Fixture) {
+TEST(QueryTest, requireThatIteratorsAreBuiltForAllTermNodes)
+{
+    Fixture f;
     Node::UP node = buildQueryTree(ViewResolver(), plain_index_env);
     ASSERT_TRUE(node);
 
@@ -506,7 +519,9 @@ TEST_F("requireThatIteratorsAreBuiltForAllTermNodes", Fixture) {
     EXPECT_TRUE(iterator->seek(42));
 }
 
-TEST_F("requireThatNearIteratorsCanBeBuilt", Fixture) {
+TEST(QueryTest, requireThatNearIteratorsCanBeBuilt)
+{
+    Fixture f;
     QueryBuilder<ProtonNodeTypes> builder;
     builder.addNear(2, 4);
     builder.addStringTerm(string_term, field, 1, Weight(2));
@@ -530,7 +545,9 @@ TEST_F("requireThatNearIteratorsCanBeBuilt", Fixture) {
     EXPECT_TRUE(iterator->seek(8));
 }
 
-TEST_F("requireThatONearIteratorsCanBeBuilt", Fixture) {
+TEST(QueryTest, requireThatONearIteratorsCanBeBuilt)
+{
+    Fixture f;
     QueryBuilder<ProtonNodeTypes> builder;
     builder.addONear(2, 4);
     builder.addStringTerm(string_term, field, 1, Weight(2));
@@ -554,7 +571,9 @@ TEST_F("requireThatONearIteratorsCanBeBuilt", Fixture) {
     EXPECT_TRUE(iterator->seek(8));
 }
 
-TEST_F("requireThatPhraseIteratorsCanBeBuilt", Fixture) {
+TEST(QueryTest, requireThatPhraseIteratorsCanBeBuilt)
+{
+    Fixture f;
     QueryBuilder<ProtonNodeTypes> builder;
     builder.addPhrase(3, field, 0, Weight(42));
     builder.addStringTerm(string_term, field, 1, Weight(2));
@@ -591,8 +610,9 @@ TEST_F("requireThatPhraseIteratorsCanBeBuilt", Fixture) {
     EXPECT_TRUE(iterator->isAtEnd());
 }
 
-TEST_F("requireThatUnknownFieldActsEmpty", Fixture)
+TEST(QueryTest, requireThatUnknownFieldActsEmpty)
 {
+    Fixture f;
     FakeSearchContext context;
     context.addIdx(0).idx(0).getFake()
         .addResult(unknown_field, string_term, FakeResult()
@@ -607,15 +627,15 @@ TEST_F("requireThatUnknownFieldActsEmpty", Fixture)
 
     SearchIterator::UP iterator = f.getIterator(node, context);
 
-    ASSERT_TRUE(EXPECT_EQUAL(1u, terms.size()));
-    EXPECT_EQUAL(0u, terms[0]->numFields());
+    ASSERT_EQ(1u, terms.size());
+    EXPECT_EQ(0u, terms[0]->numFields());
 
     ASSERT_TRUE(iterator);
     EXPECT_TRUE(!iterator->seek(1));
     EXPECT_TRUE(iterator->isAtEnd());
 }
 
-TEST("requireThatIllegalFieldsAreIgnored")
+TEST(QueryTest, requireThatIllegalFieldsAreIgnored)
 {
     ProtonNodeTypes::StringTerm node(string_term, unknown_field, string_id, string_weight);
     node.resolve(ViewResolver(), plain_index_env);
@@ -628,12 +648,13 @@ TEST("requireThatIllegalFieldsAreIgnored")
     node.accept(reserve_visitor);
 
     Blueprint::UP blueprint = BlueprintBuilder::build(requestContext, node, context);
-    EXPECT_EQUAL(0u, node.numFields());
+    EXPECT_EQ(0u, node.numFields());
     MatchData::UP match_data = mdl.createMatchData();
-    EXPECT_EQUAL(0u, match_data->getNumTermFields());
+    EXPECT_EQ(0u, match_data->getNumTermFields());
 }
 
-TEST("requireThatQueryGluesEverythingTogether") {
+TEST(QueryTest, requireThatQueryGluesEverythingTogether)
+{
     QueryBuilder<ProtonNodeTypes> builder;
     builder.addStringTerm(string_term, field, 1, Weight(2));
     string stack_dump = StackDumpCreator::create(*builder.build());
@@ -642,7 +663,7 @@ TEST("requireThatQueryGluesEverythingTogether") {
     query.buildTree(stack_dump, "", ViewResolver(), plain_index_env);
     vector<const ITermData *> term_data;
     query.extractTerms(term_data);
-    EXPECT_EQUAL(1u, term_data.size());
+    EXPECT_EQ(1u, term_data.size());
 
     FakeRequestContext requestContext;
     FakeSearchContext context;
@@ -650,10 +671,10 @@ TEST("requireThatQueryGluesEverythingTogether") {
     MatchDataLayout mdl;
     query.reserveHandles(requestContext, context, mdl);
     MatchData::UP md = mdl.createMatchData();
-    EXPECT_EQUAL(1u, md->getNumTermFields());
+    EXPECT_EQ(1u, md->getNumTermFields());
 
-    query.optimize(true);
-    query.fetchPostings(ExecuteInfo::TRUE);
+    query.optimize(true, true);
+    query.fetchPostings(ExecuteInfo::FULL);
     SearchIterator::UP search = query.createSearch(*md);
     ASSERT_TRUE(search);
 }
@@ -675,7 +696,7 @@ checkQueryAddsLocation(const string &loc_in, const string &loc_out) {
                     ViewResolver(), index_environment);
     vector<const ITermData *> term_data;
     query.extractTerms(term_data);
-    EXPECT_EQUAL(2u, term_data.size());
+    EXPECT_EQ(2u, term_data.size());
 
     FakeRequestContext requestContext;
     FakeSearchContext context;
@@ -683,15 +704,14 @@ checkQueryAddsLocation(const string &loc_in, const string &loc_out) {
     MatchDataLayout mdl;
     query.reserveHandles(requestContext, context, mdl);
     MatchData::UP md = mdl.createMatchData();
-    EXPECT_EQUAL(2u, md->getNumTermFields());
+    EXPECT_EQ(2u, md->getNumTermFields());
 
-    query.fetchPostings(ExecuteInfo::TRUE);
+    // query.optimize(true, true);
+    query.fetchPostings(ExecuteInfo::FULL);
     SearchIterator::UP search = query.createSearch(*md);
     ASSERT_TRUE(search);
-    if (!EXPECT_NOT_EQUAL(string::npos, search->asString().find(loc_out))) {
-        fprintf(stderr, "search (missing loc_out '%s'): %s",
-                loc_out.c_str(), search->asString().c_str());
-    }
+    EXPECT_NE(string::npos, search->asString().find(loc_out)) << "search (missing loc_out '" << loc_out << "'): " <<
+        search->asString();
 }
 
 template<typename T1, typename T2>
@@ -716,16 +736,16 @@ void verifyThatRankBlueprintAndAndNotStaysOnTopAfterLocation(QueryBuilder<Proton
     query.reserveHandles(requestContext, context, mdl);
     const IntermediateBlueprint * root = dynamic_cast<const T1 *>(query.peekRoot());
     ASSERT_TRUE(root != nullptr);
-    EXPECT_EQUAL(2u, root->childCnt());
+    EXPECT_EQ(2u, root->childCnt());
     const IntermediateBlueprint * second = dynamic_cast<const T2 *>(&root->getChild(0));
     ASSERT_TRUE(second != nullptr);
-    EXPECT_EQUAL(2u, second->childCnt());
+    EXPECT_EQ(2u, second->childCnt());
     auto first = dynamic_cast<const AndBlueprint *>(&second->getChild(0));
     ASSERT_TRUE(first != nullptr);
-    EXPECT_EQUAL(2u, first->childCnt());
+    EXPECT_EQ(2u, first->childCnt());
     EXPECT_TRUE(dynamic_cast<const AndBlueprint *>(&first->getChild(0)));
     auto bottom = dynamic_cast<const AndBlueprint *>(&first->getChild(0));
-    EXPECT_EQUAL(2u, bottom->childCnt());
+    EXPECT_EQ(2u, bottom->childCnt());
     EXPECT_TRUE(dynamic_cast<const FakeBlueprint *>(&bottom->getChild(0)));
     EXPECT_TRUE(dynamic_cast<const FakeBlueprint *>(&bottom->getChild(1)));
     EXPECT_TRUE(dynamic_cast<const SimpleBlueprint *>(&first->getChild(1)));
@@ -733,7 +753,8 @@ void verifyThatRankBlueprintAndAndNotStaysOnTopAfterLocation(QueryBuilder<Proton
     EXPECT_TRUE(dynamic_cast<const FakeBlueprint *>(&root->getChild(1)));
 }
 
-TEST("requireThatLocationIsAddedTheCorrectPlace") {
+TEST(QueryTest, requireThatLocationIsAddedTheCorrectPlace)
+{
     {
         QueryBuilder<ProtonNodeTypes> builder;
         builder.addRank(2);
@@ -748,19 +769,21 @@ TEST("requireThatLocationIsAddedTheCorrectPlace") {
     }
 }
 
-TEST("requireThatQueryAddsLocation") {
+TEST(QueryTest, requireThatQueryAddsLocation)
+{
     checkQueryAddsLocation("(2,10,10,3,0,1,0,0)", "{p:{x:10,y:10},r:3,b:{x:[7,13],y:[7,13]}}");
     checkQueryAddsLocation("{p:{x:10,y:10},r:3}", "{p:{x:10,y:10},r:3,b:{x:[7,13],y:[7,13]}}");
     checkQueryAddsLocation("{b:{x:[6,11],y:[8,15]},p:{x:10,y:10},r:3}", "{p:{x:10,y:10},r:3,b:{x:[7,11],y:[8,13]}}");
     checkQueryAddsLocation("{a:12345,b:{x:[8,10],y:[8,10]},p:{x:10,y:10},r:3}", "{p:{x:10,y:10},r:3,a:12345,b:{x:[8,10],y:[8,10]}}");
 }
 
-TEST("requireThatQueryAddsLocationCutoff") {
+TEST(QueryTest, requireThatQueryAddsLocationCutoff)
+{
     checkQueryAddsLocation("[2,10,11,23,24]", "{b:{x:[10,23],y:[11,24]}}");
     checkQueryAddsLocation("{b:{y:[11,24],x:[10,23]}}", "{b:{x:[10,23],y:[11,24]}}");
 }
 
-TEST("requireThatFakeFieldSearchDumpsDiffer")
+TEST(QueryTest, requireThatFakeFieldSearchDumpsDiffer)
 {
     FakeRequestContext requestContext;
     uint32_t fieldId = 0;
@@ -772,8 +795,8 @@ TEST("requireThatFakeFieldSearchDumpsDiffer")
     FakeSearchable b;
     a.tag("a");
     b.tag("b");
-    vespalib::string term1="term1";
-    vespalib::string term2="term2";
+    std::string term1="term1";
+    std::string term2="term2";
     ProtonStringTerm n1(term1, "field1", string_id, string_weight);
     ProtonStringTerm n2(term2, "field1", string_id, string_weight);
     ProtonStringTerm n3(term1, "field2", string_id, string_weight);
@@ -788,22 +811,28 @@ TEST("requireThatFakeFieldSearchDumpsDiffer")
     Blueprint::UP l3(a.createBlueprint(requestContext, fields2, n3)); // field
     Blueprint::UP l4(b.createBlueprint(requestContext, fields1, n1)); // tag
 
-    l1->fetchPostings(ExecuteInfo::TRUE);
-    l2->fetchPostings(ExecuteInfo::TRUE);
-    l3->fetchPostings(ExecuteInfo::TRUE);
-    l4->fetchPostings(ExecuteInfo::TRUE);
+    l1->basic_plan(true, 1000);
+    l2->basic_plan(true, 1000);
+    l3->basic_plan(true, 1000);
+    l4->basic_plan(true, 1000);
+    
+    l1->fetchPostings(ExecuteInfo::FULL);
+    l2->fetchPostings(ExecuteInfo::FULL);
+    l3->fetchPostings(ExecuteInfo::FULL);
+    l4->fetchPostings(ExecuteInfo::FULL);
 
-    SearchIterator::UP s1(l1->createSearch(*match_data, true));
-    SearchIterator::UP s2(l2->createSearch(*match_data, true));
-    SearchIterator::UP s3(l3->createSearch(*match_data, true));
-    SearchIterator::UP s4(l4->createSearch(*match_data, true));
+    SearchIterator::UP s1(l1->createSearch(*match_data));
+    SearchIterator::UP s2(l2->createSearch(*match_data));
+    SearchIterator::UP s3(l3->createSearch(*match_data));
+    SearchIterator::UP s4(l4->createSearch(*match_data));
 
-    EXPECT_NOT_EQUAL(s1->asString(), s2->asString());
-    EXPECT_NOT_EQUAL(s1->asString(), s3->asString());
-    EXPECT_NOT_EQUAL(s1->asString(), s4->asString());
+    EXPECT_NE(s1->asString(), s2->asString());
+    EXPECT_NE(s1->asString(), s3->asString());
+    EXPECT_NE(s1->asString(), s4->asString());
 }
 
-TEST("requireThatNoDocsGiveZeroDocFrequency") {
+TEST(QueryTest, requireThatNoDocsGiveZeroDocFrequency)
+{
     ProtonStringTerm node(string_term, field, string_id, string_weight);
     node.resolve(ViewResolver(), plain_index_env);
     FakeSearchContext context;
@@ -816,11 +845,13 @@ TEST("requireThatNoDocsGiveZeroDocFrequency") {
 
     Blueprint::UP blueprint = BlueprintBuilder::build(requestContext, node, context);
 
-    EXPECT_EQUAL(1u, node.numFields());
-    EXPECT_EQUAL(0.0, node.field(0).getDocFreq());
+    EXPECT_EQ(1u, node.numFields());
+    EXPECT_EQ(0u, node.field(0).get_doc_freq().frequency);
+    EXPECT_EQ(1u, node.field( 0).get_doc_freq().count);
 }
 
-TEST("requireThatWeakAndBlueprintsAreCreatedCorrectly") {
+TEST(QueryTest, requireThatWeakAndBlueprintsAreCreatedCorrectly)
+{
     using search::queryeval::WeakAndBlueprint;
 
     ProtonWeakAnd wand(123, "view");
@@ -844,16 +875,17 @@ TEST("requireThatWeakAndBlueprintsAreCreatedCorrectly") {
     Blueprint::UP blueprint = BlueprintBuilder::build(requestContext, wand, context);
     auto *wbp = dynamic_cast<WeakAndBlueprint*>(blueprint.get());
     ASSERT_TRUE(wbp != nullptr);
-    ASSERT_EQUAL(2u, wbp->getWeights().size());
-    ASSERT_EQUAL(2u, wbp->childCnt());
-    EXPECT_EQUAL(123u, wbp->getN());
-    EXPECT_EQUAL(3u, wbp->getWeights()[0]);
-    EXPECT_EQUAL(7u, wbp->getWeights()[1]);
-    EXPECT_EQUAL(2u, wbp->getChild(0).getState().estimate().estHits);
-    EXPECT_EQUAL(3u, wbp->getChild(1).getState().estimate().estHits);
+    ASSERT_EQ(2u, wbp->getWeights().size());
+    ASSERT_EQ(2u, wbp->childCnt());
+    EXPECT_EQ(123u, wbp->getN());
+    EXPECT_EQ(3u, wbp->getWeights()[0]);
+    EXPECT_EQ(7u, wbp->getWeights()[1]);
+    EXPECT_EQ(2u, wbp->getChild(0).getState().estimate().estHits);
+    EXPECT_EQ(3u, wbp->getChild(1).getState().estimate().estHits);
 }
 
-TEST("requireThatParallelWandBlueprintsAreCreatedCorrectly") {
+TEST(QueryTest, requireThatParallelWandBlueprintsAreCreatedCorrectly)
+{
     using search::queryeval::WeakAndBlueprint;
 
     ProtonWandTerm wand(2, field, 42, Weight(100), 123, 9000, 1.25);
@@ -878,12 +910,12 @@ TEST("requireThatParallelWandBlueprintsAreCreatedCorrectly") {
     Blueprint::UP blueprint = BlueprintBuilder::build(requestContext, wand, context);
     auto *wbp = dynamic_cast<ParallelWeakAndBlueprint*>(blueprint.get());
     ASSERT_TRUE(wbp != nullptr);
-    EXPECT_EQUAL(9000, wbp->getScoreThreshold());
-    EXPECT_EQUAL(1.25, wbp->getThresholdBoostFactor());
-    EXPECT_EQUAL(1000u, wbp->get_docid_limit());
+    EXPECT_EQ(9000, wbp->getScoreThreshold());
+    EXPECT_EQ(1.25, wbp->getThresholdBoostFactor());
+    EXPECT_EQ(1000u, wbp->get_docid_limit());
 }
 
-TEST("requireThatWhiteListBlueprintCanBeUsed")
+TEST(QueryTest, requireThatWhiteListBlueprintCanBeUsed)
 {
     QueryBuilder<ProtonNodeTypes> builder;
     builder.addStringTerm("foo", field, field_id, string_weight);
@@ -904,13 +936,13 @@ TEST("requireThatWhiteListBlueprintCanBeUsed")
     query.reserveHandles(requestContext, context, mdl);
     MatchData::UP md = mdl.createMatchData();
 
-    query.optimize(true);
-    query.fetchPostings(ExecuteInfo::TRUE);
+    query.optimize(true, true);
+    query.fetchPostings(ExecuteInfo::FULL);
     SearchIterator::UP search = query.createSearch(*md);
     SimpleResult exp = SimpleResult().addHit(1).addHit(5).addHit(7).addHit(11);
     SimpleResult act;
     act.search(*search);
-    EXPECT_EQUAL(exp, act);
+    EXPECT_EQ(exp, act);
 }
 
 template<typename T1, typename T2>
@@ -933,27 +965,29 @@ void verifyThatRankBlueprintAndAndNotStaysOnTopAfterWhiteListing(QueryBuilder<Pr
     query.reserveHandles(requestContext, context, mdl);
     const IntermediateBlueprint * root = dynamic_cast<const T1 *>(query.peekRoot());
     ASSERT_TRUE(root != nullptr);
-    EXPECT_EQUAL(2u, root->childCnt());
+    EXPECT_EQ(2u, root->childCnt());
     const IntermediateBlueprint * second = dynamic_cast<const T2 *>(&root->getChild(0));
     ASSERT_TRUE(second != nullptr);
-    EXPECT_EQUAL(2u, second->childCnt());
+    EXPECT_EQ(2u, second->childCnt());
     auto first = dynamic_cast<const AndBlueprint *>(&second->getChild(0));
     ASSERT_TRUE(first != nullptr);
-    EXPECT_EQUAL(2u, first->childCnt());
+    EXPECT_EQ(2u, first->childCnt());
     EXPECT_TRUE(dynamic_cast<const SourceBlenderBlueprint *>(&first->getChild(0)));
     EXPECT_TRUE(dynamic_cast<const SimpleBlueprint *>(&first->getChild(1)));
     EXPECT_TRUE(dynamic_cast<const SourceBlenderBlueprint *>(&second->getChild(1)));
     EXPECT_TRUE(dynamic_cast<const SourceBlenderBlueprint *>(&root->getChild(1)));
 }
 
-TEST("requireThatRankBlueprintStaysOnTopAfterWhiteListing") {
+TEST(QueryTest, requireThatRankBlueprintStaysOnTopAfterWhiteListing)
+{
     QueryBuilder<ProtonNodeTypes> builder;
     builder.addRank(2);
     builder.addAndNot(2);
     verifyThatRankBlueprintAndAndNotStaysOnTopAfterWhiteListing<RankBlueprint, AndNotBlueprint>(builder);
 }
 
-TEST("requireThatAndNotBlueprintStaysOnTopAfterWhiteListing") {
+TEST(QueryTest, requireThatAndNotBlueprintStaysOnTopAfterWhiteListing)
+{
     QueryBuilder<ProtonNodeTypes> builder;
     builder.addAndNot(2);
     builder.addRank(2);
@@ -962,13 +996,13 @@ TEST("requireThatAndNotBlueprintStaysOnTopAfterWhiteListing") {
 
 
 search::query::Node::UP
-make_same_element_stack_dump(const vespalib::string &prefix, const vespalib::string &term_prefix)
+make_same_element_stack_dump(const std::string &prefix, const std::string &term_prefix)
 {
     QueryBuilder<ProtonNodeTypes> builder;
     builder.addSameElement(2, prefix, 0, Weight(1));
     builder.addStringTerm("xyz", term_prefix + "f1", 1, Weight(1));
     builder.addStringTerm("abc", term_prefix + "f2", 2, Weight(1));
-    vespalib::string stack = StackDumpCreator::create(*builder.build());
+    std::string stack = StackDumpCreator::create(*builder.build());
     search::SimpleQueryStackDumpIterator stack_dump_iterator(stack);
     SameElementModifier sem;
     search::query::Node::UP query = search::query::QueryTreeCreator<ProtonNodeTypes>::create(stack_dump_iterator);
@@ -976,48 +1010,50 @@ make_same_element_stack_dump(const vespalib::string &prefix, const vespalib::str
     return query;
 }
 
-TEST("requireThatSameElementTermsAreProperlyPrefixed")
+TEST(QueryTest, requireThatSameElementTermsAreProperlyPrefixed)
 {
     search::query::Node::UP query = make_same_element_stack_dump("", "");
     auto * root = dynamic_cast<search::query::SameElement *>(query.get());
-    EXPECT_EQUAL(root->getView(), "");
-    EXPECT_EQUAL(root->getChildren().size(), 2u);
-    EXPECT_EQUAL(dynamic_cast<ProtonStringTerm *>(root->getChildren()[0])->getView(), "f1");
-    EXPECT_EQUAL(dynamic_cast<ProtonStringTerm *>(root->getChildren()[1])->getView(), "f2");
+    EXPECT_EQ(root->getView(), "");
+    EXPECT_EQ(root->getChildren().size(), 2u);
+    EXPECT_EQ(dynamic_cast<ProtonStringTerm *>(root->getChildren()[0])->getView(), "f1");
+    EXPECT_EQ(dynamic_cast<ProtonStringTerm *>(root->getChildren()[1])->getView(), "f2");
 
     query = make_same_element_stack_dump("abc", "");
     root = dynamic_cast<search::query::SameElement *>(query.get());
-    EXPECT_EQUAL(root->getView(), "abc");
-    EXPECT_EQUAL(root->getChildren().size(), 2u);
-    EXPECT_EQUAL(dynamic_cast<ProtonStringTerm *>(root->getChildren()[0])->getView(), "abc.f1");
-    EXPECT_EQUAL(dynamic_cast<ProtonStringTerm *>(root->getChildren()[1])->getView(), "abc.f2");
+    EXPECT_EQ(root->getView(), "abc");
+    EXPECT_EQ(root->getChildren().size(), 2u);
+    EXPECT_EQ(dynamic_cast<ProtonStringTerm *>(root->getChildren()[0])->getView(), "abc.f1");
+    EXPECT_EQ(dynamic_cast<ProtonStringTerm *>(root->getChildren()[1])->getView(), "abc.f2");
 
     query = make_same_element_stack_dump("abc", "xyz.");
     root = dynamic_cast<search::query::SameElement *>(query.get());
-    EXPECT_EQUAL(root->getView(), "abc");
-    EXPECT_EQUAL(root->getChildren().size(), 2u);
-    EXPECT_EQUAL(dynamic_cast<ProtonStringTerm *>(root->getChildren()[0])->getView(), "abc.xyz.f1");
-    EXPECT_EQUAL(dynamic_cast<ProtonStringTerm *>(root->getChildren()[1])->getView(), "abc.xyz.f2");
+    EXPECT_EQ(root->getView(), "abc");
+    EXPECT_EQ(root->getChildren().size(), 2u);
+    EXPECT_EQ(dynamic_cast<ProtonStringTerm *>(root->getChildren()[0])->getView(), "abc.xyz.f1");
+    EXPECT_EQ(dynamic_cast<ProtonStringTerm *>(root->getChildren()[1])->getView(), "abc.xyz.f2");
 
     query = make_same_element_stack_dump("abc", "abc.");
     root = dynamic_cast<search::query::SameElement *>(query.get());
-    EXPECT_EQUAL(root->getView(), "abc");
-    EXPECT_EQUAL(root->getChildren().size(), 2u);
-    EXPECT_EQUAL(dynamic_cast<ProtonStringTerm *>(root->getChildren()[0])->getView(), "abc.abc.f1");
-    EXPECT_EQUAL(dynamic_cast<ProtonStringTerm *>(root->getChildren()[1])->getView(), "abc.abc.f2");
+    EXPECT_EQ(root->getView(), "abc");
+    EXPECT_EQ(root->getChildren().size(), 2u);
+    EXPECT_EQ(dynamic_cast<ProtonStringTerm *>(root->getChildren()[0])->getView(), "abc.abc.f1");
+    EXPECT_EQ(dynamic_cast<ProtonStringTerm *>(root->getChildren()[1])->getView(), "abc.abc.f2");
 }
 
-TEST("requireThatSameElementAllocatesMatchData")
+TEST(QueryTest, requireThatSameElementAllocatesMatchData)
 {
     Node::UP node = buildSameElementQueryTree(ViewResolver(), plain_index_env);
     MatchDataLayout mdl;
     MatchDataReserveVisitor visitor(mdl);
     node->accept(visitor);
     MatchData::UP match_data = mdl.createMatchData();
-    EXPECT_EQUAL(1u, match_data->getNumTermFields());
+    EXPECT_EQ(1u, match_data->getNumTermFields());
 }
 
-TEST_F("requireThatSameElementIteratorsCanBeBuilt", Fixture) {
+TEST(QueryTest, requireThatSameElementIteratorsCanBeBuilt)
+{
+    Fixture f;
     Node::UP node = buildSameElementQueryTree(ViewResolver(), plain_index_env);
     FakeSearchContext context(10);
     context.addIdx(0).idx(0).getFake()
@@ -1031,7 +1067,8 @@ TEST_F("requireThatSameElementIteratorsCanBeBuilt", Fixture) {
     EXPECT_TRUE(iterator->seek(8));
 }
 
-TEST("requireThatConstBoolBlueprintsAreCreatedCorrectly") {
+TEST(QueryTest, requireThatConstBoolBlueprintsAreCreatedCorrectly)
+{
     using search::queryeval::AlwaysTrueBlueprint;
     using search::queryeval::EmptyBlueprint;
 
@@ -1073,7 +1110,7 @@ public:
 
 GlobalFilterBlueprint::~GlobalFilterBlueprint() = default;
 
-TEST("global_filter_is_calculated_and_handled")
+TEST(QueryTest, global_filter_is_calculated_and_handled)
 {
     // estimated hits = 3, estimated hit ratio = 0.3
     auto result = SimpleResult().addHit(3).addHit(5).addHit(7);
@@ -1083,14 +1120,14 @@ TEST("global_filter_is_calculated_and_handled")
         auto res = Query::handle_global_filter(bp, docid_limit, 0, 1, ttb(), nullptr);
         EXPECT_FALSE(res);
         EXPECT_FALSE(bp.filter);
-        EXPECT_EQUAL(-1.0, bp.estimated_hit_ratio);
+        EXPECT_EQ(-1.0, bp.estimated_hit_ratio);
     }
     { // estimated_hit_ratio < global_filter_lower_limit
         GlobalFilterBlueprint bp(result, true);
         auto res = Query::handle_global_filter(bp, docid_limit, 0.31, 1, ttb(), nullptr);
         EXPECT_FALSE(res);
         EXPECT_FALSE(bp.filter);
-        EXPECT_EQUAL(-1.0, bp.estimated_hit_ratio);
+        EXPECT_EQ(-1.0, bp.estimated_hit_ratio);
     }
     { // estimated_hit_ratio <= global_filter_upper_limit
         GlobalFilterBlueprint bp(result, true);
@@ -1098,9 +1135,9 @@ TEST("global_filter_is_calculated_and_handled")
         EXPECT_TRUE(res);
         EXPECT_TRUE(bp.filter);
         EXPECT_TRUE(bp.filter->is_active());
-        EXPECT_EQUAL(0.3, bp.estimated_hit_ratio);
+        EXPECT_EQ(0.3, bp.estimated_hit_ratio);
 
-        EXPECT_EQUAL(3u, bp.filter->count());
+        EXPECT_EQ(3u, bp.filter->count());
         EXPECT_TRUE(bp.filter->check(3));
         EXPECT_TRUE(bp.filter->check(5));
         EXPECT_TRUE(bp.filter->check(7));
@@ -1111,11 +1148,11 @@ TEST("global_filter_is_calculated_and_handled")
         EXPECT_TRUE(res);
         EXPECT_TRUE(bp.filter);
         EXPECT_FALSE(bp.filter->is_active());
-        EXPECT_EQUAL(0.3, bp.estimated_hit_ratio);
+        EXPECT_EQ(0.3, bp.estimated_hit_ratio);
     }
 }
 
 }  // namespace
 }  // namespace proton::matching
 
-TEST_MAIN() { TEST_RUN_ALL(); }
+GTEST_MAIN_RUN_ALL_TESTS()

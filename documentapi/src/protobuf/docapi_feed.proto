@@ -10,6 +10,8 @@ import "docapi_common.proto";
 
 message TestAndSetCondition {
     string selection = 1;
+    // Iff non-zero, `selection` is ignored in favor of _only_ checking the timestamp.
+    uint64 required_timestamp = 2;
 }
 
 message DocumentUpdate {
@@ -32,6 +34,9 @@ message PutDocumentRequest {
     TestAndSetCondition condition              = 2;
     bool                create_if_missing      = 3;
     uint64              force_assign_timestamp = 4;
+    // When a Put is sent to a client as part of visiting, this value may be set
+    // to indicate the timestamp of the underlying persisted document.
+    uint64              persisted_timestamp    = 5;
 }
 
 message PutDocumentResponse {
@@ -39,11 +44,18 @@ message PutDocumentResponse {
 }
 
 message UpdateDocumentRequest {
+    enum CreateIfMissing {
+        UNSPECIFIED = 0; // Legacy fallback: must deserialize `update` to find flag value
+        TRUE        = 1;
+        FALSE       = 2;
+    }
+
     // Note: update contains embedded document ID
     DocumentUpdate      update                 = 1;
     TestAndSetCondition condition              = 2;
     uint64              expected_old_timestamp = 3;
     uint64              force_assign_timestamp = 4;
+    CreateIfMissing     create_if_missing      = 5;
 }
 
 message UpdateDocumentResponse {
@@ -54,6 +66,9 @@ message UpdateDocumentResponse {
 message RemoveDocumentRequest {
     DocumentId          document_id = 1;
     TestAndSetCondition condition   = 2;
+    // When a Remove is sent to a client as part of visiting, this value may be set
+    // to indicate the timestamp of the underlying persisted tombstone.
+    uint64              persisted_timestamp = 3;
 }
 
 message RemoveDocumentResponse {

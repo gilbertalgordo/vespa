@@ -2,7 +2,8 @@
 
 #pragma once
 
-#include <vespa/vespalib/stllike/string.h>
+#include <string>
+#include <iosfwd>
 
 namespace vespalib {
 
@@ -50,17 +51,25 @@ public:
         _allocatedBytesOnHold += inc;
     }
 
-    void merge(const MemoryUsage & rhs) {
+    void merge(const MemoryUsage & rhs) noexcept {
         _allocatedBytes += rhs._allocatedBytes;
         _usedBytes += rhs._usedBytes;
         _deadBytes += rhs._deadBytes;
         _allocatedBytesOnHold += rhs._allocatedBytesOnHold;
     }
-    string toString() const;
+
+    bool operator==(const MemoryUsage& rhs) const noexcept {
+        return _allocatedBytes == rhs._allocatedBytes &&
+        _usedBytes == rhs._usedBytes &&
+        _deadBytes == rhs._deadBytes &&
+        _allocatedBytesOnHold == rhs._allocatedBytesOnHold;
+    }
+    std::string toString() const;
 };
 
 class asciistream;
 
 asciistream & operator << (asciistream & os, const MemoryUsage & usage);
+std::ostream& operator<<(std::ostream& os, const MemoryUsage& usage);
 
 } // namespace vespalib

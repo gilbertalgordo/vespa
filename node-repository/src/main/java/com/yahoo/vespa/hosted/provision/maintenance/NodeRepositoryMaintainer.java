@@ -24,8 +24,12 @@ public abstract class NodeRepositoryMaintainer extends Maintainer {
     private final NodeRepository nodeRepository;
 
     public NodeRepositoryMaintainer(NodeRepository nodeRepository, Duration interval, Metric metric) {
+        this(nodeRepository, interval, metric, true);
+    }
+
+    public NodeRepositoryMaintainer(NodeRepository nodeRepository, Duration interval, Metric metric, boolean acquireLock) {
         super(null, interval, nodeRepository.clock(), nodeRepository.jobControl(),
-              new NodeRepositoryJobMetrics(metric), nodeRepository.database().cluster(), true);
+              new NodeRepositoryJobMetrics(metric), nodeRepository.database().cluster(), acquireLock, 1.0, acquireLock);
         this.nodeRepository = nodeRepository;
     }
 
@@ -58,7 +62,7 @@ public abstract class NodeRepositoryMaintainer extends Maintainer {
 
         @Override
         public void completed(String job, double successFactor, long duration) {
-            var context = metric.createContext(Map.of("job", job));
+            var context = metric.createContext(Map.of("maintainer", job));
             metric.set("maintenance.successFactorDeviation", successFactor, context);
             metric.set("maintenance.duration", duration, context);
         }

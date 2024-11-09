@@ -5,6 +5,7 @@
 #include "asciiconfigreader.h"
 #include <vespa/config/common/types.h>
 #include <vespa/config/common/configvalue.h>
+#include <vespa/vespalib/stllike/asciistream.h>
 
 namespace config {
 
@@ -19,7 +20,7 @@ std::unique_ptr<ConfigType>
 AsciiConfigReader<ConfigType>::read(const ConfigFormatter & formatter)
 {
     ConfigDataBuffer buffer;
-    buffer.setEncodedString(_is.str());
+    buffer.setEncodedString(_is.view());
     formatter.decode(buffer);
     return std::make_unique<ConfigType>(buffer);
 }
@@ -29,7 +30,7 @@ std::unique_ptr<ConfigType>
 AsciiConfigReader<ConfigType>::read()
 {
     StringVector lines;
-    vespalib::string line;
+    std::string line;
     while (getline(_is, line)) {
         lines.push_back(line);
     }

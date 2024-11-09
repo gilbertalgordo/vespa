@@ -17,7 +17,6 @@ import ai.vespa.metricsproxy.service.VespaService;
 
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -105,7 +104,7 @@ public class VespaMetrics {
     private MetricsPacket.Builder getHealth(VespaService service) {
         HealthMetric health = service.getHealth();
         return new MetricsPacket.Builder(service.getMonitoringName())
-                .timestamp(System.currentTimeMillis() / 1000)
+                .timestamp(Instant.now())
                 .statusCode(health.getStatus().ordinal())  // TODO: MetricsPacket should use StatusCode instead of int
                 .statusMessage(health.getMessage())
                 .putDimensions(service.getDimensions())
@@ -140,7 +139,7 @@ public class VespaMetrics {
             if ( ! configuredDimensions.isEmpty()) {
                 Map<DimensionId, String> dims = new HashMap<>(dimensions);
                 configuredDimensions.forEach(d -> dims.put(d.key(), d.value()));
-                dimensions = Collections.unmodifiableMap(dims);
+                dimensions = Map.copyOf(dims);
             }
             return dimensions;
         }
@@ -222,14 +221,14 @@ public class VespaMetrics {
     }
 
     private List<ConfiguredMetric> getMetricDefinitions(ConsumerId consumer) {
-        if (metricsConsumers == null) return Collections.emptyList();
+        if (metricsConsumers == null) return List.of();
 
         List<ConfiguredMetric> definitions = metricsConsumers.getMetricDefinitions(consumer);
-        return definitions == null ? Collections.emptyList() : definitions;
+        return definitions == null ? List.of() : definitions;
     }
 
     private static void setMetaInfo(MetricsPacket.Builder builder, Instant timestamp) {
-        builder.timestamp(timestamp.getEpochSecond())
+        builder.timestamp(timestamp)
                 .statusCode(0)
                 .statusMessage("Data collected successfully");
     }

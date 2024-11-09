@@ -36,14 +36,14 @@ class DocumentFeaturesStore {
     // the constructor and search for an illegal EntryRef.
     class KeyComp {
         const WordStore &_word_store;
-        const vespalib::string _word;
+        const std::string _word;
 
         const char *getWord(vespalib::datastore::EntryRef ref) const {
             return ref.valid() ? _word_store.getWord(ref) : _word.c_str();
         }
 
     public:
-        KeyComp(const WordStore &word_store, vespalib::stringref word)
+        KeyComp(const WordStore &word_store, std::string_view word)
             : _word_store(word_store),
               _word(word) {
         }

@@ -21,7 +21,7 @@ using attribute::Config;
 using attribute::HitEstimate;
 
 SingleBoolAttribute::
-SingleBoolAttribute(const vespalib::string &baseFileName, const GrowStrategy & grow, bool paged)
+SingleBoolAttribute(const std::string &baseFileName, const GrowStrategy & grow, bool paged)
     : IntegerAttributeTemplate<int8_t>(baseFileName, Config(BasicType::BOOL, CollectionType::SINGLE).setGrowStrategy(grow).setPaged(paged), BasicType::BOOL),
       _init_alloc(get_initial_alloc()),
       _bv(0, 0, getGenerationHolder(), get_memory_allocator() ? &_init_alloc : nullptr)
@@ -130,7 +130,7 @@ public:
 
     std::unique_ptr<queryeval::SearchIterator>
     createFilterIterator(fef::TermFieldMatchData * matchData, bool strict) override;
-    void fetchPostings(const queryeval::ExecuteInfo &execInfo) override;
+    void fetchPostings(const queryeval::ExecuteInfo &execInfo, bool strict) override;
     std::unique_ptr<queryeval::SearchIterator> createPostingIterator(fef::TermFieldMatchData *matchData, bool strict) override;
     HitEstimate calc_hit_estimate() const override;
     uint32_t get_committed_docid_limit() const noexcept override;
@@ -162,7 +162,7 @@ BitVectorSearchContext::createFilterIterator(fef::TermFieldMatchData * matchData
 }
 
 void
-BitVectorSearchContext::fetchPostings(const queryeval::ExecuteInfo &) {
+BitVectorSearchContext::fetchPostings(const queryeval::ExecuteInfo &, bool) {
 }
 
 std::unique_ptr<queryeval::SearchIterator>
@@ -209,6 +209,7 @@ SingleBoolAttribute::onLoad(vespalib::Executor *)
         assert(bytesRead == _bv.writer().sizeBytes());
         setNumDocs(numDocs);
         setCommittedDocIdLimit(numDocs);
+        set_size_on_disk(attrReader.size_on_disk());
     }
 
     return ok;

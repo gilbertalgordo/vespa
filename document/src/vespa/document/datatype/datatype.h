@@ -8,8 +8,8 @@
 #pragma once
 
 #include <vespa/document/util/printable.h>
-#include <vespa/vespalib/stllike/string.h>
 #include <memory>
+#include <string>
 #include <vector>
 
 namespace document {
@@ -31,7 +31,7 @@ class WeightedSetDataType;
 class DataType : public Printable
 {
     int _dataTypeId;
-    vespalib::string _name;
+    std::string _name;
 
 protected:
     /**
@@ -40,12 +40,12 @@ protected:
      * everyone to be able to use them. Only tests and the type manager reading
      * config should need to create datatypes.
      */
-    DataType(vespalib::stringref name, int dataTypeId) noexcept;
+    DataType(std::string_view name, int dataTypeId) noexcept;
 
     /**
      * Creates a datatype using the hash of name as the id.
      */
-    explicit DataType(vespalib::stringref name) noexcept;
+    explicit DataType(std::string_view name) noexcept;
 
 public:
     ~DataType() override;
@@ -102,7 +102,7 @@ public:
     /** Used by type manager to fetch default types to register. */
     static std::vector<const DataType *> getDefaultDataTypes();
 
-    const vespalib::string& getName() const noexcept { return _name; }
+    const std::string& getName() const noexcept { return _name; }
     int getId() const noexcept { return _dataTypeId; }
     bool isValueType(const FieldValue & fv) const;
 
@@ -153,12 +153,12 @@ public:
      *                         MUST be null-terminated.
      * @return pointer to field path or null if an error occured
      */
-    void buildFieldPath(FieldPath & fieldPath, vespalib::stringref remainFieldName) const;
+    void buildFieldPath(FieldPath & fieldPath, std::string_view remainFieldName) const;
 
     /** @throws FieldNotFoundException if field does not exist. */
     virtual const Field& getField(int fieldId) const;
 private:
-    virtual void onBuildFieldPath(FieldPath & fieldPath, vespalib::stringref remainFieldName) const = 0;
+    virtual void onBuildFieldPath(FieldPath & fieldPath, std::string_view remainFieldName) const = 0;
 };
 
 } // document

@@ -3,7 +3,7 @@
 #pragma once
 
 #include <vespa/searchlib/query/weight.h>
-#include <vespa/vespalib/stllike/string.h>
+#include <string>
 #include <utility>
 
 namespace search::query {
@@ -13,10 +13,10 @@ namespace search::query {
  */
 class TermVector {
 public:
-    using StringAndWeight = std::pair<vespalib::stringref, Weight>;
+    using StringAndWeight = std::pair<std::string_view, Weight>;
     using IntegerAndWeight = std::pair<int64_t, Weight>;
     virtual ~TermVector() = default;
-    virtual void addTerm(vespalib::stringref term, Weight weight) = 0;
+    virtual void addTerm(std::string_view term, Weight weight) = 0;
     virtual void addTerm(int64_t term, Weight weight) = 0;
     [[nodiscard]] virtual StringAndWeight getAsString(uint32_t index) const = 0;
     [[nodiscard]] virtual IntegerAndWeight getAsInteger(uint32_t index) const = 0;

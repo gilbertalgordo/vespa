@@ -27,19 +27,19 @@ private:
     std::shared_ptr<const document::DocumentTypeRepo> _repo;
     DocumentDBConfig::ImportedFieldsConfigSP _importedFields;
     search::TuneFileDocumentDB::SP _tuneFileDocumentDB;
-    search::index::Schema::SP _schema;
+    std::shared_ptr<const search::index::Schema> _schema;
     DocumentDBConfig::MaintenanceConfigSP _maintenance;
     search::LogDocumentStore::Config _store;
     const ThreadingServiceConfig _threading_service_config;
     const AllocConfig _alloc_config;
-    vespalib::string _configId;
-    vespalib::string _docTypeName;
+    std::string _configId;
+    std::string _docTypeName;
 
 public:
     DocumentDBConfigBuilder(int64_t generation,
-                            const search::index::Schema::SP &schema,
-                            const vespalib::string &configId,
-                            const vespalib::string &docTypeName);
+                            std::shared_ptr<const search::index::Schema> schema,
+                            const std::string &configId,
+                            const std::string &docTypeName);
     ~DocumentDBConfigBuilder();
 
     DocumentDBConfigBuilder(const DocumentDBConfig &cfg);

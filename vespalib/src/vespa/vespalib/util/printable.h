@@ -30,7 +30,8 @@
 
 #pragma once
 
-#include <vespa/vespalib/stllike/string.h>
+#include <cstdint>
+#include <string>
 #include <vector>
 
 namespace vespalib {
@@ -100,23 +101,23 @@ public:
 
     class PrintProperties {
         PrintMode _mode;
-        vespalib::string _indent;
+        std::string _indent;
 
     public:
-        PrintProperties(PrintMode mode = NORMAL, stringref indent_ = "")
+        PrintProperties(PrintMode mode = NORMAL, std::string_view indent_ = "")
             : _mode(mode), _indent(indent_) {}
 
         PrintProperties indentedCopy() const
             { return PrintProperties(_mode, _indent + "  "); }
         bool verbose() const { return (_mode == VERBOSE); }
-        const vespalib::string& indent() const { return _indent; }
-        vespalib::string indent(uint32_t extraLevels) const;
+        const std::string& indent() const { return _indent; }
+        std::string indent(uint32_t extraLevels) const;
     };
 
     void print(std::ostream& out, bool verbose, const std::string& indent) const override;
     virtual void print(vespalib::asciistream&, const PrintProperties& = PrintProperties()) const = 0;
 
-    vespalib::string toString(const PrintProperties& = PrintProperties()) const;
+    std::string toString(const PrintProperties& = PrintProperties()) const;
 };
 
 std::ostream& operator<<(std::ostream& out, const Printable& p);

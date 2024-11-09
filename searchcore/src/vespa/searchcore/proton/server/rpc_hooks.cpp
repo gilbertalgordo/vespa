@@ -8,6 +8,7 @@
 #include <vespa/fnet/frt/require_capabilities.h>
 #include <vespa/fnet/frt/supervisor.h>
 #include <vespa/fnet/transport.h>
+#include <cstdlib>
 
 #include <vespa/log/log.h>
 LOG_SETUP(".proton.server.rtchooks");
@@ -17,9 +18,9 @@ using vespalib::compression::CompressionConfig;
 
 namespace {
 
-string delayed_configs_string("delayedConfigs");
+std::string delayed_configs_string("delayedConfigs");
 
-using Pair = std::pair<string, string>;
+using Pair = std::pair<std::string, std::string>;
 
 }
 
@@ -89,11 +90,6 @@ RPCHooksBase::initRPC()
     rb.ReturnDesc("message", "Array of status messages");
     rb.RequestAccessFilter(make_proton_admin_api_capability_filter());
     //-------------------------------------------------------------------------
-    rb.DefineMethod("pandora.rtc.die", "", "",
-                    FRT_METHOD(RPCHooksBase::rpc_die), this);
-    rb.MethodDesc("Exit the rtc application without cleanup");
-    rb.RequestAccessFilter(make_proton_admin_api_capability_filter());
-    //-------------------------------------------------------------------------
     rb.DefineMethod("proton.triggerFlush", "", "b",
                     FRT_METHOD(RPCHooksBase::rpc_triggerFlush), this);
     rb.MethodDesc("Tell the node to trigger flush ASAP");
@@ -109,9 +105,9 @@ RPCHooksBase::initRPC()
 }
 
 RPCHooksBase::Params::Params(Proton &parent, uint32_t port, const config::ConfigUri & configUri,
-                             vespalib::stringref slobrokId, uint32_t transportThreads)
+                             std::string_view slobrokId, uint32_t transportThreads)
     : proton(parent),
-      slobrok_config(configUri.createWithNewId(slobrokId)),
+      slobrok_config(configUri.createWithNewId(std::string(slobrokId))),
       identity(configUri.getConfigId()),
       rtcPort(port),
       numTranportThreads(transportThreads)
@@ -238,13 +234,6 @@ RPCHooksBase::getProtonStatus(FRT_RPCRequest *req)
                      report.getComponent().c_str(), k[i]._str, internalStates[i]._str, report.getMessage().c_str());
     }
     req->Return();
-}
-
-void
-RPCHooksBase::rpc_die(FRT_RPCRequest *)
-{
-    LOG(debug, "RPCHooksBase::rpc_die");
-    _exit(0);
 }
 
 void

@@ -9,7 +9,6 @@ import com.yahoo.config.provision.ClusterSpec;
 import com.yahoo.config.provision.NodeResources;
 import com.yahoo.vespa.hosted.provision.NodeRepository;
 import com.yahoo.vespa.hosted.provision.applications.Cluster;
-import com.yahoo.vespa.hosted.provision.provisioning.CapacityPolicies;
 
 import java.util.Objects;
 
@@ -30,8 +29,6 @@ public class Limits {
         this.max = max;
         this.groupSize = groupSize;
     }
-
-    public static Limits empty() { return empty; }
 
     public boolean isEmpty() { return this == empty; }
 
@@ -60,7 +57,7 @@ public class Limits {
         if (isEmpty()) return resources;
         if (min.nodeResources().isUnspecified()) return resources; // means max is also unspecified
         resources = resources.withVcpu(between(min.nodeResources().vcpu(), max.nodeResources().vcpu(), resources.vcpu()));
-        resources = resources.withMemoryGb(between(min.nodeResources().memoryGb(), max.nodeResources().memoryGb(), resources.memoryGb()));
+        resources = resources.withMemoryGiB(between(min.nodeResources().memoryGiB(), max.nodeResources().memoryGiB(), resources.memoryGiB()));
         resources = resources.withDiskGb(between(min.nodeResources().diskGb(), max.nodeResources().diskGb(), resources.diskGb()));
         return resources;
     }
@@ -68,9 +65,9 @@ public class Limits {
     public Limits fullySpecified(ClusterSpec clusterSpec, NodeRepository nodeRepository, ApplicationId applicationId) {
         if (this.isEmpty()) throw new IllegalStateException("Unspecified limits can not be made fully specified");
 
-        var capacityPolicies = new CapacityPolicies(nodeRepository);
-        return new Limits(capacityPolicies.specifyFully(min, clusterSpec, applicationId),
-                          capacityPolicies.specifyFully(max, clusterSpec, applicationId),
+        var capacityPolicies = nodeRepository.capacityPoliciesFor(applicationId);
+        return new Limits(capacityPolicies.specifyFully(min, clusterSpec),
+                          capacityPolicies.specifyFully(max, clusterSpec),
                           groupSize);
     }
 
@@ -78,6 +75,12 @@ public class Limits {
         value = Math.max(min, value);
         value = Math.min(max, value);
         return value;
+    }
+
+    @Override
+    public String toString() {
+        if (isEmpty()) return "no limits";
+        return "limits: from " + min + " to " + max + ( groupSize.isEmpty() ? "" : " with group size " + groupSize);
     }
 
     public static Limits of(Cluster cluster) {
@@ -94,10 +97,6 @@ public class Limits {
                           Objects.requireNonNull(groupSize, "groupSize"));
     }
 
-    @Override
-    public String toString() {
-        if (isEmpty()) return "no limits";
-        return "limits: from " + min + " to " + max + ( groupSize.isEmpty() ? "" : " with group size " + groupSize);
-    }
+    public static Limits empty() { return empty; }
 
 }

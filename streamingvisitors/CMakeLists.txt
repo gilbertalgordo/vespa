@@ -2,13 +2,13 @@
 vespa_define_module(
     DEPENDS
     vespalog
-    storage
-    config_cloudconfig
+    vespa_storage
+    vespa_config
     vespalib
-    document
-    vdslib
-    searchlib
-    searchsummary
+    vespa_document
+    vespa_vdslib
+    vespa_searchlib
+    vespa_searchsummary
 
     LIBS
     src/vespa/searchvisitor
@@ -30,4 +30,5 @@ vespa_define_module(
     src/tests/searcher
     src/tests/searchvisitor
     src/tests/textutil
+    src/tests/tokens_converter
 )

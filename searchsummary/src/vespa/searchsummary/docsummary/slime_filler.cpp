@@ -325,7 +325,7 @@ SlimeFiller::visit(const WeightedSetFieldValue& value)
 void
 SlimeFiller::visit(const TensorFieldValue& value)
 {
-    const auto& tensor = value.getAsTensorPtr();
+    const auto* tensor = value.getAsTensorPtr();
     vespalib::nbostream s;
     if (tensor) {
         encode_value(*tensor, s);
@@ -338,7 +338,7 @@ SlimeFiller::visit(const ReferenceFieldValue& value)
 {
     _inserter.insertString(Memory(value.hasValidDocumentId()
                                   ? value.getDocumentId().toString()
-                                  : vespalib::string()));
+                                  : std::string()));
 }
 
 void

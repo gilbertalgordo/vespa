@@ -1,6 +1,7 @@
 // Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include <vespa/searchlib/fef/blueprint.h>
+#include <vespa/searchlib/fef/document_frequency.h>
 #include <vespa/searchlib/fef/featureexecutor.h>
 #include <vespa/vespalib/util/trinary.h>
 
@@ -39,7 +40,7 @@ public:
                  double k1_param,
                  double b_param);
 
-    double static calculate_inverse_document_frequency(uint32_t matching_doc_count, uint32_t total_doc_count);
+    static double calculate_inverse_document_frequency(search::fef::DocumentFrequency doc_freq) noexcept;
 
     void handle_bind_match_data(const fef::MatchData& match_data) override;
     void execute(uint32_t docId) override;
@@ -56,8 +57,8 @@ private:
     double _b_param;
     std::optional<double> _avg_field_length;
 
-    vespalib::Trinary lookup_param(const fef::Properties& props, const vespalib::string& param, double& result) const;
-    vespalib::Trinary lookup_param(const fef::Properties& props, const vespalib::string& param, std::optional<double>& result) const;
+    vespalib::Trinary lookup_param(const fef::Properties& props, const std::string& param, double& result) const;
+    vespalib::Trinary lookup_param(const fef::Properties& props, const std::string& param, std::optional<double>& result) const;
 
 public:
     Bm25Blueprint();

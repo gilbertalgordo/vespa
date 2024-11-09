@@ -9,8 +9,9 @@
 #include <vespa/vespalib/stllike/asciistream.h>
 #include <vespa/vespalib/stllike/hash_map.hpp>
 #include <vespa/vespalib/stllike/hash_map_equal.hpp>
-#include <sstream>
 #include <cassert>
+#include <sstream>
+#include <string>
 
 #include <vespa/log/log.h>
 LOG_SETUP(".vdslib.state.cluster");
@@ -46,7 +47,7 @@ struct NodeData {
 
     void addTo(ClusterState::NodeMap & nodeStates, ClusterState::NodeCounts & nodeCount) {
         if (!empty) {
-            NodeState state(ost.str(), &node.getType());
+            NodeState state(ost.view(), &node.getType());
             if ((state != NodeState(node.getType(), State::UP)) || (state.getDescription().size() > 0)) {
                 nodeStates.insert(std::make_pair(node, state));
             }
@@ -59,7 +60,7 @@ struct NodeData {
     }
 };
 
-ClusterState::ClusterState(const vespalib::string& serialized)
+ClusterState::ClusterState(std::string_view serialized)
     : Printable(),
       _version(0),
       _nodeCount(),
@@ -71,17 +72,17 @@ ClusterState::ClusterState(const vespalib::string& serialized)
     vespalib::StringTokenizer st(serialized, " \t\f\r\n");
     st.removeEmptyTokens();
     NodeData nodeData;
-    vespalib::string lastAbsolutePath;
+    std::string lastAbsolutePath;
 
     for (const auto & token : st) {
-        vespalib::string::size_type index = token.find(':');
-        if (index == vespalib::string::npos) {
-            throw IllegalArgumentException("Token " + token + " does not contain ':': " + serialized, VESPA_STRLOC);
+        std::string::size_type index = token.find(':');
+        if (index == std::string::npos) {
+            throw IllegalArgumentException("Token " + std::string(token) + " does not contain ':': " + std::string(serialized), VESPA_STRLOC);
         }
-        vespalib::string key = token.substr(0, index);
-        vespalib::stringref value = token.substr(index + 1);
-        if (key.size() > 0 && key[0] == '.') {
-            if (lastAbsolutePath == "") {
+        std::string key(token.substr(0, index));
+        std::string_view value = token.substr(index + 1);
+        if (!key.empty() && key[0] == '.') {
+            if (lastAbsolutePath.empty()) {
                 throw IllegalArgumentException("The first path in system state string needs to be absolute", VESPA_STRLOC);
             }
             key = lastAbsolutePath + key;
@@ -92,7 +93,7 @@ ClusterState::ClusterState(const vespalib::string& serialized)
         if (key.empty() || ! parse(key, value, nodeData) ) {
             LOG(debug, "Unknown key %s in systemstate. Ignoring it, assuming it's "
                        "a new feature from a newer version than ourself: %s",
-                       vespalib::string(key).c_str(), serialized.c_str());
+                       std::string(key).c_str(), std::string(serialized).c_str());
         }
     }
     nodeData.addTo(_nodeStates, _nodeCount);
@@ -100,7 +101,7 @@ ClusterState::ClusterState(const vespalib::string& serialized)
 }
 
 bool
-ClusterState::parse(vespalib::stringref key, vespalib::stringref value, NodeData & nodeData) {
+ClusterState::parse(std::string_view key, std::string_view value, NodeData & nodeData) {
     switch (key[0]) {
     case 'c':
         if (key == "cluster") {
@@ -138,10 +139,10 @@ ClusterState::parse(vespalib::stringref key, vespalib::stringref value, NodeData
 }
 
 bool
-ClusterState::parseSorD(vespalib::stringref key, vespalib::stringref value, NodeData & nodeData) {
+ClusterState::parseSorD(std::string_view key, std::string_view value, NodeData & nodeData) {
     const NodeType* nodeType = nullptr;
-    vespalib::string::size_type dot = key.find('.');
-    vespalib::stringref type(dot == vespalib::string::npos
+    std::string::size_type dot = key.find('.');
+    std::string_view type(dot == std::string::npos
                              ? key : key.substr(0, dot));
     if (type == "storage") {
         nodeType = &NodeType::STORAGE;
@@ -149,7 +150,7 @@ ClusterState::parseSorD(vespalib::stringref key, vespalib::stringref value, Node
         nodeType = &NodeType::DISTRIBUTOR;
     }
     if (nodeType == nullptr) return false;
-    if (dot == vespalib::string::npos) { // Entry that set node counts
+    if (dot == std::string::npos) { // Entry that set node counts
         uint16_t nodeCount = atoi(value.data());
 
         if (nodeCount > _nodeCount[*nodeType] ) {
@@ -157,20 +158,20 @@ ClusterState::parseSorD(vespalib::stringref key, vespalib::stringref value, Node
         }
         return true;
     }
-    vespalib::string::size_type dot2 = key.find('.', dot + 1);
-    Node node(*nodeType, (dot2 == vespalib::string::npos)
+    std::string::size_type dot2 = key.find('.', dot + 1);
+    Node node(*nodeType, (dot2 == std::string::npos)
                          ? atoi(key.substr(dot + 1).data())
                          : atoi(key.substr(dot + 1, dot2 - dot - 1).data()));
 
     if (node.getIndex() >= _nodeCount[*nodeType]) {
         vespalib::asciistream ost;
         ost << "Cannot index " << *nodeType << " node " << node.getIndex() << " of " << _nodeCount[*nodeType];
-        throw IllegalArgumentException( ost.str(), VESPA_STRLOC);
+        throw IllegalArgumentException(ost.view(), VESPA_STRLOC);
     }
     if (nodeData.node != node) {
         nodeData.addTo(_nodeStates, _nodeCount);
     }
-    if (dot2 == vespalib::string::npos) {
+    if (dot2 == std::string::npos) {
         return false; // No default key for nodes.
     } else {
         nodeData.ost << " " << key.substr(dot2 + 1) << ':' << value;
@@ -199,8 +200,8 @@ serialize_node(vespalib::asciistream & out, const Node & node, const NodeState &
     vespalib::asciistream prefix;
     prefix << "." << node.getIndex() << ".";
     vespalib::asciistream ost;
-    state.serialize(ost, prefix.str(), false);
-    vespalib::stringref content = ost.str();
+    state.serialize(ost, prefix.view(), false);
+    std::string_view content = ost.view();
     if ( !content.empty()) {
         out << " " << content;
     }
@@ -327,7 +328,7 @@ ClusterState::print(std::ostream& out, bool verbose, const std::string&) const
     (void) verbose;
     vespalib::asciistream tmp;
     serialize(tmp);
-    out << tmp.str();
+    out << tmp.view();
 }
 
 void

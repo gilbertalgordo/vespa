@@ -38,7 +38,7 @@ struct BucketCheckerInjector : FileStorTestFixture::StorageLinkInjector
     {}
     void inject(DummyStorageLink& link) const override {
         using vespa::config::content::core::StorServerConfig;
-        auto cfg = config_from<StorServerConfig>(config::ConfigUri(_fixture._config->getConfigId()));
+        auto cfg = config_from<StorServerConfig>(_fixture._config->config_uri());
        link.push_back(std::make_unique<ModifiedBucketChecker>(
                _node.getComponentRegister(), _node.getPersistenceProvider(), *cfg));
     }
@@ -50,7 +50,7 @@ assertIsNotifyCommandWithActiveBucket(api::StorageMessage& msg)
     auto& cmd = dynamic_cast<api::NotifyBucketChangeCommand&>(msg);
     ASSERT_TRUE(cmd.getBucketInfo().isActive());
     ASSERT_EQ(
-            vespalib::string("StorageMessageAddress(Storage protocol, "
+            std::string("StorageMessageAddress(Storage protocol, "
                              "cluster storage, nodetype distributor, index 0)"),
             cmd.getAddress()->toString());
 }

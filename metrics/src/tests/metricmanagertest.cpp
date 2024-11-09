@@ -150,7 +150,7 @@ struct MetricNameVisitor : public MetricVisitor {
 namespace {
 
 std::pair<std::string, std::string>
-getMatchedMetrics(const vespalib::string& config)
+getMatchedMetrics(const std::string& config)
 {
     TestMetricSet mySet;
     MetricManager mm;
@@ -437,7 +437,7 @@ std::string dumpAllSnapshots(const MetricManager& mm, const std::string& consume
     } else { \
         mm.visit(lockGuard, mm.getMetricSnapshot(lockGuard, period), briefValuePrinter, "snapper"); \
     } \
-    EXPECT_EQ(std::string(expected), briefValuePrinter.ost.str()) << dumpAllSnapshots(mm, "snapper"); \
+    EXPECT_EQ(std::string(expected), briefValuePrinter.ost.view()) << dumpAllSnapshots(mm, "snapper"); \
 }
 
 #define ASSERT_PROCESS_TIME(mm, time) \
@@ -572,7 +572,7 @@ TEST_F(MetricManagerTest, test_json_output)
         // No snapshots have been taken yet, so the non-total getMetrics call should return
         // the empty string (i.e. no metrics produced).
         metrics::StateApiAdapter adapter(mm);
-        auto json_str = adapter.getMetrics("snapper");
+        auto json_str = adapter.getMetrics("snapper", vespalib::MetricsProducer::ExpositionFormat::JSON);
         EXPECT_EQ(json_str, "");
     }
 
@@ -598,7 +598,7 @@ TEST_F(MetricManagerTest, test_json_output)
         mm.visit(lockGuard, mm.getMetricSnapshot(lockGuard, 300s, false), writer, "snapper");
     }
     jsonStream.finalize();
-    std::string jsonData = as.str();
+    std::string jsonData(as.view());
     // Parse it back
     using namespace vespalib::slime;
     vespalib::Slime slime;
@@ -614,9 +614,9 @@ TEST_F(MetricManagerTest, test_json_output)
     // Verify some content
     EXPECT_EQ(1000.0, slime.get()["snapshot"]["from"].asDouble()) << jsonData;
     EXPECT_EQ(1300.0, slime.get()["snapshot"]["to"].asDouble()) << jsonData;
-    EXPECT_EQ(vespalib::string("temp.val6"),
+    EXPECT_EQ(std::string("temp.val6"),
               slime.get()["values"][0]["name"].asString().make_string()) << jsonData;
-    EXPECT_EQ(vespalib::string("val6 desc"),
+    EXPECT_EQ(std::string("val6 desc"),
               slime.get()["values"][0]["description"].asString().make_string()) << jsonData;
     EXPECT_EQ(2.0, slime.get()["values"][0]["values"]["average"].asDouble()) << jsonData;
     EXPECT_EQ(1.0, slime.get()["values"][0]["values"]["count"].asDouble()) << jsonData;
@@ -624,9 +624,9 @@ TEST_F(MetricManagerTest, test_json_output)
     EXPECT_EQ(2.0, slime.get()["values"][0]["values"]["max"].asDouble()) << jsonData;
     EXPECT_EQ(2.0, slime.get()["values"][0]["values"]["last"].asDouble()) << jsonData;
 
-    EXPECT_EQ(vespalib::string("temp.multisub.sum.valsum"),
+    EXPECT_EQ(std::string("temp.multisub.sum.valsum"),
               slime.get()["values"][10]["name"].asString().make_string()) << jsonData;
-    EXPECT_EQ(vespalib::string("valsum desc"),
+    EXPECT_EQ(std::string("valsum desc"),
               slime.get()["values"][10]["description"].asString().make_string()) << jsonData;
     EXPECT_EQ(10.0, slime.get()["values"][10]["values"]["average"].asDouble()) << jsonData;
     EXPECT_EQ(3.0, slime.get()["values"][10]["values"]["count"].asDouble()) << jsonData;
@@ -635,9 +635,9 @@ TEST_F(MetricManagerTest, test_json_output)
     EXPECT_EQ(10.0, slime.get()["values"][10]["values"]["last"].asDouble()) << jsonData;
 
     metrics::StateApiAdapter adapter(mm);
-    vespalib::string normal = adapter.getMetrics("snapper");
-    EXPECT_EQ(vespalib::string(jsonData), normal);
-    vespalib::string total = adapter.getTotalMetrics("snapper");
+    std::string normal = adapter.getMetrics("snapper", vespalib::MetricsProducer::ExpositionFormat::JSON);
+    EXPECT_EQ(std::string(jsonData), normal);
+    std::string total = adapter.getTotalMetrics("snapper", vespalib::MetricsProducer::ExpositionFormat::JSON);
     EXPECT_GT(total.size(), 0);
     EXPECT_NE(total, normal);
 }
@@ -687,7 +687,7 @@ struct MetricSnapshotTestFixture
             manager.visit(lockGuard, manager.getMetricSnapshot(lockGuard, 300s, false), writer, "snapper");
         }
         jsonStream.finalize();
-        return as.str();
+        return std::string(as.view());
     }
 
     std::string renderLastSnapshotAsText(const std::string& matchPattern = ".*") const
@@ -708,7 +708,7 @@ struct MetricSnapshotTestFixture
             MetricLockGuard lockGuard(manager.getMetricLock());
             manager.visit(lockGuard, manager.getMetricSnapshot(lockGuard, 300s, false), writer, "snapper");
         }
-        return os.str();
+        return std::string(os.view());
     }
 };
 
@@ -1056,6 +1056,18 @@ TEST_F(MetricManagerTest, prometheus_output_can_emit_inf_values_verbatim) {
     std::string actual = fixture.render_last_snapshot_as_prometheus();
     EXPECT_THAT(actual, HasSubstr("outer_temp_val_sum{foo=\"bar\",fancy=\"stuff\"} +Inf 1300000\n"));
     EXPECT_THAT(actual, HasSubstr("outer_temp_val_sum{foo=\"baz\",fancy=\"stuff\"} -Inf 1300000\n"));
+}
+
+TEST_F(MetricManagerTest, state_adapter_can_output_prometheus_format) {
+    SameNamesTestMetricSet mset;
+    mset.set1.val.addValue(2);
+    mset.set2.val.addValue(3);
+    MetricSnapshotTestFixture fixture(*this, mset);
+    fixture.takeSnapshotsOnce();
+    metrics::StateApiAdapter adapter(fixture.manager);
+    auto metrics = adapter.getMetrics("snapper", vespalib::MetricsProducer::ExpositionFormat::Prometheus);
+    EXPECT_THAT(metrics, HasSubstr("outer_temp_val_sum{foo=\"bar\",fancy=\"stuff\"} 2 1300000\n"));
+    EXPECT_THAT(metrics, HasSubstr("outer_temp_val_sum{foo=\"baz\",fancy=\"stuff\"} 3 1300000\n"));
 }
 
 struct SneakyNamesMetricSet : public MetricSet {

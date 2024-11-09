@@ -13,7 +13,6 @@ import ai.vespa.metricsproxy.service.VespaServices;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -107,7 +106,7 @@ public class MetricsManager {
      * NOTE: Use {@link #getMetrics(List, Instant)} instead, unless further processing of the metrics is necessary.
      */
     public List<MetricsPacket.Builder> getMetricsAsBuilders(List<VespaService> services, Instant startTime, ConsumerId consumerId) {
-        if (services.isEmpty()) return Collections.emptyList();
+        if (services.isEmpty()) return List.of();
 
         log.log(FINE, () -> "Updating services prior to fetching metrics, number of services= " + services.size());
         vespaServices.updateServices(services);
@@ -153,7 +152,7 @@ public class MetricsManager {
     static MetricsPacket.Builder adjustTimestamp(MetricsPacket.Builder builder, Instant startTime) {
         Duration age = Duration.between(startTime, builder.getTimestamp());
         if (age.abs().minusMinutes(1).isNegative())
-            builder.timestamp(startTime.getEpochSecond());
+            builder.timestamp(startTime);
         return builder;
     }
 
@@ -164,7 +163,7 @@ public class MetricsManager {
      * @return Health metrics for all matching services.
      */
     public List<MetricsPacket> getHealthMetrics(List<VespaService> services) {
-        if (services.isEmpty()) return Collections.emptyList();
+        if (services.isEmpty()) return List.of();
         vespaServices.updateServices(services);
 
         // TODO: Add global dimensions to health metrics?
@@ -190,7 +189,7 @@ public class MetricsManager {
 
     public void purgeExtraMetrics() {
         extraDimensions = new HashMap<>();
-        externalMetrics.setExtraMetrics(Collections.emptyList());
+        externalMetrics.setExtraMetrics(List.of());
     }
 
     /**

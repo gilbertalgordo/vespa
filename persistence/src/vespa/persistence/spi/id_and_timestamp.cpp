@@ -1,6 +1,7 @@
 // Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 #include "id_and_timestamp.h"
 #include <vespa/vespalib/stllike/asciistream.h>
+#include <ostream>
 
 namespace storage::spi {
 
@@ -19,7 +20,7 @@ void IdAndTimestamp::print(vespalib::asciistream& os) const {
     os << id.toString() << " at time " << timestamp.getValue();
 }
 
-vespalib::string IdAndTimestamp::to_string() const {
+std::string IdAndTimestamp::to_string() const {
     vespalib::asciistream os;
     print(os);
     return os.str();

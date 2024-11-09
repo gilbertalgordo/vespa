@@ -3,6 +3,7 @@ package com.yahoo.vespa.hosted.provision.provisioning;
 
 import com.yahoo.config.provision.ApplicationId;
 import com.yahoo.config.provision.Capacity;
+import com.yahoo.config.provision.CloudAccount;
 import com.yahoo.config.provision.ClusterResources;
 import com.yahoo.config.provision.ClusterSpec;
 import com.yahoo.config.provision.Flavor;
@@ -50,7 +51,6 @@ public class DynamicProvisioningTester {
     private final ProvisioningTester provisioningTester;
     private final Autoscaler autoscaler;
     private final HostResourcesCalculator hostResourcesCalculator;
-    private final CapacityPolicies capacityPolicies;
 
     public DynamicProvisioningTester(Zone zone, HostResourcesCalculator resourcesCalculator, List<Flavor> hostFlavors, InMemoryFlagSource flagSource, int hostCount) {
         this(zone, hostFlavors, resourcesCalculator, flagSource);
@@ -76,7 +76,6 @@ public class DynamicProvisioningTester {
 
         hostResourcesCalculator = resourcesCalculator;
         autoscaler = new Autoscaler(nodeRepository());
-        capacityPolicies = new CapacityPolicies(provisioningTester.nodeRepository());
     }
 
     public InMemoryProvisionLogger provisionLogger() { return provisioningTester.provisionLogger(); }
@@ -143,6 +142,7 @@ public class DynamicProvisioningTester {
                               cluster.maxResources(),
                               cluster.groupSize(),
                               cluster.required(),
+                              cluster.cloudAccount(),
                               cluster.suggestions(),
                               cluster.target(),
                               cluster.clusterInfo(),
@@ -156,14 +156,15 @@ public class DynamicProvisioningTester {
     }
 
     public Autoscaling autoscale(ApplicationId applicationId, ClusterSpec cluster, Capacity capacity) {
-        capacity = capacityPolicies.applyOn(capacity, applicationId, capacityPolicies.decideExclusivity(capacity, cluster).isExclusive());
+        var capacityPolicies = provisioningTester.nodeRepository().capacityPoliciesFor(applicationId);
+        capacity = capacityPolicies.applyOn(capacity, capacityPolicies.decideExclusivity(capacity, cluster).isExclusive());
         Application application = nodeRepository().applications().get(applicationId).orElse(Application.empty(applicationId))
                                                   .withCluster(cluster.id(), false, capacity);
         try (Mutex lock = nodeRepository().applications().lock(applicationId)) {
             nodeRepository().applications().put(application, lock);
         }
         return autoscaler.autoscale(application, application.clusters().get(cluster.id()),
-                                    nodeRepository().nodes().list(Node.State.active).owner(applicationId));
+                                    nodeRepository().nodes().list(Node.State.active).owner(applicationId), true, false);
     }
 
     public List<Autoscaling> suggest(ApplicationId applicationId, ClusterSpec.Id clusterId,
@@ -182,7 +183,7 @@ public class DynamicProvisioningTester {
                                 NodeResources expectedResources,
                                 ClusterResources resources) {
         assertResources(message, nodeCount, groupCount,
-                        expectedResources.vcpu(), expectedResources.memoryGb(), expectedResources.diskGb(),
+                        expectedResources.vcpu(), expectedResources.memoryGiB(), expectedResources.diskGb(),
                         resources);
     }
 
@@ -193,7 +194,7 @@ public class DynamicProvisioningTester {
         assertTrue("Resources are present: " + message + " (" + autoscaling + ": " + autoscaling.status() + ")",
                    autoscaling.resources().isPresent());
         assertResources(message, nodeCount, groupCount,
-                        expectedResources.vcpu(), expectedResources.memoryGb(), expectedResources.diskGb(),
+                        expectedResources.vcpu(), expectedResources.memoryGiB(), expectedResources.diskGb(),
                         autoscaling.resources().get());
     }
 
@@ -225,7 +226,7 @@ public class DynamicProvisioningTester {
         assertEquals("Node count in " + resources + ": " + message, nodeCount, resources.nodes());
         assertEquals("Group count in " + resources+ ": " + message, groupCount, resources.groups());
         assertEquals("Cpu in " + resources + ": " + message, approxCpu, Math.round(nodeResources.vcpu() * 10) / 10.0, delta);
-        assertEquals("Memory in " + resources + ": " + message, approxMemory, Math.round(nodeResources.memoryGb() * 10) / 10.0, delta);
+        assertEquals("Memory in " + resources + ": " + message, approxMemory, Math.round(nodeResources.memoryGiB() * 10) / 10.0, delta);
         assertEquals("Disk in: " + resources + ": "  + message, approxDisk, Math.round(nodeResources.diskGb() * 10) / 10.0, delta);
     }
 
@@ -251,7 +252,7 @@ public class DynamicProvisioningTester {
         @Override
         public NodeResources realResourcesOf(Nodelike node, NodeRepository nodeRepository) {
             if (zone.cloud().dynamicProvisioning())
-                return node.resources().withMemoryGb(node.resources().memoryGb());
+                return node.resources().withMemoryGiB(node.resources().memoryGiB());
             else
                 return node.resources();
         }
@@ -259,19 +260,19 @@ public class DynamicProvisioningTester {
         @Override
         public NodeResources advertisedResourcesOf(Flavor flavor) {
             if (zone.cloud().dynamicProvisioning())
-                return flavor.resources().withMemoryGb(flavor.resources().memoryGb());
+                return flavor.resources().withMemoryGiB(flavor.resources().memoryGiB());
             else
                 return flavor.resources();
         }
 
         @Override
-        public NodeResources requestToReal(NodeResources resources, boolean exclusive, boolean bestCase) {
-            return resources.withMemoryGb(resources.memoryGb());
+        public NodeResources requestToReal(NodeResources resources, CloudAccount cloudAccount, boolean exclusive, boolean bestCase) {
+            return resources.withMemoryGiB(resources.memoryGiB());
         }
 
         @Override
-        public NodeResources realToRequest(NodeResources resources, boolean exclusive, boolean bestCase) {
-            return resources.withMemoryGb(resources.memoryGb());
+        public NodeResources realToRequest(NodeResources resources, CloudAccount cloudAccount, boolean exclusive, boolean bestCase) {
+            return resources.withMemoryGiB(resources.memoryGiB());
         }
 
         @Override

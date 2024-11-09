@@ -24,14 +24,14 @@ IndexWriter::ignoreOperation(search::SerialNum serialNum) const {
 }
 
 void
-IndexWriter::put(search::SerialNum serialNum, const document::Document &doc, const search::DocumentIdT lid, OnWriteDoneType on_write_done)
+IndexWriter::put(search::SerialNum serialNum, const document::Document &doc, const search::DocumentIdT lid, const OnWriteDoneType& on_write_done)
 {
     if (ignoreOperation(serialNum)) {
         return;
     }
     ns_log::Logger::LogLevel level = getDebugLevel(lid, doc.getId());
     if (LOG_WOULD_VLOG(level)) {
-        vespalib::string s1(doc.toString(true));
+        std::string s1(doc.toString(true));
         VLOG(level, "Handle put: serial(%" PRIu64 "), docId(%s), lid(%u), document(sz=%ld)",
             serialNum, doc.getId().toString().c_str(), lid, s1.size());
         const size_t chunksize(30000);
@@ -56,7 +56,7 @@ IndexWriter::removeDocs(search::SerialNum serialNum, LidVector lids)
 }
 
 void
-IndexWriter::commit(search::SerialNum serialNum, OnWriteDoneType onWriteDone)
+IndexWriter::commit(search::SerialNum serialNum, const OnWriteDoneType& onWriteDone)
 {
     if (serialNum <= _mgr->getFlushedSerialNum()) {
         return;

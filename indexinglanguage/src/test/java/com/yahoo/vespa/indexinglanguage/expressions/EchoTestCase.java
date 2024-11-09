@@ -42,7 +42,7 @@ public class EchoTestCase {
         ByteArrayOutputStream out = new ByteArrayOutputStream();
 
         ExecutionContext ctx = new ExecutionContext(new SimpleTestAdapter());
-        ctx.setValue(new StringFieldValue("69"));
+        ctx.setCurrentValue(new StringFieldValue("69"));
         new EchoExpression(new PrintStream(out)).execute(ctx);
 
         assertEquals("69" + System.getProperty("line.separator"), out.toString());
@@ -53,6 +53,6 @@ public class EchoTestCase {
         Expression exp = new EchoExpression();
         assertVerify(DataType.INT, exp, DataType.INT);
         assertVerify(DataType.STRING, exp, DataType.STRING);
-        assertVerifyThrows(null, exp, "Expected any input, but no input is specified");
+        assertVerifyThrows("Invalid expression 'echo': Expected any input, but no input is specified", null, exp);
     }
 }

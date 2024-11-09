@@ -18,10 +18,27 @@ public final class HexDecodeExpression extends Expression {
     }
 
     @Override
+    public DataType setInputType(DataType inputType, VerificationContext context) {
+        super.setInputType(inputType, DataType.STRING, context);
+        return DataType.LONG;
+    }
+
+    @Override
+    public DataType setOutputType(DataType outputType, VerificationContext context) {
+        super.setOutputType(DataType.LONG, outputType, null, context);
+        return DataType.STRING;
+    }
+
+    @Override
+    protected void doVerify(VerificationContext context) {
+        context.setCurrentType(createdOutputType());
+    }
+
+    @Override
     protected void doExecute(ExecutionContext context) {
-        String input = String.valueOf(context.getValue());
+        String input = String.valueOf(context.getCurrentValue());
         if (input.isEmpty()) {
-            context.setValue(new LongFieldValue(Long.MIN_VALUE));
+            context.setCurrentValue(new LongFieldValue(Long.MIN_VALUE));
             return;
         }
         BigInteger output;
@@ -36,23 +53,14 @@ public final class HexDecodeExpression extends Expression {
         if (output.compareTo(BigInteger.ZERO) > 0 && output.bitLength() == 64) {
             output = output.subtract(ULONG_MAX); // flip to negative
         }
-        context.setValue(new LongFieldValue(output.longValue()));
+        context.setCurrentValue(new LongFieldValue(output.longValue()));
     }
 
     @Override
-    protected void doVerify(VerificationContext context) {
-        context.setValueType(createdOutputType());
-    }
+    public DataType createdOutputType() { return DataType.LONG; }
 
     @Override
-    public DataType createdOutputType() {
-        return DataType.LONG;
-    }
-
-    @Override
-    public String toString() {
-        return "hexdecode";
-    }
+    public String toString() { return "hexdecode"; }
 
     @Override
     public boolean equals(Object obj) {

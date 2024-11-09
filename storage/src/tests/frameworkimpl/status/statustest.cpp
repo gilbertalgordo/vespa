@@ -1,10 +1,11 @@
 // Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
+#include <tests/common/storage_config_set.h>
+#include <tests/common/teststorageapp.h>
 #include <vespa/storageframework/defaultimplementation/component/componentregisterimpl.h>
 #include <vespa/storage/frameworkimpl/status/statuswebserver.h>
 #include <vespa/storageframework/generic/status/htmlstatusreporter.h>
 #include <vespa/storageframework/generic/status/xmlstatusreporter.h>
-#include <tests/common/teststorageapp.h>
 #include <vespa/document/util/stringutil.h>
 #include <vespa/vespalib/net/crypto_engine.h>
 #include <vespa/vespalib/net/socket_spec.h>
@@ -16,20 +17,20 @@
 
 using namespace ::testing;
 
-vespalib::string fetch(int port, const vespalib::string &path) {
+std::string fetch(int port, const std::string &path) {
     auto crypto = vespalib::CryptoEngine::get_default();
     auto socket = vespalib::SocketSpec::from_port(port).client_address().connect();
     assert(socket.valid());
     auto conn = vespalib::SyncCryptoSocket::create_client(*crypto, std::move(socket), vespalib::SocketSpec::from_host_port("localhost", port));
-    vespalib::string http_req = vespalib::make_string("GET %s HTTP/1.1\r\n"
+    std::string http_req = vespalib::make_string("GET %s HTTP/1.1\r\n"
                                                       "Host: localhost:%d\r\n"
                                                       "\r\n", path.c_str(), port);
     assert(conn->write(http_req.data(), http_req.size()) == ssize_t(http_req.size()));
     char buf[1024];
-    vespalib::string result;
+    std::string result;
     ssize_t res = conn->read(buf, sizeof(buf));
     while (res > 0) {
-        result.append(vespalib::stringref(buf, res));
+        result.append(std::string_view(buf, res));
         res = conn->read(buf, sizeof(buf));
     }
     assert(res == 0);
@@ -39,6 +40,7 @@ vespalib::string fetch(int port, const vespalib::string &path) {
 namespace storage {
 
 struct StatusTest : Test {
+    std::unique_ptr<StorageConfigSet>    _config;
     std::unique_ptr<TestServiceLayerApp> _node;
 
     void SetUp() override;
@@ -70,7 +72,7 @@ namespace {
         XmlStatusReporter(const std::string& id, const std::string& name)
             : framework::XmlStatusReporter(id, name) {}
 
-        vespalib::string reportXmlStatus(vespalib::xml::XmlOutputStream& xos,
+        std::string reportXmlStatus(vespalib::xml::XmlOutputStream& xos,
                                          const framework::HttpUrlPath&) const override
         {
             xos << vespalib::xml::XmlTag("mytag")
@@ -97,7 +99,8 @@ namespace {
 }
 
 void StatusTest::SetUp() {
-    _node = std::make_unique<TestServiceLayerApp>();
+    _config = StorageConfigSet::make_storage_node_config();
+    _node = std::make_unique<TestServiceLayerApp>(_config->config_uri());
 }
 
 namespace {

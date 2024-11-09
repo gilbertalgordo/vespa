@@ -6,9 +6,9 @@
 #include <vespa/vespalib/net/socket_address.h>
 #include <vespa/vespalib/util/exceptions.h>
 #include <vespa/vespalib/util/size_literals.h>
-#include <string>
 #include <fcntl.h>
 #include <sys/wait.h>
+#include <string>
 
 #include <vespa/log/log.h>
 LOG_SETUP(".sentinel.manager");
@@ -88,7 +88,7 @@ Manager::doConfigure()
     ServiceMap services;
     for (unsigned int i = 0; i < config.service.size(); ++i) {
         const SentinelConfig::Service& serviceConfig = config.service[i];
-        const vespalib::string name(serviceConfig.name);
+        const std::string name(serviceConfig.name);
         auto found(_services.find(name));
         if (found == _services.end()) {
             services[name] = std::make_unique<Service>(serviceConfig, config.application, _outputConnections, _env.metrics());
@@ -170,16 +170,17 @@ Manager::handleChildDeaths()
 }
 
 void
-Manager::updateActiveFdset(fd_set *fds, int *maxNum)
+Manager::updateActiveFdset(std::vector<pollfd> &fds)
 {
-    // ### _Possibly put an assert here if fd is > 1023???
-    for (OutputConnection *c : _outputConnections) {
+    fds.clear();
+    for (const OutputConnection *c : _outputConnections) {
         int fd = c->fd();
         if (fd >= 0) {
-            FD_SET(fd, fds);
-            if (fd >= *maxNum) {
-                *maxNum = fd + 1;
-            }
+            fds.emplace_back();
+            auto &ev = fds.back();
+            ev.fd = fd;
+            ev.events = POLLIN;
+            ev.revents = 0;
         }
     }
 }
@@ -236,7 +237,7 @@ Manager::serviceByPid(pid_t pid)
 }
 
 Service *
-Manager::serviceByName(const vespalib::string & name)
+Manager::serviceByName(const std::string & name)
 {
     auto found(_services.find(name));
     if (found != _services.end()) {

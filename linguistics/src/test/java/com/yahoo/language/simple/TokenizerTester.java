@@ -5,9 +5,9 @@ import com.yahoo.language.Language;
 import com.yahoo.language.Linguistics;
 import com.yahoo.language.process.StemMode;
 import com.yahoo.language.process.Token;
+import com.yahoo.language.process.TokenScript;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 
 import static org.junit.Assert.assertEquals;
@@ -27,7 +27,15 @@ public class TokenizerTester {
         for (Token token : tokenize(input)) {
             findTokenStrings(token, actual);
         }
-        assertEquals(Arrays.asList(expectedTokenStrings), actual);
+        assertEquals(List.of(expectedTokenStrings), actual);
+    }
+
+    public void assertTokenScripts(String input, TokenScript... expectedTokenScripts) {
+        List<TokenScript> actual = new ArrayList<>();
+        for (Token token : tokenize(input)) {
+            findTokenScripts(token, actual);
+        }
+        assertEquals(List.of(expectedTokenScripts), actual);
     }
 
     public List<String> findTokenStrings(Token token, List<String> out) {
@@ -37,6 +45,18 @@ public class TokenizerTester {
         } else {
             for (int i = 0; i < numComponents; ++i) {
                 findTokenStrings(token.getComponent(i), out);
+            }
+        }
+        return out;
+    }
+
+    public List<TokenScript> findTokenScripts(Token token, List<TokenScript> out) {
+        int numComponents = token.getNumComponents();
+        if (token.isSpecialToken() || numComponents == 0) {
+            out.add(token.getScript());
+        } else {
+            for (int i = 0; i < numComponents; ++i) {
+                findTokenScripts(token.getComponent(i), out);
             }
         }
         return out;

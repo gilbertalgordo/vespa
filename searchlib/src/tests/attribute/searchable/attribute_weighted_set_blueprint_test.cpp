@@ -1,5 +1,4 @@
 // Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
-#include <vespa/vespalib/testkit/testapp.h>
 #include <vespa/searchlib/attribute/attribute_blueprint_factory.h>
 #include <vespa/searchlib/attribute/attribute_weighted_set_blueprint.h>
 #include <vespa/searchlib/attribute/attributecontext.h>
@@ -15,7 +14,10 @@
 #include <vespa/searchlib/test/mock_attribute_manager.h>
 #include <vespa/searchlib/attribute/enumstore.hpp>
 #include <vespa/searchcommon/attribute/config.h>
+#include <vespa/vespalib/stllike/string.h>
 #include <vespa/vespalib/util/normalize_class_name.h>
+#include <vespa/vespalib/testkit/test_kit.h>
+#include <vespa/vespalib/testkit/test_master.hpp>
 
 #include <vespa/log/log.h>
 LOG_SETUP("attribute_weighted_set_blueprint_test");
@@ -111,8 +113,9 @@ struct WS {
         FieldSpecList fields;
         fields.add(FieldSpec(field, fieldId, handle, ac.getAttribute(field)->getIsFilter()));
         queryeval::Blueprint::UP bp = searchable.createBlueprint(requestContext, fields, *node);
-        bp->fetchPostings(queryeval::ExecuteInfo::createForTest(strict));
-        SearchIterator::UP sb = bp->createSearch(*md, strict);
+        bp->basic_plan(strict, 100);
+        bp->fetchPostings(queryeval::ExecuteInfo::FULL);
+        SearchIterator::UP sb = bp->createSearch(*md);
         return sb;
     }
     bool isWeightedSetTermSearch(Searchable &searchable, const std::string &field, bool strict) const {
@@ -127,8 +130,9 @@ struct WS {
         FieldSpecList fields;
         fields.add(FieldSpec(field, fieldId, handle));
         queryeval::Blueprint::UP bp = searchable.createBlueprint(requestContext, fields, *node);
-        bp->fetchPostings(queryeval::ExecuteInfo::createForTest(strict));
-        SearchIterator::UP sb = bp->createSearch(*md, strict);
+        bp->basic_plan(strict, 100);
+        bp->fetchPostings(queryeval::ExecuteInfo::FULL);
+        SearchIterator::UP sb = bp->createSearch(*md);
         FakeResult result;
         sb->initRange(1, 10);
         for (uint32_t docId = 1; docId < 10; ++docId) {

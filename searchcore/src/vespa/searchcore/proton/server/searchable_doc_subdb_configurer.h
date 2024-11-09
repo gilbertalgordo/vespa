@@ -47,11 +47,11 @@ private:
     matching::QueryLimiter      &_queryLimiter;
     const vespalib::eval::ConstantValueFactory& _constant_value_factory;
     const std::atomic<steady_time> & _now_ref;
-    vespalib::string             _subDbName;
+    std::string             _subDbName;
     uint32_t                     _distributionKey;
 
     void reconfigureFeedView(std::shared_ptr<IAttributeWriter> attrWriter,
-                             std::shared_ptr<search::index::Schema> schema,
+                             std::shared_ptr<const search::index::Schema> schema,
                              std::shared_ptr<const document::DocumentTypeRepo> repo);
 
     void reconfigureMatchView(const std::shared_ptr<searchcorespi::IndexSearchable>& indexSearchable);
@@ -73,7 +73,7 @@ public:
                                  matching::QueryLimiter &queryLimiter,
                                  const vespalib::eval::ConstantValueFactory& constant_value_factory,
                                  const std::atomic<steady_time> & now_ref,
-                                 const vespalib::string &subDbName,
+                                 const std::string &subDbName,
                                  uint32_t distributionKey);
     ~SearchableDocSubDBConfigurer();
 

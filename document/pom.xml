@@ -78,8 +78,8 @@
     <build>
         <plugins>
             <plugin>
-                <groupId>com.helger.maven</groupId>
-                <artifactId>ph-javacc-maven-plugin</artifactId>
+                <groupId>io.github.tulipcc</groupId>
+                <artifactId>tulipcc-maven-plugin</artifactId>
             </plugin>
             <plugin>
                 <groupId>com.yahoo.vespa</groupId>
@@ -102,7 +102,7 @@
                 <artifactId>maven-compiler-plugin</artifactId>
                 <configuration>
                     <compilerArgs>
-                        <arg>-Xlint:all</arg>
+                        <arg>${vespaCompilerArgs.xlint}</arg>
                         <arg>-Xlint:-serial</arg>
                         <arg>-Xlint:-rawtypes</arg>
                         <arg>-Xlint:-unchecked</arg>

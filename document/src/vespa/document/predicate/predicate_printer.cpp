@@ -17,14 +17,13 @@ void printEscapedString(vespalib::asciistream &out, const Inspector &in) {
 }
 }  // namespace
 
-vespalib::string
+std::string
 PredicatePrinter::str() const {
     return _out->str();
 }
 
-PredicatePrinter::PredicatePrinter() : _out(new vespalib::asciistream()), _negated(false) {}
-PredicatePrinter::~PredicatePrinter() { }
-
+PredicatePrinter::PredicatePrinter() : _out(std::make_unique<vespalib::asciistream>()), _negated(false) {}
+PredicatePrinter::~PredicatePrinter() = default;
 
 void PredicatePrinter::visitFeatureSet(const Inspector &in) {
     printEscapedString(*_out, in[Predicate::KEY]);
@@ -98,7 +97,7 @@ void PredicatePrinter::visitFalse(const Inspector &) {
     *_out << "false";
 }
 
-vespalib::string PredicatePrinter::print(const Slime &slime) {
+std::string PredicatePrinter::print(const Slime &slime) {
     PredicatePrinter printer;
     printer.visit(slime.get());
     return printer.str();

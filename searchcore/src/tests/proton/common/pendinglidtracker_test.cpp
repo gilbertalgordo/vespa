@@ -1,10 +1,7 @@
 // Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
-#include <vespa/vespalib/testkit/testapp.h>
 #include <vespa/searchcore/proton/common/pendinglidtracker.h>
-
-#include <vespa/log/log.h>
-LOG_SETUP("pendinglidtracker_test");
+#include <vespa/vespalib/gtest/gtest.h>
 
 using namespace proton;
 
@@ -34,47 +31,46 @@ operator << (std::ostream & os, ILidCommitState::State state) {
 
 void
 verifyPhase1ProduceAndNeedCommit(PendingLidTrackerBase & tracker, ILidCommitState::State expected) {
-    EXPECT_EQUAL(ILidCommitState::State::COMPLETED, tracker.getState(LID_1));
-    EXPECT_EQUAL(ILidCommitState::State::COMPLETED, tracker.getState(LIDV_2_1_3));
+    EXPECT_EQ(ILidCommitState::State::COMPLETED, tracker.getState(LID_1));
+    EXPECT_EQ(ILidCommitState::State::COMPLETED, tracker.getState(LIDV_2_1_3));
 
     auto token = tracker.produce(LID_1);
-    EXPECT_EQUAL(expected, tracker.getState(LID_1));
-    EXPECT_EQUAL(expected, tracker.getState(LIDV_2_1_3));
-    EXPECT_EQUAL(ILidCommitState::State::COMPLETED, tracker.getState(LIDV_2_3));
+    EXPECT_EQ(expected, tracker.getState(LID_1));
+    EXPECT_EQ(expected, tracker.getState(LIDV_2_1_3));
+    EXPECT_EQ(ILidCommitState::State::COMPLETED, tracker.getState(LIDV_2_3));
     {
         auto token2 = tracker.produce(LID_1);
-        EXPECT_EQUAL(expected, tracker.getState(LID_1));
-        EXPECT_EQUAL(expected, tracker.getState(LIDV_2_1_3));
-        EXPECT_EQUAL(ILidCommitState::State::COMPLETED, tracker.getState(LIDV_2_3));
+        EXPECT_EQ(expected, tracker.getState(LID_1));
+        EXPECT_EQ(expected, tracker.getState(LIDV_2_1_3));
+        EXPECT_EQ(ILidCommitState::State::COMPLETED, tracker.getState(LIDV_2_3));
     }
-    EXPECT_EQUAL(expected, tracker.getState(LID_1));
-    EXPECT_EQUAL(expected, tracker.getState(LIDV_2_1_3));
-    EXPECT_EQUAL(ILidCommitState::State::COMPLETED, tracker.getState(LIDV_2_3));
+    EXPECT_EQ(expected, tracker.getState(LID_1));
+    EXPECT_EQ(expected, tracker.getState(LIDV_2_1_3));
+    EXPECT_EQ(ILidCommitState::State::COMPLETED, tracker.getState(LIDV_2_3));
 }
 
-TEST("test pendinglidtracker for needcommit") {
+TEST(PendingLidTrackerTest, test_pendinglidtracker_for_needcommit)
+{
     PendingLidTracker tracker;
     verifyPhase1ProduceAndNeedCommit(tracker, ILidCommitState::State::WAITING);
-    EXPECT_EQUAL(ILidCommitState::State::COMPLETED, tracker.getState(LID_1));
-    EXPECT_EQUAL(ILidCommitState::State::COMPLETED, tracker.getState(LIDV_2_1_3));
+    EXPECT_EQ(ILidCommitState::State::COMPLETED, tracker.getState(LID_1));
+    EXPECT_EQ(ILidCommitState::State::COMPLETED, tracker.getState(LIDV_2_1_3));
     {
         ILidCommitState::State incomplete = ILidCommitState::State::WAITING;
         auto token = tracker.produce(LID_1);
-        EXPECT_EQUAL(incomplete, tracker.getState(LID_1));
-        EXPECT_EQUAL(incomplete, tracker.getState(LIDV_2_1_3));
-        EXPECT_EQUAL(ILidCommitState::State::COMPLETED, tracker.getState(LIDV_2_3));
+        EXPECT_EQ(incomplete, tracker.getState(LID_1));
+        EXPECT_EQ(incomplete, tracker.getState(LIDV_2_1_3));
+        EXPECT_EQ(ILidCommitState::State::COMPLETED, tracker.getState(LIDV_2_3));
         {
             auto snapshot = tracker.produceSnapshot();
-            EXPECT_EQUAL(incomplete, tracker.getState(LID_1));
-            EXPECT_EQUAL(incomplete, tracker.getState(LIDV_2_1_3));
-            EXPECT_EQUAL(ILidCommitState::State::COMPLETED, tracker.getState(LIDV_2_3));
+            EXPECT_EQ(incomplete, tracker.getState(LID_1));
+            EXPECT_EQ(incomplete, tracker.getState(LIDV_2_1_3));
+            EXPECT_EQ(ILidCommitState::State::COMPLETED, tracker.getState(LIDV_2_3));
         }
-        EXPECT_EQUAL(incomplete, tracker.getState(LID_1));
-        EXPECT_EQUAL(incomplete, tracker.getState(LIDV_2_1_3));
-        EXPECT_EQUAL(ILidCommitState::State::COMPLETED, tracker.getState(LIDV_2_3));
+        EXPECT_EQ(incomplete, tracker.getState(LID_1));
+        EXPECT_EQ(incomplete, tracker.getState(LIDV_2_1_3));
+        EXPECT_EQ(ILidCommitState::State::COMPLETED, tracker.getState(LIDV_2_3));
     }
-    EXPECT_EQUAL(ILidCommitState::State::COMPLETED, tracker.getState(LID_1));
-    EXPECT_EQUAL(ILidCommitState::State::COMPLETED, tracker.getState(LIDV_2_1_3));
+    EXPECT_EQ(ILidCommitState::State::COMPLETED, tracker.getState(LID_1));
+    EXPECT_EQ(ILidCommitState::State::COMPLETED, tracker.getState(LIDV_2_1_3));
 }
-
-TEST_MAIN() { TEST_RUN_ALL(); }

@@ -13,7 +13,7 @@
 using namespace search::queryeval;
 using namespace search::query;
 using vespalib::make_string;
-using vespalib::string;
+using std::string;
 using vespalib::make_string_short::fmt;
 
 namespace proton::matching {
@@ -57,20 +57,20 @@ AttributeLimiter::~AttributeLimiter() = default;
 
 namespace {
 
-vespalib::string STRICT_STR("strict");
-vespalib::string LOOSE_STR("loose");
+std::string STRICT_STR("strict");
+std::string LOOSE_STR("loose");
 
 }
 
 AttributeLimiter::DiversityCutoffStrategy
-AttributeLimiter::toDiversityCutoffStrategy(vespalib::stringref strategy)
+AttributeLimiter::toDiversityCutoffStrategy(std::string_view strategy)
 {
     return (strategy == STRICT_STR)
         ? DiversityCutoffStrategy::STRICT
         : DiversityCutoffStrategy::LOOSE;
 }
 
-const vespalib::string &
+const std::string &
 toString(AttributeLimiter::DiversityCutoffStrategy strategy)
 {
     return (strategy == AttributeLimiter::DiversityCutoffStrategy::STRICT) ? STRICT_STR : LOOSE_STR;
@@ -99,9 +99,11 @@ AttributeLimiter::create_match_data(size_t want_hits, size_t max_group_size, dou
         FieldSpecList field; // single field API is protected
         field.add(FieldSpec(_attribute_name, my_field_id, my_handle));
         _blueprint = _searchable_attributes.createBlueprint(_requestContext, field, node);
+        uint32_t dummy_docid_limit = 1337;
+        _blueprint->basic_plan(strictSearch, dummy_docid_limit);
         //TODO use_estimate must be switched to true quite soon
         //TODO Use thread_bundle once verified(soon), _requestContext.thread_bundle()
-        auto execInfo = ExecuteInfo::create(strictSearch, strictSearch ? 1.0 : hit_rate, _requestContext.getDoom(),
+        auto execInfo = ExecuteInfo::create(strictSearch ? 1.0 : hit_rate, _requestContext.getDoom(),
                                             vespalib::ThreadBundle::trivial());
         _blueprint->fetchPostings(execInfo);
         _estimatedHits.store(_blueprint->getState().estimate().estHits, std::memory_order_relaxed);
@@ -114,7 +116,7 @@ AttributeLimiter::create_match_data(size_t want_hits, size_t max_group_size, dou
 std::unique_ptr<SearchIterator>
 AttributeLimiter::create_search(size_t want_hits, size_t max_group_size, double hit_rate, bool strictSearch) {
     auto [blueprint, match_data] = create_match_data(want_hits, max_group_size, hit_rate, strictSearch);
-    return blueprint.createSearch(match_data, strictSearch);
+    return blueprint.createSearch(match_data);
 }
 
 }

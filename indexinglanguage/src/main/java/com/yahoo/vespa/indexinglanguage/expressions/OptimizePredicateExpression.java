@@ -30,16 +30,13 @@ public final class OptimizePredicateExpression extends Expression {
     }
 
     @Override
-    protected void doExecute(ExecutionContext context) {
-        PredicateFieldValue predicate = ((PredicateFieldValue) context.getValue()).clone();
-        IntegerFieldValue arity = (IntegerFieldValue) context.getVariable("arity");
-        LongFieldValue lower_bound = (LongFieldValue) context.getVariable("lower_bound");
-        LongFieldValue upper_bound = (LongFieldValue) context.getVariable("upper_bound");
-        Long lower = lower_bound != null? lower_bound.getLong() : null;
-        Long upper = upper_bound != null? upper_bound.getLong() : null;
-        PredicateOptions options = new PredicateOptions(arity.getInteger(), lower, upper);
-        predicate.setPredicate(optimizer.process(predicate.getPredicate(), options));
-        context.setValue(predicate);
+    public DataType setInputType(DataType inputType, VerificationContext context) {
+        return super.setInputType(inputType, DataType.PREDICATE, context);
+    }
+
+    @Override
+    public DataType setOutputType(DataType outputType, VerificationContext context) {
+        return super.setOutputType(DataType.PREDICATE, outputType, null, context);
     }
 
     @Override
@@ -47,29 +44,37 @@ public final class OptimizePredicateExpression extends Expression {
         checkVariable(context, "arity", DataType.INT, true);
         checkVariable(context, "lower_bound", DataType.LONG, false);
         checkVariable(context, "upper_bound", DataType.LONG, false);
-        context.setValueType(DataType.PREDICATE);
+        context.setCurrentType(DataType.PREDICATE);
+    }
+
+    @Override
+    protected void doExecute(ExecutionContext context) {
+        PredicateFieldValue predicate = ((PredicateFieldValue) context.getCurrentValue()).clone();
+        IntegerFieldValue arity = (IntegerFieldValue) context.getVariable("arity");
+        LongFieldValue lower_bound = (LongFieldValue) context.getVariable("lower_bound");
+        LongFieldValue upper_bound = (LongFieldValue) context.getVariable("upper_bound");
+        Long lower = lower_bound != null? lower_bound.getLong() : null;
+        Long upper = upper_bound != null? upper_bound.getLong() : null;
+        PredicateOptions options = new PredicateOptions(arity.getInteger(), lower, upper);
+        predicate.setPredicate(optimizer.process(predicate.getPredicate(), options));
+        context.setCurrentValue(predicate);
     }
 
     private void checkVariable(VerificationContext ctx, String var, DataType type, boolean required) {
         DataType input = ctx.getVariable(var);
         if (input == null) {
-            if (required) {
+            if (required)
                 throw new VerificationException(this, "Variable '" + var + "' must be set");
-            }
         } else if (input != type) {
             throw new VerificationException(this, "Variable '" + var + "' must have type " + type.getName());
         }
     }
 
     @Override
-    public DataType createdOutputType() {
-        return null;
-    }
+    public DataType createdOutputType() { return null; }
 
     @Override
-    public String toString() {
-        return "optimize_predicate";
-    }
+    public String toString() { return "optimize_predicate"; }
 
     @Override
     public int hashCode() {

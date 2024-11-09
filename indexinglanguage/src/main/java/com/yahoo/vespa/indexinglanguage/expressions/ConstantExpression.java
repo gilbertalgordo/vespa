@@ -21,18 +21,30 @@ public final class ConstantExpression extends Expression {
         this.value = Objects.requireNonNull(value);
     }
 
-    public FieldValue getValue() {
-        return value;
+    public FieldValue getValue() { return value; }
+
+    @Override
+    public DataType setInputType(DataType inputType, VerificationContext context) {
+        super.setInputType(inputType, context);
+        return value.getDataType();
     }
 
     @Override
-    protected void doExecute(ExecutionContext context) {
-        context.setValue(value);
+    public DataType setOutputType(DataType outputType, VerificationContext context) {
+        if ( ! value.getDataType().isAssignableTo(outputType))
+            throw new VerificationException(this, "Produces type " + value.getDataType().getName() + ", but type " +
+                                            outputType.getName() + " is required");
+        return super.setOutputType(outputType, context);
     }
 
     @Override
     protected void doVerify(VerificationContext context) {
-        context.setValueType(value.getDataType());
+        context.setCurrentType(value.getDataType());
+    }
+
+    @Override
+    protected void doExecute(ExecutionContext context) {
+        context.setCurrentValue(value);
     }
 
     @Override

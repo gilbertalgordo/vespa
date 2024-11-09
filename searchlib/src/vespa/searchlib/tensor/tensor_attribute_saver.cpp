@@ -6,6 +6,7 @@
 #include "tensor_attribute_constants.h"
 #include <vespa/searchlib/util/bufferwriter.h>
 #include <vespa/searchlib/attribute/iattributesavetarget.h>
+#include <vespa/vespalib/objects/nbostream.h>
 #include <cassert>
 
 using vespalib::GenerationHandler;
@@ -26,7 +27,7 @@ TensorAttributeSaver::TensorAttributeSaver(GenerationHandler::Guard &&guard,
 
 TensorAttributeSaver::~TensorAttributeSaver() = default;
 
-vespalib::string
+std::string
 TensorAttributeSaver::index_file_suffix()
 {
     return "nnidx";

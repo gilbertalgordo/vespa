@@ -5,7 +5,6 @@
 package cmd
 
 import (
-	"bufio"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -17,6 +16,7 @@ import (
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 	"github.com/vespa-engine/vespa/client/go/internal/curl"
+	"github.com/vespa-engine/vespa/client/go/internal/httputil"
 	"github.com/vespa-engine/vespa/client/go/internal/ioutil"
 	"github.com/vespa-engine/vespa/client/go/internal/sse"
 	"github.com/vespa-engine/vespa/client/go/internal/vespa"
@@ -45,7 +45,8 @@ can be set by the syntax [parameter-name]=[value].`,
 		SilenceUsage:      true,
 		Args:              cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return query(cli, args, queryTimeoutSecs, waitSecs, printCurl, format, headers)
+			waiter := cli.waiter(time.Duration(waitSecs)*time.Second, cmd)
+			return query(cli, args, queryTimeoutSecs, printCurl, format, headers, waiter)
 		},
 	}
 	cmd.Flags().BoolVarP(&printCurl, "verbose", "v", false, "Print the equivalent curl command for the query")
@@ -67,26 +68,11 @@ func printCurl(stderr io.Writer, url string, service *vespa.Service) error {
 	return err
 }
 
-func parseHeaders(headers []string) (http.Header, error) {
-	h := make(http.Header)
-	for _, header := range headers {
-		kv := strings.SplitN(header, ":", 2)
-		if len(kv) < 2 {
-			return nil, fmt.Errorf("invalid header %q: missing colon separator", header)
-		}
-		k := kv[0]
-		v := strings.TrimSpace(kv[1])
-		h.Add(k, v)
-	}
-	return h, nil
-}
-
-func query(cli *CLI, arguments []string, timeoutSecs, waitSecs int, curl bool, format string, headers []string) error {
+func query(cli *CLI, arguments []string, timeoutSecs int, curl bool, format string, headers []string, waiter *Waiter) error {
 	target, err := cli.target(targetOptions{})
 	if err != nil {
 		return err
 	}
-	waiter := cli.waiter(time.Duration(waitSecs) * time.Second)
 	service, err := waiter.Service(target, cli.config.cluster())
 	if err != nil {
 		return err
@@ -98,7 +84,7 @@ func query(cli *CLI, arguments []string, timeoutSecs, waitSecs int, curl bool, f
 	}
 	url, _ := url.Parse(service.BaseURL + "/search/")
 	urlQuery := url.Query()
-	for i := 0; i < len(arguments); i++ {
+	for i := range len(arguments) {
 		key, value := splitArg(arguments[i])
 		urlQuery.Set(key, value)
 	}
@@ -118,7 +104,7 @@ func query(cli *CLI, arguments []string, timeoutSecs, waitSecs int, curl bool, f
 			return err
 		}
 	}
-	header, err := parseHeaders(headers)
+	header, err := httputil.ParseHeader(headers)
 	if err != nil {
 		return err
 	}
@@ -159,13 +145,11 @@ type printOptions struct {
 
 func printResponseBody(body io.Reader, options printOptions, cli *CLI) error {
 	if options.plainStream {
-		scanner := bufio.NewScanner(body)
-		for scanner.Scan() {
-			fmt.Fprintln(cli.Stdout, scanner.Text())
-		}
-		return scanner.Err()
+		_, err := io.Copy(cli.Stdout, body)
+		return err
 	} else if options.tokenStream {
-		dec := sse.NewDecoder(body)
+		bufSize := 1024 * 1024 // Handle events up to this size
+		dec := sse.NewDecoderSize(body, bufSize)
 		writingLine := false
 		for {
 			event, err := dec.Decode()
@@ -175,9 +159,7 @@ func printResponseBody(body io.Reader, options printOptions, cli *CLI) error {
 				return err
 			}
 			if event.Name == "token" {
-				if writingLine {
-					fmt.Fprint(cli.Stdout, " ")
-				} else {
+				if !writingLine {
 					writingLine = true
 				}
 				var token struct {

@@ -126,7 +126,7 @@ private:
         token = lt->GetNextToken();
         char temp = *token.second;
         *token.second = '\0';
-        vespalib::string word = vespalib::make_string("%s", token.first);
+        std::string word = vespalib::make_string("%s", token.first);
         *token.second = temp;
 
         PushDesc(vespalib::make_string("%s%s == %s", "word: ", word.c_str(), correct).c_str());
@@ -361,7 +361,7 @@ public:
     bool operator()(char c)
     {
 //      LatinTokenizerTest::_test(_myfunc);
-        return (_myfunc(c) != 0);
+        return (_myfunc(static_cast<unsigned char>(c)) != 0);
     }
 
 private:
@@ -376,8 +376,8 @@ void LatinTokenizerTest::TestTypeparamObservers()
     PushDesc("TypeparamObservers\n");
     std::string text("4Some6text");
     MyTokenizer* tok = new MyTokenizer(const_cast<char*>(text.c_str()));
-    tok->GetIsPunctuation().Init(ispunct);
-    tok->GetIsSeparator().Init(isdigit);
+    tok->GetIsPunctuation().Init(std::ispunct);
+    tok->GetIsSeparator().Init(std::isdigit);
 
     TestWord(tok,"Some");
     TestWord(tok,"text");

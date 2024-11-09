@@ -1,14 +1,14 @@
 // Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include "common.h"
-#include <random>
+#include <vespa/searchlib/queryeval/blueprint.h>
 #include <sstream>
 
 using search::attribute::CollectionType;
 
 namespace search::queryeval::test {
 
-vespalib::string
+std::string
 to_string(const Config& attr_config)
 {
     std::ostringstream oss;
@@ -20,12 +20,16 @@ to_string(const Config& attr_config)
         oss << col_type.asString() << "<" << basic_type.asString() << ">";
     }
     if (attr_config.fastSearch()) {
-        oss << "(fs)";
+        oss << "(fs";
+        if (attr_config.getIsFilter()) {
+            oss << ",rf";
+        }
+        oss << ")";
     }
     return oss.str();
 }
 
-vespalib::string
+std::string
 to_string(QueryOperator query_op)
 {
     switch (query_op) {
@@ -35,9 +39,43 @@ to_string(QueryOperator query_op)
         case QueryOperator::DotProduct: return "DotProduct";
         case QueryOperator::And: return "And";
         case QueryOperator::Or: return "Or";
+        case QueryOperator::WeakAnd: return "WeakAnd";
+        case QueryOperator::ParallelWeakAnd: return "ParallelWeakAnd";
     }
     return "unknown";
 }
+
+namespace {
+
+std::string
+delete_substr_from(const std::string& source, const std::string& substr)
+{
+    std::string res = source;
+    auto i = res.find(substr);
+    while (i != std::string::npos) {
+        res.erase(i, substr.length());
+        i = res.find(substr, i);
+    }
+    return res;
+}
+
+}
+
+std::string
+get_class_name(const auto& obj)
+{
+    auto res = obj.getClassName();
+    res = delete_substr_from(res, "search::attribute::");
+    res = delete_substr_from(res, "search::queryeval::");
+    res = delete_substr_from(res, "vespalib::btree::");
+    res = delete_substr_from(res, "search::");
+    res = delete_substr_from(res, "vespalib::");
+    res = delete_substr_from(res, "anonymous namespace");
+    return res;
+}
+
+template std::string get_class_name<Blueprint>(const Blueprint& obj);
+template std::string get_class_name<SearchIterator>(const SearchIterator& obj);
 
 namespace {
 
@@ -46,6 +84,8 @@ constexpr uint32_t default_seed = 1234;
 std::mt19937 gen(default_seed);
 
 }
+
+std::mt19937& get_gen() { return gen; }
 
 BitVector::UP
 random_docids(uint32_t docid_limit, uint32_t count)
@@ -69,6 +109,13 @@ random_docids(uint32_t docid_limit, uint32_t count)
     res->invalidateCachedCount();
     assert(res->countTrueBits() == count);
     return res;
+}
+
+int32_t
+random_int(int32_t a, int32_t b)
+{
+    std::uniform_int_distribution<int32_t> distr(a, b);
+    return distr(gen);
 }
 
 }

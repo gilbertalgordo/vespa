@@ -58,19 +58,19 @@ using namespace search::queryeval;
 //-----------------------------------------------------------------------------
 
 struct MySetup : public IFieldLengthInspector {
-    std::vector<vespalib::string> fields;
-    std::map<vespalib::string, FieldLengthInfo> field_lengths;
+    std::vector<std::string> fields;
+    std::map<std::string, FieldLengthInfo> field_lengths;
     MySetup();
     ~MySetup() override;
     MySetup &field(const std::string &name) {
         fields.emplace_back(name);
         return *this;
     }
-    MySetup& field_length(const vespalib::string& field_name, const FieldLengthInfo& info) {
+    MySetup& field_length(const std::string& field_name, const FieldLengthInfo& info) {
         field_lengths[field_name] = info;
         return *this;
     }
-    FieldLengthInfo get_field_length_info(const vespalib::string& field_name) const override {
+    FieldLengthInfo get_field_length_info(const std::string& field_name) const override {
         auto itr = field_lengths.find(field_name);
         if (itr != field_lengths.end()) {
             return itr->second;
@@ -219,7 +219,7 @@ verifyResult(const FakeResult &expect,
     FieldSpecList fields;
     fields.add(field);
 
-    Blueprint::UP result = index.createBlueprint(requestContext, fields, term);
+    auto result = index.createBlueprint(requestContext, fields, term);
     bool valid_result = result.get() != 0;
     EXPECT_TRUE(valid_result);
     if (!valid_result) {
@@ -228,8 +228,9 @@ verifyResult(const FakeResult &expect,
     EXPECT_EQ(expect.inspect().size(), result->getState().estimate().estHits);
     EXPECT_EQ(expect.inspect().empty(), result->getState().estimate().empty);
 
-    result->fetchPostings(search::queryeval::ExecuteInfo::TRUE);
-    SearchIterator::UP search = result->createSearch(*match_data, true);
+    result->basic_plan(true, 100);
+    result->fetchPostings(search::queryeval::ExecuteInfo::FULL);
+    SearchIterator::UP search = result->createSearch(*match_data);
     bool valid_search = search.get() != 0;
     EXPECT_TRUE(valid_search);
     if (!valid_search) {
@@ -253,10 +254,10 @@ verifyResult(const FakeResult &expect,
     }
     bool success = true;
     EXPECT_EQ(expect, actual) << (success = false, "");
-    using FilterConstraint = Blueprint::FilterConstraint;
+    using FilterConstraint = search::queryeval::Blueprint::FilterConstraint;
     for (auto constraint : { FilterConstraint::LOWER_BOUND, FilterConstraint::UPPER_BOUND }) {
         constexpr uint32_t docid_limit = 10u;
-        auto filter_search = result->createFilterSearch(true, constraint);
+        auto filter_search = result->createFilterSearch(constraint);
         auto act_simple = SimpleResult().search(*filter_search, docid_limit);
         if (constraint == FilterConstraint::LOWER_BOUND) {
             EXPECT_TRUE(exp_simple.contains(act_simple)) << (success = false, "");
@@ -468,7 +469,7 @@ TEST(MemoryIndexTest, require_that_num_docs_and_doc_id_limit_is_returned)
 TEST(MemoryIndexTest, require_that_we_understand_the_memory_footprint)
 {
     constexpr size_t BASE_ALLOCATED = 360936u;
-    constexpr size_t BASE_USED = 150804u;
+    constexpr size_t BASE_USED = 150676u;
     {
         MySetup setup;
         Index index(setup);
@@ -519,11 +520,12 @@ TEST(MemoryIndexTest, require_that_we_can_fake_bit_vector)
         fields.add(field);
 
         Searchable &searchable = index.index;
-        Blueprint::UP res = searchable.createBlueprint(requestContext, fields, makeTerm(foo));
+        auto res = searchable.createBlueprint(requestContext, fields, makeTerm(foo));
         EXPECT_TRUE(res);
 
-        res->fetchPostings(search::queryeval::ExecuteInfo::TRUE);
-        SearchIterator::UP search = res->createSearch(*match_data, true);
+        res->basic_plan(true, 100);
+        res->fetchPostings(search::queryeval::ExecuteInfo::FULL);
+        SearchIterator::UP search = res->createSearch(*match_data);
         EXPECT_TRUE(search);
         EXPECT_TRUE(dynamic_cast<BooleanMatchIteratorWrapper *>(search.get()) != nullptr);
         search->initFullRange();

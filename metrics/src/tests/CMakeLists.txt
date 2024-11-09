@@ -9,13 +9,11 @@ vespa_add_executable(metrics_gtest_runner_app TEST
     metricsettest.cpp
     metrictest.cpp
     snapshottest.cpp
-    stresstest.cpp
     summetrictest.cpp
     valuemetrictest.cpp
     gtest_runner.cpp
     DEPENDS
-    metrics
-    vdstestlib
+    vespa_metrics
     GTest::GTest
 )
 

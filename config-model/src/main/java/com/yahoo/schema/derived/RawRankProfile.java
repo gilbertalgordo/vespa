@@ -159,6 +159,7 @@ public class RawRankProfile {
 
         private final boolean ignoreDefaultRankFeatures;
         private final RankProfile.MatchPhaseSettings matchPhaseSettings;
+        private final RankProfile.DiversitySettings diversitySettings;
         private final int rerankCount;
         private final int keepRankCount;
         private final int numThreadsPerSearch;
@@ -169,6 +170,7 @@ public class RawRankProfile {
         private final OptionalDouble approximateThreshold;
         private final OptionalDouble targetHitsMaxAdjustmentFactor;
         private final double rankScoreDropLimit;
+        private final double secondPhaseRankScoreDropLimit;
         private final boolean sortBlueprintsByCost;
         private final boolean alwaysMarkPhraseExpensive;
 
@@ -207,7 +209,8 @@ public class RawRankProfile {
             rankFeatures = compiled.getRankFeatures();
             rerankCount = compiled.getRerankCount();
             globalPhaseRerankCount = compiled.getGlobalPhaseRerankCount();
-            matchPhaseSettings = compiled.getMatchPhaseSettings();
+            matchPhaseSettings = compiled.getMatchPhase();
+            diversitySettings = compiled.getDiversity();
             numThreadsPerSearch = compiled.getNumThreadsPerSearch();
             minHitsPerThread = compiled.getMinHitsPerThread();
             numSearchPartitions = compiled.getNumSearchPartitions();
@@ -219,6 +222,7 @@ public class RawRankProfile {
             targetHitsMaxAdjustmentFactor = compiled.getTargetHitsMaxAdjustmentFactor();
             keepRankCount = compiled.getKeepRankCount();
             rankScoreDropLimit = compiled.getRankScoreDropLimit();
+            secondPhaseRankScoreDropLimit = compiled.getSecondPhaseRankScoreDropLimit();
             ignoreDefaultRankFeatures = compiled.getIgnoreDefaultRankFeatures();
             rankProperties = new ArrayList<>(compiled.getRankProperties());
 
@@ -284,9 +288,9 @@ public class RawRankProfile {
             for (Map.Entry<String, RankProfile.RankingExpressionFunction> e : functions.entrySet()) {
                 String propertyName = RankingExpression.propertyName(e.getKey());
                 if (! context.serializedFunctions().containsKey(propertyName)) {
-
                     String expressionString = e.getValue().function().getBody().getRoot().toString(context).toString();
                     context.addFunctionSerialization(propertyName, expressionString);
+
                     e.getValue().function().argumentTypes().entrySet().stream().sorted(Map.Entry.comparingByKey())
                             .forEach(argumentType -> context.addArgumentTypeSerialization(e.getKey(), argumentType.getKey(), argumentType.getValue()));
                 }
@@ -486,13 +490,12 @@ public class RawRankProfile {
                 properties.add(new Pair<>("vespa.matchphase.degradation.maxfiltercoverage", matchPhaseSettings.getMaxFilterCoverage() + ""));
                 properties.add(new Pair<>("vespa.matchphase.degradation.samplepercentage", matchPhaseSettings.getEvaluationPoint() + ""));
                 properties.add(new Pair<>("vespa.matchphase.degradation.postfiltermultiplier", matchPhaseSettings.getPrePostFilterTippingPoint() + ""));
-                RankProfile.DiversitySettings diversitySettings = matchPhaseSettings.getDiversity();
-                if (diversitySettings != null) {
-                    properties.add(new Pair<>("vespa.matchphase.diversity.attribute", diversitySettings.getAttribute()));
-                    properties.add(new Pair<>("vespa.matchphase.diversity.mingroups", String.valueOf(diversitySettings.getMinGroups())));
-                    properties.add(new Pair<>("vespa.matchphase.diversity.cutoff.factor", String.valueOf(diversitySettings.getCutoffFactor())));
-                    properties.add(new Pair<>("vespa.matchphase.diversity.cutoff.strategy", String.valueOf(diversitySettings.getCutoffStrategy())));
-                }
+            }
+            if (diversitySettings != null) {
+                properties.add(new Pair<>("vespa.matchphase.diversity.attribute", diversitySettings.getAttribute()));
+                properties.add(new Pair<>("vespa.matchphase.diversity.mingroups", String.valueOf(diversitySettings.getMinGroups())));
+                properties.add(new Pair<>("vespa.matchphase.diversity.cutoff.factor", String.valueOf(diversitySettings.getCutoffFactor())));
+                properties.add(new Pair<>("vespa.matchphase.diversity.cutoff.strategy", String.valueOf(diversitySettings.getCutoffStrategy())));
             }
             if (rerankCount > -1) {
                 properties.add(new Pair<>("vespa.hitcollector.heapsize", rerankCount + ""));
@@ -505,6 +508,9 @@ public class RawRankProfile {
             }
             if (rankScoreDropLimit > -Double.MAX_VALUE) {
                 properties.add(new Pair<>("vespa.hitcollector.rankscoredroplimit", rankScoreDropLimit + ""));
+            }
+            if (secondPhaseRankScoreDropLimit > -Double.MAX_VALUE) {
+                properties.add(new Pair<>("vespa.hitcollector.secondphase.rankscoredroplimit", secondPhaseRankScoreDropLimit + ""));
             }
             if (ignoreDefaultRankFeatures) {
                 properties.add(new Pair<>("vespa.dump.ignoredefaultfeatures", String.valueOf(true)));

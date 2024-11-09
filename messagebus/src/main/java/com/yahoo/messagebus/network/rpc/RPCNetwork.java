@@ -55,6 +55,7 @@ import java.util.stream.Collectors;
 public class RPCNetwork implements Network, MethodHandler {
 
     private static final Logger log = Logger.getLogger(RPCNetwork.class.getName());
+    private static final Version REPORTED_VERSION = new Version(8, 310);
 
     private final AtomicBoolean destroyed = new AtomicBoolean(false);
     private final Identity identity;
@@ -66,6 +67,7 @@ public class RPCNetwork implements Network, MethodHandler {
     private final Register register;
     private final TreeMap<Version, RPCSendAdapter> sendAdapters = new TreeMap<>();
     private volatile NetworkOwner owner;
+    private Version version = REPORTED_VERSION;
     private final SlobrokConfigSubscriber slobroksConfig;
     private final LinkedHashMap<String, Route> lruRouteMap = new LinkedHashMap<>(10000, 0.5f, true);
     private final ExecutorService executor =
@@ -97,7 +99,7 @@ public class RPCNetwork implements Network, MethodHandler {
         orb.setMaxInputBufferSize(params.getMaxInputBufferSize());
         orb.setMaxOutputBufferSize(params.getMaxOutputBufferSize());
         targetPool = new RPCTargetPool(params.getConnectionExpireSecs(), params.getNumTargetsPerSpec());
-        servicePool = new RPCServicePool(this, 4096);
+        servicePool = new RPCServicePool(4096);
 
         Method method = new Method("mbus.getVersion", "", "s", this);
         method.requireCapabilities(CapabilitySet.none());
@@ -251,10 +253,9 @@ public class RPCNetwork implements Network, MethodHandler {
 
     private static String buildRecipientListString(SendContext ctx) {
         return ctx.recipients.stream().map(r -> {
-            if (!(r.getServiceAddress() instanceof RPCServiceAddress)) {
+            if (!(r.getServiceAddress() instanceof RPCServiceAddress addr)) {
                 return "<non-RPC service address>";
             }
-            RPCServiceAddress addr = (RPCServiceAddress)r.getServiceAddress();
             return String.format("%s at %s", addr.getServiceName(), addr.getConnectionSpec());
         }).collect(Collectors.joining(", "));
     }
@@ -300,22 +301,6 @@ public class RPCNetwork implements Network, MethodHandler {
         return false;
     }
 
-    private static Version deriveSupportedProtocolVersion() {
-        // This is a very leaky abstraction, but since MessageBus only exchanges versions
-        // (and not a set of supported protocols), we have to do this workaround.
-        // Disallow-version MUST be lower than that used as a protocol lower bound in
-        // DocumentProtocol.java and the exact same as that used in C++ for the same purposes.
-        // ... Or else!
-        // TODO remove this glorious hack once protobuf protocol is enabled by default
-        var maybeEnvVal = System.getenv("VESPA_MBUS_DOCUMENTAPI_USE_PROTOBUF");
-        if ("true".equals(maybeEnvVal) || "yes".equals(maybeEnvVal)) {
-            return new Version(8, 310); // _Allows_ new protobuf protocol
-        }
-        return new Version(8, 309); // _Disallows_ new protobuf protocol
-    }
-
-    private static final Version REPORTED_VERSION = deriveSupportedProtocolVersion();
-
     /**
      * Returns the (protocol) version of this network. This gets called when the "mbus.getVersion" method is invoked
      * on this network, and is separated into its own function so that unit tests can override it to simulate other
@@ -326,8 +311,13 @@ public class RPCNetwork implements Network, MethodHandler {
      *
      * @return the version to claim to be
      */
-    protected Version getVersion() {
-        return REPORTED_VERSION;
+    private Version getVersion() {
+        return version;
+    }
+    // Only for testing
+    public void setVersion(Version version) {
+        this.version = version;
+        flushTargetPool();
     }
 
     /**
@@ -340,7 +330,7 @@ public class RPCNetwork implements Network, MethodHandler {
      * @return any error encountered, or null
      */
     public Error resolveServiceAddress(RoutingNode recipient, String serviceName) {
-        RPCServiceAddress ret = servicePool.resolve(serviceName);
+        RPCServiceAddress ret = servicePool.resolve(serviceName, getMirror());
         if (ret == null) {
             return new Error(ErrorCode.NO_ADDRESS_FOR_SERVICE,
                              String.format("The address of service '%s' could not be resolved. It is not currently " +

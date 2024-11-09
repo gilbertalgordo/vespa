@@ -70,22 +70,22 @@ public:
        using UP = std::unique_ptr<Anything>;
        virtual ~Anything() = default;
     };
-    explicit ExceptionWithPayload(vespalib::stringref msg);
-    ExceptionWithPayload(vespalib::stringref msg, Anything::UP payload);
+    explicit ExceptionWithPayload(std::string_view msg);
+    ExceptionWithPayload(std::string_view msg, Anything::UP payload);
     ExceptionWithPayload(ExceptionWithPayload &&) noexcept;
     ExceptionWithPayload & operator = (ExceptionWithPayload &&) noexcept;
     ~ExceptionWithPayload() override;
     void setPayload(Anything::UP payload) { _payload = std::move(payload); }
     const char * what() const noexcept override;
 private:
-    vespalib::string _msg;
+    std::string _msg;
     Anything::UP     _payload;
 };
 
 class OOMException : public ExceptionWithPayload {
 public:
-    explicit OOMException(vespalib::stringref msg) : ExceptionWithPayload(msg) { }
-    OOMException(vespalib::stringref msg, Anything::UP payload) : ExceptionWithPayload(msg, std::move(payload)) { }
+    explicit OOMException(std::string_view msg) : ExceptionWithPayload(msg) { }
+    OOMException(std::string_view msg, Anything::UP payload) : ExceptionWithPayload(msg, std::move(payload)) { }
 };
 
 /**
@@ -96,15 +96,15 @@ class PortListenException : public Exception
 {
 private:
     int _port;
-    vespalib::string _protocol;
+    std::string _protocol;
 
-    vespalib::string make_message(int port, vespalib::stringref protocol, vespalib::stringref msg);
+    std::string make_message(int port, std::string_view protocol, std::string_view msg);
 
 public:
-    PortListenException(int port, vespalib::stringref protocol, vespalib::stringref msg = "",
-                        vespalib::stringref location = "", int skipStack = 0);
-    PortListenException(int port, vespalib::stringref protocol, const Exception &cause, vespalib::stringref msg = "",
-                        vespalib::stringref location = "", int skipStack = 0);
+    PortListenException(int port, std::string_view protocol, std::string_view msg = "",
+                        std::string_view location = "", int skipStack = 0);
+    PortListenException(int port, std::string_view protocol, const Exception &cause, std::string_view msg = "",
+                        std::string_view location = "", int skipStack = 0);
     PortListenException(PortListenException &&) noexcept;
     PortListenException & operator = (PortListenException &&) noexcept;
     PortListenException(const PortListenException &);
@@ -112,7 +112,7 @@ public:
     ~PortListenException() override;
     VESPA_DEFINE_EXCEPTION_SPINE(PortListenException);
     int get_port() const { return _port; }
-    const vespalib::string &get_protocol() const { return _protocol; }
+    const std::string &get_protocol() const { return _protocol; }
 };
 
 //-----------------------------------------------------------------------------
@@ -128,8 +128,8 @@ public:
                 TOO_MANY_OPEN_FILES, DIRECTORY_HAVE_CONTENT, FILE_FULL,
                 ALREADY_EXISTS };
 
-    IoException(stringref msg, Type type, stringref location, int skipStack = 0);
-    IoException(stringref msg, Type type, const Exception& cause, stringref location, int skipStack = 0);
+    IoException(std::string_view msg, Type type, std::string_view location, int skipStack = 0);
+    IoException(std::string_view msg, Type type, const Exception& cause, std::string_view location, int skipStack = 0);
     IoException(const IoException &);
     IoException & operator =(const IoException &) = delete;
     IoException(IoException &&) noexcept;
@@ -138,7 +138,7 @@ public:
 
     VESPA_DEFINE_EXCEPTION_SPINE(IoException);
 
-    static string createMessage(stringref msg, Type type);
+    static std::string createMessage(std::string_view msg, Type type);
 
     Type getType() const { return _type; }
 

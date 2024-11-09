@@ -9,7 +9,6 @@ import com.yahoo.vespa.objects.ObjectPredicate;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Objects;
 
 /**
  * @author Simon Thoresen Hult
@@ -26,29 +25,46 @@ public final class InputExpression extends Expression {
         this.fieldName = fieldName;
     }
 
-    public String getFieldName() {
-        return fieldName;
+    public String getFieldName() { return fieldName; }
+
+    @Override
+    public DataType setInputType(DataType inputType, VerificationContext context) {
+        super.setInputType(inputType, context);
+        return requireFieldType(context);
+    }
+
+    @Override
+    public DataType setOutputType(DataType outputType, VerificationContext context) {
+        super.setOutputType(requireFieldType(context), outputType, null, context);
+        return AnyDataType.instance;
+    }
+
+    private DataType requireFieldType(VerificationContext context) {
+        DataType fieldType = context.getFieldType(fieldName, this);
+        if (fieldType == null)
+            throw new VerificationException(this, "Field '" + fieldName + "' not found");
+        return fieldType;
+    }
+
+    @Override
+    protected void doVerify(VerificationContext context) {
+        context.setCurrentType(requireFieldType(context));
     }
 
     @Override
     protected void doExecute(ExecutionContext context) {
         if (fieldPath != null)
-            context.setValue(context.getInputValue(fieldPath));
+            context.setCurrentValue(context.getFieldValue(fieldPath));
         else
-            context.setValue(context.getInputValue(fieldName));
+            context.setCurrentValue(context.getFieldValue(fieldName));
     }
 
     @Override
-    protected void doVerify(VerificationContext context) {
-        DataType val = context.getInputType(this, fieldName);
-        if (val == null)
-            throw new VerificationException(this, "Field '" + fieldName + "' not found");
-        context.setValueType(val);
-    }
+    public DataType createdOutputType() { return UnresolvedDataType.INSTANCE; }
 
     @Override
-    public DataType createdOutputType() {
-        return UnresolvedDataType.INSTANCE;
+    public DataType getOutputType(VerificationContext context) {
+        return context.getFieldType(fieldName, this);
     }
 
     @Override

@@ -2,9 +2,11 @@
 package com.yahoo.vespa.hosted.provision;
 
 import com.yahoo.config.provision.DockerImage;
+import com.yahoo.config.provision.Exclusivity;
 import com.yahoo.config.provision.Flavor;
 import com.yahoo.config.provision.NodeFlavors;
 import com.yahoo.config.provision.NodeType;
+import com.yahoo.config.provision.SharedHosts;
 import com.yahoo.config.provision.Zone;
 import com.yahoo.config.provisioning.FlavorsConfig;
 import com.yahoo.test.ManualClock;

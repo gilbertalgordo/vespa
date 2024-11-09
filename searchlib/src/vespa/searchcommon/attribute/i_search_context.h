@@ -4,8 +4,8 @@
 
 #include "hit_estimate.h"
 #include <vespa/searchcommon/common/range.h>
-#include <vespa/vespalib/stllike/string.h>
 #include <memory>
+#include <string>
 
 namespace search::fef { class TermFieldMatchData; }
 namespace search::queryeval {
@@ -48,13 +48,13 @@ public:
      * Create temporary posting lists.
      * Should be called before createIterator() is called.
      */
-    virtual void fetchPostings(const queryeval::ExecuteInfo &execInfo) = 0;
+    virtual void fetchPostings(const queryeval::ExecuteInfo &execInfo, bool strict) = 0;
 
     virtual bool valid() const = 0;
     virtual Int64Range getAsIntegerTerm() const = 0;
     virtual DoubleRange getAsDoubleTerm() const = 0;
     virtual const QueryTermUCS4 * queryTerm() const = 0;
-    virtual const vespalib::string &attributeName() const = 0;
+    virtual const std::string &attributeName() const = 0;
 
     int32_t find(DocId docId, int32_t elementId, int32_t &weight) const { return onFind(docId, elementId, weight); }
     int32_t find(DocId docId, int32_t elementId) const { return onFind(docId, elementId); }

@@ -71,7 +71,7 @@ std::unique_ptr<vespalib::eval::Value>
 TensorAddUpdate::apply_to(const Value &old_tensor,
                           const ValueBuilderFactory &factory) const
 {
-    if (auto addTensor = _tensor->getAsTensorPtr()) {
+    if (const auto* addTensor = _tensor->getAsTensorPtr()) {
         return TensorPartialUpdate::add(old_tensor, *addTensor, factory);
     }
     return {};
@@ -83,14 +83,14 @@ TensorAddUpdate::applyTo(FieldValue& value) const
     if (value.isA(FieldValue::Type::TENSOR)) {
         TensorFieldValue &tensorFieldValue = static_cast<TensorFieldValue &>(value);
         tensorFieldValue.make_empty_if_not_existing();
-        auto oldTensor = tensorFieldValue.getAsTensorPtr();
+        const auto* oldTensor = tensorFieldValue.getAsTensorPtr();
         assert(oldTensor);
         auto newTensor = applyTo(*oldTensor);
         if (newTensor) {
             tensorFieldValue = std::move(newTensor);
         }
     } else {
-        vespalib::string err = make_string("Unable to perform a tensor add update on a '%s' field value",
+        std::string err = make_string("Unable to perform a tensor add update on a '%s' field value",
                                            value.className());
         throw IllegalStateException(err, VESPA_STRLOC);
     }
@@ -120,7 +120,7 @@ TensorAddUpdate::deserialize(const DocumentTypeRepo &repo, const DataType &type,
     if (tensor->isA(FieldValue::Type::TENSOR)) {
         _tensor.reset(static_cast<TensorFieldValue *>(tensor.release()));
     } else {
-        vespalib::string err = make_string("Expected tensor field value, got a '%s' field value",
+        std::string err = make_string("Expected tensor field value, got a '%s' field value",
                                            tensor->className());
         throw IllegalStateException(err, VESPA_STRLOC);
     }

@@ -8,6 +8,7 @@
 #include "queryvisitor.h"
 #include "string_term_vector.h"
 #include "termnodes.h"
+#include <cassert>
 
 namespace search::query {
 
@@ -29,8 +30,8 @@ public:
 
 private:
     void visitNodes(const std::vector<Node *> &nodes) {
-        for (size_t i = 0; i < nodes.size(); ++i) {
-            nodes[i]->accept(*this);
+        for (auto node : nodes) {
+            node->accept(*this);
         }
     }
 
@@ -201,7 +202,8 @@ private:
         replicate(node, _builder.addFuzzyTerm(
                 node.getTerm(), node.getView(),
                 node.getId(), node.getWeight(),
-                node.getMaxEditDistance(), node.getPrefixLength()));
+                node.max_edit_distance(), node.prefix_lock_length(),
+                node.prefix_match()));
     }
 
     std::unique_ptr<TermVector> replicate_subterms(const InTerm& original) {

@@ -9,6 +9,7 @@
 #include "state-api.h"
 #include <vespa/config-sentinel.h>
 #include <vespa/vespalib/net/http/state_server.h>
+#include <poll.h>
 #include <sys/types.h>
 #include <sys/select.h>
 
@@ -29,7 +30,7 @@ class OutputConnection;
  **/
 class Manager {
 private:
-    typedef std::map<vespalib::string, Service::UP> ServiceMap;
+    typedef std::map<std::string, Service::UP> ServiceMap;
 
     Env &_env;
     ServiceMap _services;
@@ -40,7 +41,7 @@ private:
     Manager& operator =(const Manager&) = delete;
 
     Service *serviceByPid(pid_t pid);
-    Service *serviceByName(const vespalib::string & name);
+    Service *serviceByName(const std::string & name);
     void handleCommands();
     void handleCmd(const Cmd& cmd);
     void handleOutputs();
@@ -54,7 +55,7 @@ public:
     virtual ~Manager();
     bool terminate();
     bool doWork();
-    void updateActiveFdset(fd_set *fds, int *maxNum);
+    void updateActiveFdset(std::vector<pollfd> &fds);
 };
 
 }

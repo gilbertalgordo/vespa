@@ -68,8 +68,8 @@ struct TestHeap : public WeakAndHeap
 {
     ScoresHistory history;
 
-    TestHeap(uint32_t scoresToTrack_) : WeakAndHeap(scoresToTrack_), history() {}
-    virtual void adjust(score_t *begin, score_t *end) override {
+    explicit TestHeap(uint32_t scoresToTrack_) : WeakAndHeap(scoresToTrack_), history() {}
+    void adjust(score_t *begin, score_t *end) override {
         Scores scores;
         for (score_t *itr = begin; itr != end; ++itr) {
             scores.add(*itr);
@@ -86,13 +86,15 @@ struct WandTestSpec : public WandSpec
     HeapType heap;
     TermFieldMatchData rootMatchData;
     MatchParams matchParams;
+    MatchingPhase matching_phase;
 
-    WandTestSpec(uint32_t scoresToTrack, uint32_t scoresAdjustFrequency = 1,
-                 score_t scoreThreshold = 0, double thresholdBoostFactor = 1);
+    explicit WandTestSpec(uint32_t scoresToTrack, uint32_t scoresAdjustFrequency = 1,
+                          score_t scoreThreshold = 0, double thresholdBoostFactor = 1);
     ~WandTestSpec();
     SearchIterator::UP create() {
         MatchData::UP childrenMatchData = createMatchData();
         MatchData *tmp = childrenMatchData.get();
+        bool readonly_scores_heap = (matching_phase != MatchingPhase::FIRST_PHASE);
         return SearchIterator::UP(
                 new TrackedSearch("PWAND", getHistory(),
                                   ParallelWeakAndSearch::create(
@@ -100,8 +102,9 @@ struct WandTestSpec : public WandSpec
                                           matchParams,
                                           RankParams(rootMatchData,
                                                      std::move(childrenMatchData)),
-                                          true)));
+                                          true, readonly_scores_heap)));
     }
+    void set_second_phase() { matching_phase = MatchingPhase::SECOND_PHASE; }
 };
 
 template <typename HeapType>
@@ -110,11 +113,12 @@ WandTestSpec<HeapType>::WandTestSpec(uint32_t scoresToTrack, uint32_t scoresAdju
     : WandSpec(),
       heap(scoresToTrack),
       rootMatchData(),
-      matchParams(heap, scoreThreshold, thresholdBoostFactor, scoresAdjustFrequency)
+      matchParams(heap, scoreThreshold, thresholdBoostFactor, scoresAdjustFrequency, 0),
+      matching_phase(MatchingPhase::FIRST_PHASE)
 {}
 
 template <typename HeapType>
-WandTestSpec<HeapType>::~WandTestSpec() {}
+WandTestSpec<HeapType>::~WandTestSpec() = default;
 
 using WandSpecWithTestHeap = WandTestSpec<TestHeap>;
 using WandSpecWithRealHeap = WandTestSpec<SharedWeakAndPriorityQueue>;
@@ -137,8 +141,8 @@ SimpleResult
 asSimpleResult(const FakeResult &result)
 {
     SimpleResult retval;
-    for (size_t i = 0; i < result.inspect().size(); ++i) {
-        retval.addHit(result.inspect()[i].docId);
+    for (const auto & doc : result.inspect()) {
+        retval.addHit(doc.docId);
     }
     return retval;
 }
@@ -152,26 +156,26 @@ struct WandBlueprintSpec
     FakeRequestContext requestContext;
 
     WandBlueprintSpec &add(const std::string &token, int32_t weight) {
-        tokens.push_back(std::make_pair(token, weight));
+        tokens.emplace_back(token, weight);
         return *this;
     }
 
     Node::UP createNode(uint32_t scoresToTrack = 100,
                         score_t scoreThreshold = 0,
                         double thresholdBoostFactor = 1) const {
-        SimpleWandTerm *node = new SimpleWandTerm(tokens.size(), "view", 0, Weight(0),
-                                                  scoresToTrack, scoreThreshold, thresholdBoostFactor);
-        for (size_t i = 0; i < tokens.size(); ++i) {
-            node->addTerm(tokens[i].first, Weight(tokens[i].second));
+        auto node = std::make_unique<SimpleWandTerm>(tokens.size(), "view", 0, Weight(0),
+                                                     scoresToTrack, scoreThreshold, thresholdBoostFactor);
+        for (const auto & token : tokens) {
+            node->addTerm(token.first, Weight(token.second));
         }
-        return Node::UP(node);
+        return node;
     }
 
     Blueprint::UP blueprint(Searchable &searchable, const std::string &field, const search::query::Node &term) const {
         FieldSpecList fields;
         fields.add(FieldSpec(field, fieldId, handle));
         Blueprint::UP bp = searchable.createBlueprint(requestContext, fields, term);
-        EXPECT_TRUE(dynamic_cast<ParallelWeakAndBlueprint*>(bp.get()) != 0);
+        EXPECT_TRUE(dynamic_cast<ParallelWeakAndBlueprint*>(bp.get()) != nullptr);
         return bp;
     }
 
@@ -179,10 +183,10 @@ struct WandBlueprintSpec
         Node::UP term = createNode();
         Blueprint::UP bp = blueprint(searchable, field, *term);
         MatchData::UP md(MatchData::makeTestInstance(1, 1));
-        bp->fetchPostings(ExecuteInfo::TRUE);
-        bp->setDocIdLimit(docIdLimit);
-        SearchIterator::UP sb = bp->createSearch(*md, true);
-        EXPECT_TRUE(dynamic_cast<ParallelWeakAndSearch*>(sb.get()) != 0);
+        bp->basic_plan(true, docIdLimit);
+        bp->fetchPostings(ExecuteInfo::FULL);
+        SearchIterator::UP sb = bp->createSearch(*md);
+        EXPECT_TRUE(dynamic_cast<ParallelWeakAndSearch*>(sb.get()) != nullptr);
         return sb;
     }
 
@@ -194,10 +198,10 @@ struct WandBlueprintSpec
     FakeResult search(Searchable &searchable, const std::string &field, const search::query::Node &term) const {
         Blueprint::UP bp = blueprint(searchable, field, term);
         MatchData::UP md(MatchData::makeTestInstance(1, 1));
-        bp->fetchPostings(ExecuteInfo::TRUE);
-        bp->setDocIdLimit(docIdLimit);
-        SearchIterator::UP sb = bp->createSearch(*md, true);
-        EXPECT_TRUE(dynamic_cast<ParallelWeakAndSearch*>(sb.get()) != 0);
+        bp->basic_plan(true, docIdLimit);
+        bp->fetchPostings(ExecuteInfo::FULL);
+        SearchIterator::UP sb = bp->createSearch(*md);
+        EXPECT_TRUE(dynamic_cast<ParallelWeakAndSearch*>(sb.get()) != nullptr);
         return doSearch(*sb, *md->resolveTermField(handle));
     }
 };
@@ -220,7 +224,16 @@ struct FixtureBase
 
 struct AlgoSimpleFixture : public FixtureBase
 {
-    AlgoSimpleFixture() : FixtureBase(2, 1) {
+    AlgoSimpleFixture()
+        : AlgoSimpleFixture(false)
+    {
+    }
+    explicit AlgoSimpleFixture(bool second_phase)
+        : FixtureBase(2, 1)
+    {
+        if (second_phase) {
+            spec.set_second_phase();
+        }
         spec.leaf(LeafSpec("A", 1).doc(1, 1).doc(2, 2).doc(3, 3).doc(4, 4).doc(5, 5).doc(6, 6));
         spec.leaf(LeafSpec("B", 4).doc(1, 1).doc(3, 3).doc(5, 5));
         prepare();
@@ -258,7 +271,7 @@ struct AlgoSameScoreFixture : public FixtureBase
 
 struct AlgoScoreThresholdFixture : public FixtureBase
 {
-    AlgoScoreThresholdFixture(score_t scoreThreshold) : FixtureBase(3, 1, scoreThreshold) {
+    explicit AlgoScoreThresholdFixture(score_t scoreThreshold) : FixtureBase(3, 1, scoreThreshold) {
         spec.leaf(LeafSpec("A", 1).doc(1, 10).doc(2, 30));
         spec.leaf(LeafSpec("B", 2).doc(1, 20).doc(3, 40));
         prepare();
@@ -267,7 +280,7 @@ struct AlgoScoreThresholdFixture : public FixtureBase
 
 struct AlgoLargeScoresFixture : public FixtureBase
 {
-    AlgoLargeScoresFixture(score_t scoreThreshold) : FixtureBase(3, 1, scoreThreshold) {
+    explicit AlgoLargeScoresFixture(score_t scoreThreshold) : FixtureBase(3, 1, scoreThreshold) {
         spec.leaf(LeafSpec("A", 60000).doc(1, 60000).doc(2, 70000));
         spec.leaf(LeafSpec("B", 70000).doc(1, 80000).doc(3, 90000));
         prepare();
@@ -276,7 +289,7 @@ struct AlgoLargeScoresFixture : public FixtureBase
 
 struct AlgoExhaustPastFixture : public FixtureBase
 {
-    AlgoExhaustPastFixture(score_t scoreThreshold) : FixtureBase(3, 1, scoreThreshold) {
+    explicit AlgoExhaustPastFixture(score_t scoreThreshold) : FixtureBase(3, 1, scoreThreshold) {
         spec.leaf(LeafSpec("A", 1).doc(1, 20).doc(3, 40).doc(5, 10));
         spec.leaf(LeafSpec("B", 1).doc(5, 10));
         spec.leaf(LeafSpec("C", 1).doc(5, 10));
@@ -287,12 +300,25 @@ struct AlgoExhaustPastFixture : public FixtureBase
 
 TEST(ParallelWeakAndTest, require_that_algorithm_prunes_bad_hits_after_enough_good_ones_are_obtained)
 {
-    AlgoSimpleFixture f;
+    AlgoSimpleFixture f; // First phase
     FakeResult expect = FakeResult()
                         .doc(1).score(1 * 1 + 4 * 1)
                         .doc(2).score(1 * 2)
                         .doc(3).score(1 * 3 + 4 * 3)
                         .doc(5).score(1 * 5 + 4 * 5);
+    EXPECT_EQ(expect, f.result);
+}
+
+TEST(ParallelWeakAndTest, require_that_algorithm_does_not_prune_hits_in_pater_matching_phases)
+{
+    AlgoSimpleFixture f(true); // Second phase
+    FakeResult expect = FakeResult()
+                        .doc(1).score(1 * 1 + 4 * 1)
+                        .doc(2).score(1 * 2)
+                        .doc(3).score(1 * 3 + 4 * 3)
+                        .doc(4).score(1 * 4)
+                        .doc(5).score(1 * 5 + 4 * 5)
+                        .doc(6).score(1 * 6);
     EXPECT_EQ(expect, f.result);
 }
 
@@ -449,11 +475,11 @@ struct BlueprintFixtureBase
 };
 
 BlueprintFixtureBase::BlueprintFixtureBase() : spec(), searchable() {}
-BlueprintFixtureBase::~BlueprintFixtureBase() {}
+BlueprintFixtureBase::~BlueprintFixtureBase() = default;
 
 struct BlueprintHitsFixture : public BlueprintFixtureBase
 {
-    FakeResult createResult(size_t hits) {
+    static FakeResult createResult(size_t hits) {
         FakeResult result;
         for (size_t i = 0; i < hits; ++i) {
             result.doc(i + 1);
@@ -479,7 +505,7 @@ struct BlueprintHitsFixture : public BlueprintFixtureBase
 struct ThresholdBoostFixture : public FixtureBase
 {
     FakeResult result;
-    ThresholdBoostFixture(double boost) : FixtureBase(1, 1, 800, boost) {
+    explicit ThresholdBoostFixture(double boost) : FixtureBase(1, 1, 800, boost) {
         spec.leaf(LeafSpec("A").doc(1, 10));
         spec.leaf(LeafSpec("B").doc(2, 20));
         spec.leaf(LeafSpec("C").doc(3, 30));
@@ -532,7 +558,7 @@ TEST(ParallelWeakAndTest, require_that_blueprint_picks_up_docid_limit)
     BlueprintFixture f;
     Node::UP term = f.spec.createNode(57, 67, 77.7);
     Blueprint::UP bp = f.blueprint(*term);
-    const ParallelWeakAndBlueprint * pbp = dynamic_cast<const ParallelWeakAndBlueprint *>(bp.get());
+    const auto * pbp = dynamic_cast<const ParallelWeakAndBlueprint *>(bp.get());
     EXPECT_EQ(0u, pbp->get_docid_limit());
     bp->setDocIdLimit(1000);
     EXPECT_EQ(1000u, pbp->get_docid_limit());
@@ -543,7 +569,7 @@ TEST(ParallelWeakAndTest, require_that_scores_to_track_score_threshold_and_thres
     BlueprintFixture f;
     Node::UP term = f.spec.createNode(57, 67, 77.7);
     Blueprint::UP bp = f.blueprint(*term);
-    const ParallelWeakAndBlueprint * pbp = dynamic_cast<const ParallelWeakAndBlueprint *>(bp.get());
+    const auto * pbp = dynamic_cast<const ParallelWeakAndBlueprint *>(bp.get());
     EXPECT_EQ(57u, pbp->getScores().getScoresToTrack());
     EXPECT_EQ(67u, pbp->getScoreThreshold());
     EXPECT_EQ(77.7, pbp->getThresholdBoostFactor());
@@ -614,7 +640,7 @@ TEST(ParallelWeakAndTest, require_that_asString_on_blueprint_works)
     BlueprintAsStringFixture f;
     Node::UP term = f.spec.createNode(57, 67);
     Blueprint::UP bp = f.blueprint(*term);
-    vespalib::string expStr = "search::queryeval::ParallelWeakAndBlueprint {\n"
+    std::string expStr = "search::queryeval::ParallelWeakAndBlueprint {\n"
                               "    isTermLike: true\n"
                               "    fields: FieldList {\n"
                               "        [0]: Field {\n"
@@ -635,6 +661,8 @@ TEST(ParallelWeakAndTest, require_that_asString_on_blueprint_works)
                               "    strict_cost: 0\n"
                               "    sourceId: 4294967295\n"
                               "    docid_limit: 0\n"
+                              "    id: 0\n"
+                              "    strict: false\n"
                               "    _weights: std::vector {\n"
                               "        [0]: 5\n"
                               "    }\n"
@@ -660,6 +688,8 @@ TEST(ParallelWeakAndTest, require_that_asString_on_blueprint_works)
                               "            strict_cost: 0\n"
                               "            sourceId: 4294967295\n"
                               "            docid_limit: 0\n"
+                              "            id: 0\n"
+                              "            strict: false\n"
                               "        }\n"
                               "    }\n"
                               "}\n";
@@ -683,7 +713,7 @@ SearchIterator::UP create_wand(bool use_dww,
                                bool strict)
 {
     if (use_dww) {
-        return ParallelWeakAndSearch::create(tfmd, matchParams, weights, dict_entries, attr, strict);
+        return ParallelWeakAndSearch::create(tfmd, matchParams, weights, dict_entries, attr, strict, false);
     }
     // use search iterators as children
     MatchDataLayout layout;
@@ -701,15 +731,15 @@ SearchIterator::UP create_wand(bool use_dww,
                                    childrenMatchData->resolveTermField(handles[i])));
     }
     assert(terms.size() == dict_entries.size());
-    return SearchIterator::UP(ParallelWeakAndSearch::create(terms, matchParams, RankParams(tfmd, std::move(childrenMatchData)), strict));
+    return SearchIterator::UP(ParallelWeakAndSearch::create(terms, matchParams, RankParams(tfmd, std::move(childrenMatchData)), strict, false));
 }
 
 class Verifier : public search::test::DwwIteratorChildrenVerifier {
 public:
-    Verifier(bool use_dww) : _use_dww(use_dww) { }
+    explicit Verifier(bool use_dww) : _use_dww(use_dww) { }
 private:
     SearchIterator::UP create(bool strict) const override {
-        MatchParams match_params(_dummy_heap, _dummy_heap.getMinScore(), 1.0, 1);
+        MatchParams match_params(_dummy_heap, _dummy_heap.getMinScore(), 1.0, 1, 0);
         std::vector<IDirectPostingStore::LookupResult> dict_entries;
         for (size_t i = 0; i < _num_children; ++i) {
             dict_entries.push_back(_helper.dww().lookup(vespalib::make_string("%zu", i).c_str(), _helper.dww().get_dictionary_snapshot()));

@@ -46,7 +46,7 @@ import java.util.TreeMap;
  *
  * @author bratseth
  */
-public class SDField extends Field implements TypedKey, ImmutableSDField {
+public class SDField extends Field implements ImmutableSDField {
 
     /** Use this field for modifying index-structure, even if it doesn't have any indexing code */
     private boolean indexStructureField = false;
@@ -315,7 +315,7 @@ public class SDField extends Field implements TypedKey, ImmutableSDField {
                     supplyStructField.accept(field.getName(), field.getDataType());
                 }
             }
-            if ((subType == null) && (structFields.size() > 0)) {
+            if ((subType == null) && (!structFields.isEmpty())) {
                 throw new IllegalArgumentException("Cannot find matching (repo=" + sdoc + ") for subfields in "
                                                    + this + " [" + getDataType() + getDataType().getClass() +
                                                    "] with " + structFields.size() + " struct fields");
@@ -398,22 +398,23 @@ public class SDField extends Field implements TypedKey, ImmutableSDField {
     }
 
     /** Parse an indexing expression which will use the simple linguistics implementation suitable for testing */
-    public void parseIndexingScript(String script) {
-        parseIndexingScript(script, new SimpleLinguistics(), Embedder.throwsOnUse.asMap());
+    public void parseIndexingScript(String schemaName, String script) {
+        parseIndexingScript(schemaName, script, new SimpleLinguistics(), Embedder.throwsOnUse.asMap());
     }
 
-    public void parseIndexingScript(String script, Linguistics linguistics, Map<String, Embedder> embedders) {
+    public void parseIndexingScript(String schemaName, String script, Linguistics linguistics, Map<String, Embedder> embedders) {
         try {
             ScriptParserContext config = new ScriptParserContext(linguistics, embedders);
             config.setInputStream(new IndexingInput(script));
-            setIndexingScript(ScriptExpression.newInstance(config));
+            setIndexingScript(schemaName, ScriptExpression.newInstance(config));
         } catch (ParseException e) {
             throw new IllegalArgumentException("Failed to parse script '" + script + "'", e);
         }
     }
 
     /** Sets the indexing script of this, or null to not use a script */
-    public void setIndexingScript(ScriptExpression exp) {
+
+    public void setIndexingScript(String schemaName, ScriptExpression exp) {
         if (exp == null) {
             exp = new ScriptExpression();
         }
@@ -441,13 +442,13 @@ public class SDField extends Field implements TypedKey, ImmutableSDField {
                     }
                     Attribute attribute = attributes.get(fieldName);
                     if (attribute == null) {
-                        addAttribute(new Attribute(fieldName, getDataType()));
+                        addAttribute(new Attribute(schemaName, fieldName, fieldName, getDataType()));
                     }
                 }
             }.visit(indexingScript);
         }
         for (SDField structField : getStructFields()) {
-            structField.setIndexingScript(exp);
+            structField.setIndexingScript(schemaName, exp);
         }
     }
 
@@ -626,7 +627,7 @@ public class SDField extends Field implements TypedKey, ImmutableSDField {
 
     public Attribute addAttribute(Attribute attribute) {
         String name = attribute.getName();
-        if (name == null || "".equals(name)) {
+        if (name == null || name.isEmpty()) {
             name = getName();
             attribute.setName(name);
         }
@@ -636,7 +637,7 @@ public class SDField extends Field implements TypedKey, ImmutableSDField {
 
     /**
      * Returns the stemming setting of this field.
-     * Default is determined by the owning search definition.
+     * Default is determined by the owning schema.
      *
      * @return the stemming setting of this, or null, to use the default
      */
@@ -644,7 +645,7 @@ public class SDField extends Field implements TypedKey, ImmutableSDField {
     public Stemming getStemming() { return stemming; }
 
     /**
-     * Whether this field should be stemmed in this search definition
+     * Whether this field should be stemmed in this schema
      */
     @Override
     public Stemming getStemming(Schema schema) {

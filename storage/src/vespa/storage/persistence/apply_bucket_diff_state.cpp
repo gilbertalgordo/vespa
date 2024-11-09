@@ -88,7 +88,7 @@ ApplyBucketDiffState::on_entry_complete(std::unique_ptr<Result> result, const do
            << " for " << doc_id.toString()
            << " in " << _bucket
            << ": " << result->toString();
-        _fail_message = ss.str();
+        _fail_message = ss.view();
     }
 }
 
@@ -107,10 +107,10 @@ ApplyBucketDiffState::sync_bucket_info()
     }
 }
 
-std::future<vespalib::string>
+std::future<std::string>
 ApplyBucketDiffState::get_future()
 {
-    _promise = std::promise<vespalib::string>();
+    _promise = std::promise<std::string>();
     return _promise.value().get_future();
 }
 

@@ -10,6 +10,7 @@ import com.yahoo.prelude.IndexModel;
 import com.yahoo.prelude.SearchDefinition;
 import com.yahoo.prelude.query.AndItem;
 import com.yahoo.prelude.query.BoolItem;
+import com.yahoo.prelude.query.DocumentFrequency;
 import com.yahoo.prelude.query.ExactStringItem;
 import com.yahoo.prelude.query.FuzzyItem;
 import com.yahoo.prelude.query.IndexedItem;
@@ -17,6 +18,7 @@ import com.yahoo.prelude.query.Item;
 import com.yahoo.prelude.query.MarkerWordItem;
 import com.yahoo.prelude.query.NearestNeighborItem;
 import com.yahoo.prelude.query.NumericInItem;
+import com.yahoo.prelude.query.OrItem;
 import com.yahoo.prelude.query.PhraseItem;
 import com.yahoo.prelude.query.PhraseSegmentItem;
 import com.yahoo.prelude.query.PrefixItem;
@@ -30,6 +32,7 @@ import com.yahoo.prelude.query.SuffixItem;
 import com.yahoo.prelude.query.WeakAndItem;
 import com.yahoo.prelude.query.WordAlternativesItem;
 import com.yahoo.prelude.query.WordItem;
+import com.yahoo.prelude.query.textualrepresentation.TextualQueryRepresentation;
 import com.yahoo.prelude.querytransform.QueryRewrite;
 import com.yahoo.processing.IllegalInputException;
 import com.yahoo.search.Query;
@@ -58,6 +61,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -365,6 +369,9 @@ public class YqlParserTestCase {
                         "({annotations: {cox: \"another\"}}\"colors\")").getAnnotation("cox"));
         assertEquals(23.0, getRootWord("select foo from bar where baz contains " +
                 "({significance: 23.0}\"colors\")").getSignificance(), 1E-6);
+        assertEquals(Optional.of(new DocumentFrequency(13, 101)),
+                getRootWord("select foo from bar where baz contains " +
+                "({documentFrequency: {frequency: 13, count: 101L}}\"colors\")").getDocumentFrequency());
         assertEquals(23, getRootWord("select foo from bar where baz contains " +
                 "({id: 23}\"colors\")").getUniqueID());
         assertEquals(150, getRootWord("select foo from bar where baz contains " +
@@ -437,23 +444,27 @@ public class YqlParserTestCase {
         QueryTree x = parse("select foo from bar where baz contains fuzzy(\"a b\")");
         Item root = x.getRoot();
         assertSame(FuzzyItem.class, root.getClass());
-        assertEquals("baz", ((FuzzyItem) root).getIndexName());
-        assertEquals("a b", ((FuzzyItem) root).stringValue());
-        assertEquals(FuzzyItem.DEFAULT_MAX_EDIT_DISTANCE, ((FuzzyItem) root).getMaxEditDistance());
-        assertEquals(FuzzyItem.DEFAULT_PREFIX_LENGTH, ((FuzzyItem) root).getPrefixLength());
+        var fuzzy = (FuzzyItem) root;
+        assertEquals("baz", fuzzy.getIndexName());
+        assertEquals("a b", fuzzy.stringValue());
+        assertEquals(FuzzyItem.DEFAULT_MAX_EDIT_DISTANCE, fuzzy.getMaxEditDistance());
+        assertEquals(FuzzyItem.DEFAULT_PREFIX_LENGTH, fuzzy.getPrefixLength());
+        assertFalse(fuzzy.isPrefixMatch());
     }
 
     @Test
     void testFuzzyAnnotations() {
         QueryTree x = parse(
-                "select foo from bar where baz contains ({maxEditDistance: 3, prefixLength: 10}fuzzy(\"a b\"))"
+                "select foo from bar where baz contains ({maxEditDistance: 3, prefixLength: 10, prefix: true}fuzzy(\"a b\"))"
         );
         Item root = x.getRoot();
         assertSame(FuzzyItem.class, root.getClass());
-        assertEquals("baz", ((FuzzyItem) root).getIndexName());
-        assertEquals("a b", ((FuzzyItem) root).stringValue());
-        assertEquals(3, ((FuzzyItem) root).getMaxEditDistance());
-        assertEquals(10, ((FuzzyItem) root).getPrefixLength());
+        var fuzzy = (FuzzyItem) root;
+        assertEquals("baz", fuzzy.getIndexName());
+        assertEquals("a b", fuzzy.stringValue());
+        assertEquals(3, fuzzy.getMaxEditDistance());
+        assertEquals(10, fuzzy.getPrefixLength());
+        assertTrue(fuzzy.isPrefixMatch());
     }
 
     @Test
@@ -553,8 +564,7 @@ public class YqlParserTestCase {
                 "title contains ({id: 1, connectivity: {\"id\": 3, weight: 7.0}}\"madonna\") " +
                 "and title contains ({id: 2}\"saint\") " +
                 "and title contains ({id: 3}\"angel\")");
-        assertEquals("AND title:madonna title:saint title:angel",
-                parsed.toString());
+        assertEquals("AND title:madonna title:saint title:angel", parsed.toString());
         AndItem root = (AndItem) parsed.getRoot();
         WordItem first = (WordItem) root.getItem(0);
         WordItem second = (WordItem) root.getItem(1);
@@ -809,6 +819,9 @@ public class YqlParserTestCase {
     @Test
     void testSources() {
         assertSources("select foo from sourceA where price <= 500", List.of("sourceA"));
+        assertSources("select foo from sources sourceA, sourceB where price <= 500", List.of("sourceA", "sourceB"));
+        assertSources("select foo from sources cluster1.* where price <= 500", List.of("cluster1")); // Dot syntax is ignored
+        assertSources("select foo from sources cluster1.*, cluster2.* where price <= 500", List.of("cluster1", "cluster2"));
     }
 
     @Test

@@ -11,7 +11,6 @@ import com.yahoo.config.application.XmlPreProcessor;
 import com.yahoo.config.application.api.ApplicationMetaData;
 import com.yahoo.config.application.api.ApplicationPackage;
 import com.yahoo.config.application.api.DeployLogger;
-import com.yahoo.config.application.api.DeploymentInstanceSpec;
 import com.yahoo.config.application.api.FileRegistry;
 import com.yahoo.config.model.api.ConfigDefinitionRepo;
 import com.yahoo.config.model.api.ContainerEndpoint;
@@ -26,6 +25,7 @@ import com.yahoo.config.provision.AllocatedHosts;
 import com.yahoo.config.provision.ApplicationId;
 import com.yahoo.config.provision.AthenzDomain;
 import com.yahoo.config.provision.CloudAccount;
+import com.yahoo.config.provision.CloudName;
 import com.yahoo.config.provision.DataplaneToken;
 import com.yahoo.config.provision.DockerImage;
 import com.yahoo.config.provision.InstanceName;
@@ -56,6 +56,7 @@ import com.yahoo.vespa.flags.FlagSource;
 import com.yahoo.vespa.flags.Flags;
 import com.yahoo.vespa.model.application.validation.BundleValidator;
 import org.xml.sax.SAXException;
+
 import javax.xml.parsers.ParserConfigurationException;
 import javax.xml.transform.TransformerException;
 import java.io.File;
@@ -128,7 +129,8 @@ public class SessionPreparer {
     ExecutorService getExecutor() { return executor; }
 
     /**
-     * Prepares a session (validates, builds model, writes to zookeeper and distributes files)
+     * Prepares a session (validates, builds model, trigger distribution of application package
+     * to other config servers, writes to zookeeper)
      *
      * @param hostValidator               host validator
      * @param logger                      for storing logs returned in response to client.
@@ -149,7 +151,7 @@ public class SessionPreparer {
             AllocatedHosts allocatedHosts = preparation.buildModels(now);
             preparation.makeResult(allocatedHosts);
             if ( ! params.isDryRun()) {
-                FileReference fileReference = preparation.startDistributionOfApplicationPackage();
+                FileReference fileReference = preparation.triggerDistributionOfApplicationPackage();
                 preparation.writeStateZK(fileReference);
                 preparation.writeEndpointCertificateMetadataZK();
                 preparation.writeContainerEndpointsZK();
@@ -242,7 +244,7 @@ public class SessionPreparer {
             }
         }
 
-        FileReference startDistributionOfApplicationPackage() {
+        FileReference triggerDistributionOfApplicationPackage() {
             FileReference fileReference = fileRegistry.addApplicationPackage();
             FileDistribution fileDistribution = fileDistributionFactory.createFileDistribution();
             log.log(Level.FINE, () -> "Ask other config servers to download application package for " +
@@ -250,7 +252,7 @@ public class SessionPreparer {
             ConfigServerSpec.fromConfig(configserverConfig)
                       .stream()
                       .filter(spec -> !spec.getHostName().equals(HostName.getLocalhost()))
-                      .forEach(spec -> fileDistribution.startDownload(spec.getHostName(), spec.getConfigServerPort(), Set.of(fileReference)));
+                      .forEach(spec -> fileDistribution.triggerDownload(spec.getHostName(), spec.getConfigServerPort(), Set.of(fileReference)));
 
             checkTimeout("startDistributionOfApplicationPackage");
             return fileReference;
@@ -283,9 +285,7 @@ public class SessionPreparer {
             // Validate after doing our own preprocessing on these two files
             ApplicationMetaData meta = applicationPackage.getMetaData();
             InstanceName instance = meta.getApplicationId().instance();
-            Tags tags = applicationPackage.getDeploymentSpec().instance(instance)
-                                          .map(DeploymentInstanceSpec::tags)
-                                          .orElse(Tags.empty());
+            Tags tags = applicationPackage.getDeploymentSpec().tags(instance, zone.environment());
             if (servicesXml.exists()) {
                 vespaPreprocess(applicationPackageDir.getAbsoluteFile(), servicesXml, meta, tags);
             }
@@ -349,6 +349,7 @@ public class SessionPreparer {
 
         void writeStateZK(FileReference filereference) {
             log.log(Level.FINE, "Writing application package state to zookeeper");
+
             writeStateToZooKeeper(sessionZooKeeperClient,
                                   preprocessedApplicationPackage,
                                   applicationId,
@@ -457,7 +458,7 @@ public class SessionPreparer {
         }
 
         /**
-         * Collects the config change actions from all model factory creations and returns the aggregated union of these actions.
+         * Collects the config change actions from all model factory creations and returns the union of these actions.
          * A system in the process of upgrading Vespa will have hosts running both version X and Y, and this will change
          * during the upgrade process. Trying to be smart about which actions to perform on which hosts depending
          * on the version running will be a nightmare to maintain. A pragmatic approach is therefore to just use the
@@ -499,5 +500,5 @@ public class SessionPreparer {
         }
 
     }
-    
+
 }

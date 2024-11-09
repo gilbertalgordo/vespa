@@ -1,6 +1,5 @@
 // Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
-#include <string>
 #include <vespa/vespalib/btree/btreeroot.h>
 #include <vespa/vespalib/btree/btreenodeallocator.h>
 #include <vespa/vespalib/btree/btree.h>
@@ -19,6 +18,7 @@
 #include <vespa/vespalib/datastore/compaction_strategy.h>
 #include <vespa/vespalib/test/btree/btree_printer.h>
 #include <vespa/vespalib/gtest/gtest.h>
+#include <string>
 
 #include <vespa/log/log.h>
 LOG_SETUP("btree_test");
@@ -1072,7 +1072,7 @@ adjustAllocatedBytes(size_t nodeCount, size_t nodeSize)
 TEST_F(BTreeTest, require_that_memory_usage_is_calculated)
 {
     constexpr size_t BASE_ALLOCATED = 28744u;
-    constexpr size_t BASE_USED = 24936;
+    constexpr size_t BASE_USED = 24920;
     typedef BTreeNodeAllocator<int32_t, int8_t,
         btree::NoAggregated,
         MyTraits::INTERNAL_SLOTS, MyTraits::LEAF_SLOTS> NodeAllocator;

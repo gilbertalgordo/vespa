@@ -2,10 +2,10 @@
 
 #pragma once
 
-#include <string>
-#include <cstdint>
 #include "geo_location.h"
 #include "geo_location_spec.h"
+#include <cstdint>
+#include <string>
 
 namespace search::common {
 
@@ -17,8 +17,8 @@ class GeoLocationParser
 public:
     GeoLocationParser();
 
-    bool parseNoField(const std::string &locStr);
-    bool parseWithField(const std::string &locStr);
+    bool parseNoField(std::string_view locStr);
+    bool parseWithField(std::string_view locStr);
 
     std::string getFieldName() const { return _field_name; }
     GeoLocation getGeoLocation() const;
@@ -42,8 +42,8 @@ private:
 
     const char *_parseError;
     bool correctDimensionalitySkip(const char * &p);
-    bool parseJsonFormat(const std::string &locStr);
-    bool parseOldFormat(const std::string &locStr);
+    bool parseJsonFormat(std::string_view locStr);
+    bool parseOldFormat(std::string_view locStr);
 };
 
 } // namespace

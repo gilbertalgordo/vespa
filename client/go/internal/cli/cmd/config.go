@@ -35,7 +35,7 @@ func newConfigCmd() *cobra.Command {
 
 This command allows setting persistent values for the global flags found in
 Vespa CLI. On future invocations the flag can then be omitted as it is read
- from the config file instead.
+from the config file instead.
 
 Configuration is written to $HOME/.vespa by default. This path can be
 overridden by setting the VESPA_CLI_HOME environment variable.
@@ -114,8 +114,7 @@ zone
 Specifies a custom zone to use when connecting to a Vespa Cloud application.
 This is only relevant for cloud and hosted targets and defaults to a dev zone.
 See https://cloud.vespa.ai/en/reference/zones for available zones. Examples:
-dev.aws-us-east-1c, dev.gcp-us-central1-f, perf.aws-us-east-1c
-`,
+dev.aws-us-east-1c, dev.gcp-us-central1-f, perf.aws-us-east-1c`,
 		DisableAutoGenTag: true,
 		SilenceUsage:      false,
 		Args:              cobra.MinimumNArgs(1),
@@ -143,8 +142,7 @@ $ vespa config set application my-tenant.my-application.my-instance
 $ vespa config set instance other-instance
 
 # Set an option in local configuration, for the current application only
-$ vespa config set --local wait 600
-`,
+$ vespa config set --local zone perf.us-north-1`,
 		DisableAutoGenTag: true,
 		SilenceUsage:      true,
 		Args:              cobra.ExactArgs(2),
@@ -180,8 +178,7 @@ Unsetting a configuration option will reset it to its default value, which may b
 $ vespa config unset target
 
 # Stop overriding application option in local config
-$ vespa config unset --local application
-`,
+$ vespa config unset --local application`,
 		DisableAutoGenTag: true,
 		SilenceUsage:      true,
 		Args:              cobra.ExactArgs(1),
@@ -216,8 +213,7 @@ application, i.e. it takes into account any local configuration located in
 `,
 		Example: `$ vespa config get
 $ vespa config get target
-$ vespa config get --local
-`,
+$ vespa config get --local`,
 		Args:              cobra.MaximumNArgs(1),
 		DisableAutoGenTag: true,
 		SilenceUsage:      true,
@@ -429,51 +425,76 @@ func (c *Config) privateKeyPath(app vespa.ApplicationID, targetType string) (cre
 	return c.credentialsFile(app, targetType, false)
 }
 
-func (c *Config) readTLSOptions(app vespa.ApplicationID, targetType string) (vespa.TLSOptions, error) {
-	_, trustAll := c.environment["VESPA_CLI_DATA_PLANE_TRUST_ALL"]
-	cert, certOk := c.environment["VESPA_CLI_DATA_PLANE_CERT"]
-	key, keyOk := c.environment["VESPA_CLI_DATA_PLANE_KEY"]
-	caCertText, caCertOk := c.environment["VESPA_CLI_DATA_PLANE_CA_CERT"]
-	options := vespa.TLSOptions{TrustAll: trustAll}
-	// CA certificate
+func (c *Config) caCertificatePEM() ([]byte, string, error) {
+	envVar := "VESPA_CLI_DATA_PLANE_CA_CERT"
+	caCertText, caCertOk := c.environment[envVar]
 	if caCertOk {
-		options.CACertificate = []byte(caCertText)
-	} else if caCertFile := c.caCertificatePath(); caCertFile != "" {
+		return []byte(caCertText), envVar, nil
+	}
+	if caCertFile := c.caCertificatePath(); caCertFile != "" {
 		b, err := os.ReadFile(caCertFile)
 		if err != nil {
-			return options, err
+			return nil, "", err
 		}
-		options.CACertificate = b
-		options.CACertificateFile = caCertFile
+		return b, caCertFile, nil
 	}
-	// Certificate and private key
-	if certOk && keyOk {
-		kp, err := tls.X509KeyPair([]byte(cert), []byte(key))
+	return nil, "", nil
+}
+
+func (c *Config) credentialsPEM(envVar string, credentialsFile credentialsFile) ([]byte, string, error) {
+	if pem, ok := c.environment[envVar]; ok {
+		return []byte(pem), envVar, nil
+	}
+	pem, err := os.ReadFile(credentialsFile.path)
+	if err != nil {
+		if os.IsNotExist(err) && credentialsFile.optional {
+			return nil, "", nil
+		}
+		return nil, "", err
+	}
+	return []byte(pem), credentialsFile.path, nil
+}
+
+func (c *Config) readTLSOptions(app vespa.ApplicationID, targetType string) (vespa.TLSOptions, error) {
+	var options vespa.TLSOptions
+	// Certificate
+	if certPath, err := c.certificatePath(app, targetType); err == nil {
+		certPEM, certFile, err := c.credentialsPEM("VESPA_CLI_DATA_PLANE_CERT", certPath)
+		if err != nil {
+			return vespa.TLSOptions{}, err
+		}
+		options.CertificatePEM = certPEM
+		options.CertificateFile = certFile
+	} else {
+		return vespa.TLSOptions{}, err
+	}
+	// Private key
+	if keyPath, err := c.privateKeyPath(app, targetType); err == nil {
+		keyPEM, keyFile, err := c.credentialsPEM("VESPA_CLI_DATA_PLANE_KEY", keyPath)
+		if err != nil {
+			return vespa.TLSOptions{}, err
+		}
+		options.PrivateKeyPEM = keyPEM
+		options.PrivateKeyFile = keyFile
+	} else {
+		return vespa.TLSOptions{}, err
+
+	}
+	// CA certificate
+	_, options.TrustAll = c.environment["VESPA_CLI_DATA_PLANE_TRUST_ALL"]
+	caCertificate, caCertificateFile, err := c.caCertificatePEM()
+	if err != nil {
+		return vespa.TLSOptions{}, err
+	}
+	options.CACertificatePEM = caCertificate
+	options.CACertificateFile = caCertificateFile
+	// Key pair
+	if len(options.CertificatePEM) > 0 && len(options.PrivateKeyPEM) > 0 {
+		kp, err := tls.X509KeyPair(options.CertificatePEM, options.PrivateKeyPEM)
 		if err != nil {
 			return vespa.TLSOptions{}, err
 		}
 		options.KeyPair = []tls.Certificate{kp}
-	} else {
-		keyFile, err := c.privateKeyPath(app, targetType)
-		if err != nil {
-			return vespa.TLSOptions{}, err
-		}
-		certFile, err := c.certificatePath(app, targetType)
-		if err != nil {
-			return vespa.TLSOptions{}, err
-		}
-		kp, err := tls.LoadX509KeyPair(certFile.path, keyFile.path)
-		allowMissing := os.IsNotExist(err) && keyFile.optional && certFile.optional
-		if err == nil {
-			options.KeyPair = []tls.Certificate{kp}
-			options.PrivateKeyFile = keyFile.path
-			options.CertificateFile = certFile.path
-		} else if err != nil && !allowMissing {
-			return vespa.TLSOptions{}, err
-		}
-	}
-	// If we found a key pair, parse it and check expiry
-	if options.KeyPair != nil {
 		cert, err := x509.ParseCertificate(options.KeyPair[0].Certificate[0])
 		if err != nil {
 			return vespa.TLSOptions{}, err
@@ -513,7 +534,7 @@ func (c *Config) authConfigPath() string {
 	return filepath.Join(c.homeDir, "auth.json")
 }
 
-func (c *Config) readAPIKey(cli *CLI, system vespa.System, tenantName string) ([]byte, error) {
+func (c *Config) readAPIKey(cli *CLI, tenantName string) ([]byte, error) {
 	if override, ok := c.apiKeyFromEnv(); ok {
 		return override, nil
 	}

@@ -106,7 +106,7 @@ private:
 
     DocTypeName                   _docTypeName;
     document::BucketSpace         _bucketSpace;
-    vespalib::string              _baseDir;
+    std::string              _baseDir;
     ThreadingServiceConfig        _writeServiceConfig;
     // Only one thread per executor, or dropFeedView() will fail.
     ExecutorThreadingService      _writeService;
@@ -214,9 +214,9 @@ private:
     // Invokes initFinish() on self
     friend class InitDoneTask;
 
-    DocumentDB(const vespalib::string &baseDir,
+    DocumentDB(const std::string &baseDir,
                DocumentDBConfigSP currentSnapshot,
-               const vespalib::string &tlsSpec,
+               const std::string &tlsSpec,
                matching::QueryLimiter &queryLimiter,
                const DocTypeName &docTypeName,
                document::BucketSpace bucketSpace,
@@ -229,7 +229,8 @@ private:
                std::shared_ptr<search::attribute::Interlock> attribute_interlock,
                ConfigStore::UP config_store,
                InitializeThreads initializeThreads,
-               const vespalib::HwInfo &hwInfo);
+               const vespalib::HwInfo &hwInfo,
+               std::shared_ptr<search::diskindex::IPostingListCache> posting_list_cache);
 public:
     using SP = std::shared_ptr<DocumentDB>;
 
@@ -244,9 +245,9 @@ public:
      * @param config_store Access to read and write configs.
      */
     static DocumentDB::SP
-    create(const vespalib::string &baseDir,
+    create(const std::string &baseDir,
            DocumentDBConfigSP currentSnapshot,
-           const vespalib::string &tlsSpec,
+           const std::string &tlsSpec,
            matching::QueryLimiter &queryLimiter,
            const DocTypeName &docTypeName,
            document::BucketSpace bucketSpace,
@@ -259,7 +260,8 @@ public:
            std::shared_ptr<search::attribute::Interlock> attribute_interlock,
            ConfigStore::UP config_store,
            InitializeThreads initializeThreads,
-           const vespalib::HwInfo &hwInfo);
+           const vespalib::HwInfo &hwInfo,
+           std::shared_ptr<search::diskindex::IPostingListCache> posting_list_cache);
 
     /**
      * Frees any allocated resources. This will also stop the internal thread
@@ -324,7 +326,7 @@ public:
      *
      * @return The directory name.
      */
-    const vespalib::string &getBaseDirectory() const { return _baseDir; }
+    const std::string &getBaseDirectory() const { return _baseDir; }
 
 
     const DocumentSubDBCollection &getDocumentSubDBs() const { return _subDBs; }
@@ -391,7 +393,7 @@ public:
      * Implements IDocumentSubDBOwner
      */
     document::BucketSpace getBucketSpace() const override;
-    vespalib::string getName() const override;
+    std::string getName() const override;
     uint32_t getDistributionKey() const override;
     matching::SessionManager &session_manager() override;
 

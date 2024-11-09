@@ -115,6 +115,11 @@ public:
             addValueWithCount(avg, avg * count, count, min, max);
         }
     }
+    void addTotalValueBatch(TotVal tot, uint32_t count, AvgVal min, AvgVal max) {
+        if (count > 0) {
+            addValueWithCount(tot / count, tot, count, min, max);
+        }
+    }
     virtual void addValue(AvgVal avg) { addAvgValueWithCount(avg, 1); }
     virtual void set(AvgVal avg) { addValue(avg); }
     virtual void inc(AvgVal val = 1);
@@ -133,8 +138,8 @@ public:
     void print(std::ostream&, bool verbose,
                const std::string& indent, uint64_t secondsPassed) const override;
 
-    int64_t getLongValue(stringref id) const override;
-    double getDoubleValue(stringref id) const override;
+    int64_t getLongValue(string_view id) const override;
+    double getDoubleValue(string_view id) const override;
 
     bool inUse(const MetricValueClass& v) const override {
         const Values& values(static_cast<const Values&>(v));

@@ -16,14 +16,19 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.function.BiConsumer;
+import java.util.function.BinaryOperator;
 import java.util.function.Consumer;
-import java.util.stream.Collectors;
+import java.util.function.Function;
+import java.util.function.Supplier;
+import java.util.stream.Collector;
 import java.util.stream.Stream;
 import java.util.stream.StreamSupport;
 
 import static com.yahoo.slime.Type.ARRAY;
 import static com.yahoo.slime.Type.STRING;
+import static java.util.stream.Collectors.joining;
 
 /**
  * A {@link Slime} wrapper that throws {@link InvalidJsonException} on missing members or invalid types.
@@ -59,8 +64,10 @@ public class Json implements Iterable<Json> {
 
     public int length() { return inspector.children(); }
     public boolean has(String field) { return inspector.field(field).valid(); }
-    public boolean isPresent() { return inspector.valid(); }
+    public boolean isPresent() { return inspector.type() != Type.NIX; }
     public boolean isMissing() { return !isPresent(); }
+    /** @return true if the JSON field was present but its value was 'null' */
+    public boolean isExplicitNull() { return isMissing() && inspector.valid(); }
 
     public Optional<String> asOptionalString() { return Optional.ofNullable(asString(null)); }
     public String asString() { requireType(STRING); return inspector.asString(); }
@@ -122,6 +129,8 @@ public class Json implements Iterable<Json> {
     public boolean isNumber() { return isLong() || isDouble(); }
     public boolean isObject() { return inspector.type() == Type.OBJECT; }
 
+    public boolean isEqualTo(Json other) { return SlimeUtils.equalTo(inspector, other.inspector); }
+
     @Override
     public Iterator<Json> iterator() {
         requireType(ARRAY);
@@ -161,7 +170,7 @@ public class Json implements Iterable<Json> {
     private void requirePresent() { if (isMissing()) throw createMissingMemberException(); }
 
     private InvalidJsonException createInvalidTypeException(Type... expected) {
-        var expectedTypesString = Arrays.stream(expected).map(this::toString).collect(Collectors.joining("' or '", "'", "'"));
+        var expectedTypesString = Arrays.stream(expected).map(this::toString).collect(joining("' or '", "'", "'"));
         var pathString = path.isEmpty() ? "JSON" : "JSON member '%s'".formatted(path);
         return new InvalidJsonException(
                 "Expected %s to be a %s but got '%s'"
@@ -206,6 +215,18 @@ public class Json implements Iterable<Json> {
             if (cursor.type() != Type.ARRAY) throw new InvalidJsonException("Input is not an array");
             return new Builder.Array(cursor);
         }
+        public static Builder.Object fromObject(Json json) {
+            json.requireType(Type.OBJECT);
+            var builder = newObject();
+            SlimeUtils.copyObject(json.inspector, builder.cursor);
+            return builder;
+        }
+        public static Builder.Array fromArray(Json json) {
+            json.requireType(Type.ARRAY);
+            var builder = newArray();
+            SlimeUtils.copyArray(json.inspector, builder.cursor);
+            return builder;
+        }
 
         private Builder(Cursor cursor) { this.cursor = cursor; }
 
@@ -219,9 +240,13 @@ public class Json implements Iterable<Json> {
                 SlimeUtils.copyObject(object.cursor, cursor.addObject()); return this;
             }
             public Builder.Array add(Json json) {
-                SlimeUtils.addValue(json.inspector, cursor.addObject()); return this;
+                SlimeUtils.addValue(json.inspector, cursor); return this;
             }
             public Builder.Array add(Json.Builder builder) { return add(builder.build()); }
+            /** Add all values from {@code array} to this array. */
+            public Builder.Array addAll(Json.Builder.Array array) {
+                SlimeUtils.copyArray(array.cursor, cursor); return this;
+            }
 
             /** Note: does not return {@code this}! */
             public Builder.Array addArray() { return new Array(cursor.addArray()); }
@@ -258,11 +283,27 @@ public class Json implements Iterable<Json> {
             public Builder.Object set(String field, long value) { cursor.setLong(field, value); return this; }
             public Builder.Object set(String field, double value) { cursor.setDouble(field, value); return this; }
             public Builder.Object set(String field, boolean value) { cursor.setBool(field, value); return this; }
-            public Builder.Object set(String field, BigDecimal value) { cursor.setString(field, value.toPlainString()); return this; }
+            public Builder.Object set(String field, BigDecimal value) {
+                cursor.setString(field, value.stripTrailingZeros().toPlainString()); return this;
+            }
             public Builder.Object set(String field, Instant timestamp) { cursor.setString(field, timestamp.toString()); return this; }
         }
 
         public Cursor slimeCursor() { return cursor; }
         public Json build() { return Json.of(cursor); }
+    }
+
+    public static class Collectors {
+        private Collectors() {}
+        /** @param accumululator Specify one of the 'add' overloads from {@link Builder.Array} */
+        public static <T> Collector<T, Json.Builder.Array, Json> toArray(BiConsumer<Builder.Array, T> accumululator) {
+            return new Collector<T, Builder.Array, Json>() {
+                @Override public Supplier<Builder.Array> supplier() { return Json.Builder.Array::newArray; }
+                @Override public BiConsumer<Builder.Array, T> accumulator() { return accumululator; }
+                @Override public BinaryOperator<Builder.Array> combiner() { return Builder.Array::addAll; }
+                @Override public Function<Builder.Array, Json> finisher() { return Builder.Array::build; }
+                @Override public Set<Characteristics> characteristics() { return Set.of(); }
+            };
+        }
     }
 }

@@ -20,7 +20,7 @@ using fileutil::LoadedBuffer;
 
 template <typename B, typename M>
 MultiValueNumericEnumAttribute<B, M>::
-MultiValueNumericEnumAttribute(const vespalib::string & baseFileName, const AttributeVector::Config & cfg)
+MultiValueNumericEnumAttribute(const std::string & baseFileName, const AttributeVector::Config & cfg)
     : MultiValueEnumAttribute<B, M>(baseFileName, cfg)
 { }
 
@@ -66,6 +66,7 @@ MultiValueNumericEnumAttribute<B, M>::onLoadEnumerated(ReaderBase &attrReader)
 
     this->setNumDocs(numDocs);
     this->setCommittedDocIdLimit(numDocs);
+    this->set_size_on_disk(attrReader.size_on_disk() + udatBuffer->size_on_disk());
     this->_mvMapping.reserve(numDocs);
 
     if (this->hasPostings()) {
@@ -113,6 +114,7 @@ MultiValueNumericEnumAttribute<B, M>::onLoad(vespalib::Executor *)
 
     this->setNumDocs(numDocs);
     this->setCommittedDocIdLimit(numDocs);
+    this->set_size_on_disk(attrReader.size_on_disk());
     if (numDocs > 0) {
         this->onAddDoc(numDocs - 1);
     }

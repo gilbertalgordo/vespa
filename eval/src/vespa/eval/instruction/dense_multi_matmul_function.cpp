@@ -24,10 +24,10 @@ void my_cblas_double_multi_matmul_op(InterpretedFunction::State &state, uint64_t
     size_t rhs_block_size = self.rhs_size() * self.common_size();
     size_t dst_block_size = self.lhs_size() * self.rhs_size();
     size_t num_blocks = self.matmul_cnt();
-    const CT *lhs = state.peek(1).cells().typify<CT>().cbegin();
-    const CT *rhs = state.peek(0).cells().typify<CT>().cbegin();
+    const CT *lhs = state.peek(1).cells().typify<CT>().data();
+    const CT *rhs = state.peek(0).cells().typify<CT>().data();
     auto dst_cells = state.stash.create_array<CT>(dst_block_size * num_blocks);
-    CT *dst = dst_cells.begin();
+    CT *dst = dst_cells.data();
     for (size_t i = 0; i < num_blocks; ++i, lhs += lhs_block_size, rhs += rhs_block_size, dst += dst_block_size) {
         cblas_dgemm(CblasRowMajor, self.lhs_common_inner() ? CblasNoTrans : CblasTrans, self.rhs_common_inner() ? CblasTrans : CblasNoTrans,
                     self.lhs_size(), self.rhs_size(), self.common_size(), 1.0,
@@ -45,10 +45,10 @@ void my_cblas_float_multi_matmul_op(InterpretedFunction::State &state, uint64_t 
     size_t rhs_block_size = self.rhs_size() * self.common_size();
     size_t dst_block_size = self.lhs_size() * self.rhs_size();
     size_t num_blocks = self.matmul_cnt();
-    const CT *lhs = state.peek(1).cells().typify<CT>().cbegin();
-    const CT *rhs = state.peek(0).cells().typify<CT>().cbegin();
+    const CT *lhs = state.peek(1).cells().typify<CT>().data();
+    const CT *rhs = state.peek(0).cells().typify<CT>().data();
     auto dst_cells = state.stash.create_array<CT>(dst_block_size * num_blocks);
-    CT *dst = dst_cells.begin();
+    CT *dst = dst_cells.data();
     for (size_t i = 0; i < num_blocks; ++i, lhs += lhs_block_size, rhs += rhs_block_size, dst += dst_block_size) {
         cblas_sgemm(CblasRowMajor, self.lhs_common_inner() ? CblasNoTrans : CblasTrans, self.rhs_common_inner() ? CblasTrans : CblasNoTrans,
                     self.lhs_size(), self.rhs_size(), self.common_size(), 1.0,
@@ -72,7 +72,7 @@ InterpretedFunction::op_function my_select(CellType cell_type) {
 struct CommonDim {
     bool valid;
     bool inner;
-    CommonDim(const DimList &list, const vespalib::string &dim)
+    CommonDim(const DimList &list, const std::string &dim)
         : valid(true), inner(false)
     {
         if (list[list.size() - 1].name == dim) {
@@ -119,7 +119,7 @@ bool check_input_type(const ValueType &type, const DimList &relevant) {
             ((type.cell_type() == CellType::FLOAT) || (type.cell_type() == CellType::DOUBLE)));
 }
 
-bool is_multi_matmul(const ValueType &a, const ValueType &b, const vespalib::string &reduce_dim) {
+bool is_multi_matmul(const ValueType &a, const ValueType &b, const std::string &reduce_dim) {
     auto dims_a = a.nontrivial_indexed_dimensions();
     auto dims_b = b.nontrivial_indexed_dimensions();
     if (check_input_type(a, dims_a) && check_input_type(b, dims_b) && (a.cell_type() == b.cell_type())) {
@@ -134,7 +134,7 @@ bool is_multi_matmul(const ValueType &a, const ValueType &b, const vespalib::str
 }
 
 const TensorFunction &create_multi_matmul(const TensorFunction &a, const TensorFunction &b,
-                                          const vespalib::string &reduce_dim, const ValueType &result_type, Stash &stash)
+                                          const std::string &reduce_dim, const ValueType &result_type, Stash &stash)
 {
     auto dims_a = a.result_type().nontrivial_indexed_dimensions();
     auto dims_b = b.result_type().nontrivial_indexed_dimensions();

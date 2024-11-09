@@ -1,5 +1,4 @@
 // Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
-#include <vespa/vespalib/testkit/test_kit.h>
 #include <vespa/searchlib/fef/fef.h>
 #include <vespa/searchlib/fef/test/indexenvironment.h>
 #include <vespa/searchlib/fef/test/plugin/setup.h>
@@ -7,13 +6,15 @@
 #include <vespa/vespalib/util/stringfmt.h>
 #include <vespa/vespalib/stllike/asciistream.h>
 #include <regex>
+#include <vespa/vespalib/testkit/test_kit.h>
+#include <vespa/vespalib/testkit/test_master.hpp>
 
 using namespace search::features;
 using namespace search::fef::test;
 using namespace search::fef;
 using vespalib::make_string_short::fmt;
 
-typedef bool (*cmp)(const vespalib::string & a, const vespalib::string &b);
+typedef bool (*cmp)(const std::string & a, const std::string &b);
 
 namespace search::fef {
 std::ostream &operator<<(std::ostream &os, Level level) {
@@ -27,12 +28,12 @@ std::ostream &operator<<(std::ostream &os, Level level) {
 }
 }
 
-bool equal(const vespalib::string & a, const vespalib::string &b) {
+bool equal(const std::string & a, const std::string &b) {
     EXPECT_EQUAL(a, b);
     return a == b;
 }
 
-bool regex(const vespalib::string & a, const vespalib::string &b) {
+bool regex(const std::string & a, const std::string &b) {
     std::regex exp(b.c_str());
     return std::regex_match(a.c_str(), exp);
 }

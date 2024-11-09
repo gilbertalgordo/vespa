@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/fatih/color"
+	"github.com/spf13/cobra"
 	"github.com/vespa-engine/vespa/client/go/internal/vespa"
 )
 
@@ -15,6 +16,7 @@ type Waiter struct {
 	Timeout time.Duration // TODO(mpolden): Consider making this a budget
 
 	cli *CLI
+	cmd *cobra.Command
 }
 
 // DeployService returns the service providing the deploy API on given target,
@@ -81,10 +83,21 @@ func (w *Waiter) services(target vespa.Target) ([]*vespa.Service, error) {
 	return target.ContainerServices(w.Timeout)
 }
 
+// FastWaitOn returns whether we should use a short default timeout for given target.
+func (w *Waiter) FastWaitOn(target vespa.Target) bool {
+	return target.IsCloud() && w.Timeout == 0 && !w.cmd.PersistentFlags().Changed("wait")
+}
+
 // Deployment waits for a deployment to become ready, returning the ID of the converged deployment.
-func (w *Waiter) Deployment(target vespa.Target, id int64) (int64, error) {
-	if w.Timeout > 0 {
-		w.cli.printInfo("Waiting up to ", color.CyanString(w.Timeout.String()), " for deployment to converge...")
+func (w *Waiter) Deployment(target vespa.Target, wantedID int64) (int64, error) {
+	timeout := w.Timeout
+	fastWait := w.FastWaitOn(target)
+	if timeout > 0 {
+		w.cli.printInfo("Waiting up to ", color.CyanString(timeout.String()), " for deployment to converge...")
+	} else if fastWait {
+		// If --wait is not explicitly given, we always wait a few seconds in Cloud to catch fast failures, e.g.
+		// invalid application package
+		timeout = 3 * time.Second
 	}
-	return target.AwaitDeployment(id, w.Timeout)
+	return target.AwaitDeployment(wantedID, timeout)
 }

@@ -30,11 +30,12 @@ DocumentDBTaggedMetrics::JobMetrics::JobMetrics(metrics::MetricSet* parent)
 
 DocumentDBTaggedMetrics::JobMetrics::~JobMetrics() = default;
 
-DocumentDBTaggedMetrics::SubDBMetrics::SubDBMetrics(const vespalib::string &name, MetricSet *parent)
+DocumentDBTaggedMetrics::SubDBMetrics::SubDBMetrics(const std::string &name, MetricSet *parent)
     : MetricSet(name, {}, "Sub database metrics", parent),
       lidSpace(this),
       documentStore(this),
-      attributes(this)
+      attributes(this),
+      index(this)
 {
 }
 
@@ -56,25 +57,13 @@ DocumentDBTaggedMetrics::SubDBMetrics::LidSpaceMetrics::LidSpaceMetrics(MetricSe
 
 DocumentDBTaggedMetrics::SubDBMetrics::LidSpaceMetrics::~LidSpaceMetrics() = default;
 
-DocumentDBTaggedMetrics::SubDBMetrics::DocumentStoreMetrics::CacheMetrics::CacheMetrics(MetricSet *parent)
-    : MetricSet("cache", {}, "Document store cache metrics", parent),
-      memoryUsage("memory_usage", {}, "Memory usage of the cache (in bytes)", this),
-      elements("elements", {}, "Number of elements in the cache", this),
-      hitRate("hit_rate", {}, "Rate of hits in the cache compared to number of lookups", this),
-      lookups("lookups", {}, "Number of lookups in the cache (hits + misses)", this),
-      invalidations("invalidations", {}, "Number of invalidations (erased elements) in the cache. ", this)
-{
-}
-
-DocumentDBTaggedMetrics::SubDBMetrics::DocumentStoreMetrics::CacheMetrics::~CacheMetrics() = default;
-
 DocumentDBTaggedMetrics::SubDBMetrics::DocumentStoreMetrics::DocumentStoreMetrics(MetricSet *parent)
     : MetricSet("document_store", {}, "Document store metrics for this document sub DB", parent),
       diskUsage("disk_usage", {}, "Disk space usage in bytes", this),
       diskBloat("disk_bloat", {}, "Disk space bloat in bytes", this),
       maxBucketSpread("max_bucket_spread", {}, "Max bucket spread in underlying files (sum(unique buckets in each chunk)/unique buckets in file)", this),
       memoryUsage(this),
-      cache(this)
+      cache(this, "cache", "Document store cache metrics", "Document store")
 {
 }
 
@@ -137,7 +126,7 @@ DocumentDBTaggedMetrics::MatchingMetrics::MatchingMetrics(MetricSet *parent)
 
 DocumentDBTaggedMetrics::MatchingMetrics::~MatchingMetrics() = default;
 
-DocumentDBTaggedMetrics::MatchingMetrics::RankProfileMetrics::RankProfileMetrics(const vespalib::string &name,
+DocumentDBTaggedMetrics::MatchingMetrics::RankProfileMetrics::RankProfileMetrics(const std::string &name,
                                                                                  size_t numDocIdPartitions,
                                                                                  MetricSet *parent)
     : MetricSet("rank_profile", {{"rankProfile", name}}, "Rank profile metrics", parent),
@@ -156,14 +145,14 @@ DocumentDBTaggedMetrics::MatchingMetrics::RankProfileMetrics::RankProfileMetrics
 {
     softDoomFactor.set(MatchingStats::INITIAL_SOFT_DOOM_FACTOR);
     for (size_t i = 0; i < numDocIdPartitions; ++i) {
-        vespalib::string partition(vespalib::make_string("docid_part%02ld", i));
+        std::string partition(vespalib::make_string("docid_part%02ld", i));
         partitions.push_back(std::make_unique<DocIdPartition>(partition, this));
     }
 }
 
 DocumentDBTaggedMetrics::MatchingMetrics::RankProfileMetrics::~RankProfileMetrics() = default;
 
-DocumentDBTaggedMetrics::MatchingMetrics::RankProfileMetrics::DocIdPartition::DocIdPartition(const vespalib::string &name, MetricSet *parent)
+DocumentDBTaggedMetrics::MatchingMetrics::RankProfileMetrics::DocIdPartition::DocIdPartition(const std::string &name, MetricSet *parent)
     : MetricSet("docid_partition", {{"docidPartition", name}}, "DocId Partition profile metrics", parent),
       docsMatched("docs_matched", {}, "Number of documents matched", this),
       docsRanked("docs_ranked", {}, "Number of documents ranked (first phase)", this),
@@ -210,7 +199,7 @@ DocumentDBTaggedMetrics::MatchingMetrics::RankProfileMetrics::update(const metri
     if (stats.getNumPartitions() > 0) {
         for (size_t i = partitions.size(); i < stats.getNumPartitions(); ++i) {
             // This loop is to handle live reconfigs that changes how many partitions(number of threads) might be used per query.
-            vespalib::string partition(vespalib::make_string("docid_part%02ld", i));
+            std::string partition(vespalib::make_string("docid_part%02ld", i));
             partitions.push_back(std::make_unique<DocIdPartition>(partition, this));
             LOG(info, "Number of partitions has been increased to '%ld' from '%ld' previously configured. Adding part %ld",
                 stats.getNumPartitions(), partitions.size(), i);
@@ -239,7 +228,7 @@ DocumentDBTaggedMetrics::BucketMoveMetrics::BucketMoveMetrics(metrics::MetricSet
 
 DocumentDBTaggedMetrics::BucketMoveMetrics::~BucketMoveMetrics() = default;
 
-DocumentDBTaggedMetrics::DocumentDBTaggedMetrics(const vespalib::string &docTypeName, size_t maxNumThreads_)
+DocumentDBTaggedMetrics::DocumentDBTaggedMetrics(const std::string &docTypeName, size_t maxNumThreads_)
     : MetricSet("documentdb", {{"documenttype", docTypeName}}, "Document DB metrics", nullptr),
       job(this),
       attribute(this),

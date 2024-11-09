@@ -19,6 +19,37 @@ vespa_add_executable(searchcore_documentdb_test_app TEST
     searchcore_pcommon
     searchcore_grouping
     searchcore_proton_metrics
+    GTest::gtest
 )
-vespa_add_test(NAME searchcore_documentdb_test_app COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/documentdb_test.sh
-               DEPENDS searchcore_documentdb_test_app)
+vespa_add_test(NAME searchcore_documentdb_test_app COMMAND searchcore_documentdb_test_app)
+
+vespa_add_executable(searchcore_proton_documentdb_gtest_test_app TEST
+    SOURCES
+    gtest_runner.cpp
+    buckethandler_test.cpp
+    bucketmover_common.cpp
+    clusterstatehandler_test.cpp
+    combiningfeedview_test.cpp
+    configurer_test.cpp
+    document_scan_iterator_test.cpp
+    document_subdbs_test.cpp
+    documentbucketmover_test.cpp
+    documentdbconfig_test.cpp
+    documentdbconfigscout_test.cpp
+    documentmover_test.cpp
+    executor_threading_service_test.cpp
+    feedview_test.cpp
+    job_tracked_maintenance_job_test.cpp
+    lid_space_common.cpp
+    lid_space_compaction_test.cpp
+    lid_space_handler_test.cpp
+    lid_space_jobtest.cpp
+    maintenancecontroller_test.cpp
+    storeonlyfeedview_test.cpp
+    DEPENDS
+    searchcore_server
+    searchcore_feedoperation
+    searchcore_test
+    GTest::GTest
+)
+vespa_add_test(NAME searchcore_proton_documentdb_gtest_test_app COMMAND searchcore_proton_documentdb_gtest_test_app)

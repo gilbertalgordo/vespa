@@ -133,7 +133,7 @@ import static java.util.stream.Collectors.toUnmodifiableMap;
  *
  * @author jonmv
  */
-public class DocumentV1ApiHandler extends AbstractRequestHandler {
+public final class DocumentV1ApiHandler extends AbstractRequestHandler {
 
     private static final Duration defaultTimeout = Duration.ofSeconds(180); // Match document API default timeout.
     private static final Duration handlerTimeout = Duration.ofMillis(100); // Extra time to allow for handler, JDisc and jetty to complete.
@@ -188,6 +188,7 @@ public class DocumentV1ApiHandler extends AbstractRequestHandler {
     private final DocumentApiMetrics metrics;
     private final DocumentOperationParser parser;
     private final long maxThrottled;
+    private final long maxThrottledAgeNS;
     private final DocumentAccess access;
     private final AsyncSession asyncSession;
     private final Map<String, StorageCluster> clusters;
@@ -221,6 +222,7 @@ public class DocumentV1ApiHandler extends AbstractRequestHandler {
         this.metric = metric;
         this.metrics = new DocumentApiMetrics(metricReceiver, "documentV1");
         this.maxThrottled = executorConfig.maxThrottled();
+        this.maxThrottledAgeNS = (long) (executorConfig.maxThrottledAge() * 1_000_000_000.0);
         this.access = access;
         this.asyncSession = access.createAsyncSession(new AsyncParameters());
         this.clusters = parseClusters(clusterListConfig, bucketSpacesConfig);
@@ -470,7 +472,7 @@ public class DocumentV1ApiHandler extends AbstractRequestHandler {
             enqueueAndDispatch(request, handler, () -> {
                 ParsedDocumentOperation parsed = parser.parsePut(in, path.id().toString());
                 DocumentPut put = (DocumentPut)parsed.operation();
-                getProperty(request, CONDITION).map(TestAndSetCondition::new).ifPresent(c -> put.setCondition(c));
+                getProperty(request, CONDITION).map(TestAndSetCondition::new).ifPresent(put::setCondition);
                 getProperty(request, CREATE, booleanParser).ifPresent(put::setCreateIfNonExistent);
                 DocumentOperationParameters parameters = parametersFromRequest(request, ROUTE)
                         .withResponseHandler(response -> {
@@ -574,7 +576,7 @@ public class DocumentV1ApiHandler extends AbstractRequestHandler {
     }
 
     /** Dispatches enqueued requests until one is blocked. */
-    void dispatchVisitEnqueued() {
+    private void dispatchVisitEnqueued() {
         try {
             while (dispatchFirstVisit());
         }
@@ -596,15 +598,33 @@ public class DocumentV1ApiHandler extends AbstractRequestHandler {
         return false;
     }
 
+    private long qAgeNS(HttpRequest request) {
+        Operation oldest = operations.peek();
+        return (oldest != null)
+                ? (request.relativeCreatedAtNanoTime() - oldest.request.relativeCreatedAtNanoTime())
+                : 0;
+    }
+
     /**
      * Enqueues the given request and operation, or responds with "overload" if the queue is full,
      * and then attempts to dispatch an enqueued operation from the head of the queue.
      */
     private void enqueueAndDispatch(HttpRequest request, ResponseHandler handler, Supplier<BooleanSupplier> operationParser) {
-        if (enqueued.incrementAndGet() > maxThrottled) {
+        long numQueued = enqueued.incrementAndGet();
+        if (numQueued > maxThrottled) {
             enqueued.decrementAndGet();
-            overload(request, "Rejecting execution due to overload: " + maxThrottled + " requests already enqueued", handler);
+            overload(request, "Rejecting execution due to overload: "
+                    + maxThrottled + " requests already enqueued", handler);
             return;
+        }
+        if (numQueued > 1) {
+            long ageNS = qAgeNS(request);
+            if (ageNS > maxThrottledAgeNS) {
+                enqueued.decrementAndGet();
+                overload(request, "Rejecting execution due to overload: "
+                        + maxThrottledAgeNS / 1_000_000_000.0 + " seconds worth of work enqueued", handler);
+                return;
+            }
         }
         operations.offer(new Operation(request, handler, operationParser));
         dispatchFirst();
@@ -843,7 +863,8 @@ public class DocumentV1ApiHandler extends AbstractRequestHandler {
                     ackDocuments();
                 }
                 @Override public void failed(Throwable t) {
-                    log.log(WARNING, "Error writing documents", t);
+                    // This is typically caused by the client closing the connection during production of the response content.
+                    log.log(FINE, "Error writing documents", t);
                     completed();
                 }
             });
@@ -1264,35 +1285,55 @@ public class DocumentV1ApiHandler extends AbstractRequestHandler {
         default void onStart(JsonResponse response, boolean fullyApplied) throws IOException { }
 
         /** Called for every document or removal received from backend visitors—must call the ack for these to proceed. */
-        default void onDocument(JsonResponse response, Document document, DocumentId removeId, Runnable ack, Consumer<String> onError) { }
+        default void onDocument(JsonResponse response, Document document, DocumentId removeId, long persistedTimestamp, Runnable ack, Consumer<String> onError) { }
 
         /** Called at the end of response rendering, before generic status data is written. Called from a dedicated thread pool. */
         default void onEnd(JsonResponse response) throws IOException { }
     }
 
+    @FunctionalInterface
+    private interface VisitProcessingCallback {
+        Result apply(DocumentId id, long persistedTimestamp, DocumentOperationParameters params);
+    }
+
     private void visitAndDelete(HttpRequest request, VisitorParameters parameters, ResponseHandler handler,
                                 TestAndSetCondition condition, String route) {
-        visitAndProcess(request, parameters, true, handler, route, (id, operationParameters) -> {
+        visitAndProcess(request, parameters, true, handler, route, (id, timestamp, operationParameters) -> {
             DocumentRemove remove = new DocumentRemove(id);
-            remove.setCondition(condition);
+            // If the backend provided a persisted timestamp, we set a condition that specifies _both_ the
+            // original selection and the timestamp. If the backend supports timestamp-predicated TaS operations,
+            // it will ignore the selection entirely and only look at the timestamp. If it does not, it will fall
+            // back to evaluating the selection, which preserves legacy behavior.
+            if (timestamp != 0) {
+                remove.setCondition(TestAndSetCondition.ofRequiredTimestampWithSelectionFallback(
+                        timestamp, condition.getSelection()));
+            } else {
+                remove.setCondition(condition);
+            }
             return asyncSession.remove(remove, operationParameters);
         });
     }
 
     private void visitAndUpdate(HttpRequest request, VisitorParameters parameters, boolean fullyApplied,
                                 ResponseHandler handler, DocumentUpdate protoUpdate, String route) {
-        visitAndProcess(request, parameters, fullyApplied, handler, route, (id, operationParameters) -> {
-                DocumentUpdate update = new DocumentUpdate(protoUpdate);
-                update.setId(id);
-                return asyncSession.update(update, operationParameters);
+        visitAndProcess(request, parameters, fullyApplied, handler, route, (id, timestamp, operationParameters) -> {
+            DocumentUpdate update = new DocumentUpdate(protoUpdate);
+            // See `visitAndDelete()` for rationale for sending down a timestamp _and_ the original condition.
+            if (timestamp != 0) {
+                update.setCondition(TestAndSetCondition.ofRequiredTimestampWithSelectionFallback(
+                        timestamp, protoUpdate.getCondition().getSelection()));
+            } // else: use condition already set from protoUpdate
+            update.setId(id);
+            return asyncSession.update(update, operationParameters);
         });
     }
 
     private void visitAndProcess(HttpRequest request, VisitorParameters parameters, boolean fullyApplied,
                                  ResponseHandler handler,
-                                 String route, BiFunction<DocumentId, DocumentOperationParameters, Result> operation) {
+                                 String route, VisitProcessingCallback operation) {
         visit(request, parameters, false, fullyApplied, handler, new VisitCallback() {
-            @Override public void onDocument(JsonResponse response, Document document, DocumentId removeId, Runnable ack, Consumer<String> onError) {
+            @Override public void onDocument(JsonResponse response, Document document, DocumentId removeId,
+                                             long persistedTimestamp, Runnable ack, Consumer<String> onError) {
                 DocumentOperationParameters operationParameters = parameters().withRoute(route)
                         .withResponseHandler(operationResponse -> {
                             outstanding.decrementAndGet();
@@ -1311,7 +1352,7 @@ public class DocumentV1ApiHandler extends AbstractRequestHandler {
                             }
                         });
                 visitOperations.offer(() -> {
-                    Result result = operation.apply(document.getId(), operationParameters);
+                    Result result = operation.apply(document.getId(), persistedTimestamp, operationParameters);
                     if (result.type() == Result.ResultType.TRANSIENT_ERROR)
                         return false;
 
@@ -1336,7 +1377,8 @@ public class DocumentV1ApiHandler extends AbstractRequestHandler {
 
                 response.writeDocumentsArrayStart();
             }
-            @Override public void onDocument(JsonResponse response, Document document, DocumentId removeId, Runnable ack, Consumer<String> onError) {
+            @Override public void onDocument(JsonResponse response, Document document, DocumentId removeId,
+                                             long persistedTimestamp, Runnable ack, Consumer<String> onError) {
                 try {
                     if (streamed) {
                         CompletionHandler completion = new CompletionHandler() {
@@ -1376,6 +1418,7 @@ public class DocumentV1ApiHandler extends AbstractRequestHandler {
             Phaser phaser = new Phaser(2); // Synchronize this thread (dispatch) with the visitor callback thread.
             AtomicReference<String> error = new AtomicReference<>(); // Set if error occurs during processing of visited documents.
             callback.onStart(response, fullyApplied);
+            final AtomicLong locallyReceivedDocCount = new AtomicLong(0);
             VisitorControlHandler controller = new VisitorControlHandler() {
                 final ScheduledFuture<?> abort = streaming ? visitDispatcher.schedule(this::abort, visitTimeout(request), MILLISECONDS) : null;
                 final AtomicReference<VisitorSession> session = new AtomicReference<>();
@@ -1389,7 +1432,10 @@ public class DocumentV1ApiHandler extends AbstractRequestHandler {
                         try (response) {
                             callback.onEnd(response);
 
-                            response.writeDocumentCount(getVisitorStatistics() == null ? 0 : getVisitorStatistics().getDocumentsVisited());
+                            // Locally tracked document count is only correct if we have a local data handler.
+                            // Otherwise, we have to report the statistics received transitively from the content nodes.
+                            long statsDocCount = (getVisitorStatistics() != null ? getVisitorStatistics().getDocumentsVisited() : 0);
+                            response.writeDocumentCount(parameters.getLocalDataHandler() != null ? locallyReceivedDocCount.get() : statsDocCount);
 
                             if (session.get() != null)
                                 response.writeTrace(session.get().getTrace());
@@ -1432,12 +1478,21 @@ public class DocumentV1ApiHandler extends AbstractRequestHandler {
                     @Override public void onMessage(Message m, AckToken token) {
                         Document document = null;
                         DocumentId removeId = null;
-                        if (m instanceof PutDocumentMessage put) document = put.getDocumentPut().getDocument();
-                        else if (parameters.visitRemoves() && m instanceof RemoveDocumentMessage remove) removeId = remove.getDocumentId();
-                        else throw new UnsupportedOperationException("Got unsupported message type: " + m.getClass().getName());
+                        long persistedTimestamp = 0;
+                        if (m instanceof PutDocumentMessage put) {
+                            document = put.getDocumentPut().getDocument();
+                            persistedTimestamp = put.getPersistedTimestamp();
+                        } else if (parameters.visitRemoves() && m instanceof RemoveDocumentMessage remove) {
+                            removeId = remove.getDocumentId();
+                            persistedTimestamp = remove.getPersistedTimestamp();
+                        } else {
+                            throw new UnsupportedOperationException("Got unsupported message type: " + m.getClass().getName());
+                        }
+                        locallyReceivedDocCount.getAndAdd(1);
                         callback.onDocument(response,
                                             document,
                                             removeId,
+                                            persistedTimestamp,
                                             () -> ack(token),
                                             errorMessage -> {
                                                 error.set(errorMessage);
@@ -1595,8 +1650,8 @@ public class DocumentV1ApiHandler extends AbstractRequestHandler {
     static String resolveBucket(StorageCluster cluster, Optional<String> documentType,
                                 List<String> bucketSpaces, Optional<String> bucketSpace) {
         return documentType.map(type -> cluster.bucketOf(type)
-                                               .orElseThrow(() -> new IllegalArgumentException("Document type '" + type + "' in cluster '" + cluster.name() +
-                                                                                               "' is not mapped to a known bucket space")))
+                                               .orElseThrow(() -> new IllegalArgumentException("There is no document type '" + type + "' in cluster '" + cluster.name() +
+                                                                                               "', only '" + String.join("', '", cluster.documentBuckets.keySet()) + "'")))
                            .or(() -> bucketSpace.map(space -> {
                                if ( ! bucketSpaces.contains(space))
                                    throw new IllegalArgumentException("Bucket space '" + space + "' is not a known bucket space; expected one of " +

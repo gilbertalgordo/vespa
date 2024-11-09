@@ -15,7 +15,7 @@ namespace search {
 
 template <typename B>
 SingleValueEnumAttribute<B>::
-SingleValueEnumAttribute(const vespalib::string &baseFileName,
+SingleValueEnumAttribute(const std::string &baseFileName,
                          const AttributeVector::Config &cfg)
     : B(baseFileName, cfg),
       SingleValueEnumAttributeBase(cfg, getGenerationHolder(), this->get_initial_alloc())
@@ -329,7 +329,7 @@ SingleValueEnumAttribute<B>::onShrinkLidSpace()
 
 template <typename B>
 std::unique_ptr<AttributeSaver>
-SingleValueEnumAttribute<B>::onInitSave(vespalib::stringref fileName)
+SingleValueEnumAttribute<B>::onInitSave(std::string_view fileName)
 {
     auto guard = this->getGenerationHandler().takeGuard();
     return std::make_unique<SingleValueEnumAttributeSaver>

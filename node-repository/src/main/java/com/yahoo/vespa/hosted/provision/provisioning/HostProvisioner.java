@@ -2,7 +2,6 @@
 package com.yahoo.vespa.hosted.provision.provisioning;
 
 import com.yahoo.component.Version;
-import com.yahoo.config.provision.ApplicationId;
 import com.yahoo.config.provision.CloudAccount;
 import com.yahoo.config.provision.HostEvent;
 import com.yahoo.config.provision.NodeAllocationException;
@@ -31,11 +30,8 @@ public interface HostProvisioner {
         /** The host must be exclusive to a single application ID */
         exclusive,
 
-        /** The host must be provisioned to be shared with other applications. */
-        shared,
-
-        /** The client has no requirements on whether the host must be provisioned exclusively or shared. */
-        any;
+        /** The host may be provisioned to be shared with other applications, otherwise falls back to exclusive. */
+        shared;
 
         public boolean isExclusiveAllocation() {
             return this == provision || this == exclusive;
@@ -100,8 +96,5 @@ public interface HostProvisioner {
 
     /** Returns all OS versions available to host for the given major version */
     Set<Version> osVersions(Node host, int majorVersion);
-
-    /** Updates the given hosts to indicate that they are allocated to the given application. */
-    default void updateAllocation(Collection<Node> hosts, ApplicationId owner) { }
 
 }

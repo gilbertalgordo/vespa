@@ -2,6 +2,7 @@
 #include "memoryconsumption.h"
 #include <vespa/vespalib/stllike/hash_set.hpp>
 #include <vespa/vespalib/util/size_literals.h>
+#include <cstring>
 #include <sstream>
 
 namespace metrics {
@@ -28,21 +29,8 @@ MemoryConsumption::getStringMemoryUsage(const std::string& s, uint32_t& uniqueCo
     }
     ++uniqueCount;
     _seenStrings->insert(internalString);
-    return s.capacity();
-}
-
-
-uint32_t
-MemoryConsumption::getStringMemoryUsage(const vespalib::string& s, uint32_t& uniqueCount) {
-    ++_totalStringCount;
-    const char* internalString = s.c_str();
-    if (_seenStrings->find(internalString) != _seenStrings->end()) {
-        return 0;
-    }
-    ++uniqueCount;
-    _seenStrings->insert(internalString);
     const void *p = &s;
-    if ((p <= internalString) && (internalString - sizeof(vespalib::string) < p)) {
+    if ((p <= internalString) && (internalString - sizeof(std::string) < p)) {
         // no extra space allocated outside object
         return 0;
     }

@@ -22,6 +22,7 @@ ContainerServices =
     Http? &
     AccessLog* &
     SecretStore? &
+    Secrets? &
     ZooKeeper? &
     GenericConfig* &
     Clients?
@@ -92,6 +93,13 @@ SecretStore = element secret-store {
     }?
 }
 
+Secrets = element secrets {
+    element * {
+        attribute vault {text},
+        attribute name {text}
+    } *
+}
+
 ZooKeeper = element zookeeper {
     attribute session-timeout-seconds { string }?
 }
@@ -137,6 +145,10 @@ Threadpool = element threadpool {
     ))
 }
 
+Significance = element significance {
+    element model { ModelReference }*
+}
+
 Clients = element clients {
     Client*
 }
@@ -161,7 +173,8 @@ SearchInContainer = element search {
     Provider* &
     Renderer* &
     GenericConfig* &
-    Threadpool?
+    Threadpool? &
+    Significance?
 }
 
 SearchChain = element chain {
@@ -307,7 +320,7 @@ NodesOfContainerCluster = element nodes {
       attribute type { xsd:string }
       |
       (
-        attribute count { xsd:positiveInteger | xsd:string  } &
+        attribute count { xsd:positiveInteger | xsd:string  }? &
         attribute flavor { xsd:string }? &
         attribute required { xsd:boolean }? &
         attribute exclusive { xsd:boolean }? &

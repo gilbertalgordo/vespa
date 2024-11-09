@@ -3,8 +3,8 @@
 
 #include "name_repo.h"
 #include <vespa/vespalib/util/printable.h>
-#include <vespa/vespalib/stllike/string.h>
 #include <memory>
+#include <string>
 
 namespace metrics {
 
@@ -81,11 +81,11 @@ struct MetricVisitor {
  */
 struct Tag
 {
-    const vespalib::string& key() const { return NameRepo::tagKey(_key); }
-    const vespalib::string& value() const { return NameRepo::tagValue(_value); }
+    const std::string& key() const { return NameRepo::tagKey(_key); }
+    const std::string& value() const { return NameRepo::tagValue(_value); }
 
-    Tag(vespalib::stringref k);
-    Tag(vespalib::stringref k, vespalib::stringref v);
+    Tag(std::string_view k);
+    Tag(std::string_view k, std::string_view v);
     Tag(const Tag &) noexcept;
     Tag & operator = (const Tag &);
     Tag(Tag &&) noexcept = default;
@@ -102,35 +102,32 @@ private:
 class Metric : public vespalib::Printable
 {
 public:
-    using String = vespalib::string;
-    using stringref = vespalib::stringref;
+    using String = std::string;
+    using string_view = std::string_view;
     using UP = std::unique_ptr<Metric>;
     using SP = std::shared_ptr<Metric>;
     using Tags = std::vector<Tag>;
 
-    Metric(const String& name,
-           Tags dimensions,
-           const String& description,
-           MetricSet* owner = 0);
+    Metric(const String& name, Tags dimensions, const String& description, MetricSet* owner = nullptr);
 
     Metric(const Metric& other, MetricSet* owner);
     Metric(const Metric& rhs);
     Metric & operator = (const Metric& rhs);
-    Metric(Metric && rhs) = default;
-    Metric & operator = (Metric && rhs) = default;
-    ~Metric();
+    Metric(Metric && rhs) noexcept = default;
+    Metric & operator = (Metric && rhs) noexcept = default;
+    ~Metric() override;
 
-    const vespalib::string& getName() const { return NameRepo::metricName(_name); }
+    const std::string& getName() const { return NameRepo::metricName(_name); }
     /**
      * Get mangled name iff the metric contains any dimensions, otherwise
      * the original metric name is returned.
      */
-    const vespalib::string& getMangledName() const {
+    const std::string& getMangledName() const {
         return NameRepo::metricName(_mangledName);
     }
-    vespalib::string getPath() const;
+    std::string getPath() const;
     std::vector<String> getPathVector() const;
-    const vespalib::string& getDescription() const { return NameRepo::description(_description); }
+    const std::string& getDescription() const { return NameRepo::description(_description); }
     const Tags& getTags() const { return _tags; }
     /** Return whether there exists a tag with a key equal to 'tag' */
     bool hasTag(const String& tag) const;
@@ -173,8 +170,8 @@ public:
      * @param id The part of the metric to extract. For instance, an average
      *           metric have average,
      */
-    virtual int64_t getLongValue(stringref id) const = 0;
-    virtual double getDoubleValue(stringref id) const = 0;
+    virtual int64_t getLongValue(string_view id) const = 0;
+    virtual double getDoubleValue(string_view id) const = 0;
 
     /**
      * When snapshotting we need to be able to add data from one set of metrics
@@ -215,7 +212,7 @@ public:
     }
 
     /** Used by sum metric to alter description of cloned metric for sum. */
-    void setDescription(const vespalib::string& d) {
+    void setDescription(const std::string& d) {
         _description = NameRepo::descriptionId(d);
     }
     /** Used by sum metric to alter tag of cloned metric for sum. */
@@ -228,7 +225,7 @@ public:
     virtual bool used() const = 0;
 
     /** Returns true if this metric is registered in a metric set. */
-    bool isRegistered() const { return (_owner != 0); }
+    bool isRegistered() const { return (_owner != nullptr); }
 
     const MetricSet* getOwner() const { return _owner; }
     const MetricSet* getRoot() const;
@@ -268,7 +265,7 @@ private:
      */
     void sortTagsInDeterministicOrder();
 
-    vespalib::string createMangledNameWithDimensions() const;
+    std::string createMangledNameWithDimensions() const;
 
     void verifyConstructionParameters();
     /**
@@ -283,7 +280,6 @@ protected:
     DescriptionId _description;
     std::vector<Tag> _tags;
     MetricSet* _owner;
-
 };
 
 } // metrics

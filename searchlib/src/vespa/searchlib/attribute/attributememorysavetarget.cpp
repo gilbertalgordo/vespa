@@ -10,12 +10,15 @@ namespace search {
 using search::common::FileHeaderContext;
 using vespalib::IllegalArgumentException;
 
+AttributeMemorySaveTarget::WriterEntry::~WriterEntry() = default;
+
 AttributeMemorySaveTarget::AttributeMemorySaveTarget()
     : _datWriter(),
       _idxWriter(),
       _weightWriter(),
       _udatWriter(),
-      _writers()
+      _writers(),
+      _size_on_disk(0)
 {
 }
 
@@ -46,9 +49,8 @@ AttributeMemorySaveTarget::udatWriter()
 }
 
 bool
-AttributeMemorySaveTarget::
-writeToFile(const TuneFileAttributes &tuneFileAttributes,
-            const FileHeaderContext &fileHeaderContext)
+AttributeMemorySaveTarget::writeToFile(const TuneFileAttributes &tuneFileAttributes,
+                                       const FileHeaderContext &fileHeaderContext)
 {
     AttributeFileSaveTarget saveTarget(tuneFileAttributes, fileHeaderContext);
     saveTarget.setHeader(_header);
@@ -73,12 +75,13 @@ writeToFile(const TuneFileAttributes &tuneFileAttributes,
         entry.second.writer->writeTo(file_writer);
     }
     saveTarget.close();
+    _size_on_disk = saveTarget.size_on_disk();
     return true;
 }
 
 bool
-AttributeMemorySaveTarget::setup_writer(const vespalib::string& file_suffix,
-                                        const vespalib::string& desc)
+AttributeMemorySaveTarget::setup_writer(const std::string& file_suffix,
+                                        const std::string& desc)
 {
     auto writer = std::make_unique<AttributeMemoryFileWriter>();
     auto itr = _writers.find(file_suffix);
@@ -90,13 +93,19 @@ AttributeMemorySaveTarget::setup_writer(const vespalib::string& file_suffix,
 }
 
 IAttributeFileWriter&
-AttributeMemorySaveTarget::get_writer(const vespalib::string& file_suffix)
+AttributeMemorySaveTarget::get_writer(const std::string& file_suffix)
 {
     auto itr = _writers.find(file_suffix);
     if (itr == _writers.end()) {
         throw IllegalArgumentException("File writer with suffix '" + file_suffix + "' does not exist");
     }
     return *itr->second.writer;
+}
+
+uint64_t
+AttributeMemorySaveTarget::size_on_disk() const noexcept
+{
+    return _size_on_disk;
 }
 
 } // namespace search

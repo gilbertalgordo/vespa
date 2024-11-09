@@ -8,7 +8,6 @@
 #include <vespa/vespalib/datastore/sharded_hash_map.h>
 #include <vespa/vespalib/gtest/gtest.h>
 #include <vespa/vespalib/test/datastore/buffer_stats.h>
-#include <vespa/vespalib/test/insertion_operators.h>
 #include <vespa/vespalib/test/memory_allocator_observer.h>
 #include <vespa/vespalib/util/traits.h>
 #include <vector>
@@ -19,7 +18,6 @@ LOG_SETUP("unique_store_test");
 enum class DictionaryType { BTREE, HASH, BTREE_AND_HASH };
 
 using namespace vespalib::datastore;
-using vespalib::ArrayRef;
 using generation_t = vespalib::GenerationHandler::generation_t;
 using vespalib::alloc::MemoryAllocator;
 using vespalib::alloc::test::MemoryAllocatorObserver;
@@ -128,7 +126,7 @@ struct TestBase : public ::testing::Test {
         }
         refs.push_back(AtomicEntryRef());
         std::vector<AtomicEntryRef> compactedRefs = refs;
-        remapper->remap(ArrayRef<AtomicEntryRef>(compactedRefs));
+        remapper->remap(std::span<AtomicEntryRef>(compactedRefs));
         remapper->done();
         remapper.reset();
         ASSERT_FALSE(refs.back().load_relaxed().valid());
@@ -465,13 +463,13 @@ TEST_F(DoubleTest, nan_is_handled)
 TEST_F(DoubleTest, control_memory_usage) {
     static constexpr size_t sizeof_deque = vespalib::datastore::DataStoreBase::sizeof_entry_ref_hold_list_deque;
     EXPECT_EQ(400u + sizeof_deque, sizeof(store));
-    EXPECT_EQ(120u, sizeof(BufferState));
+    EXPECT_EQ(112u, sizeof(BufferState));
     EXPECT_EQ(28740u, store.get_values_memory_usage().allocatedBytes());
-    EXPECT_EQ(24780u, store.get_values_memory_usage().usedBytes());
+    EXPECT_EQ(24772u, store.get_values_memory_usage().usedBytes());
     EXPECT_EQ(126952u, store.get_dictionary_memory_usage().allocatedBytes());
-    EXPECT_EQ(25200u, store.get_dictionary_memory_usage().usedBytes());
+    EXPECT_EQ(25184u, store.get_dictionary_memory_usage().usedBytes());
     EXPECT_EQ(155692u, store.getMemoryUsage().allocatedBytes());
-    EXPECT_EQ(49980u, store.getMemoryUsage().usedBytes());
+    EXPECT_EQ(49956u, store.getMemoryUsage().usedBytes());
 }
                 
 GTEST_MAIN_RUN_ALL_TESTS()

@@ -77,6 +77,39 @@ public class StateHandlerTest extends StateHandlerTestBase {
         assertEquals(2, metricValues.get("count").asInt(), json.toString());
     }
 
+    @Test
+    public void testPrometheusFormat() {
+        var counterContext = StateMetricContext.newInstance(Map.of("label", "This label has \"quotes\""));
+        var otherContext = StateMetricContext.newInstance(Map.of("label", "This label, a\nnewline"));
+        var snapshot = new MetricSnapshot(0L, SNAPSHOT_INTERVAL, TimeUnit.MILLISECONDS);
+        snapshot.add(counterContext, "some.counter", 10);
+        snapshot.add(counterContext, "some.counter", 20);
+        snapshot.add(otherContext, "some.counter", 1);
+        snapshot.add(otherContext, "some.counter", 2);
+        snapshot.set(null, "bar", 20);
+        snapshot.set(null, "bar", 40);
+        snapshot.set(null, "testing-infinity", Double.NEGATIVE_INFINITY);
+        snapshot.set(null, "testing.nan", Double.NaN);
+        snapshotProvider.setSnapshot(snapshot);
+
+        var response = requestAsString(V1_URI + "metrics?format=prometheus");
+        var expectedResponse = """
+                # NOTE: THIS API IS NOT INTENDED FOR PUBLIC USE
+                bar_count 2 300000
+                bar_max 40.0 300000
+                bar_sum 60.0 300000
+                some_counter_count{label="This label has \\"quotes\\"",} 30 300000
+                some_counter_count{label="This label, a\\nnewline",} 3 300000
+                testing_infinity_count 1 300000
+                testing_infinity_max -Inf 300000
+                testing_infinity_sum -Inf 300000
+                testing_nan_count 1 300000
+                testing_nan_max NaN 300000
+                testing_nan_sum NaN 300000
+                """;
+        assertEquals(expectedResponse, response);
+    }
+
     private JsonNode getFirstMetricValueNode(JsonNode root) {
         assertEquals(1, root.get("metrics").get("values").size(), root.toString());
         JsonNode metricValues = root.get("metrics").get("values").get(0).get("values");

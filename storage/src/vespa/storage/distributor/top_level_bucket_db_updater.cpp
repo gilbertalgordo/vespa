@@ -2,7 +2,6 @@
 
 #include "top_level_bucket_db_updater.h"
 #include "bucket_db_prune_elision.h"
-#include "bucket_space_distribution_configs.h"
 #include "bucket_space_distribution_context.h"
 #include "top_level_distributor.h"
 #include "distributor_bucket_space.h"
@@ -11,11 +10,12 @@
 #include "simpleclusterinformation.h"
 #include "stripe_access_guard.h"
 #include <vespa/document/bucket/fixed_bucket_spaces.h>
-#include <vespa/storage/common/global_bucket_space_distribution_converter.h>
 #include <vespa/storage/config/distributorconfiguration.h>
 #include <vespa/storageapi/message/persistence.h>
 #include <vespa/storageapi/message/removelocation.h>
+#include <vespa/vdslib/distribution/bucket_space_distribution_configs.h>
 #include <vespa/vdslib/distribution/distribution.h>
+#include <vespa/vdslib/distribution/global_bucket_space_distribution_converter.h>
 #include <vespa/vdslib/state/clusterstate.h>
 #include <vespa/vespalib/util/xmlstream.h>
 #include <thread>
@@ -54,6 +54,7 @@ TopLevelBucketDBUpdater::TopLevelBucketDBUpdater(const DistributorNodeContext& n
 {
     // FIXME STRIPE top-level Distributor needs a proper way to track the current cluster state bundle!
     propagate_active_state_bundle_internally(true); // We're just starting up so assume ownership transfer.
+    // TODO bootstrap cluster state bundle instead? version:0 cluster:d
     bootstrap_distribution_config(std::move(bootstrap_distribution));
 }
 
@@ -71,7 +72,7 @@ TopLevelBucketDBUpdater::propagate_active_state_bundle_internally(bool has_bucke
 
 void
 TopLevelBucketDBUpdater::bootstrap_distribution_config(std::shared_ptr<const lib::Distribution> distribution) {
-    auto global_distr = GlobalBucketSpaceDistributionConverter::convert_to_global(*distribution);
+    auto global_distr = lib::GlobalBucketSpaceDistributionConverter::convert_to_global(*distribution);
     _op_ctx.bucket_space_states().get(document::FixedBucketSpaces::default_space()).set_distribution(distribution);
     _op_ctx.bucket_space_states().get(document::FixedBucketSpaces::global_space()).set_distribution(global_distr);
     // TODO STRIPE do we need to bootstrap the stripes as well here? Or do they do this on their own volition?
@@ -79,7 +80,7 @@ TopLevelBucketDBUpdater::bootstrap_distribution_config(std::shared_ptr<const lib
 }
 
 void
-TopLevelBucketDBUpdater::propagate_distribution_config(const BucketSpaceDistributionConfigs& configs) {
+TopLevelBucketDBUpdater::propagate_distribution_config(const lib::BucketSpaceDistributionConfigs& configs) {
     if (auto distr = configs.get_or_nullptr(document::FixedBucketSpaces::default_space())) {
         _op_ctx.bucket_space_states().get(document::FixedBucketSpaces::default_space()).set_distribution(distr);
     }
@@ -129,7 +130,7 @@ TopLevelBucketDBUpdater::remove_superfluous_buckets(
             && db_pruning_may_be_elided(old_cluster_state, *new_cluster_state, up_states))
         {
             LOG(debug, "[bucket space '%s']: eliding DB pruning for state transition '%s' -> '%s'",
-                document::FixedBucketSpaces::to_string(elem.first).data(),
+                document::FixedBucketSpaces::to_string(elem.first).c_str(),
                 old_cluster_state.toString().c_str(), new_cluster_state->toString().c_str());
             continue;
         }
@@ -183,29 +184,43 @@ TopLevelBucketDBUpdater::complete_transition_timer()
 }
 
 void
-TopLevelBucketDBUpdater::storage_distribution_changed(const BucketSpaceDistributionConfigs& configs)
+TopLevelBucketDBUpdater::storage_distribution_changed(const lib::BucketSpaceDistributionConfigs& configs)
+{
+    auto guard = _stripe_accessor.rendezvous_and_hold_all();
+    storage_distribution_changed_impl(*guard, configs, false);
+}
+
+void
+TopLevelBucketDBUpdater::storage_distribution_changed_impl(StripeAccessGuard& guard,
+                                                           const lib::BucketSpaceDistributionConfigs& configs,
+                                                           bool inhibit_request_sending)
 {
     propagate_distribution_config(configs);
     ensure_transition_timer_started();
 
-    auto guard = _stripe_accessor.rendezvous_and_hold_all();
-    // FIXME STRIPE might this cause a mismatch with the component stuff's own distribution config..?!
-    guard->update_distribution_config(configs);
-    remove_superfluous_buckets(*guard, _active_state_bundle, true);
+    // TODO should be part of bundle only...!!
+    guard.update_distribution_config(configs);
+    remove_superfluous_buckets(guard, _active_state_bundle, true);
 
     auto clusterInfo = std::make_shared<const SimpleClusterInformation>(
             _node_ctx.node_index(),
             _active_state_bundle,
             storage_node_up_states());
+    // If distribution has changed as part of a SetSystemState we do not send bucket info
+    // requests, but we do all the other work to enumerate the set of nodes that we _would_
+    // have sent to (_outdated_nodes_map), which is then reused when we immediately after
+    // process the cluster state itself. The cluster state might not have any changes in and
+    // by itself, but the outdated nodes map ensures that we send necessary requests anyway.
     _pending_cluster_state = PendingClusterState::createForDistributionChange(
             _node_ctx.clock(),
             std::move(clusterInfo),
             _sender,
             _op_ctx.bucket_space_states(),
-            _op_ctx.generate_unique_timestamp());
+            _op_ctx.generate_unique_timestamp(),
+            inhibit_request_sending);
     _outdated_nodes_map = _pending_cluster_state->getOutdatedNodesMap();
 
-    guard->set_pending_cluster_state_bundle(_pending_cluster_state->getNewClusterStateBundle());
+    guard.set_pending_cluster_state_bundle(_pending_cluster_state->getNewClusterStateBundle());
 }
 
 void
@@ -236,7 +251,7 @@ TopLevelBucketDBUpdater::onSetSystemState(
 
     const lib::ClusterStateBundle& state = cmd->getClusterStateBundle();
 
-    if (state == _active_state_bundle) {
+    if (state == _active_state_bundle) { // Also considers distribution configs, if present
         return false;
     }
     ensure_transition_timer_started();
@@ -244,8 +259,22 @@ TopLevelBucketDBUpdater::onSetSystemState(
     framework::MilliSecTimer process_timer(_node_ctx.clock());
 
     auto guard = _stripe_accessor.rendezvous_and_hold_all();
-    guard->update_read_snapshot_before_db_pruning();
     const auto& bundle = cmd->getClusterStateBundle();
+    if (bundle.has_distribution_config()) {
+        const auto distr_bundle = bundle.distribution_config_bundle();
+        if (_distributor_interface.receive_distribution_from_cluster_controller(distr_bundle->default_distribution_sp())) {
+            // This stages the distribution config change internally and does everything _except_
+            // actually send bucket info requests to the content nodes, as they would be inherently
+            // doomed due to having a stale cluster state version. Instead, we remember the set of
+            // affected nodes and reuse this below when we send the properly versioned info requests.
+            storage_distribution_changed_impl(*guard, distr_bundle->bucket_space_distributions(), true);
+        }
+    } else if (_distributor_interface.cluster_controller_is_distribution_source_of_truth()) {
+        // Cluster controller has stopped sending config (possibly rolled back or reconfigured), so
+        // we have to follow suit and go back to listening to internal config changes instead.
+        _distributor_interface.revert_distribution_source_of_truth_to_node_internal_config();
+    }
+    guard->update_read_snapshot_before_db_pruning();
     remove_superfluous_buckets(*guard, bundle, false);
     guard->update_read_snapshot_after_db_pruning(bundle);
     reply_to_previous_pending_cluster_state_if_any();
@@ -261,7 +290,7 @@ TopLevelBucketDBUpdater::onSetSystemState(
             _op_ctx.bucket_space_states(),
             cmd,
             _outdated_nodes_map,
-            _op_ctx.generate_unique_timestamp()); // FIXME STRIPE must be atomic across all threads
+            _op_ctx.generate_unique_timestamp());
     _outdated_nodes_map = _pending_cluster_state->getOutdatedNodesMap();
 
     _distributor_interface.metrics().set_cluster_state_processing_time.addValue(
@@ -446,7 +475,7 @@ TopLevelBucketDBUpdater::add_current_state_to_cluster_state_history()
     }
 }
 
-vespalib::string
+std::string
 TopLevelBucketDBUpdater::getReportContentType(const framework::HttpUrlPath&) const
 {
     return "text/xml";
@@ -454,9 +483,8 @@ TopLevelBucketDBUpdater::getReportContentType(const framework::HttpUrlPath&) con
 
 namespace {
 
-const vespalib::string ALL = "all";
-const vespalib::string BUCKETDB = "bucketdb";
-const vespalib::string BUCKETDB_UPDATER = "Bucket Database Updater";
+const std::string BUCKETDB = "bucketdb";
+const std::string BUCKETDB_UPDATER = "Bucket Database Updater";
 
 }
 
@@ -477,7 +505,7 @@ TopLevelBucketDBUpdater::reportStatus(std::ostream& out,
     return true;
 }
 
-vespalib::string
+std::string
 TopLevelBucketDBUpdater::report_xml_status(vespalib::xml::XmlOutputStream& xos,
                                            const framework::HttpUrlPath&) const
 {

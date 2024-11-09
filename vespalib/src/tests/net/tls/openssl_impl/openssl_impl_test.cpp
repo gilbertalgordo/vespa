@@ -1,7 +1,6 @@
 // Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 #include <vespa/vespalib/crypto/private_key.h>
 #include <vespa/vespalib/crypto/x509_certificate.h>
-#include <vespa/vespalib/testkit/test_kit.h>
 #include <vespa/vespalib/data/smart_buffer.h>
 #include <vespa/vespalib/net/tls/authorization_mode.h>
 #include <vespa/vespalib/net/tls/crypto_codec.h>
@@ -14,7 +13,8 @@
 #include <vespa/vespalib/test/peer_policy_utils.h>
 #include <vespa/vespalib/util/size_literals.h>
 #include <stdexcept>
-#include <stdlib.h>
+#include <vespa/vespalib/testkit/test_kit.h>
+#include <vespa/vespalib/testkit/test_master.hpp>
 
 using namespace vespalib;
 using namespace vespalib::crypto;
@@ -59,9 +59,9 @@ void print_decode_result(const char* mode, const DecodeResult& res) {
             decode_state_to_str(res.state));
 }
 
-TransportSecurityOptions ts_from_pems(vespalib::stringref ca_certs_pem,
-                                      vespalib::stringref cert_chain_pem,
-                                      vespalib::stringref private_key_pem)
+TransportSecurityOptions ts_from_pems(std::string_view ca_certs_pem,
+                                      std::string_view cert_chain_pem,
+                                      std::string_view private_key_pem)
 {
     auto ts_builder = TransportSecurityOptions::Params().
             ca_certs_pem(ca_certs_pem).
@@ -128,14 +128,14 @@ struct Fixture {
         return create_openssl_codec(ctx, mode, SocketSpec::invalid);
     }
 
-    static EncodeResult do_encode(CryptoCodec& codec, Output& buffer, vespalib::stringref plaintext) {
+    static EncodeResult do_encode(CryptoCodec& codec, Output& buffer, std::string_view plaintext) {
         auto out = buffer.reserve(codec.min_encode_buffer_size());
         auto enc_res = codec.encode(plaintext.data(), plaintext.size(), out.data, out.size);
         buffer.commit(enc_res.bytes_produced);
         return enc_res;
     }
 
-    static DecodeResult do_decode(CryptoCodec& codec, Input& buffer, vespalib::string& out,
+    static DecodeResult do_decode(CryptoCodec& codec, Input& buffer, std::string& out,
                                   size_t max_bytes_produced, size_t max_bytes_consumed) {
         auto in = buffer.obtain();
         out.resize(max_bytes_produced);
@@ -146,26 +146,26 @@ struct Fixture {
         return enc_res;
     }
 
-    EncodeResult client_encode(vespalib::stringref plaintext) {
+    EncodeResult client_encode(std::string_view plaintext) {
         auto res = do_encode(*client, client_to_server, plaintext);
         print_encode_result("client", res);
         return res;
     }
 
-    EncodeResult server_encode(vespalib::stringref plaintext) {
+    EncodeResult server_encode(std::string_view plaintext) {
         auto res = do_encode(*server, server_to_client, plaintext);
         print_encode_result("server", res);
         return res;
     }
 
-    DecodeResult client_decode(vespalib::string& out, size_t max_bytes_produced,
+    DecodeResult client_decode(std::string& out, size_t max_bytes_produced,
                                size_t max_bytes_consumed = UINT64_MAX) {
         auto res = do_decode(*client, server_to_client, out, max_bytes_produced, max_bytes_consumed);
         print_decode_result("client", res);
         return res;
     }
 
-    DecodeResult server_decode(vespalib::string& out, size_t max_bytes_produced,
+    DecodeResult server_decode(std::string& out, size_t max_bytes_produced,
                                size_t max_bytes_consumed = UINT64_MAX) {
         auto res = do_decode(*server, client_to_server, out, max_bytes_produced, max_bytes_consumed);
         print_decode_result("server", res);
@@ -173,13 +173,13 @@ struct Fixture {
     }
 
     DecodeResult client_decode_ignore_plaintext_output() {
-        vespalib::string dummy_decoded;
+        std::string dummy_decoded;
         constexpr size_t dummy_max_decoded = 100;
         return client_decode(dummy_decoded, dummy_max_decoded);
     }
 
     DecodeResult server_decode_ignore_plaintext_output() {
-        vespalib::string dummy_decoded;
+        std::string dummy_decoded;
         constexpr size_t dummy_max_decoded = 100;
         return server_decode(dummy_decoded, dummy_max_decoded);
     }
@@ -264,16 +264,16 @@ TEST_F("server handshake() returns NeedsPeerData with empty input", Fixture) {
 TEST_F("clients and servers can send single data frame after handshake (not full duplex)", Fixture) {
     ASSERT_TRUE(f.handshake());
 
-    vespalib::string client_plaintext = "Hellooo world! :D";
-    vespalib::string server_plaintext = "Goodbye moon~ :3";
+    std::string client_plaintext = "Hellooo world! :D";
+    std::string server_plaintext = "Goodbye moon~ :3";
 
     ASSERT_FALSE(f.client_encode(client_plaintext).failed);
-    vespalib::string server_plaintext_out;
+    std::string server_plaintext_out;
     ASSERT_TRUE(f.server_decode(server_plaintext_out, 256).frame_decoded_ok());
     EXPECT_EQUAL(client_plaintext, server_plaintext_out);
 
     ASSERT_FALSE(f.server_encode(server_plaintext).failed);
-    vespalib::string client_plaintext_out;
+    std::string client_plaintext_out;
     ASSERT_TRUE(f.client_decode(client_plaintext_out, 256).frame_decoded_ok());
     EXPECT_EQUAL(server_plaintext, client_plaintext_out);
 }
@@ -281,14 +281,14 @@ TEST_F("clients and servers can send single data frame after handshake (not full
 TEST_F("clients and servers can send single data frame after handshake (full duplex)", Fixture) {
     ASSERT_TRUE(f.handshake());
 
-    vespalib::string client_plaintext = "Greetings globe! :D";
-    vespalib::string server_plaintext = "Sayonara luna~ :3";
+    std::string client_plaintext = "Greetings globe! :D";
+    std::string server_plaintext = "Sayonara luna~ :3";
 
     ASSERT_FALSE(f.client_encode(client_plaintext).failed);
     ASSERT_FALSE(f.server_encode(server_plaintext).failed);
 
-    vespalib::string client_plaintext_out;
-    vespalib::string server_plaintext_out;
+    std::string client_plaintext_out;
+    std::string server_plaintext_out;
     ASSERT_TRUE(f.server_decode(server_plaintext_out, 256).frame_decoded_ok());
     EXPECT_EQUAL(client_plaintext, server_plaintext_out);
     ASSERT_TRUE(f.client_decode(client_plaintext_out, 256).frame_decoded_ok());
@@ -298,10 +298,10 @@ TEST_F("clients and servers can send single data frame after handshake (full dup
 TEST_F("short ciphertext read on decode() returns NeedsMorePeerData", Fixture) {
     ASSERT_TRUE(f.handshake());
 
-    vespalib::string client_plaintext = "very secret foo";
+    std::string client_plaintext = "very secret foo";
     ASSERT_FALSE(f.client_encode(client_plaintext).failed);
 
-    vespalib::string server_plaintext_out;
+    std::string server_plaintext_out;
     auto dec_res = f.server_decode(server_plaintext_out, 256, 10);
     EXPECT_FALSE(dec_res.failed()); // Short read is not a failure mode
     EXPECT_TRUE(dec_res.state == DecodeResult::State::NeedsMorePeerData);
@@ -310,7 +310,7 @@ TEST_F("short ciphertext read on decode() returns NeedsMorePeerData", Fixture) {
 TEST_F("Encodes larger than max frame size are split up", Fixture) {
     ASSERT_TRUE(f.handshake());
     constexpr auto frame_size = impl::OpenSslCryptoCodecImpl::MaximumFramePlaintextSize;
-    vespalib::string client_plaintext(frame_size + 50, 'X');
+    std::string client_plaintext(frame_size + 50, 'X');
 
     auto enc_res = f.client_encode(client_plaintext);
     ASSERT_FALSE(enc_res.failed);
@@ -322,12 +322,12 @@ TEST_F("Encodes larger than max frame size are split up", Fixture) {
     ASSERT_EQUAL(50u, enc_res.bytes_consumed);
 
     // Over on the server side, we expect to decode 2 matching frames
-    vespalib::string server_plaintext_out;
+    std::string server_plaintext_out;
     auto dec_res = f.server_decode(server_plaintext_out, frame_size);
     ASSERT_TRUE(dec_res.frame_decoded_ok());
     EXPECT_EQUAL(frame_size, dec_res.bytes_produced);
 
-    vespalib::string remainder_out;
+    std::string remainder_out;
     dec_res = f.server_decode(remainder_out, frame_size);
     ASSERT_TRUE(dec_res.frame_decoded_ok());
     EXPECT_EQUAL(50u, dec_res.bytes_produced);
@@ -455,8 +455,8 @@ struct CertFixture : Fixture {
     {}
     ~CertFixture();
 
-    static X509Certificate::SubjectInfo make_subject_info(const std::vector<vespalib::string>& common_names,
-                                                          const std::vector<vespalib::string>& sans) {
+    static X509Certificate::SubjectInfo make_subject_info(const std::vector<std::string>& common_names,
+                                                          const std::vector<std::string>& sans) {
         auto dn = X509Certificate::DistinguishedName()
                 .country("US").state("CA").locality("Sunnyvale")
                 .organization("Wile E. Coyote, Ltd.")
@@ -471,8 +471,8 @@ struct CertFixture : Fixture {
         return subject;
     }
 
-    CertKeyWrapper create_ca_issued_peer_cert(const std::vector<vespalib::string>& common_names,
-                                              const std::vector<vespalib::string>& sans) const {
+    CertKeyWrapper create_ca_issued_peer_cert(const std::vector<std::string>& common_names,
+                                              const std::vector<std::string>& sans) const {
         auto subject = make_subject_info(common_names, sans);
         auto key = PrivateKey::generate_p256_ec_key();
         auto params = X509Certificate::Params::issued_by(std::move(subject), key, root_ca.cert, root_ca.key);
@@ -480,8 +480,8 @@ struct CertFixture : Fixture {
         return {std::move(cert), std::move(key)};
     }
 
-    CertKeyWrapper create_self_signed_peer_cert(const std::vector<vespalib::string>& common_names,
-                                                const std::vector<vespalib::string>& sans) const {
+    CertKeyWrapper create_self_signed_peer_cert(const std::vector<std::string>& common_names,
+                                                const std::vector<std::string>& sans) const {
         auto subject = make_subject_info(common_names, sans);
         auto key = PrivateKey::generate_p256_ec_key();
         auto params = X509Certificate::Params::self_signed(std::move(subject), key);

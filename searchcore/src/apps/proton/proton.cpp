@@ -12,6 +12,7 @@
 #include <vespa/config/common/configcontext.h>
 #include <vespa/fnet/transport.h>
 #include <vespa/fastos/file.h>
+#include <absl/debugging/failure_signal_handler.h>
 #include <filesystem>
 #include <iostream>
 #include <thread>
@@ -53,6 +54,20 @@ public:
 void
 App::setupSignals()
 {
+    absl::FailureSignalHandlerOptions opts;
+    // Sanitizers set up their own signal handler, so we must ensure that the failure signal
+    // handler calls this when it's done, or we won't get a proper report.
+    opts.call_previous_handler = true;
+    // Ideally we'd use an alternate stack to have well-defined reporting when a
+    // thread runs out of stack space (infinite recursion bug etc.), but for some
+    // reason this seems to negatively affect stack walking and give very incomplete
+    // traces. So until this is resolved, use the thread's own stack.
+    opts.use_alternate_stack = false;
+    absl::InstallFailureSignalHandler(opts);
+
+    // Install our own signal handlers _after_ the failure handler, as the sentinel uses
+    // SIGTERM as a "friendly poke for shutdown" signal and the Abseil failure handler
+    // always dumps stack when intercepting this signal (since it's considered fatal).
     SIG::PIPE.ignore();
     SIG::INT.hook();
     SIG::TERM.hook();
@@ -103,14 +118,14 @@ using storage::spi::PersistenceProvider;
 class ProtonServiceLayerProcess : public storage::ServiceLayerProcess {
     proton::Proton&         _proton;
     FNET_Transport&         _transport;
-    vespalib::string        _file_distributor_connection_spec;
+    std::string        _file_distributor_connection_spec;
     metrics::MetricManager* _metricManager;
     std::weak_ptr<streaming::SearchVisitorFactory> _search_visitor_factory;
 
 public:
     ProtonServiceLayerProcess(const config::ConfigUri & configUri,
                               proton::Proton & proton, FNET_Transport& transport,
-                              const vespalib::string& file_distributor_connection_spec,
+                              const std::string& file_distributor_connection_spec,
                               const vespalib::HwInfo& hw_info);
     ~ProtonServiceLayerProcess() override { shutdown(); }
 
@@ -132,7 +147,7 @@ public:
 
 ProtonServiceLayerProcess::ProtonServiceLayerProcess(const config::ConfigUri & configUri,
                                                      proton::Proton & proton, FNET_Transport& transport,
-                                                     const vespalib::string& file_distributor_connection_spec,
+                                                     const std::string& file_distributor_connection_spec,
                                                      const vespalib::HwInfo& hw_info)
     : ServiceLayerProcess(configUri, hw_info),
       _proton(proton),
@@ -266,13 +281,13 @@ App::startAndRun(FNET_Transport & transport, int argc, char **argv) {
         EV_STOPPING("proton", "shutdown after aborted init");
     } else {
         const ProtonConfig &protonConfig = configSnapshot->getProtonConfig();
-        vespalib::string basedir = protonConfig.basedir;
+        std::string basedir = protonConfig.basedir;
         std::filesystem::create_directories(std::filesystem::path(basedir));
         {
             ExitOnSignal exit_on_signal;
             proton.init(configSnapshot);
         }
-        vespalib::string file_distributor_connection_spec = configSnapshot->getFiledistributorrpcConfig().connectionspec;
+        std::string file_distributor_connection_spec = configSnapshot->getFiledistributorrpcConfig().connectionspec;
         std::unique_ptr<ProtonServiceLayerProcess> spiProton;
 
         if ( ! params.serviceidentity.empty()) {
@@ -312,6 +327,7 @@ App::main(int argc, char **argv)
     try {
         setupSignals();
         setup_fadvise();
+        FastOS_FileInterface::enableFSync();
         Transport transport(buildTransportConfig());
         startAndRun(transport.transport(), argc, argv);
     } catch (const vespalib::InvalidCommandLineArgumentsException &e) {

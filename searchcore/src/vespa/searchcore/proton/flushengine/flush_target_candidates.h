@@ -1,14 +1,13 @@
 // Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 #pragma once
 
+#include "flush_target_candidate.h"
 #include "prepare_restart_flush_strategy.h"
-#include <vespa/vespalib/util/arrayref.h>
+#include <span>
 
 namespace proton {
 
 namespace flushengine { class TlsStats; }
-
-class FlushTargetCandidate;
 
 /**
  * A set of flush targets that are candidates to be flushed.
@@ -30,7 +29,7 @@ public:
         double totalCost() const { return bytesCost + operationsCost; }
     };
 private:
-    vespalib::ConstArrayRef<FlushTargetCandidate> _candidates; // NOTE: ownership is handled outside
+    std::span<const FlushTargetCandidate> _candidates; // NOTE: ownership is handled outside
     size_t  _num_candidates;
     TlsReplayCost _tlsReplayCost;
     double _flushTargetsWriteCost;
@@ -40,7 +39,7 @@ private:
 public:
     using UP = std::unique_ptr<FlushTargetCandidates>;
 
-    FlushTargetCandidates(vespalib::ConstArrayRef<FlushTargetCandidate> candidates,
+    FlushTargetCandidates(std::span<const FlushTargetCandidate> candidates,
                           size_t num_candidates,
                           const flushengine::TlsStats &tlsStats,
                           const Config &cfg);

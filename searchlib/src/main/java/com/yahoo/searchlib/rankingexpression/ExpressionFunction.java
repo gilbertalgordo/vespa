@@ -15,7 +15,6 @@ import static com.yahoo.searchlib.rankingexpression.Reference.wrapInRankingExpre
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.Deque;
 import java.util.HashMap;
 import java.util.List;
@@ -50,7 +49,7 @@ public class ExpressionFunction {
      * @param body the ranking expression that defines this function
      */
     public ExpressionFunction(String name, RankingExpression body) {
-        this(name, Collections.emptyList(), body);
+        this(name, List.of(), body);
     }
 
     /**
@@ -217,7 +216,7 @@ public class ExpressionFunction {
      * An instance of a serialization of this function, using a particular serialization context (by {@link
      * ExpressionFunction#expand})
      */
-    public class Instance {
+    public static class Instance {
 
         private final String name;
         private final String expressionString;

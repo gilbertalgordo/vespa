@@ -22,23 +22,35 @@ public abstract class OutputExpression extends Expression {
         this.fieldName = fieldName;
     }
 
-    public String getFieldName() {
-        return fieldName;
+    public String getFieldName() { return fieldName; }
+
+    @Override
+    public DataType setInputType(DataType inputType, VerificationContext context) {
+        return super.setInputType(inputType, context.getFieldType(fieldName, this), context);
     }
 
     @Override
-    protected void doExecute(ExecutionContext context) {
-        context.setOutputValue(this, fieldName, context.getValue());
+    public DataType setOutputType(DataType outputType, VerificationContext context) {
+        super.setOutputType(outputType, context);
+        return context.getFieldType(fieldName, this);
     }
 
     @Override
     protected void doVerify(VerificationContext context) {
-        context.tryOutputType(this, fieldName, context.getValueType());
+        context.tryOutputType(fieldName, context.getCurrentType(), this);
     }
 
     @Override
-    public DataType createdOutputType() {
-        return null;
+    protected void doExecute(ExecutionContext context) {
+        context.setFieldValue(fieldName, context.getCurrentValue(), this);
+    }
+
+    @Override
+    public DataType createdOutputType() { return null; }
+
+    @Override
+    public DataType getInputType(VerificationContext context) {
+        return context.getFieldType(fieldName, this);
     }
 
     @Override

@@ -35,7 +35,7 @@ public class ProvisionerAdapter implements HostProvisioner {
     @Override
     public HostSpec allocateHost(String alias) {
         // TODO: Remove this method since hosted/non-hosted needs different interfaces. See also ModelContextImpl.getHostProvisioner
-        // Illegal argument becaiuse we end here by following a path not suitable for the environment steered
+        // Illegal argument because we end here by following a path not suitable for the environment steered
         // by the content of the nodes tag in services
         throw new IllegalArgumentException("Clusters in hosted environments must have a <nodes count='N'> tag " +
                                                 "matching all zones, and having no <node> subtags, " +
@@ -44,7 +44,7 @@ public class ProvisionerAdapter implements HostProvisioner {
 
     @Override
     public List<HostSpec> prepare(ClusterSpec cluster, Capacity capacity, ProvisionLogger logger) {
-        provisioned.add(cluster.id(), capacity);
+        provisioned.add(cluster, capacity);
         return provisioner.prepare(applicationId, cluster, capacity, logger);
     }
 

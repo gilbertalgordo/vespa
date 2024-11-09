@@ -4,7 +4,7 @@
 
 #include "randread.h"
 #include <vespa/vespalib/util/ptrholder.h>
-#include <vespa/vespalib/stllike/string.h>
+#include <string>
 
 class FastOS_FileInterface;
 
@@ -13,7 +13,8 @@ namespace search {
 class DirectIORandRead : public FileRandRead
 {
 public:
-    DirectIORandRead(const vespalib::string & fileName);
+    DirectIORandRead(const std::string & fileName);
+    ~DirectIORandRead() override;
     FSP read(size_t offset, vespalib::DataBuffer & buffer, size_t sz) override;
     int64_t getSize() const override;
 private:
@@ -26,7 +27,8 @@ private:
 class MMapRandRead : public FileRandRead
 {
 public:
-    MMapRandRead(const vespalib::string & fileName, int mmapFlags, int fadviseOptions);
+    MMapRandRead(const std::string & fileName, int mmapFlags, int fadviseOptions);
+    ~MMapRandRead() override;
     FSP read(size_t offset, vespalib::DataBuffer & buffer, size_t sz) override;
     int64_t getSize() const override;
     const void * getMapping();
@@ -37,13 +39,14 @@ private:
 class MMapRandReadDynamic : public FileRandRead
 {
 public:
-    MMapRandReadDynamic(const vespalib::string & fileName, int mmapFlags, int fadviseOptions);
+    MMapRandReadDynamic(const std::string & fileName, int mmapFlags, int fadviseOptions);
+    ~MMapRandReadDynamic() override;
     FSP read(size_t offset, vespalib::DataBuffer & buffer, size_t sz) override;
     int64_t getSize() const override;
 private:
     static bool contains(const FastOS_FileInterface & file, size_t sz);
     void remap(size_t end);
-    vespalib::string                          _fileName;
+    std::string                          _fileName;
     vespalib::PtrHolder<FastOS_FileInterface> _holder;
     int                                       _mmapFlags;
     int                                       _fadviseOptions;
@@ -53,7 +56,8 @@ private:
 class NormalRandRead : public FileRandRead
 {
 public:
-    NormalRandRead(const vespalib::string & fileName);
+    NormalRandRead(const std::string & fileName);
+    ~NormalRandRead() override;
     FSP read(size_t offset, vespalib::DataBuffer & buffer, size_t sz) override;
     int64_t getSize() const override;
 private:

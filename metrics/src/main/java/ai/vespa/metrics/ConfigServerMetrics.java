@@ -66,6 +66,9 @@ public enum ConfigServerMetrics implements VespaMetrics {
     CLUSTER_LOAD_IDEAL_CPU("cluster.load.ideal.cpu", Unit.FRACTION, "The ideal cpu load of a certain cluster"),
     CLUSTER_LOAD_IDEAL_MEMORY("cluster.load.ideal.memory", Unit.FRACTION, "The ideal memory load of a certain cluster"),
     CLUSTER_LOAD_IDEAL_DISK("cluster.load.ideal.disk", Unit.FRACTION, "The ideal disk load of a certain cluster"),
+    CLUSTER_LOAD_PEAK_CPU("cluster.load.peak.cpu", Unit.FRACTION, "The peak cpu load in the period considered of a certain cluster"),
+    CLUSTER_LOAD_PEAK_MEMORY("cluster.load.peak.memory", Unit.FRACTION, "The peak memory load in the period considered of a certain cluster"),
+    CLUSTER_LOAD_PEAK_DISK("cluster.load.peak.disk", Unit.FRACTION, "The peak disk load in the period considered of a certain cluster"),
 
     ZONE_WORKING("zone.working", Unit.BINARY, "The value 1 if zone is considered healthy, 0 if not. This is decided by considering the number of non-active nodes vs the number of active nodes in a zone"),
     CACHE_NODE_OBJECT_HIT_RATE("cache.nodeObject.hitRate", Unit.FRACTION, "The fraction of cache hits vs cache lookups for the node object cache"),
@@ -90,6 +93,7 @@ public enum ConfigServerMetrics implements VespaMetrics {
     FAIL_REPORT("failReport", Unit.BINARY, "One if there is a fail report for the node, zero if not"),
     SUSPENDED("suspended", Unit.BINARY, "One if the node is suspended, zero if not"),
     SUSPENDED_SECONDS("suspendedSeconds", Unit.SECOND, "The number of seconds the node has been suspended"),
+    ACTIVE_SECONDS("activeSeconds", Unit.SECOND, "The number of seconds the node has been active"),
     NUMBER_OF_SERVICES_UP("numberOfServicesUp", Unit.INSTANCE, "The number of services confirmed to be running on a node"),
     NUMBER_OF_SERVICES_NOT_CHECKED("numberOfServicesNotChecked", Unit.INSTANCE, "The number of services supposed to run on a node, that has not checked"),
     NUMBER_OF_SERVICES_DOWN("numberOfServicesDown", Unit.INSTANCE, "The number of services confirmed to not be running on a node"),

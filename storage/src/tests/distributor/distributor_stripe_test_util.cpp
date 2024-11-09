@@ -16,6 +16,7 @@
 #include <vespa/vdslib/distribution/distribution.h>
 #include <vespa/vespalib/text/stringtokenizer.h>
 #include <vespa/vespalib/stllike/hash_map.hpp>
+#include <cctype>
 
 using document::test::makeBucketSpace;
 using document::test::makeDocumentBucket;
@@ -32,7 +33,7 @@ DistributorStripeTestUtil::DistributorStripeTestUtil()
       _done_initializing(true),
       _messageSender(_sender, _senderDown)
 {
-    _config = getStandardConfig(false);
+    _config = StorageConfigSet::make_distributor_node_config();
 }
 
 DistributorStripeTestUtil::~DistributorStripeTestUtil() = default;
@@ -40,7 +41,7 @@ DistributorStripeTestUtil::~DistributorStripeTestUtil() = default;
 void
 DistributorStripeTestUtil::createLinks()
 {
-    _node = std::make_unique<TestDistributorApp>(_config.getConfigId());
+    _node = std::make_unique<TestDistributorApp>(_config->config_uri());
     _metrics = std::make_shared<DistributorMetricSet>();
     _ideal_state_metrics = std::make_shared<IdealStateMetricSet>();
     _stripe = std::make_unique<DistributorStripe>(_node->getComponentRegister(), *_metrics, *_ideal_state_metrics,
@@ -77,7 +78,7 @@ DistributorStripeTestUtil::setup_stripe(int redundancy, int node_count, const li
     // trigger_distribution_change().
     // This isn't pretty, folks, but it avoids breaking the world for now,
     // as many tests have implicit assumptions about this being the behavior.
-    auto new_configs = BucketSpaceDistributionConfigs::from_default_distribution(std::move(distribution));
+    auto new_configs = lib::BucketSpaceDistributionConfigs::from_default_distribution(std::move(distribution));
     _stripe->update_distribution_config(new_configs);
 }
 
@@ -95,7 +96,7 @@ void
 DistributorStripeTestUtil::trigger_distribution_change(lib::Distribution::SP distr)
 {
     _node->getComponentRegister().setDistribution(distr);
-    auto new_config = BucketSpaceDistributionConfigs::from_default_distribution(std::move(distr));
+    auto new_config = lib::BucketSpaceDistributionConfigs::from_default_distribution(std::move(distr));
     _stripe->update_distribution_config(new_config);
 }
 
@@ -141,7 +142,7 @@ DistributorStripeTestUtil::configure_stripe(const ConfigBuilder& builder)
 }
 
 void
-DistributorStripeTestUtil::receive_set_system_state_command(const vespalib::string& state_str)
+DistributorStripeTestUtil::receive_set_system_state_command(const std::string& state_str)
 {
     auto state_cmd = std::make_shared<api::SetSystemStateCommand>(lib::ClusterState(state_str));
     _stripe->handleMessage(state_cmd); // TODO move semantics
@@ -154,7 +155,7 @@ DistributorStripeTestUtil::handle_top_level_message(const std::shared_ptr<api::S
 }
 
 void
-DistributorStripeTestUtil::simulate_set_pending_cluster_state(const vespalib::string& state_str)
+DistributorStripeTestUtil::simulate_set_pending_cluster_state(const std::string& state_str)
 {
     lib::ClusterState state(state_str);
     lib::ClusterStateBundle pending_state(state);
@@ -184,8 +185,8 @@ DistributorStripeTestUtil::close()
 {
     _stripe->flush_and_close();
     _sender.clear();
-    _node.reset(0);
-    _config = getStandardConfig(false);
+    _node.reset();
+    _config = StorageConfigSet::make_distributor_node_config();
 }
 
 namespace {
@@ -279,7 +280,7 @@ DistributorStripeTestUtil::addNodesToBucketDB(const document::Bucket& bucket, co
         size_t flagsIdx = 3;
 
         // Meta info override? For simplicity, require both meta count and size
-        if (tok3.size() > 4 && (!tok3[3].empty() && isdigit(tok3[3][0]))) {
+        if (tok3.size() > 4 && (!tok3[3].empty() && std::isdigit(static_cast<unsigned char>(tok3[3][0])))) {
             info.setMetaCount(atoi(tok3[3].data()));
             info.setUsedFileSize(atoi(tok3[4].data()));
             flagsIdx = 5;
@@ -537,7 +538,7 @@ DistributorStripeTestUtil::getBucketSpaces() const
 }
 
 void
-DistributorStripeTestUtil::enable_cluster_state(vespalib::stringref state)
+DistributorStripeTestUtil::enable_cluster_state(std::string_view state)
 {
     getBucketDBUpdater().simulate_cluster_state_bundle_activation(lib::ClusterStateBundle(lib::ClusterState(state)));
 }

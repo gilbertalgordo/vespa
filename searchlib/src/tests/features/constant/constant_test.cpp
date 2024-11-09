@@ -1,7 +1,5 @@
 // Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
-#include <vespa/vespalib/testkit/test_kit.h>
-#include <iostream>
 #include <vespa/searchlib/features/setup.h>
 #include <vespa/searchlib/fef/fef.h>
 #include <vespa/searchlib/fef/test/ftlib.h>
@@ -13,6 +11,8 @@
 #include <vespa/eval/eval/value.h>
 #include <vespa/eval/eval/test/value_compare.h>
 #include <vespa/vespalib/util/stringfmt.h>
+#include <vespa/vespalib/testkit/test_kit.h>
+#include <vespa/vespalib/testkit/test_master.hpp>
 
 using search::feature_t;
 using namespace search::fef;
@@ -28,8 +28,7 @@ using vespalib::eval::Value;
 using vespalib::eval::ValueType;
 using vespalib::make_string_short::fmt;
 
-namespace
-{
+namespace {
 
 Value::UP make_tensor(const TensorSpec &spec) {
     return SimpleValue::from_spec(spec);
@@ -41,7 +40,7 @@ struct ExecFixture
 {
     BlueprintFactory factory;
     FtFeatureTest test;
-    ExecFixture(const vespalib::string &feature)
+    ExecFixture(const std::string &feature)
         : factory(),
           test(factory, feature)
     {
@@ -64,7 +63,7 @@ struct ExecFixture
     double executeDouble(uint32_t docId = 1) {
         return extractDouble(docId);
     }
-    void addTensor(const vespalib::string &name,
+    void addTensor(const std::string &name,
                    const TensorSpec &spec)
     {
         Value::UP tensor = make_tensor(spec);
@@ -73,12 +72,12 @@ struct ExecFixture
                                             std::move(type),
                                             std::move(tensor));
     }
-    void addDouble(const vespalib::string &name, const double value) {
+    void addDouble(const std::string &name, const double value) {
         test.getIndexEnv().addConstantValue(name,
                                             ValueType::double_type(),
                                             std::make_unique<DoubleValue>(value));
     }
-    void addTypeValue(const vespalib::string &name, const vespalib::string &type, const vespalib::string &value) {
+    void addTypeValue(const std::string &name, const std::string &type, const std::string &value) {
         auto &props = test.getIndexEnv().getProperties();
         auto type_prop = fmt("constant(%s).type", name.c_str());
         auto value_prop = fmt("constant(%s).value", name.c_str());

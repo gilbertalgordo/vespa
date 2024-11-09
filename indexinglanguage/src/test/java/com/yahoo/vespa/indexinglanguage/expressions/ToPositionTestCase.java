@@ -31,16 +31,16 @@ public class ToPositionTestCase {
     public void requireThatExpressionCanBeVerified() {
         Expression exp = new ToPositionExpression();
         assertVerify(DataType.STRING, exp, PositionDataType.INSTANCE);
-        assertVerifyThrows(null, exp, "Expected string input, but no input is specified");
-        assertVerifyThrows(DataType.INT, exp, "Expected string input, got int");
+        assertVerifyThrows("Invalid expression 'to_pos': Expected string input, but no input is specified", null, exp);
+        assertVerifyThrows("Invalid expression 'to_pos': Expected string input, got int", DataType.INT, exp);
     }
 
     @Test
     public void requireThatPositionIsParsed() {
         ExecutionContext ctx = new ExecutionContext(new SimpleTestAdapter());
-        ctx.setValue(new StringFieldValue("6;9")).execute(new ToPositionExpression());
+        ctx.setCurrentValue(new StringFieldValue("6;9")).execute(new ToPositionExpression());
 
-        FieldValue out = ctx.getValue();
+        FieldValue out = ctx.getCurrentValue();
         assertTrue(out instanceof StructuredFieldValue);
         assertEquals(PositionDataType.INSTANCE, out.getDataType());
 

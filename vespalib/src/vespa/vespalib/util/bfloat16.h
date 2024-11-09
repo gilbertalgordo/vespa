@@ -74,7 +74,7 @@ public:
     constexpr float to_float() const noexcept { return bits_to_float(_bits); }
     constexpr void assign(float value) noexcept { _bits = float_to_bits(value); }
 
-    constexpr uint16_t get_bits() const { return _bits; }
+    constexpr uint16_t get_bits() const noexcept { return _bits; }
     constexpr void assign_bits(uint16_t value) noexcept { _bits = value; }
 };
 
@@ -106,7 +106,7 @@ public:
     static constexpr int max_digits10 = 4;
 
     static constexpr int min_exponent = -125;
-    static constexpr int min_exponent10 = -2;
+    static constexpr int min_exponent10 = -37;
 
     static constexpr int max_exponent = 128;
     static constexpr int max_exponent10 = 38;

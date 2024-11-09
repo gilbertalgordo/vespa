@@ -3,11 +3,11 @@
 
 #include <vespa/document/predicate/predicate.h>
 #include <vespa/vespalib/data/slime/slime.h>
-#include <vespa/vespalib/testkit/testapp.h>
+#include <vespa/vespalib/testkit/test_kit.h>
 
 #include <vespa/document/predicate/predicate_slime_builder.h>
-#include <string>
 #include <climits>
+#include <string>
 
 #include <vespa/log/log.h>
 LOG_SETUP("predicate_test");
@@ -195,8 +195,8 @@ TEST("require that feature range can be open") {
     EXPECT_EQUAL(feature_name, set.getKey());
     EXPECT_FALSE(set.hasMin());
     EXPECT_FALSE(set.hasMax());
-    EXPECT_EQUAL(LLONG_MIN, set.getMin());
-    EXPECT_EQUAL(LLONG_MAX, set.getMax());
+    EXPECT_EQUAL(LONG_MIN, set.getMin());
+    EXPECT_EQUAL(LONG_MAX, set.getMax());
 }
 
 PredicateNode::UP getPredicateNode() {

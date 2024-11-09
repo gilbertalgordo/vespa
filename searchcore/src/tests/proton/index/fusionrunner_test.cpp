@@ -26,6 +26,7 @@
 #include <vespa/vespalib/stllike/asciistream.h>
 #include <filesystem>
 #include <set>
+#include <string>
 
 using document::Document;
 using document::FieldValue;
@@ -81,7 +82,7 @@ protected:
     void TearDown() override;
 
     void createIndex(const string &dir, uint32_t id, bool fusion = false);
-    void checkResults(uint32_t fusion_id, const uint32_t *ids, size_t size);
+    static void checkResults(uint32_t fusion_id, const uint32_t *ids, size_t size);
 
     void requireThatNoDiskIndexesGiveId0();
     void requireThatOneDiskIndexCausesCopy();
@@ -99,7 +100,7 @@ FusionRunnerTest::FusionRunnerTest()
       _fusion_spec(),
       _fileHeaderContext(),
       _service(1),
-      _ops(_fileHeaderContext,TuneFileIndexManager(), 0, _service.write())
+      _ops(_fileHeaderContext,TuneFileIndexManager(), {}, 0, _service.write())
 { }
 
 FusionRunnerTest::~FusionRunnerTest() = default;
@@ -169,7 +170,7 @@ FusionRunnerTest::createIndex(const string &dir, uint32_t id, bool fusion)
         ost << dir << "/index.flush." << id;
         _fusion_spec.flush_ids.push_back(id);
     }
-    const string index_dir = ost.str();
+    std::string_view index_dir = ost.view();
     _selector->setDefaultSource(id - _selector->getBaseId());
 
     DocBuilder doc_builder(add_fields);
@@ -192,14 +193,14 @@ FusionRunnerTest::createIndex(const string &dir, uint32_t id, bool fusion)
         memory_index.dump(index_builder);
     }
 
-    _selector->extractSaveInfo(index_dir + "/selector")->save(tuneFileAttributes, _fileHeaderContext);
+    _selector->extractSaveInfo(std::string(index_dir) + "/selector")->save(tuneFileAttributes, _fileHeaderContext);
 }
 
 set<uint32_t>
 readFusionIds(const string &dir)
 {
     set<uint32_t> ids;
-    const vespalib::string prefix("index.fusion.");
+    const std::string prefix("index.fusion.");
     std::filesystem::directory_iterator dir_scan(dir);
     for (auto& entry : dir_scan) {
         if (entry.is_directory() && entry.path().filename().string().find(prefix) == 0) {
@@ -213,7 +214,7 @@ readFusionIds(const string &dir)
     return ids;
 }
 
-vespalib::string
+std::string
 getFusionIndexName(uint32_t fusion_id)
 {
    vespalib::asciistream ost;
@@ -225,7 +226,7 @@ void
 FusionRunnerTest::checkResults(uint32_t fusion_id, const uint32_t *ids, size_t size)
 {
     FakeRequestContext requestContext;
-    DiskIndex disk_index(getFusionIndexName(fusion_id));
+    DiskIndex disk_index(getFusionIndexName(fusion_id), {});
     ASSERT_TRUE(disk_index.setup(TuneFileSearch()));
     uint32_t fieldId = 0;
 
@@ -240,8 +241,9 @@ FusionRunnerTest::checkResults(uint32_t fusion_id, const uint32_t *ids, size_t s
     search::queryeval::Searchable &searchable = disk_index;
     SimpleStringTerm node(term, field_name, fieldId, search::query::Weight(0));
     Blueprint::UP blueprint = searchable.createBlueprint(requestContext, fields, node);
-    blueprint->fetchPostings(search::queryeval::ExecuteInfo::TRUE);
-    SearchIterator::UP search = blueprint->createSearch(*match_data, true);
+    blueprint->basic_plan(true, 1000);
+    blueprint->fetchPostings(search::queryeval::ExecuteInfo::FULL);
+    SearchIterator::UP search = blueprint->createSearch(*match_data);
     search->initFullRange();
     for (size_t i = 0; i < size; ++i) {
         EXPECT_TRUE(search->seek(ids[i]));

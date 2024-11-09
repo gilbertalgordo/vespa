@@ -7,11 +7,7 @@
 #include <vespa/searchlib/predicate/predicate_index.h>
 #include <vespa/searchlib/predicate/predicate_tree_annotator.h>
 #include <vespa/searchlib/predicate/predicate_hash.h>
-#include <vespa/vespalib/testkit/testapp.h>
-#include <string>
-
-#include <vespa/log/log.h>
-LOG_SETUP("document_features_store_test");
+#include <vespa/vespalib/testkit/test_kit.h>
 
 using namespace search;
 using namespace search::predicate;
@@ -175,18 +171,19 @@ TEST("require that both features and ranges are removed by 'remove'") {
 }
 
 TEST("require that both features and ranges counts towards memory usage") {
+    constexpr size_t BASE_USED = 557152u;
     DocumentFeaturesStore features_store(10);
-    EXPECT_EQUAL(562024u, features_store.getMemoryUsage().usedBytes());
+    EXPECT_EQUAL(BASE_USED, features_store.getMemoryUsage().usedBytes());
 
     PredicateTreeAnnotations annotations;
     annotations.features.push_back(PredicateHash::hash64("foo=100-199"));
     features_store.insert(annotations, doc_id);
-    EXPECT_EQUAL(562376u, features_store.getMemoryUsage().usedBytes());
+    EXPECT_EQUAL(BASE_USED + 352u, features_store.getMemoryUsage().usedBytes());
 
     annotations.features.clear();
     annotations.range_features.push_back({"foo", 100, 199});
     features_store.insert(annotations, doc_id + 1);
-    EXPECT_EQUAL(562480u, features_store.getMemoryUsage().usedBytes());
+    EXPECT_EQUAL(BASE_USED + 456u, features_store.getMemoryUsage().usedBytes());
 }
 
 TEST("require that DocumentFeaturesStore can be serialized") {
@@ -212,24 +209,23 @@ TEST("require that DocumentFeaturesStore can be serialized") {
 }
 
 TEST("require that serialization cleans up wordstore") {
+    constexpr size_t BASE_USED = 557592u;
     DocumentFeaturesStore features_store(10);
     PredicateTreeAnnotations annotations;
     annotations.range_features.push_back({"foo", 100, 199});
     features_store.insert(annotations, doc_id);
-    EXPECT_EQUAL(562464u, features_store.getMemoryUsage().usedBytes());
+    EXPECT_EQUAL(BASE_USED, features_store.getMemoryUsage().usedBytes());
     annotations.range_features.push_back({"bar", 100, 199});
     features_store.insert(annotations, doc_id + 1);
-    EXPECT_EQUAL(562524u, features_store.getMemoryUsage().usedBytes());
+    EXPECT_EQUAL(BASE_USED +60u, features_store.getMemoryUsage().usedBytes());
     features_store.remove(doc_id + 1);
-    EXPECT_EQUAL(562524u, features_store.getMemoryUsage().usedBytes());
+    EXPECT_EQUAL(BASE_USED + 60u, features_store.getMemoryUsage().usedBytes());
 
     vespalib::DataBuffer buffer;
     save_document_features_store(features_store, buffer);
     DocumentFeaturesStore features_store2(buffer);
-    EXPECT_EQUAL(562464u, features_store2.getMemoryUsage().usedBytes());
+    EXPECT_EQUAL(BASE_USED, features_store2.getMemoryUsage().usedBytes());
 }
 
 
 }  // namespace
-
-TEST_MAIN() { TEST_RUN_ALL(); }

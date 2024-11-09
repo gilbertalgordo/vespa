@@ -22,7 +22,7 @@ using ARIConfig = AttributeReprocessingInitializer::Config;
 
 void
 FastAccessDocSubDBConfigurer::reconfigureFeedView(FastAccessFeedView & curr,
-                                                  std::shared_ptr<Schema> schema,
+                                                  std::shared_ptr<const Schema> schema,
                                                   std::shared_ptr<const DocumentTypeRepo> repo,
                                                   std::shared_ptr<IAttributeWriter> writer)
 {
@@ -39,7 +39,7 @@ FastAccessDocSubDBConfigurer::reconfigureFeedView(FastAccessFeedView & curr,
 }
 
 FastAccessDocSubDBConfigurer::FastAccessDocSubDBConfigurer(FeedViewVarHolder &feedView,
-                                                           const vespalib::string &subDbName)
+                                                           const std::string &subDbName)
     : _feedView(feedView),
       _subDbName(subDbName)
 {

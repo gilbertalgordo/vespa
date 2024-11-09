@@ -57,8 +57,8 @@ using vespalib::eval::Value;
 using vespalib::eval::ValueType;
 using vespalib::make_string_short::fmt;
 
-std::optional<vespalib::string>
-get_file(const vespalib::string &ref, const VerifyRanksetupConfig &myCfg) {
+std::optional<std::string>
+get_file(const std::string &ref, const VerifyRanksetupConfig &myCfg) {
     for (const auto &entry: myCfg.file) {
         if (ref == entry.ref) {
             return entry.path;
@@ -130,13 +130,13 @@ struct DummyRankingAssetsRepo : IRankingAssetsRepo {
     OnnxModels _onnxModels;
     DummyRankingAssetsRepo(const RankingConstantsConfig &cfg_in, RankingExpressions expressions, OnnxModels onnxModels);
     ~DummyRankingAssetsRepo() override;
-    [[nodiscard]] vespalib::eval::ConstantValue::UP getConstant(const vespalib::string &name) const override;
+    [[nodiscard]] vespalib::eval::ConstantValue::UP getConstant(const std::string &name) const override;
 
-    [[nodiscard]] vespalib::string getExpression(const vespalib::string & name) const override {
+    [[nodiscard]] std::string getExpression(const std::string & name) const override {
         return _expressions.loadExpression(name);
     }
 
-    [[nodiscard]] const search::fef::OnnxModel *getOnnxModel(const vespalib::string & name) const override {
+    [[nodiscard]] const search::fef::OnnxModel *getOnnxModel(const std::string & name) const override {
         return _onnxModels.getModel(name);
     }
 };
@@ -150,7 +150,7 @@ DummyRankingAssetsRepo::DummyRankingAssetsRepo(const RankingConstantsConfig &cfg
 DummyRankingAssetsRepo::~DummyRankingAssetsRepo() = default;
 
 vespalib::eval::ConstantValue::UP
-DummyRankingAssetsRepo::getConstant(const vespalib::string &name) const {
+DummyRankingAssetsRepo::getConstant(const std::string &name) const {
     for (const auto &entry: cfg.constant) {
         if (entry.name == name) {
             try {
@@ -220,10 +220,12 @@ VerifyRankSetup::verifyConfig(const VerifyRanksetupConfig &myCfg,
     if (_searchMode == SearchMode::STREAMING) {
         streamingProto.set_ranking_assets_repo(repo);
         streamingProto.detectFields(vsmFieldsCfg);
+        streamingProto.add_virtual_fields();
         factory = [&](const search::fef::Properties &properties)
                   {
                       auto indexEnv = streamingProto.clone();
                       indexEnv->getProperties().import(properties);
+                      indexEnv->fixup_fields();
                       return indexEnv;
                   };
     } else {
@@ -258,7 +260,7 @@ VerifyRankSetup::verify(const std::string & configid)
     bool ok = false;
     try {
         auto ctx = std::make_shared<ConfigContext>(*config::legacyConfigId2Spec(configid));
-        vespalib::string cfgId(config::legacyConfigId2ConfigId(configid));
+        std::string cfgId(config::legacyConfigId2ConfigId(configid));
         ConfigSubscriber subscriber(ctx);
         ConfigHandle<VerifyRanksetupConfig>::UP myHandle = subscriber.subscribe<VerifyRanksetupConfig>(cfgId);
         ConfigHandle<RankProfilesConfig>::UP rankHandle = subscriber.subscribe<RankProfilesConfig>(cfgId);

@@ -23,7 +23,7 @@
 namespace storage::framework {
 
 struct XmlStatusReporter : public StatusReporter {
-    XmlStatusReporter(vespalib::stringref id, vespalib::stringref name);
+    XmlStatusReporter(std::string_view id, std::string_view name);
     virtual ~XmlStatusReporter();
 
     virtual void initXmlReport(vespalib::xml::XmlOutputStream&,
@@ -32,14 +32,14 @@ struct XmlStatusReporter : public StatusReporter {
     /**
      * @return Empty string if ok, otherwise indicate a failure condition.
      */
-    virtual vespalib::string reportXmlStatus(vespalib::xml::XmlOutputStream&,
+    virtual std::string reportXmlStatus(vespalib::xml::XmlOutputStream&,
                                              const HttpUrlPath&) const = 0;
 
     virtual void finalizeXmlReport(vespalib::xml::XmlOutputStream&,
                                    const HttpUrlPath&) const;
 
     // Implementation of status reporter interface
-    vespalib::string getReportContentType(const HttpUrlPath&) const override;
+    std::string getReportContentType(const HttpUrlPath&) const override;
     bool reportStatus(std::ostream&, const HttpUrlPath&) const override;
 };
 
@@ -67,7 +67,7 @@ public:
     }
 
     vespalib::XmlOutputStream& getStream() { return _xos; }
-    vespalib::string reportXmlStatus(vespalib::xml::XmlOutputStream&, const HttpUrlPath&) const override { return ""; }
+    std::string reportXmlStatus(vespalib::xml::XmlOutputStream&, const HttpUrlPath&) const override { return ""; }
 
     template<typename T>
     PartlyXmlStatusReporter& operator<<(const T& v) {

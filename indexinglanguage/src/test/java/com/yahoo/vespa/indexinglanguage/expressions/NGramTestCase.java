@@ -46,17 +46,17 @@ public class NGramTestCase {
     public void requireThatExpressionCanBeVerified() {
         Expression exp = new NGramExpression(new SimpleLinguistics(), 69);
         assertVerify(DataType.STRING, exp, DataType.STRING);
-        assertVerifyThrows(null, exp, "Expected string input, but no input is specified");
-        assertVerifyThrows(DataType.INT, exp, "Expected string input, got int");
+        assertVerifyThrows("Invalid expression 'ngram 69': Expected string input, but no input is specified", null, exp);
+        assertVerifyThrows("Invalid expression 'ngram 69': Expected string input, got int", DataType.INT, exp);
     }
 
     @Test
     public void testNGrams() {
         ExecutionContext context = new ExecutionContext(new SimpleTestAdapter());
-        context.setValue(new StringFieldValue("en gul Bille sang... "));
+        context.setCurrentValue(new StringFieldValue("en gul Bille sang... "));
         new NGramExpression(new SimpleLinguistics(), 3).execute(context);
 
-        StringFieldValue value = (StringFieldValue)context.getValue();
+        StringFieldValue value = (StringFieldValue)context.getCurrentValue();
         assertEquals("Grams are pure annotations - field value is unchanged",
                      "en gul Bille sang... ", value.getString());
         SpanTree gramTree = value.getSpanTree(SpanTrees.LINGUISTICS);
@@ -80,15 +80,15 @@ public class NGramTestCase {
     @Test
     public void requireThatExecuteCanBeCalledMultipleTimes() {
         ExecutionContext context = new ExecutionContext(new SimpleTestAdapter());
-        context.setValue(new StringFieldValue("some random text string"));
+        context.setCurrentValue(new StringFieldValue("some random text string"));
         NGramExpression expression = new NGramExpression(new SimpleLinguistics(), 3);
 
         expression.execute(context);
-        SpanTree firstTree = ((StringFieldValue)context.getValue()).getSpanTree(SpanTrees.LINGUISTICS);
+        SpanTree firstTree = ((StringFieldValue)context.getCurrentValue()).getSpanTree(SpanTrees.LINGUISTICS);
         assertNotNull(firstTree);
 
         expression.execute(context);
-        SpanTree secondTree = ((StringFieldValue)context.getValue()).getSpanTree(SpanTrees.LINGUISTICS);
+        SpanTree secondTree = ((StringFieldValue)context.getCurrentValue()).getSpanTree(SpanTrees.LINGUISTICS);
         // The span tree instance should be the same.
         assertEquals(firstTree, secondTree);
     }

@@ -152,13 +152,14 @@ public class InMemoryProvisioner implements HostProvisioner {
     public HostSpec allocateHost(String alias) {
         List<Host> defaultHosts = freeNodes.get(defaultHostResources);
         if (defaultHosts.isEmpty()) throw new IllegalArgumentException("No more hosts with default resources available");
+
         Host newHost = freeNodes.removeValue(defaultHostResources, 0);
         return new HostSpec(newHost.hostname(), Optional.empty());
     }
 
     @Override
     public List<HostSpec> prepare(ClusterSpec cluster, Capacity requested, ProvisionLogger logger) {
-        provisioned.add(cluster.id(), requested);
+        provisioned.add(cluster, requested);
         clusters.add(cluster);
         if (environment == Environment.dev && ! requested.isRequired()) {
             requested = requested.withLimits(requested.minResources().withNodes(1),
@@ -305,8 +306,8 @@ public class InMemoryProvisioner implements HostProvisioner {
 
         @Override
         public int compare(NodeResources a, NodeResources b) {
-            if (a.memoryGb() > b.memoryGb()) return 1;
-            if (a.memoryGb() < b.memoryGb()) return -1;
+            if (a.memoryGiB() > b.memoryGiB()) return 1;
+            if (a.memoryGiB() < b.memoryGiB()) return -1;
             if (a.diskGb() > b.diskGb()) return 1;
             if (a.diskGb() < b.diskGb()) return -1;
             return Double.compare(a.vcpu(), b.vcpu());

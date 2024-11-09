@@ -1,12 +1,14 @@
 // Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.search.test;
 
+import ai.vespa.opennlp.OpenNlpConfig;
 import com.yahoo.component.chain.Chain;
 import com.yahoo.language.Language;
 import com.yahoo.language.Linguistics;
 import com.yahoo.language.detect.Detection;
 import com.yahoo.language.detect.Detector;
 import com.yahoo.language.detect.Hint;
+import com.yahoo.language.opennlp.OpenNlpLinguistics;
 import com.yahoo.language.process.StemMode;
 import com.yahoo.language.process.Token;
 import com.yahoo.language.simple.SimpleDetector;
@@ -33,6 +35,7 @@ import com.yahoo.search.Searcher;
 import com.yahoo.search.grouping.GroupingQueryParser;
 import com.yahoo.search.query.QueryTree;
 import com.yahoo.search.query.SessionId;
+import com.yahoo.search.query.parser.ParserEnvironment.ParserSettings;
 import com.yahoo.search.query.profile.DimensionValues;
 import com.yahoo.search.query.profile.QueryProfile;
 import com.yahoo.search.query.profile.QueryProfileRegistry;
@@ -40,6 +43,7 @@ import com.yahoo.search.query.profile.compiled.CompiledQueryProfileRegistry;
 import com.yahoo.search.query.profile.types.FieldDescription;
 import com.yahoo.search.query.profile.types.QueryProfileType;
 import com.yahoo.search.result.Hit;
+import com.yahoo.search.schema.SchemaInfo;
 import com.yahoo.search.searchchain.Execution;
 import com.yahoo.yolean.Exceptions;
 import org.junit.jupiter.api.Disabled;
@@ -304,6 +308,24 @@ public class QueryTestCase {
         profile.set("myField", "Profile: %{queryProfile}", null);
         Query q = new Query(QueryTestCase.httpEncode("/search?queryProfile=myProfile"), profile.compile(null));
         assertEquals("Profile: myProfile", q.properties().get("myField"));
+    }
+
+    /** Select is special handled due to the strange idea to also use it to contain subproperties with JSON. */
+    @Test
+    void testQueryProfileWithSelect() {
+        String grouping = "all(group(customerid) each(output(count())))";
+
+        { // select in the request
+            QueryProfile profile = new QueryProfile("myProfile");
+            Query q = new Query(QueryTestCase.httpEncode("/search?query=macbook&queryProfile=myProfile&select=" + grouping), profile.compile(null));
+            assertEquals(grouping, q.getSelect().getGroupingExpressionString());
+        }
+        { // select in the query profile
+            QueryProfile profile = new QueryProfile("myProfile");
+            profile.set("select", grouping, null);
+            Query q = new Query(QueryTestCase.httpEncode("/search?query=macbook&queryProfile=myProfile"), profile.compile(null));
+            assertEquals(grouping, q.getSelect().getGroupingExpressionString());
+        }
     }
 
     @Test
@@ -1012,16 +1034,52 @@ public class QueryTestCase {
         }
     }
 
+    private static void useParserSettings(Query query) {
+        var lqp = new ParserSettings(true, true, true, true);
+        var schemaStub = SchemaInfo.createStub(lqp);
+        var ctx = Execution.Context.createContextStub(schemaStub);
+        query.getModel().getExecution().context().populateFrom(ctx);
+    }
+
+    private static void disableParserSettings(Query query) {
+        var lqp = new ParserSettings(false, false, false, false);
+        var schemaStub = SchemaInfo.createStub(lqp);
+        var ctx = Execution.Context.createContextStub(schemaStub);
+        query.getModel().getExecution().context().populateFrom(ctx);
+    }
+
     @Test
-    void testImplicitPhraseIsDefault() {
+    void testImplicitSegmentAnd() {
         Query query = new Query(httpEncode("?query=it's fine"));
+        useParserSettings(query);
         assertEquals("WEAKAND(100) (SAND it s) fine", query.getModel().getQueryTree().toString());
+        query = new Query(httpEncode("?query=it's fine"));
+        disableParserSettings(query);
+        assertEquals("WEAKAND(100) it s fine", query.getModel().getQueryTree().toString());
+    }
+
+    @Test
+    void testIdeographicPunctuation() {
+        Query query = new Query("?query=音、声");
+        useParserSettings(query);
+        assertEquals("WEAKAND(100) (AND 音 声)", query.getModel().getQueryTree().toString());
+
+        query = new Query("?query=ど。の");
+        useParserSettings(query);
+        assertEquals("WEAKAND(100) (AND ど の)", query.getModel().getQueryTree().toString());
+
+        query = new Query("?query=音、声");
+        disableParserSettings(query);
+        assertEquals("WEAKAND(100) 音 声", query.getModel().getQueryTree().toString());
+
+        query = new Query("?query=ど。の");
+        disableParserSettings(query);
+        assertEquals("WEAKAND(100) ど の", query.getModel().getQueryTree().toString());
     }
 
     @Test
     void testImplicitPhrase() {
-        Query query = new Query(httpEncode("?query=myfield:it's myfield:a.b myfield:c&type=all"));
-
+        Query query = new Query(httpEncode("?query=myfield:it's myfield:a.b myfield:c"));
         SearchDefinition test = new SearchDefinition("test");
         Index myField = new Index("myfield");
         myField.addCommand("phrase-segmenting true");
@@ -1029,8 +1087,7 @@ public class QueryTestCase {
         test.addIndex(myField);
         IndexModel indexModel = new IndexModel(test);
         query.getModel().setExecution(new Execution(Execution.Context.createContextStub(new IndexFacts(indexModel))));
-
-        assertEquals("AND myfield:'it s' myfield:\"a b\" myfield:c", query.getModel().getQueryTree().toString());
+        assertEquals("WEAKAND(100) myfield:'it s' myfield:\"a b\" myfield:c", query.getModel().getQueryTree().toString());
     }
 
     @Test
@@ -1044,7 +1101,7 @@ public class QueryTestCase {
         test.addIndex(myField);
         IndexModel indexModel = new IndexModel(test);
         query.getModel().setExecution(new Execution(Execution.Context.createContextStub(new IndexFacts(indexModel))));
-
+        useParserSettings(query);
         assertEquals("WEAKAND(100) (SAND myfield:it myfield:s) (AND myfield:a myfield:b) myfield:c", query.getModel().getQueryTree().toString());
         // 'it' and 's' should have connectivity 1
         WeakAndItem root = (WeakAndItem) query.getModel().getQueryTree().getRoot();
@@ -1055,6 +1112,13 @@ public class QueryTestCase {
         assertEquals("s", s.getWord());
         assertEquals(s, it.getConnectedItem());
         assertEquals(1.0, it.getConnectivity(), 0.00000001);
+        query = new Query(httpEncode("?query=myfield:it's myfield:a.b myfield:c"));
+        query.getModel().setExecution(new Execution(Execution.Context.createContextStub(new IndexFacts(indexModel))));
+        assertEquals("WEAKAND(100) myfield:it myfield:s (AND myfield:a myfield:b) myfield:c", query.getModel().getQueryTree().toString());
+        query = new Query(httpEncode("?query=myfield:it's myfield:a.b myfield:c"));
+        query.getModel().setExecution(new Execution(Execution.Context.createContextStub(new IndexFacts(indexModel))));
+        disableParserSettings(query);
+        assertEquals("WEAKAND(100) myfield:it myfield:s myfield:a myfield:b myfield:c", query.getModel().getQueryTree().toString());
     }
 
     @Test
@@ -1193,6 +1257,17 @@ public class QueryTestCase {
             CompiledQueryProfileRegistry cRegistry = registry.compile();
             Query query = new Query("?query=foo&presentation.format=xml", cRegistry.findQueryProfile("default"));
         }
+    }
+
+    @Test
+    public void testChinese() {
+        var query = new Query(httpEncode("?query=中村靖日驟逝"), null);
+        var execution = new Execution(Execution.Context.createContextStub(null, new IndexFacts(),
+                                                                          new OpenNlpLinguistics(new OpenNlpConfig.Builder().cjk(true)
+                                                                                                                            .createCjkGrams(true)
+                                                                                                                            .snowballStemmingForEnglish(true).build())));
+        query.getModel().setExecution(execution);
+        assertEquals("WEAKAND(100) 中村靖 日驟 逝", query.getModel().getQueryTree().toString());
     }
 
     private void assertDetectionText(String expectedDetectionText, String queryString, String ... indexSpecs) {

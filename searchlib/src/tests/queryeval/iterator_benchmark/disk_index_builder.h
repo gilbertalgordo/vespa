@@ -27,14 +27,14 @@ private:
     TuneFileAttributes _tune_file_attributes;
     TuneFileSearch _tune_file_search;
     search::index::DummyFileHeaderContext _file_header_ctx;
-    vespalib::string _index_dir;
+    std::string _index_dir;
     search::FixedSourceSelector _selector;
     search::diskindex::IndexBuilder _builder;
     std::unique_ptr<search::index::FieldIndexBuilder> _field_builder;
 
 public:
-    DiskIndexBuilder(const search::index::Schema& schema, vespalib::stringref index_dir, uint32_t docid_limit, uint64_t num_words);
-    void add_word(vespalib::stringref word, search::BitVector& docids, uint32_t num_occs);
+    DiskIndexBuilder(const search::index::Schema& schema, std::string_view index_dir, uint32_t docid_limit, uint64_t num_words);
+    void add_word(std::string_view word, search::BitVector& docids, uint32_t num_occs);
     std::unique_ptr<BenchmarkSearchable> build();
 };
 

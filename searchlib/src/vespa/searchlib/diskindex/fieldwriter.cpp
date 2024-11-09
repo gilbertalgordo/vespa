@@ -17,7 +17,7 @@ namespace search::diskindex {
 using vespalib::getLastErrorString;
 using common::FileHeaderContext;
 
-FieldWriter::FieldWriter(uint32_t docIdLimit, uint64_t numWordIds, vespalib::stringref prefix)
+FieldWriter::FieldWriter(uint32_t docIdLimit, uint64_t numWordIds, std::string_view prefix)
     : _dictFile(),
       _posoccfile(),
       _bvc(docIdLimit),
@@ -45,7 +45,7 @@ FieldWriter::open(uint32_t minSkipDocs,
                   const TuneFileSeqWrite &tuneFileWrite,
                   const FileHeaderContext &fileHeaderContext)
 {
-    vespalib::string name = _prefix + "posocc.dat.compressed";
+    std::string name = _prefix + "posocc.dat.compressed";
 
     PostingListParams params;
     PostingListParams featureParams;
@@ -69,7 +69,7 @@ FieldWriter::open(uint32_t minSkipDocs,
     _dictFile->setParams(countParams);
 
     _posoccfile = makePosOccWrite(_dictFile.get(), dynamicKPosOccFormat, params, featureParams, schema, indexId, field_length_info);
-    vespalib::string cname = _prefix + "dictionary";
+    std::string cname = _prefix + "dictionary";
 
     // Open output dictionary file
     if (!_dictFile->open(cname, tuneFileWrite, fileHeaderContext)) {
@@ -86,7 +86,7 @@ FieldWriter::open(uint32_t minSkipDocs,
     }
 
     // Open output boolocc.bdat file
-    vespalib::string booloccbidxname = _prefix + "boolocc";
+    std::string booloccbidxname = _prefix + "boolocc";
     _bmapfile.open(booloccbidxname.c_str(), _docIdLimit, tuneFileWrite, fileHeaderContext);
 
     return true;
@@ -114,7 +114,7 @@ FieldWriter::flush()
 }
 
 void
-FieldWriter::newWord(uint64_t wordNum, vespalib::stringref word)
+FieldWriter::newWord(uint64_t wordNum, std::string_view word)
 {
     assert(wordNum <= _numWordIds);
     assert(wordNum != noWordNum());
@@ -127,7 +127,7 @@ FieldWriter::newWord(uint64_t wordNum, vespalib::stringref word)
 }
 
 void
-FieldWriter::newWord(vespalib::stringref word)
+FieldWriter::newWord(std::string_view word)
 {
     newWord(_wordNum + 1, word);
 }
@@ -181,10 +181,10 @@ static const char *termOccNames[] =
 };
 
 void
-FieldWriter::remove(const vespalib::string &prefix)
+FieldWriter::remove(const std::string &prefix)
 {
     for (const char **j = termOccNames; *j != nullptr; ++j) {
-        vespalib::string tmpName = prefix + *j;
+        std::string tmpName = prefix + *j;
         std::filesystem::remove(std::filesystem::path(tmpName));
     }
 }

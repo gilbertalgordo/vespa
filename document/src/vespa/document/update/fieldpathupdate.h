@@ -21,7 +21,7 @@ class FieldPathUpdate
 {
 public:
     using nbostream = vespalib::nbostream;
-    using stringref = vespalib::stringref;
+    using string_view = std::string_view;
 
     enum FieldPathUpdateType {
         Add    = IDENTIFIABLE_CLASSID(AddFieldPathUpdate),
@@ -39,8 +39,8 @@ public:
         return ! (*this == other);
     }
 
-    const vespalib::string& getOriginalFieldPath() const { return _originalFieldPath; }
-    const vespalib::string& getOriginalWhereClause() const { return _originalWhereClause; }
+    const std::string& getOriginalFieldPath() const { return _originalFieldPath; }
+    const std::string& getOriginalWhereClause() const { return _originalWhereClause; }
 
     /**
      * Check that a given field value is of the type inferred by
@@ -61,12 +61,12 @@ public:
 
 protected:
     /** To be used for deserialization */
-    FieldPathUpdate(FieldPathUpdateType type) noexcept;
+    explicit FieldPathUpdate(FieldPathUpdateType type) noexcept;
     FieldPathUpdate(const FieldPathUpdate &);
     FieldPathUpdate & operator =(const FieldPathUpdate &);
 
-    static stringref getString(nbostream & stream);
-    FieldPathUpdate(FieldPathUpdateType type, stringref fieldPath, stringref whereClause = stringref());
+    static string_view getString(nbostream & stream);
+    FieldPathUpdate(FieldPathUpdateType type, string_view fieldPath, string_view whereClause = string_view());
 
     virtual void deserialize(const DocumentTypeRepo& repo, const DataType& type, nbostream & stream);
 
@@ -78,8 +78,8 @@ private:
     virtual std::unique_ptr<fieldvalue::IteratorHandler> getIteratorHandler(Document& doc, const DocumentTypeRepo & repo) const = 0;
 
     FieldPathUpdateType _type;
-    vespalib::string    _originalFieldPath;
-    vespalib::string    _originalWhereClause;
+    std::string    _originalFieldPath;
+    std::string    _originalWhereClause;
 };
 
 }

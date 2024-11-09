@@ -28,7 +28,6 @@ import static org.junit.jupiter.api.Assertions.*;
 public class SchemaImporterTestCase extends AbstractSchemaTestCase {
 
     @Test
-    @SuppressWarnings("deprecation")
     void testSimpleImporting() throws IOException, ParseException {
         RankProfileRegistry rankProfileRegistry = new RankProfileRegistry();
         ApplicationBuilder sb = new ApplicationBuilder(rankProfileRegistry, new QueryProfileRegistry());
@@ -40,7 +39,7 @@ public class SchemaImporterTestCase extends AbstractSchemaTestCase {
 
         SDDocumentType document = schema.getDocument();
         assertEquals("simple", document.getName());
-        assertEquals(20, document.getFieldCount());
+        assertEquals(19, document.getFieldCount());
 
         SDField field;
         Attribute attribute;

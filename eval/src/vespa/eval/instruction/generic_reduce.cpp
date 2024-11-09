@@ -27,7 +27,7 @@ struct ReduceParam {
     SparseReducePlan sparse_plan;
     DenseReducePlan dense_plan;
     const ValueBuilderFactory &factory;
-    ReduceParam(const ValueType &type, const std::vector<vespalib::string> &dimensions,
+    ReduceParam(const ValueType &type, const std::vector<std::string> &dimensions,
                 const ValueBuilderFactory &factory_in)
         : res_type(type.reduce(dimensions)),
           sparse_plan(type, res_type),
@@ -77,17 +77,17 @@ generic_reduce(const Value &value, const ReduceParam &param) {
     SparseReduceState sparse(param.sparse_plan);
     auto full_view = value.index().create_view({});
     full_view->lookup({});
-    ConstArrayRef<string_id*> keep_addr(sparse.keep_address);
+    std::span<string_id* const> keep_addr(sparse.keep_address);
     while (full_view->next_result(sparse.fetch_address, sparse.subspace)) {
         auto [tag, ignore] = map.lookup_or_add_entry(keep_addr);
-        AGGR *dst = map.get_values(tag).begin();
+        AGGR *dst = map.get_values(tag).data();
         auto sample = [&](size_t src_idx, size_t dst_idx) { dst[dst_idx].sample(cells[src_idx]); };
         param.dense_plan.execute(sparse.subspace * param.dense_plan.in_size, sample);
     }
     auto builder = param.factory.create_transient_value_builder<OCT>(param.res_type, param.sparse_plan.keep_dims.size(), param.dense_plan.out_size, map.size());
     map.each_entry([&](const auto &keys, const auto &values)
                    {
-                       OCT *dst = builder->add_subspace(keys).begin();
+                       OCT *dst = builder->add_subspace(keys).data();
                        for (const AGGR &aggr: values) {
                            *dst++ = aggr.result();
                        }
@@ -121,7 +121,7 @@ void my_generic_dense_reduce_op(State &state, uint64_t param_in) {
     auto out_cells = state.stash.create_uninitialized_array<OCT>(out_cells_size);
     if (num_subspaces > 0) {
         if constexpr (aggr::is_simple(AGGR::enum_value())) {
-            OCT *dst = out_cells.begin();
+            OCT *dst = out_cells.data();
             std::fill(out_cells.begin(), out_cells.end(), AGGR::null_value());
             auto combine = [&](size_t src_idx, size_t dst_idx) { dst[dst_idx] = AGGR::combine(dst[dst_idx], cells[src_idx]); };
             for (size_t i = 0; i < num_subspaces; ++i) {
@@ -304,7 +304,7 @@ using ReduceTypify = TypifyValue<TypifyCellMeta,TypifyBool,TypifyAggr>;
 
 Instruction
 GenericReduce::make_instruction(const ValueType &result_type,
-                                const ValueType &input_type, Aggr aggr, const std::vector<vespalib::string> &dimensions,
+                                const ValueType &input_type, Aggr aggr, const std::vector<std::string> &dimensions,
                                 const ValueBuilderFactory &factory, Stash &stash)
 {
     auto &param = stash.create<ReduceParam>(input_type, dimensions, factory);

@@ -15,8 +15,10 @@
 #include <vespa/searchlib/diskindex/pagedict4randread.h>
 #include <vespa/searchlib/common/tunefileinfo.h>
 #include <vespa/vespalib/util/signalhandler.h>
-#include <sstream>
 #include <cinttypes>
+#include <cstring>
+#include <optional>
+#include <sstream>
 
 #include <vespa/log/log.h>
 LOG_SETUP("pagedict4test");
@@ -357,6 +359,7 @@ checkCounts(const std::string &word,
 void
 testWords(const std::string &logname,
           vespalib::Rand48 &rnd,
+          std::optional<uint32_t> mmap_file_size_threshold,
           uint64_t numWordIds,
           uint32_t tupleCount,
           uint32_t chunkSize,
@@ -416,7 +419,7 @@ testWords(const std::string &logname,
                  ie = myrand.end();
              i != ie;
              ++i, ++wordNum) {
-            vespalib::string word;
+            std::string word;
             counts.clear();
             r.readCounts(word, checkWordNum, counts);
             checkCounts(word, counts, checkOffset, *i, chunkSize);
@@ -495,7 +498,14 @@ testWords(const std::string &logname,
         LOG(info, "%s: pagedict4 written", logname.c_str());
     }
     {
-        std::unique_ptr<DictionaryFileSeqRead> dr(new PageDict4FileSeqRead);
+        std::unique_ptr<DictionaryFileSeqRead> dr;
+        {
+            auto my_dr = std::make_unique<PageDict4FileSeqRead>();
+            if (mmap_file_size_threshold.has_value()) {
+                my_dr->set_mmap_file_size_threshold(mmap_file_size_threshold.value());
+            }
+            dr = std::move(my_dr);
+        }
         search::TuneFileSeqRead tuneFileRead;
 
         bool openres = dr->open("fakedict",
@@ -503,7 +513,7 @@ testWords(const std::string &logname,
         assert(openres);
         (void) openres;
         std::string lastWord;
-        vespalib::string checkWord;
+        std::string checkWord;
         PostingListCounts wCounts;
         PostingListCounts rCounts;
         uint64_t wordNum = 1;
@@ -535,14 +545,21 @@ testWords(const std::string &logname,
         LOG(info, "%s: pagedict4 seqverify OK", logname.c_str());
     }
     {
-        std::unique_ptr<DictionaryFileRandRead> drr(new PageDict4RandRead);
+        std::unique_ptr<DictionaryFileRandRead> drr;
+        {
+            auto my_drr = std::make_unique<PageDict4RandRead>();
+            if (mmap_file_size_threshold.has_value()) {
+                my_drr->set_mmap_file_size_threshold(mmap_file_size_threshold.value());
+            }
+            drr = std::move(my_drr);
+        }
         search::TuneFileRandRead tuneFileRead;
         bool openres = drr->open("fakedict",
                                  tuneFileRead);
         assert(openres);
         (void) openres;
         std::string lastWord;
-        vespalib::string checkWord;
+        std::string checkWord;
         PostingListCounts wCounts;
         PostingListCounts rCounts;
         uint64_t wOffset;
@@ -649,46 +666,50 @@ testWords(const std::string &logname,
 void
 PageDict4TestApp::testWords()
 {
-    ::testWords("smallchunkwordsempty", _rnd,
+    ::testWords("smallchunkwordsempty", _rnd, std::nullopt,
                 1000000, 0,
                 64, 80, 72, 64,
                 false, false, false);
-    ::testWords("smallchunkwordsempty2", _rnd,
+    ::testWords("smallchunkwordsempty2", _rnd, std::nullopt,
                 0, 0,
                 64, 80, 72, 64,
                 false, false, false);
-    ::testWords("smallchunkwords", _rnd,
+    ::testWords("smallchunkwords", _rnd, std::nullopt,
                 1000000, 100,
                 64, 80, 72, 64,
                 false, false, false);
-    ::testWords("smallchunkwordswithemptyword", _rnd,
+    ::testWords("smallchunkwordswithemptyword", _rnd, std::nullopt,
                 1000000, 100,
                 64, 80, 72, 64,
                 true, false, false);
-    ::testWords("smallchunkwordswithcommonfirstword", _rnd,
+    ::testWords("smallchunkwordswithcommonfirstword", _rnd, std::nullopt,
                 1000000, 100,
                 64, 80, 72, 64,
                 false, true, false);
-    ::testWords("smallchunkwordswithcommonemptyfirstword", _rnd,
+    ::testWords("smallchunkwordswithcommonemptyfirstword", _rnd, std::nullopt,
                 1000000, 100,
                 64, 80, 72, 64,
                 true, true, false);
-    ::testWords("smallchunkwordswithcommonlastword", _rnd,
+    ::testWords("smallchunkwordswithcommonlastword", _rnd, std::nullopt,
                 1000000, 100,
                 64, 80, 72, 64,
                 false, false, true);
-#if 1
-    ::testWords("smallchunkwords2", _rnd,
+    ::testWords("smallchunkwords2", _rnd, std::nullopt,
                 1000000, _stress ? 10000 : 100,
                 64, 80, 72, 64,
                 _emptyWord, _firstWordForcedCommon, _lastWordForcedCommon);
-#endif
-#if 1
-    ::testWords("stdwords", _rnd,
+    ::testWords("stdwords", _rnd, std::nullopt,
                 1000000, _stress ? 10000 : 100,
                 262144, 80, 72, 64,
                 _emptyWord, _firstWordForcedCommon, _lastWordForcedCommon);
-#endif
+    ::testWords("stdwordsnommapssdat", _rnd, 500_Mi,
+                1000000, 100,
+                262144, 80, 72, 64,
+                _emptyWord, _firstWordForcedCommon, _lastWordForcedCommon);
+    ::testWords("stdwordsmmapssdat", _rnd, 1,
+                1000000, 100,
+                262144, 80, 72, 64,
+                _emptyWord, _firstWordForcedCommon, _lastWordForcedCommon);
 }
 
 int main(int argc, char **argv) {

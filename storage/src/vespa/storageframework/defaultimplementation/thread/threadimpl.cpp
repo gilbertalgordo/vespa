@@ -16,7 +16,7 @@ namespace storage::framework::defaultimplementation {
 
 ThreadImpl::ThreadImpl(ThreadPoolImpl& pool,
                        Runnable& runnable,
-                       vespalib::stringref id,
+                       std::string_view id,
                        vespalib::duration waitTime,
                        vespalib::duration maxProcessTime,
                        int ticksBeforeWait,
@@ -81,7 +81,7 @@ ThreadImpl::join()
     }
 }
 
-vespalib::string
+std::string
 ThreadImpl::get_live_thread_stack_trace() const
 {
     auto native_handle = const_cast<std::thread&>(_thread).native_handle();

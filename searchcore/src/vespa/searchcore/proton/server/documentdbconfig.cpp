@@ -66,13 +66,13 @@ DocumentDBConfig::DocumentDBConfig(
                const std::shared_ptr<const DocumentTypeRepo> &repo,
                const ImportedFieldsConfigSP &importedFields,
                const search::TuneFileDocumentDB::SP &tuneFileDocumentDB,
-               const Schema::SP &schema,
+               std::shared_ptr<const Schema> schema,
                const DocumentDBMaintenanceConfig::SP &maintenance,
                const search::LogDocumentStore::Config & storeConfig,
                const ThreadingServiceConfig & threading_service_config,
                const AllocConfig & alloc_config,
-               const vespalib::string &configId,
-               const vespalib::string &docTypeName) noexcept
+               const std::string &configId,
+               const std::string &docTypeName) noexcept
     : _configId(configId),
       _docTypeName(docTypeName),
       _generation(generation),
@@ -88,7 +88,7 @@ DocumentDBConfig::DocumentDBConfig(
       _repo(repo),
       _importedFields(importedFields),
       _tuneFileDocumentDB(tuneFileDocumentDB),
-      _schema(schema),
+      _schema(std::move(schema)),
       _maintenance(maintenance),
       _storeConfig(storeConfig),
       _threading_service_config(threading_service_config),
@@ -338,7 +338,7 @@ DocumentDBConfig::getDocumentType() const
     return _repo->getDocumentType(getDocTypeName());
 }
 
-std::shared_ptr<Schema>
+std::shared_ptr<const Schema>
 DocumentDBConfig::build_schema(const AttributesConfig& attributes_config,
                                const IndexschemaConfig &indexschema_config)
 {

@@ -17,15 +17,11 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.security.KeyStore;
-import java.security.KeyStoreException;
-import java.security.cert.Certificate;
+
 import java.security.cert.X509Certificate;
 import java.util.List;
-import java.util.Spliterator;
-import java.util.Spliterators;
+
 import java.util.stream.Stream;
-import java.util.stream.StreamSupport;
 
 /**
  * A {@link ServiceIdentityProvider} that provides the credentials stored on file system.
@@ -46,28 +42,25 @@ public class SiaIdentityProvider extends AbstractComponent implements ServiceIde
         this(new AthenzService(config.athenzDomain(), config.athenzService()),
              SiaUtils.getPrivateKeyFile(Paths.get(config.keyPathPrefix()), new AthenzService(config.athenzDomain(), config.athenzService())),
              SiaUtils.getCertificateFile(Paths.get(config.keyPathPrefix()), new AthenzService(config.athenzDomain(), config.athenzService())),
-             Paths.get(config.trustStorePath()), config.publicSystem());
+             Paths.get(config.trustStorePath()));
     }
 
     public SiaIdentityProvider(AthenzIdentity service,
                                Path siaPath,
-                               Path clientTruststoreFile,
-                               boolean publicSystem) {
+                               Path clientTruststoreFile) {
         this(service,
                 SiaUtils.getPrivateKeyFile(siaPath, service),
                 SiaUtils.getCertificateFile(siaPath, service),
-                clientTruststoreFile,
-                publicSystem);
+                clientTruststoreFile);
     }
 
     public SiaIdentityProvider(AthenzIdentity service,
                                Path privateKeyFile,
                                Path certificateFile,
-                               Path clientTruststoreFile,
-                               boolean publicSystem) {
+                               Path clientTruststoreFile) {
         this.service = service;
         this.keyManager = AutoReloadingX509KeyManager.fromPemFiles(privateKeyFile, certificateFile);
-        this.sslContext = createIdentitySslContext(keyManager, clientTruststoreFile, publicSystem);
+        this.sslContext = createIdentitySslContext(keyManager, clientTruststoreFile);
         this.certificateFile = certificateFile;
         this.privateKeyFile = privateKeyFile;
     }
@@ -87,26 +80,23 @@ public class SiaIdentityProvider extends AbstractComponent implements ServiceIde
     @Override public Path privateKeyPath() { return privateKeyFile; }
 
     public SSLContext createIdentitySslContextWithTrustStore(Path trustStoreFile) {
-        return createIdentitySslContext(keyManager, trustStoreFile, false);
+        return createIdentitySslContext(keyManager, trustStoreFile);
     }
 
     /**
      * Create an SSL context with the given trust store and the key manager from this provider.
-     * If the {code includeDefaultTruststore} is true, the default trust store will be included.
+     * Include default trust store
      *
      * @param keyManager the key manager
      * @param trustStoreFile the trust store file
-     * @param includeDefaultTruststore whether to include the default trust store
      */
-    private static SSLContext createIdentitySslContext(AutoReloadingX509KeyManager keyManager, Path trustStoreFile, boolean includeDefaultTruststore) {
-        List<X509Certificate> defaultTrustStore = List.of();
-        if (includeDefaultTruststore) {
-            try {
-                // load the default java trust store and extract the certificates
-                defaultTrustStore = Stream.of(TrustManagerUtils.createDefaultX509TrustManager().getAcceptedIssuers()).toList();
-            } catch (Exception e) {
-                throw new RuntimeException("Failed to load default trust store", e);
-            }
+    private static SSLContext createIdentitySslContext(AutoReloadingX509KeyManager keyManager, Path trustStoreFile) {
+        List<X509Certificate> defaultTrustStore;
+        try {
+            // load the default java trust store and extract the certificates
+            defaultTrustStore = Stream.of(TrustManagerUtils.createDefaultX509TrustManager().getAcceptedIssuers()).toList();
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to load default trust store", e);
         }
         try {
             List<X509Certificate> caCertList = Stream.concat(

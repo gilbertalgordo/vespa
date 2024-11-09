@@ -12,7 +12,7 @@ namespace proton::matching {
 
 namespace {
 
-const vespalib::string SEARCH = "search";
+const std::string SEARCH = "search";
 
 class SearchSessionExplorer : public vespalib::StateExplorer
 {
@@ -44,14 +44,14 @@ SessionManagerExplorer::get_state(const Inserter &, bool) const
 {
 }
 
-std::vector<vespalib::string>
+std::vector<std::string>
 SessionManagerExplorer::get_children_names() const
 {
-    return std::vector<vespalib::string>({SEARCH});
+    return std::vector<std::string>({SEARCH});
 }
 
 std::unique_ptr<StateExplorer>
-SessionManagerExplorer::get_child(vespalib::stringref name) const
+SessionManagerExplorer::get_child(std::string_view name) const
 {
     if (name == SEARCH) {
         return std::make_unique<SearchSessionExplorer>(_manager);

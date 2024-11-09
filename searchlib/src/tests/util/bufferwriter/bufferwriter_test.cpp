@@ -1,10 +1,11 @@
 // Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
-#include <vespa/vespalib/testkit/testapp.h>
-#include <vespa/vespalib/stllike/string.h>
+#include <vespa/vespalib/testkit/test_kit.h>
 #include <vespa/searchlib/util/bufferwriter.h>
 #include <vespa/searchlib/util/drainingbufferwriter.h>
 #include <vespa/vespalib/util/rand48.h>
+#include <cassert>
+#include <string>
 
 namespace search {
 
@@ -20,7 +21,7 @@ public:
     static constexpr size_t BUFFER_SIZE = 262144;
 
     StoreBufferWriter();
-    ~StoreBufferWriter();
+    ~StoreBufferWriter() override;
 
     void flush() override;
     size_t getBytesWritten() const { return _bytesWritten; }

@@ -13,6 +13,7 @@
 #include <vespa/vespalib/util/executor.h>
 #include <vespa/vespalib/util/arrayqueue.hpp>
 #include <vespa/fastos/file.h>
+#include <exception>
 #include <filesystem>
 #include <future>
 
@@ -29,7 +30,7 @@ namespace {
 
 constexpr size_t ALIGNMENT=0x1000;
 constexpr size_t ENTRY_BIAS_SIZE=8;
-const vespalib::string DOC_ID_LIMIT_KEY("docIdLimit");
+const std::string DOC_ID_LIMIT_KEY("docIdLimit");
 
 }
 
@@ -43,24 +44,24 @@ FileChunk::ChunkInfo::ChunkInfo(uint64_t offset, uint32_t size, uint64_t lastSer
     assert(valid());
 }
 
-vespalib::string
-FileChunk::NameId::createName(const vespalib::string &baseName) const {
+std::string
+FileChunk::NameId::createName(const std::string &baseName) const {
     vespalib::asciistream os;
     os << baseName << '/' << vespalib::setfill('0') << vespalib::setw(19) << getId();
     return os.str();
 }
 
-vespalib::string
-FileChunk::createIdxFileName(const vespalib::string & name) {
+std::string
+FileChunk::createIdxFileName(const std::string & name) {
     return name + ".idx";
 }
 
-vespalib::string
-FileChunk::createDatFileName(const vespalib::string & name) {
+std::string
+FileChunk::createDatFileName(const std::string & name) {
     return name + ".dat";
 }
 
-FileChunk::FileChunk(FileId fileId, NameId nameId, const vespalib::string & baseName,
+FileChunk::FileChunk(FileId fileId, NameId nameId, const std::string & baseName,
                      const TuneFileSummary & tune, const IBucketizer * bucketizer)
     : _fileId(fileId),
       _nameId(nameId),
@@ -296,6 +297,27 @@ appendChunks(FixedParams * args, Chunk::UP chunk)
     }
 }
 
+/*
+ * Wrapper for future unique pointer to chunk that drains the
+ * pending task if the future is still valid at destruction time.
+ */
+class FutureChunk {
+    std::future<std::unique_ptr<Chunk>> _future;
+public:
+    FutureChunk(std::future<std::unique_ptr<Chunk>> future)
+        : _future(std::move(future))
+    {
+    }
+    FutureChunk(const FutureChunk&) = delete;
+    FutureChunk(FutureChunk&&) = default;
+    ~FutureChunk() {
+        if (_future.valid()) {
+            _future.wait();
+        }
+    }
+    std::unique_ptr<Chunk> get() { return _future.get(); }
+};
+
 }
 
 void
@@ -308,15 +330,24 @@ FileChunk::appendTo(vespalib::Executor & executor, const IGetLid & db, IWriteDat
     assert(numChunks <= getNumChunks());
     FixedParams fixedParams = {db, dest, lidReadGuard, getFileId().getId(), visitorProgress};
     size_t limit = std::thread::hardware_concurrency();
-    vespalib::ArrayQueue<std::future<Chunk::UP>> queue;
+    vespalib::ArrayQueue<FutureChunk> queue;
     for (size_t chunkId(0); chunkId < numChunks; chunkId++) {
         std::promise<Chunk::UP> promisedChunk;
-        std::future<Chunk::UP> futureChunk = promisedChunk.get_future();
+        FutureChunk futureChunk(promisedChunk.get_future());
         auto task = vespalib::makeLambdaTask([promise = std::move(promisedChunk), chunkId, this]() mutable {
             const ChunkInfo & cInfo(_chunkInfo[chunkId]);
-            vespalib::DataBuffer whole(0ul, ALIGNMENT);
-            FileRandRead::FSP keepAlive(_file->read(cInfo.getOffset(), whole, cInfo.getSize()));
-            promise.set_value(std::make_unique<Chunk>(chunkId, whole.getData(), whole.getDataLen()));
+            try {
+                vespalib::DataBuffer whole(0ul, ALIGNMENT);
+                FileRandRead::FSP keepAlive(_file->read(cInfo.getOffset(), whole, cInfo.getSize()));
+                promise.set_value(std::make_unique<Chunk>(chunkId, whole.getData(), whole.getDataLen()));
+            } catch (std::exception& e) {
+                promise.set_exception(std::make_exception_ptr(
+                    std::runtime_error(std::string("File '") + _dataFileName +
+                    "', offset " + std::to_string(cInfo.getOffset()) +
+                    ", len " + std::to_string(cInfo.getSize()) +
+                    ", chunkId " + std::to_string(chunkId) +
+                    " : " + e.what())));
+            }
         });
         executor.execute(CpuUsage::wrap(std::move(task), cpu_category));
 
@@ -509,9 +540,9 @@ FileChunk::getMemoryUsage() const
 }
 
 bool
-FileChunk::isIdxFileEmpty(const vespalib::string & name)
+FileChunk::isIdxFileEmpty(const std::string & name)
 {
-    vespalib::string fileName(name + ".idx");
+    std::string fileName(name + ".idx");
     FastOS_File idxFile(fileName.c_str());
     idxFile.enableMemoryMap(0);
     if (idxFile.OpenReadOnly()) {
@@ -531,16 +562,16 @@ FileChunk::isIdxFileEmpty(const vespalib::string & name)
 }
 
 void
-FileChunk::eraseIdxFile(const vespalib::string & name)
+FileChunk::eraseIdxFile(const std::string & name)
 {
-    vespalib::string fileName(createIdxFileName(name));
+    std::string fileName(createIdxFileName(name));
     std::filesystem::remove(std::filesystem::path(fileName));
 }
 
 void
-FileChunk::eraseDatFile(const vespalib::string & name)
+FileChunk::eraseDatFile(const std::string & name)
 {
-    vespalib::string fileName(createDatFileName(name));
+    std::string fileName(createDatFileName(name));
     std::filesystem::remove(std::filesystem::path(fileName));
 }
 

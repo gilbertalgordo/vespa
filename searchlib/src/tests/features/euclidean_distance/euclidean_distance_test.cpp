@@ -1,5 +1,4 @@
 // Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
-#include <vespa/vespalib/testkit/test_kit.h>
 
 #include <vespa/searchcommon/attribute/config.h>
 #include <vespa/searchlib/attribute/attributefactory.h>
@@ -60,7 +59,7 @@ struct ExecFixture
 {
     BlueprintFactory factory;
     FtFeatureTest test;
-    ExecFixture(const vespalib::string &feature)
+    ExecFixture(const std::string &feature)
         : factory(),
           test(factory, feature)
     {

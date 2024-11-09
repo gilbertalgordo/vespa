@@ -3,9 +3,9 @@
 #pragma once
 
 #include <vespa/searchlib/parsequery/item_creator.h>
-#include <vespa/vespalib/stllike/string.h>
 #include <cstddef>
 #include <cstdint>
+#include <string>
 
 #ifndef JUNIPER_RPIF
 #define JUNIPER_RPIF 1
@@ -154,7 +154,7 @@ public:
      *   otherwise caller should proceed as normal
      * @param specialToken true if this term is treated as a special token
      */
-    virtual void visitKeyword(const QueryItem* item, vespalib::stringref keyword, bool prefix, bool specialToken) = 0;
+    virtual void visitKeyword(const QueryItem* item, std::string_view keyword, bool prefix, bool specialToken) = 0;
 
     virtual ~IQueryVisitor() = default;
 };

@@ -3,7 +3,8 @@
 package ai.vespa.metricsproxy.http.application;
 
 import ai.vespa.metricsproxy.core.MetricsConsumers;
-import ai.vespa.metricsproxy.http.TextResponse;
+import ai.vespa.metricsproxy.http.MetricsJsonResponse;
+import ai.vespa.metricsproxy.http.PrometheusResponse;
 import ai.vespa.metricsproxy.metric.model.ConsumerId;
 import ai.vespa.metricsproxy.metric.model.DimensionId;
 import ai.vespa.metricsproxy.metric.model.MetricsPacket;
@@ -20,7 +21,6 @@ import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.Executor;
 import java.util.logging.Level;
-import java.util.stream.Collectors;
 
 import static ai.vespa.metricsproxy.http.ValuesFetcher.getConsumerOrDefault;
 import static ai.vespa.metricsproxy.metric.model.json.GenericJsonUtil.toGenericApplicationModel;
@@ -63,12 +63,12 @@ public class ApplicationMetricsHandler extends HttpHandlerBase {
         return Optional.empty();
     }
 
-    private JsonResponse applicationMetricsResponse(String requestedConsumer) {
+    private HttpResponse applicationMetricsResponse(String requestedConsumer) {
         try {
             ConsumerId consumer = getConsumerOrDefault(requestedConsumer, metricsConsumers);
             var metricsByNode =  metricsRetriever.getMetrics(consumer);
 
-            return new JsonResponse(OK, toGenericApplicationModel(metricsByNode).serialize());
+            return new MetricsJsonResponse(OK, toGenericApplicationModel(metricsByNode)::serialize);
 
         } catch (Exception e) {
             log.log(Level.WARNING, "Got exception when retrieving metrics:", e);
@@ -76,7 +76,7 @@ public class ApplicationMetricsHandler extends HttpHandlerBase {
         }
     }
 
-    private TextResponse applicationPrometheusResponse(String requestedConsumer) {
+    private HttpResponse applicationPrometheusResponse(String requestedConsumer) {
         ConsumerId consumer = getConsumerOrDefault(requestedConsumer, metricsConsumers);
         var metricsByNode = metricsRetriever.getMetrics(consumer);
 
@@ -88,7 +88,7 @@ public class ApplicationMetricsHandler extends HttpHandlerBase {
                         .map(builder -> builder.putDimension(DimensionId.toDimensionId("hostname"), element.hostname))
                         .map(MetricsPacket.Builder::build))
                 .toList();
-        return new TextResponse(200, toPrometheusModel(metricsForAllNodes).serialize());
+        return new PrometheusResponse(200, toPrometheusModel(metricsForAllNodes));
     }
 
 }

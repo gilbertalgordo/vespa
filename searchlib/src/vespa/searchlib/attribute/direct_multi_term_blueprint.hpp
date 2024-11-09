@@ -3,6 +3,7 @@
 #pragma once
 
 #include "direct_multi_term_blueprint.h"
+#include "direct_posting_store_flow_stats_adapter.h"
 #include "multi_term_or_filter_search.h"
 #include <vespa/searchlib/fef/termfieldmatchdata.h>
 #include <vespa/searchlib/queryeval/emptysearch.h>
@@ -164,21 +165,51 @@ DirectMultiTermBlueprint<PostingStoreType, SearchType>::create_search_helper(con
 
 template <typename PostingStoreType, typename SearchType>
 std::unique_ptr<queryeval::SearchIterator>
-DirectMultiTermBlueprint<PostingStoreType, SearchType>::createLeafSearch(const fef::TermFieldMatchDataArray &tfmda, bool strict) const
+DirectMultiTermBlueprint<PostingStoreType, SearchType>::createLeafSearch(const fef::TermFieldMatchDataArray &tfmda) const
 {
     assert(tfmda.size() == 1);
     assert(getState().numFields() == 1);
-    return create_search_helper<SearchType::filter_search>(tfmda, strict);
+    return create_search_helper<SearchType::filter_search>(tfmda, strict());
 }
 
 template <typename PostingStoreType, typename SearchType>
 std::unique_ptr<queryeval::SearchIterator>
-DirectMultiTermBlueprint<PostingStoreType, SearchType>::createFilterSearch(bool strict, FilterConstraint) const
+DirectMultiTermBlueprint<PostingStoreType, SearchType>::createFilterSearch(FilterConstraint) const
 {
     assert(getState().numFields() == 1);
     auto wrapper = std::make_unique<FilterWrapper>(getState().numFields());
-    wrapper->wrap(create_search_helper<true>(wrapper->tfmda(), strict));
+    wrapper->wrap(create_search_helper<true>(wrapper->tfmda(), strict()));
     return wrapper;
+}
+
+template <typename PostingStoreType, typename SearchType>
+queryeval::FlowStats
+DirectMultiTermBlueprint<PostingStoreType, SearchType>::calculate_flow_stats(uint32_t docid_limit) const
+{
+    using OrFlow = search::queryeval::OrFlow;
+    using MyAdapter = DirectPostingStoreFlowStatsAdapter;
+    double est = OrFlow::estimate_of(MyAdapter(docid_limit), _terms);
+    // Iterator benchmarking has shown that non-strict cost is different for attributes
+    // that support using a reverse hash filter (see use_hash_filter()).
+    // Program used: searchlib/src/tests/queryeval/iterator_benchmark
+    // Tests: analyze_and_with_filter_vs_in(), analyze_and_with_filter_vs_in_array()
+    double non_strict_cost = (SearchType::supports_hash_filter && !_iattr.hasMultiValue())
+            ? queryeval::flow::reverse_hash_lookup()
+            : OrFlow::cost_of(MyAdapter(docid_limit), _terms, false);
+    return {est, non_strict_cost, OrFlow::cost_of(MyAdapter(docid_limit), _terms, true) + queryeval::flow::heap_cost(est, _terms.size())};
+}
+
+template <typename PostingStoreType, typename SearchType>
+std::unique_ptr<queryeval::MatchingElementsSearch>
+DirectMultiTermBlueprint<PostingStoreType, SearchType>::create_matching_elements_search(const MatchingElementsFields &fields) const
+{
+    if (fields.has_struct_field(_iattr.getName())) {
+        return queryeval::MatchingElementsSearch::create(_iattr, fields.get_enclosing_field(_iattr.getName()), _dictionary_snapshot, std::span<const IDirectPostingStore::LookupResult>(_terms));
+    } else if (fields.has_field(_iattr.getName())) {
+        return queryeval::MatchingElementsSearch::create(_iattr, _iattr.getName(), _dictionary_snapshot, std::span<const IDirectPostingStore::LookupResult>(_terms));
+    } else {
+        return {};
+    }
 }
 
 }

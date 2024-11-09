@@ -26,7 +26,6 @@ import com.yahoo.vespa.model.test.utils.VespaModelCreatorWithMockPkg;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
-import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
 
@@ -158,7 +157,7 @@ public class ContentBuilderTest extends DomBuilderTest {
         assertEquals("clu/storage/0", c.getRootGroup().getNodes().get(0).getConfigId()); // Due to reuse.
         assertEquals(1, c.getRoot().hostSystem().getHosts().size());
         HostResource h = c.getRoot().hostSystem().getHost("mockhost");
-        String [] expectedServices = {"configserver", "logserver", "logd", "container-clustercontroller", "metricsproxy-container", "slobrok", "configproxy", "config-sentinel", "container", "storagenode", "searchnode", "distributor", "transactionlogserver"};
+        String [] expectedServices = {"configserver", "logserver", "logserver-container", "logd", "container-clustercontroller", "metricsproxy-container", "slobrok", "configproxy", "config-sentinel", "container", "storagenode", "searchnode", "distributor"};
         assertServices(h, expectedServices);
         assertEquals("clu/storage/0", h.getService("storagenode").getConfigId());
         assertEquals("clu/search/cluster.clu/0", h.getService("searchnode").getConfigId());
@@ -206,7 +205,7 @@ public class ContentBuilderTest extends DomBuilderTest {
         HostResource h = cluster.getRoot().hostSystem().getHost("mockhost");
         String [] expectedServices = {
                 "logd", "configproxy", "config-sentinel", "configserver", "container", "logserver",
-                "slobrok", "storagenode", "distributor", "searchnode", "transactionlogserver",
+                "logserver-container", "slobrok", "storagenode", "distributor", "searchnode",
                 CLUSTERCONTROLLER_CONTAINER.serviceName, METRICS_PROXY_CONTAINER.serviceName
         };
         assertServices(h, expectedServices);
@@ -738,7 +737,7 @@ public class ContentBuilderTest extends DomBuilderTest {
                                                                               .endpoints(Set.of(new ContainerEndpoint("search.indexing", ApplicationClusterEndpoint.Scope.zone, List.of("default.example.com"))));
             VespaModel model = new VespaModelCreatorWithMockPkg(new MockApplicationPackage.Builder()
                     .withServices(hostedXml)
-                    .withSearchDefinition(MockApplicationPackage.MUSIC_SCHEMA)
+                    .withSchema(MockApplicationPackage.MUSIC_SCHEMA)
                     .build())
                     .create(deployStateBuilder);
             ProtonConfig config = getProtonConfig(model.getContentClusters().values().iterator().next());
@@ -765,7 +764,7 @@ public class ContentBuilderTest extends DomBuilderTest {
         var deployStateBuilder = new DeployState.Builder().properties(props);
         var model = new VespaModelCreatorWithMockPkg(new MockApplicationPackage.Builder()
                 .withServices(hostedXml)
-                .withSearchDefinition(MockApplicationPackage.MUSIC_SCHEMA)
+                .withSchema(MockApplicationPackage.MUSIC_SCHEMA)
                 .build())
                 .create(deployStateBuilder);
         return getProtonConfig(model.getContentClusters().values().iterator().next());
@@ -835,7 +834,7 @@ public class ContentBuilderTest extends DomBuilderTest {
         return new MockApplicationPackage.Builder()
                 .withHosts(hosts)
                 .withServices(services)
-                .withSearchDefinition(MockApplicationPackage.MUSIC_SCHEMA)
+                .withSchema(MockApplicationPackage.MUSIC_SCHEMA)
                 .build();
     }
 
@@ -856,7 +855,7 @@ public class ContentBuilderTest extends DomBuilderTest {
         VespaModel m = new VespaModelCreatorWithMockPkg(new MockApplicationPackage.Builder()
                 .withHosts(getHosts())
                 .withServices(combined)
-                .withSearchDefinition(MockApplicationPackage.MUSIC_SCHEMA)
+                .withSchema(MockApplicationPackage.MUSIC_SCHEMA)
                 .build())
                 .create(deployStateBuilder);
 
@@ -876,8 +875,8 @@ public class ContentBuilderTest extends DomBuilderTest {
         VespaModel m = new VespaModelCreatorWithMockPkg(new MockApplicationPackage.Builder()
                                                                 .withHosts(getHosts())
                                                                 .withServices(combined)
-                                                                .withSchemas(Arrays.asList(MockApplicationPackage.MUSIC_SCHEMA,
-                                                                                           MockApplicationPackage.BOOK_SCHEMA))
+                                                                .withSchemas(List.of(MockApplicationPackage.MUSIC_SCHEMA,
+                                                                                     MockApplicationPackage.BOOK_SCHEMA))
                                                                 .build())
                 .create();
 

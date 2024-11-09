@@ -31,15 +31,15 @@ Bucket default_bucket(BucketId id) {
 }
 
 api::StorageMessageAddress make_storage_address(uint16_t node) {
-    static vespalib::string _storage("storage");
+    static std::string _storage("storage");
     return {&_storage, lib::NodeType::STORAGE, node};
 }
 
 struct MockUuidGenerator : UuidGenerator {
-    vespalib::string _uuid;
+    std::string _uuid;
     MockUuidGenerator() : _uuid("a-very-random-id") {}
 
-    vespalib::string generate_uuid() const override {
+    std::string generate_uuid() const override {
         return _uuid;
     }
 };
@@ -215,7 +215,7 @@ TEST_F(ReadForWriteVisitorOperationStarterTest, visitor_locks_bucket_with_random
     auto cmd = std::dynamic_pointer_cast<api::CreateVisitorCommand>(_sender.command(0));
     ASSERT_TRUE(cmd);
     EXPECT_EQ(cmd->getParameters().get(reindexing_bucket_lock_visitor_parameter_key(),
-                                       vespalib::stringref("not found :I")),
+                                       std::string_view("not found :I")),
               "fritjof");
 }
 

@@ -16,7 +16,7 @@ namespace search::fef {
  */
 class ParameterValidator {
 public:
-    using string = vespalib::string;
+    using string = std::string;
     using StringVector = std::vector<string>;
     /**
      * This class contains the result after running a validation for a given parameter description.
@@ -42,7 +42,7 @@ public:
         Result & operator=(Result &&) = default;
         ~Result();
         Result & addParameter(const Parameter & param) { _params.push_back(param); return *this; }
-        Result & setError(vespalib::stringref str) {
+        Result & setError(std::string_view str) {
             _errorStr = str;
             _params.clear();
             _valid = false;

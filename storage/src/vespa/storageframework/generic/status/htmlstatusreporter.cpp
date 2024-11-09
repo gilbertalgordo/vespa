@@ -4,7 +4,7 @@
 
 namespace storage::framework {
 
-HtmlStatusReporter::HtmlStatusReporter(vespalib::stringref id, vespalib::stringref name)
+HtmlStatusReporter::HtmlStatusReporter(std::string_view id, std::string_view name)
     : StatusReporter(id, name)
 { }
 
@@ -28,7 +28,7 @@ HtmlStatusReporter::reportHtmlFooter(std::ostream& out, const HttpUrlPath&) cons
     out << "</body>\n</html>\n";
 }
 
-vespalib::string
+std::string
 HtmlStatusReporter::getReportContentType(const HttpUrlPath&) const
 {
     return "text/html";

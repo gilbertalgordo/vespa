@@ -11,7 +11,7 @@
  */
 #pragma once
 
-#include <vespa/vespalib/stllike/string.h>
+#include <string>
 
 namespace storage::framework {
 
@@ -21,7 +21,7 @@ struct ComponentRegister {
     virtual ~ComponentRegister() {}
 
     virtual void registerComponent(ManagedComponent&) = 0;
-    virtual void requestShutdown(vespalib::stringref reason) = 0;
+    virtual void requestShutdown(std::string_view reason) = 0;
 };
 
 }

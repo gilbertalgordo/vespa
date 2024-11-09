@@ -11,7 +11,7 @@ struct SpanTreeVisitor;
 
 class SpanTree {
     using AnnotationVector = std::vector<Annotation>;
-    vespalib::string _name;
+    std::string _name;
     std::unique_ptr<SpanNode> _root;
     std::vector<Annotation> _annotations;
 
@@ -20,7 +20,7 @@ public:
     using const_iterator = AnnotationVector::const_iterator;
 
     template <typename T>
-    SpanTree(vespalib::stringref name, std::unique_ptr<T> root)
+    SpanTree(std::string_view name, std::unique_ptr<T> root)
         : _name(name),
           _root(std::move(root)) {
     }
@@ -36,14 +36,14 @@ public:
 
     void accept(SpanTreeVisitor &visitor) const;
 
-    const vespalib::string & getName() const { return _name; }
+    const std::string & getName() const { return _name; }
     const SpanNode &getRoot() const { return *_root; }
     size_t numAnnotations() const { return _annotations.size(); }
     void reserveAnnotations(size_t sz) { _annotations.resize(sz); }
     const_iterator begin() const { return _annotations.begin(); }
     const_iterator end() const { return _annotations.end(); }
     int compare(const SpanTree &other) const;
-    vespalib::string toString() const;
+    std::string toString() const;
 };
 
 }  // namespace document

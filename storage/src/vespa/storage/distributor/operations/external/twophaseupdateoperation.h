@@ -73,6 +73,9 @@ public:
 
     void on_cancel(DistributorStripeMessageSender& sender, const CancelScope& cancel_scope) override;
 
+    // Exposed for unit testing
+    [[nodiscard]] std::shared_ptr<api::UpdateCommand> command() const noexcept { return _updateCmd; }
+
 private:
     enum class SendState {
         NONE_SENT,
@@ -92,7 +95,7 @@ private:
     static const char* stateToString(SendState) noexcept;
 
     void sendReply(DistributorStripeMessageSender&,
-                   const std::shared_ptr<api::UpdateReply> &);
+                   const std::shared_ptr<api::UpdateReply>&);
     void sendReplyWithResult(DistributorStripeMessageSender&, const api::ReturnCode&);
     void ensureUpdateReplyCreated();
 
@@ -126,17 +129,18 @@ private:
     [[nodiscard]] bool shouldCreateIfNonExistent() const;
     bool processAndMatchTasCondition(
             DistributorStripeMessageSender& sender,
-            const document::Document& candidateDoc);
+            const document::Document& candidateDoc,
+            uint64_t persisted_timestamp);
     [[nodiscard]] bool satisfiesUpdateTimestampConstraint(api::Timestamp) const;
     void addTraceFromReply(api::StorageReply& reply);
     [[nodiscard]] bool hasTasCondition() const noexcept;
     void replyWithTasFailure(DistributorStripeMessageSender& sender,
-                             vespalib::stringref message);
+                             std::string_view message);
     bool may_restart_with_fast_path(const api::GetReply& reply);
     [[nodiscard]] bool replica_set_unchanged_after_get_operation() const;
     void restart_with_fast_path_due_to_consistent_get_timestamps(DistributorStripeMessageSender& sender);
     // Precondition: reply has not yet been sent.
-    [[nodiscard]] vespalib::string update_doc_id() const;
+    [[nodiscard]] std::string update_doc_id() const;
 
     using ReplicaState = std::vector<std::pair<document::BucketId, uint16_t>>;
 

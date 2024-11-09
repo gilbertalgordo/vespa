@@ -15,10 +15,10 @@ public:
     using IAttributeVector = search::attribute::IAttributeVector;
     class KeyHandler;
 private:
-    vespalib::string        _keyAttributeName;
-    vespalib::string        _valueAttributeName;
-    vespalib::string        _key;
-    vespalib::string        _keySourceAttributeName;
+    std::string        _keyAttributeName;
+    std::string        _valueAttributeName;
+    std::string        _key;
+    std::string        _keySourceAttributeName;
     const IAttributeVector *_keyAttribute;
     const IAttributeVector *_keySourceAttribute;
 
@@ -32,7 +32,7 @@ public:
     DECLARE_NBO_SERIALIZE;
     DECLARE_EXPRESSIONNODE(AttributeMapLookupNode);
     AttributeMapLookupNode();
-    AttributeMapLookupNode(vespalib::stringref name, vespalib::stringref keyAttributeName, vespalib::stringref valueAttributeName, vespalib::stringref key, vespalib::stringref keySourceAttributeName);
+    AttributeMapLookupNode(std::string_view name, std::string_view keyAttributeName, std::string_view valueAttributeName, std::string_view key, std::string_view keySourceAttributeName);
     AttributeMapLookupNode(const AttributeMapLookupNode &);
     AttributeMapLookupNode(AttributeMapLookupNode &&) = delete;
     ~AttributeMapLookupNode() override;

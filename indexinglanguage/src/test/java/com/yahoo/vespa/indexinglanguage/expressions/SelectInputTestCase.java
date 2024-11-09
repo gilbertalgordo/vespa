@@ -8,7 +8,6 @@ import com.yahoo.document.datatypes.StringFieldValue;
 import com.yahoo.vespa.indexinglanguage.SimpleTestAdapter;
 import org.junit.Test;
 
-import java.util.Arrays;
 import java.util.LinkedList;
 import java.util.List;
 
@@ -59,22 +58,22 @@ public class SelectInputTestCase {
         assertVerify(adapter, DataType.STRING, exp);
 
         assertVerifyThrows(adapter, newSelectInput(new AttributeExpression("my_int"), "my_str"),
-                           "Can not assign string to field 'my_int' which is int.");
+                           "Invalid expression 'attribute my_int': Can not assign string to field 'my_int' which is int.");
         assertVerifyThrows(adapter, newSelectInput(new AttributeExpression("my_int"), "my_unknown"),
-                           "Field 'my_unknown' not found");
+                           "Invalid expression 'select_input { my_unknown: attribute my_int; }': Input field 'my_unknown' not found.");
     }
 
     @Test
     public void requireThatSelectedExpressionIsRun() {
-        assertSelect(Arrays.asList("foo", "bar"), List.of("foo"), "foo");
-        assertSelect(Arrays.asList("foo", "bar"), List.of("bar"), "bar");
-        assertSelect(Arrays.asList("foo", "bar"), List.of("foo", "bar"), "foo");
-        assertSelect(Arrays.asList("foo", "bar"), List.of("bar", "baz"), "bar");
-        assertSelect(Arrays.asList("foo", "bar"), List.of("baz", "cox"), null);
+        assertSelect(List.of("foo", "bar"), List.of("foo"), "foo");
+        assertSelect(List.of("foo", "bar"), List.of("bar"), "bar");
+        assertSelect(List.of("foo", "bar"), List.of("foo", "bar"), "foo");
+        assertSelect(List.of("foo", "bar"), List.of("bar", "baz"), "bar");
+        assertSelect(List.of("foo", "bar"), List.of("baz", "cox"), null);
     }
 
     private static void assertVerify(FieldTypeAdapter adapter, DataType value, Expression exp) {
-        assertEquals(value, exp.verify(new VerificationContext(adapter).setValueType(value)));
+        assertEquals(value, exp.verify(new VerificationContext(adapter).setCurrentType(value)));
     }
 
     private static void assertVerifyThrows(FieldTypeAdapter adapter, Expression exp, String expectedException) {
@@ -99,7 +98,7 @@ public class SelectInputTestCase {
         ExecutionContext ctx = new ExecutionContext(adapter);
         for (String fieldName : availableFields) {
             adapter.createField(new Field(fieldName, DataType.STRING));
-            ctx.setOutputValue(null, fieldName, new StringFieldValue(fieldName));
+            ctx.setFieldValue(fieldName, new StringFieldValue(fieldName), null);
         }
         List<Pair<String, Expression>> cases = new LinkedList<>();
         for (String fieldName : inputField) {

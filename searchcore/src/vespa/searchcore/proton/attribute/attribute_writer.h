@@ -81,7 +81,7 @@ public:
                           ExecutorId executor_id_in);
     };
 private:
-    using AttrMap = vespalib::hash_map<vespalib::string, AttributeWithInfo>;
+    using AttrMap = vespalib::hash_map<std::string, AttributeWithInfo>;
     std::vector<WriteContext> _writeContexts;
     bool                      _hasStructFieldAttribute;
     AttrMap                   _attrMap;
@@ -89,8 +89,8 @@ private:
     void setupWriteContexts();
     void setupAttributeMapping();
     void internalPut(SerialNum serialNum, const Document &doc, DocumentIdT lid,
-                     bool allAttributes, OnWriteDoneType onWriteDone);
-    void internalRemove(SerialNum serialNum, DocumentIdT lid, OnWriteDoneType onWriteDone);
+                     bool allAttributes, const OnWriteDoneType& onWriteDone);
+    void internalRemove(SerialNum serialNum, DocumentIdT lid, const OnWriteDoneType& onWriteDone);
 
 public:
     AttributeWriter(proton::IAttributeManager::SP mgr);
@@ -102,23 +102,23 @@ public:
      * Implements IAttributeWriter.
      */
     std::vector<search::AttributeVector *> getWritableAttributes() const override;
-    search::AttributeVector *getWritableAttribute(const vespalib::string &name) const override;
-    void put(SerialNum serialNum, const Document &doc, DocumentIdT lid, OnWriteDoneType onWriteDone) override;
-    void remove(SerialNum serialNum, DocumentIdT lid, OnWriteDoneType onWriteDone) override;
-    void remove(const LidVector &lidVector, SerialNum serialNum, OnWriteDoneType onWriteDone) override;
+    search::AttributeVector *getWritableAttribute(const std::string &name) const override;
+    void put(SerialNum serialNum, const Document &doc, DocumentIdT lid, const OnWriteDoneType& onWriteDone) override;
+    void remove(SerialNum serialNum, DocumentIdT lid, const OnWriteDoneType& onWriteDone) override;
+    void remove(const LidVector &lidVector, SerialNum serialNum, const OnWriteDoneType& onWriteDone) override;
     void update(SerialNum serialNum, const DocumentUpdate &upd, DocumentIdT lid,
-                OnWriteDoneType onWriteDone, IFieldUpdateCallback & onUpdate) override;
-    void update(SerialNum serialNum, const Document &doc, DocumentIdT lid, OnWriteDoneType onWriteDone) override;
-    void heartBeat(SerialNum serialNum, OnWriteDoneType onDone) override;
+                const OnWriteDoneType& onWriteDone, IFieldUpdateCallback & onUpdate) override;
+    void update(SerialNum serialNum, const Document &doc, DocumentIdT lid, const OnWriteDoneType& onWriteDone) override;
+    void heartBeat(SerialNum serialNum, const OnWriteDoneType& onDone) override;
     void compactLidSpace(uint32_t wantedLidLimit, SerialNum serialNum) override;
     const proton::IAttributeManager::SP &getAttributeManager() const override {
         return _mgr;
     }
-    void forceCommit(const CommitParam & param, OnWriteDoneType onWriteDone) override;
+    void forceCommit(const CommitParam & param, const OnWriteDoneType& onWriteDone) override;
 
     void onReplayDone(uint32_t docIdLimit) override;
     bool hasStructFieldAttribute() const override;
-    void drain(OnWriteDoneType onWriteDone) override;
+    void drain(const OnWriteDoneType& onWriteDone) override;
 
     // Should only be used for unit testing.
     const std::vector<WriteContext>& get_write_contexts() const {

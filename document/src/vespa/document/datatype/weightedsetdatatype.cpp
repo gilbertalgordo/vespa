@@ -10,7 +10,7 @@ namespace document {
 
 namespace {
 
-vespalib::string
+std::string
 createName(const DataType& nestedType, bool create, bool remove)
 {
     if (nestedType.getId() == DataType::T_STRING && create && remove) {
@@ -82,7 +82,7 @@ WeightedSetDataType::equals(const DataType& other) const noexcept
 }
 
 void
-WeightedSetDataType::onBuildFieldPath(FieldPath & path, vespalib::stringref remainFieldName) const
+WeightedSetDataType::onBuildFieldPath(FieldPath & path, std::string_view remainFieldName) const
 {
     MapDataType::buildFieldPathImpl(path, *this, remainFieldName, getNestedType(), *DataType::INT);
 }

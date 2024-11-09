@@ -12,13 +12,13 @@ namespace search::query {
  * Weights are not stored, all terms have weight 1.
  */
 class StringTermVector : public TermVector {
-    std::vector<vespalib::string> _terms;
+    std::vector<std::string> _terms;
 public:
     explicit StringTermVector(uint32_t sz);
     ~StringTermVector() override;
-    void addTerm(vespalib::stringref term, Weight weight) override;
+    void addTerm(std::string_view term, Weight weight) override;
     void addTerm(int64_t term, Weight weight) override;
-    void addTerm(vespalib::stringref term);
+    void addTerm(std::string_view term);
     [[nodiscard]] StringAndWeight getAsString(uint32_t index) const override;
     [[nodiscard]] IntegerAndWeight getAsInteger(uint32_t index) const override;
     [[nodiscard]] Weight getWeight(uint32_t index) const override;

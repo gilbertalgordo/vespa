@@ -28,7 +28,7 @@ struct ConcatParam
 
     ConcatParam(const ValueType &res_type_in,
                 const ValueType &lhs_type, const ValueType &rhs_type,
-                const vespalib::string &dimension, const ValueBuilderFactory &factory_in)
+                const std::string &dimension, const ValueBuilderFactory &factory_in)
       : res_type(res_type_in),
         sparse_plan(lhs_type, rhs_type),
         dense_plan(lhs_type, rhs_type, dimension, res_type),
@@ -58,7 +58,7 @@ generic_concat(const Value &a, const Value &b,
     while (outer->next_result(sparse.first_address, sparse.first_subspace)) {
         inner->lookup(sparse.address_overlap);
         while (inner->next_result(sparse.second_only_address, sparse.second_subspace)) {
-            OCT *dst = builder->add_subspace(sparse.full_address).begin();
+            OCT *dst = builder->add_subspace(sparse.full_address).data();
             {
                 size_t left_input_offset = dense_plan.left.input_size * sparse.lhs_subspace;
                 auto copy_left = [&](size_t in_idx, size_t out_idx) { dst[out_idx] = a_cells[in_idx]; };
@@ -97,10 +97,10 @@ void my_mixed_dense_concat_op(State &state, uint64_t param_in) {
     const auto &index = state.peek(forward_lhs ? 1 : 0).index();
     size_t num_subspaces = index.size();
     size_t num_out_cells = dense_plan.output_size * num_subspaces;
-    ArrayRef<OCT> out_cells = state.stash.create_uninitialized_array<OCT>(num_out_cells);
-    OCT *dst = out_cells.begin();
-    const LCT *lhs = lhs_cells.begin();
-    const RCT *rhs = rhs_cells.begin();
+    std::span<OCT> out_cells = state.stash.create_uninitialized_array<OCT>(num_out_cells);
+    OCT *dst = out_cells.data();
+    const LCT *lhs = lhs_cells.data();
+    const RCT *rhs = rhs_cells.data();
     auto copy_left = [&](size_t in_idx, size_t out_idx) { dst[out_idx] = lhs[in_idx]; };
     auto copy_right = [&](size_t in_idx, size_t out_idx) { dst[out_idx] = rhs[in_idx]; };
     for (size_t i = 0; i < num_subspaces; ++i) {
@@ -114,11 +114,11 @@ void my_mixed_dense_concat_op(State &state, uint64_t param_in) {
         dst += dense_plan.output_size;
     }
     if (forward_lhs) {
-        assert(lhs == lhs_cells.end());
+        assert(lhs == lhs_cells.data() + lhs_cells.size());
     } else {
-        assert(rhs == rhs_cells.end());
+        assert(rhs == rhs_cells.data() + rhs_cells.size());
     }
-    assert(dst == out_cells.end());
+    assert(dst == out_cells.data() + out_cells.size());
     state.pop_pop_push(state.stash.create<ValueView>(param.res_type, index, TypedCells(out_cells)));
 }
 
@@ -129,7 +129,7 @@ void my_dense_simple_concat_op(State &state, uint64_t param_in) {
     const Value &rhs = state.peek(0);
     const auto a = lhs.cells().typify<LCT>();
     const auto b = rhs.cells().typify<RCT>();
-    ArrayRef<OCT> result = state.stash.create_uninitialized_array<OCT>(a.size() + b.size());
+    std::span<OCT> result = state.stash.create_uninitialized_array<OCT>(a.size() + b.size());
     auto pos = result.begin();
     for (size_t i = 0; i < a.size(); ++i) {
         *pos++ = a[i];
@@ -245,7 +245,7 @@ DenseConcatPlan::InOutLoop::~InOutLoop() = default;
 InterpretedFunction::Instruction
 GenericConcat::make_instruction(const ValueType &result_type,
                                 const ValueType &lhs_type, const ValueType &rhs_type,
-                                const vespalib::string &dimension,
+                                const std::string &dimension,
                                 const ValueBuilderFactory &factory, Stash &stash)
 {
     auto &param = stash.create<ConcatParam>(result_type, lhs_type, rhs_type, dimension, factory);

@@ -40,16 +40,16 @@ ProtonThreadPoolsExplorer::get_state(const vespalib::slime::Inserter& inserter, 
     }
 }
 
-const vespalib::string FIELD_WRITER = "field_writer";
+const std::string FIELD_WRITER = "field_writer";
 
-std::vector<vespalib::string>
+std::vector<std::string>
 ProtonThreadPoolsExplorer::get_children_names() const
 {
     return {FIELD_WRITER};
 }
 
 std::unique_ptr<vespalib::StateExplorer>
-ProtonThreadPoolsExplorer::get_child(vespalib::stringref name) const
+ProtonThreadPoolsExplorer::get_child(std::string_view name) const
 {
     if (name == FIELD_WRITER) {
         return std::make_unique<SequencedTaskExecutorExplorer>(_field_writer);

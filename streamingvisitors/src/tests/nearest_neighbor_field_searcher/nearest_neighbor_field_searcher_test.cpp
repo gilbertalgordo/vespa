@@ -13,6 +13,8 @@
 #include <vespa/vespalib/gtest/gtest.h>
 #include <vespa/vsm/searcher/mock_field_searcher_env.h>
 #include <vespa/vsm/searcher/nearest_neighbor_field_searcher.h>
+#include <vespa/vespalib/objects/nbostream.h>
+
 
 using namespace search::attribute::test;
 using namespace search::attribute;
@@ -30,7 +32,7 @@ using document::TensorFieldValue;
 struct MockQuery {
     std::vector<std::unique_ptr<NearestNeighborQueryNode>> nodes;
     QueryTermList term_list;
-    MockQuery& add(const vespalib::string& query_tensor_name,
+    MockQuery& add(const std::string& query_tensor_name,
                    uint32_t target_hits,
                    double distance_threshold) {
         std::unique_ptr<QueryNodeResultBase> base;
@@ -72,25 +74,25 @@ public:
         env.field_paths->resize(field_id + 1);
         (*env.field_paths)[field_id].push_back(std::make_unique<FieldPathEntry>(data_type, "my_tensor_field"));
     }
-    void set_query_tensor(const vespalib::string& query_tensor_name,
-                          const vespalib::string& spec_expr) {
+    void set_query_tensor(const std::string& query_tensor_name,
+                          const std::string& spec_expr) {
         search::fef::indexproperties::type::QueryFeature::set(env.index_env.getProperties(), query_tensor_name, tensor_type.to_spec());
         auto tensor = SimpleValue::from_spec(TensorSpec::from_expr(spec_expr));
         vespalib::nbostream stream;
         vespalib::eval::encode_value(*tensor, stream);
-        env.query_props.add(query_tensor_name, vespalib::stringref(stream.peek(), stream.size()));
+        env.query_props.add(query_tensor_name, std::string_view(stream.peek(), stream.size()));
     }
     void prepare() {
         env.prepare(searcher, query.term_list);
     }
-    void match(const vespalib::string& spec_expr) {
+    void match(const std::string& spec_expr) {
         TensorFieldValue fv(data_type);
         auto tensor = SimpleValue::from_spec(TensorSpec::from_expr(spec_expr));
         fv = std::move(tensor);
         query.reset();
         searcher.onValue(fv);
     }
-    void expect_match(const vespalib::string& spec_expr, double exp_square_distance, const NearestNeighborQueryNode& node) {
+    void expect_match(const std::string& spec_expr, double exp_square_distance, const NearestNeighborQueryNode& node) {
         match(spec_expr);
         expect_match(exp_square_distance, node);
     }
@@ -100,7 +102,7 @@ public:
         EXPECT_DOUBLE_EQ(exp_square_distance, node.get_distance().value());
         EXPECT_DOUBLE_EQ(exp_raw_score, node.get_raw_score().value());
     }
-    void expect_not_match(const vespalib::string& spec_expr, const NearestNeighborQueryNode& node) {
+    void expect_not_match(const std::string& spec_expr, const NearestNeighborQueryNode& node) {
         match(spec_expr);
         EXPECT_FALSE(node.evaluate());
     }

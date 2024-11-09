@@ -3,7 +3,7 @@
 #pragma once
 
 #include <vespa/juniper/query.h>
-#include <vespa/vespalib/stllike/string.h>
+#include <string>
 
 namespace search {
     class SimpleQueryStackDumpIterator;
@@ -24,13 +24,13 @@ class JuniperQueryAdapter : public juniper::IQuery
 private:
     const QueryNormalization * _query_normalization;
     const IQueryTermFilter *_query_term_filter;
-    const vespalib::stringref _buf;
+    const std::string_view _buf;
     const search::fef::Properties & _highlightTerms;
 
 public:
     JuniperQueryAdapter(const JuniperQueryAdapter&) = delete;
     JuniperQueryAdapter operator= (const JuniperQueryAdapter&) = delete;
-    JuniperQueryAdapter(const QueryNormalization * normalization, const IQueryTermFilter *query_term_filter, vespalib::stringref buf,
+    JuniperQueryAdapter(const QueryNormalization * normalization, const IQueryTermFilter *query_term_filter, std::string_view buf,
                         const search::fef::Properties & highlightTerms);
     ~JuniperQueryAdapter() override;
     bool skipItem(search::SimpleQueryStackDumpIterator *iterator) const;

@@ -293,7 +293,11 @@ public class ConfigSubscriber implements AutoCloseable {
 
             if (applyOnRestartOnly && ! isInitializing) { // disable any reconfig until restart
                 synchronized (monitor) {
-                    applyOnRestart = applyOnRestartOnly;
+                    if ( ! applyOnRestart) {
+                        log.log(Level.INFO, "Config generation " + generation + " requires restart; " +
+                                            "further config changes will not take effect until restart");
+                        applyOnRestart = true;
+                    }
                 }
             }
 
@@ -444,7 +448,7 @@ public class ConfigSubscriber implements AutoCloseable {
                         hasNewConfig = nextConfig(false);
                     }
                     catch (Exception e) {
-                        log.log(SEVERE, "Exception on receiving config. Ignoring this change.", e);
+                        log.log(isClosed() ? FINE : WARNING, "Exception on receiving config. Ignoring this change.", e);
                     }
 
                     try {

@@ -1,14 +1,20 @@
 // Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.indexinglanguage.expressions;
 
+import com.yahoo.document.ArrayDataType;
 import com.yahoo.document.DataType;
 import com.yahoo.document.Field;
+import com.yahoo.document.StructDataType;
+import com.yahoo.document.datatypes.Array;
 import com.yahoo.document.datatypes.IntegerFieldValue;
 import com.yahoo.document.datatypes.StringFieldValue;
+import com.yahoo.document.datatypes.Struct;
+import com.yahoo.language.simple.SimpleLinguistics;
 import com.yahoo.vespa.indexinglanguage.SimpleTestAdapter;
 import org.junit.Test;
 
-import java.util.Arrays;
+
+import java.util.List;
 
 import static com.yahoo.vespa.indexinglanguage.expressions.ExpressionAssert.assertVerify;
 import static com.yahoo.vespa.indexinglanguage.expressions.ExpressionAssert.assertVerifyThrows;
@@ -32,7 +38,7 @@ public class ScriptTestCase {
         assertEquals(2, exp.size());
         assertSame(foo, exp.get(0));
         assertSame(bar, exp.get(1));
-        assertEquals(Arrays.asList(foo, bar), exp.asList());
+        assertEquals(List.of(foo, bar), exp.asList());
     }
 
     @Test
@@ -55,12 +61,12 @@ public class ScriptTestCase {
     public void requireThatExpressionCanBeVerified() {
         Expression exp = newScript(newStatement(SimpleExpression.newConversion(DataType.INT, DataType.STRING)));
         assertVerify(DataType.INT, exp, DataType.STRING);
-        assertVerifyThrows(null, exp, "Expected int input, but no input is specified");
-        assertVerifyThrows(DataType.STRING, exp, "Expected int input, got string");
+        assertVerifyThrows("Invalid expression '{ SimpleExpression; }': Expected int input, but no input is specified", null, exp);
+        assertVerifyThrows("Invalid expression '{ SimpleExpression; }': Expected int input, got string", DataType.STRING, exp);
 
-        assertVerifyThrows(null, () -> newScript(newStatement(SimpleExpression.newConversion(DataType.INT, DataType.STRING)),
-                                           newStatement(SimpleExpression.newConversion(DataType.STRING, DataType.INT))),
-                           "Statements require conflicting input types, int vs string");
+        assertVerifyThrows("Invalid expression of type 'ScriptExpression': Statements require conflicting input types, int vs string", null, () -> newScript(newStatement(SimpleExpression.newConversion(DataType.INT, DataType.STRING)),
+                                                                                                                                                          newStatement(SimpleExpression.newConversion(DataType.STRING, DataType.INT)))
+                          );
     }
 
     @Test
@@ -72,6 +78,20 @@ public class ScriptTestCase {
                                             new AttributeExpression("out-2")))).execute(adapter);
         assertEquals(new IntegerFieldValue(69), adapter.getInputValue("out-1"));
         assertEquals(new IntegerFieldValue(69), adapter.getInputValue("out-2"));
+    }
+
+    @Test
+    public void testCache() {
+        SimpleTestAdapter adapter = new SimpleTestAdapter(new Field("field1", DataType.STRING));
+        var script = newScript(newStatement(new InputExpression("field1"),
+                                            new PutCacheExpression("myCacheKey", "myCacheValue")),
+                               newStatement(new ClearStateExpression()), // inserted by config model
+                               newStatement(new InputExpression("field1"),
+                                            new AssertCacheExpression("myCacheKey", "myCacheValue")));
+        adapter.setValue("field1", new StringFieldValue("foo1"));
+        ExecutionContext context = new ExecutionContext(adapter);
+        script.execute(context);
+        assertEquals("myCacheValue", context.getCachedValue("myCacheKey"));
     }
 
     @Test
@@ -128,6 +148,83 @@ public class ScriptTestCase {
         assertEquals(new IntegerFieldValue(9), adapter.getInputValue("out"));
     }
 
+    @Test
+    //       indexing: input expressions | for_each {
+    //        get_field myStructField
+    //      } | attribute
+    @SuppressWarnings("unchecked")
+    public void testGetStructField() {
+        var structType = new StructDataType("myStruct");
+        var stringField = new Field("stringField", DataType.STRING);
+        var intField = new Field("intField", DataType.INT); // Not accessed
+        structType.addField(stringField);
+        structType.addField(intField);
+
+        var adapter = new SimpleTestAdapter();
+        adapter.createField(new Field("myInput", new ArrayDataType(structType)));
+        adapter.createField(new Field("myOutput", new ArrayDataType(DataType.STRING)));
+
+        var array = new Array<Struct>(new ArrayDataType(structType));
+        var struct1 = new Struct(structType);
+        struct1.setFieldValue(stringField, "value1");
+        struct1.setFieldValue(intField, 1);
+        array.add(struct1);
+        var struct2 = new Struct(structType);
+        struct2.setFieldValue(stringField, "value2");
+        struct2.setFieldValue(intField, 2);
+        array.add(struct2);
+        adapter.setValue("myInput", array);
+        var statement =
+                newStatement(new InputExpression("myInput"),
+                             new ForEachExpression(new StatementExpression(new GetFieldExpression("stringField"))),
+                             new AttributeExpression("myOutput"));
+        statement.verify(adapter);
+        statement.execute(adapter);
+
+        var result = (Array<StringFieldValue>)adapter.values.get("myOutput");
+        assertEquals(2, result.size());
+        assertEquals("value1", result.get(0).toString());
+        assertEquals("value2", result.get(1).toString());
+    }
+
+    @Test
+    // input myString | lowercase | summary | index | split ";" | for_each {
+    public void testSplitAndForEach() {
+        var adapter = new SimpleTestAdapter();
+        adapter.createField(new Field("myString", DataType.STRING));
+        adapter.createField(new Field("myArray", new ArrayDataType(DataType.STRING)));
+        adapter.setValue("myString", new StringFieldValue("my;test;values"));
+        var statement =
+                newStatement(new InputExpression("myString"),
+                             new LowerCaseExpression(),
+                             new SplitExpression(";"),
+                             new ForEachExpression(new StatementExpression(new SubstringExpression(0, 1))),
+                             new AttributeExpression("myArray"));
+        statement.verify(adapter);
+        statement.execute(adapter);
+        assertEquals("[m, t, v]", adapter.values.get("myArray").toString());
+    }
+
+    @Test
+    //  input myString | lowercase | split ";" |
+    //            for_each { trim | normalize } |
+    //            to_string | index;
+    public void testForEachToString() {
+        var adapter = new SimpleTestAdapter();
+        adapter.createField(new Field("myString", DataType.STRING));
+        adapter.setValue("myString", new StringFieldValue("my;tEsT;Values"));
+        var statement =
+                newStatement(new InputExpression("myString"),
+                             new LowerCaseExpression(),
+                             new SplitExpression(";"),
+                             new ForEachExpression(new StatementExpression(new TrimExpression(), new NormalizeExpression(new SimpleLinguistics()))),
+                             new ToStringExpression(),
+                             new IndexExpression("myString"));
+        statement.verify(adapter);
+        statement.execute(adapter);
+        assertEquals("[my, test, values]", adapter.values.get("myString").toString());
+    }
+
     private static ScriptExpression newScript(StatementExpression... args) {
         return new ScriptExpression(args);
     }
@@ -145,6 +242,54 @@ public class ScriptTestCase {
         @Override
         protected void doExecute(ExecutionContext context) {
             throw new RuntimeException();
+        }
+
+        @Override
+        protected void doVerify(VerificationContext context) {}
+
+        @Override
+        public DataType createdOutputType() { return null; }
+
+    }
+
+    private static class PutCacheExpression extends Expression {
+
+        private final String keyToSet;
+        private final String valueToSet;
+
+        public PutCacheExpression(String keyToSet, String valueToSet) {
+            super(null);
+            this.keyToSet = keyToSet;
+            this.valueToSet = valueToSet;
+        }
+
+        @Override
+        protected void doExecute(ExecutionContext context) {
+            context.putCachedValue(keyToSet, valueToSet);
+        }
+
+        @Override
+        protected void doVerify(VerificationContext context) {}
+
+        @Override
+        public DataType createdOutputType() { return null; }
+
+    }
+
+    private static class AssertCacheExpression extends Expression {
+
+        private final String expectedKey;
+        private final String expectedValue;
+
+        public AssertCacheExpression(String expectedKey, String expectedValue) {
+            super(null);
+            this.expectedKey = expectedKey;
+            this.expectedValue = expectedValue;
+        }
+
+        @Override
+        protected void doExecute(ExecutionContext context) {
+            assertEquals(expectedValue, context.getCachedValue(expectedKey));
         }
 
         @Override

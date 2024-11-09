@@ -1,12 +1,12 @@
 // Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
+#include <tests/common/storage_config_set.h>
 #include <tests/common/testhelper.h>
 #include <tests/common/teststorageapp.h>
 #include <vespa/config/helper/configgetter.hpp>
 #include <vespa/storage/storageserver/mergethrottler.h>
 #include <vespa/storage/storageserver/service_layer_error_listener.h>
 #include <vespa/storageframework/defaultimplementation/component/componentregisterimpl.h>
-#include <vespa/vdstestlib/config/dirconfig.h>
 #include <vespa/vespalib/gtest/gtest.h>
 
 using namespace ::testing;
@@ -24,23 +24,23 @@ class TestShutdownListener
 public:
     TestShutdownListener() : _reason() {}
 
-    void requestShutdown(vespalib::stringref reason) override {
+    void requestShutdown(std::string_view reason) override {
         _reason = reason;
     }
 
     bool shutdown_requested() const { return !_reason.empty(); }
-    const vespalib::string& reason() const { return _reason; }
+    const std::string& reason() const { return _reason; }
 private:
-    vespalib::string _reason;
+    std::string _reason;
 };
 
 struct Fixture {
     using StorServerConfig = vespa::config::content::core::StorServerConfig;
 
-    vdstestlib::DirConfig config{getStandardConfig(true)};
-    TestServiceLayerApp app;
+    std::unique_ptr<StorageConfigSet> config{StorageConfigSet::make_storage_node_config()};
+    TestServiceLayerApp app{config->config_uri()};
     ServiceLayerComponent component{app.getComponentRegister(), "dummy"};
-    MergeThrottler merge_throttler{*config_from<StorServerConfig>(config::ConfigUri(config.getConfigId())),
+    MergeThrottler merge_throttler{*config_from<StorServerConfig>(config->config_uri()),
                                    app.getComponentRegister(), vespalib::HwInfo()};
     TestShutdownListener shutdown_listener;
     ServiceLayerErrorListener error_listener{component, merge_throttler};

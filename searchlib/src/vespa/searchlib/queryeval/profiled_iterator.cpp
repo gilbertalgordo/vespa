@@ -6,6 +6,7 @@
 #include <vespa/vespalib/objects/visit.hpp>
 #include <vespa/vespalib/util/classname.h>
 #include <vespa/vespalib/util/stringfmt.h>
+#include "wand/weak_and_search.h"
 
 #include <typeindex>
 
@@ -24,7 +25,7 @@ struct TaskGuard {
     ~TaskGuard() { profiler.complete(); }
 };
 
-vespalib::string name_of(const auto &obj) {
+std::string name_of(const auto &obj) {
     auto name = vespalib::getClassName(obj);
     auto end = name.find("<");
     auto ns = name.rfind("::", end);
@@ -33,28 +34,17 @@ vespalib::string name_of(const auto &obj) {
 }
 
 std::unique_ptr<SearchIterator> create(Profiler &profiler,
-                                       const vespalib::string &path,
+                                       const std::string &path,
                                        std::unique_ptr<SearchIterator> search,
                                        auto ctor_token)
 {
-    vespalib::string prefix = fmt("%s%s/", path.c_str(), name_of(*search).c_str());
+    std::string prefix = fmt("%s%s/", path.c_str(), name_of(*search).c_str());
     return std::make_unique<ProfiledIterator>(profiler, std::move(search),
                                               profiler.resolve(prefix + "init"),
                                               profiler.resolve(prefix + "seek"),
                                               profiler.resolve(prefix + "unpack"),
                                               profiler.resolve(prefix + "termwise"),
                                               ctor_token);    
-}
-
-void handle_leaf_node(Profiler &profiler, SearchIterator &leaf, const vespalib::string &path) {
-    if (leaf.isSourceBlender()) {
-        auto &source_blender = static_cast<SourceBlenderSearch&>(leaf);
-        for (size_t i = 0; i < source_blender.getNumChildren(); ++i) {
-            auto child = source_blender.steal(i);
-            child = ProfiledIterator::profile(profiler, std::move(child), fmt("%s%zu/", path.c_str(), i));
-            source_blender.setChild(i, std::move(child));
-        }
-    }
 }
 
 }
@@ -111,26 +101,12 @@ ProfiledIterator::visitMembers(vespalib::ObjectVisitor &visitor) const
 }
 
 std::unique_ptr<SearchIterator>
-ProfiledIterator::profile(Profiler &profiler, std::unique_ptr<SearchIterator> root, const vespalib::string &root_path)
+ProfiledIterator::profile(Profiler &profiler, std::unique_ptr<SearchIterator> node, const std::string &path)
 {
-    std::vector<UP*> links({&root});
-    std::vector<vespalib::string> paths({root_path});
-    for (size_t offset = 0; offset < links.size(); ++offset) {
-        UP &link = *(links[offset]);
-        vespalib::string path = paths[offset];
-        size_t first_child = links.size();
-        link->disclose_children(links);
-        size_t num_children = links.size() - first_child;
-        if (num_children == 0) {
-            handle_leaf_node(profiler, *link, path);
-        } else {
-            for (size_t i = 0; i < num_children; ++i) {
-                paths.push_back(fmt("%s%zu/", path.c_str(), i));
-            }
-        }
-        link = create(profiler, path, std::move(link), ctor_tag{});
-    }
-    return root;
+    node->transform_children([&](auto child, size_t i){
+                                 return profile(profiler, std::move(child), fmt("%s%zu/", path.c_str(), i));
+                             });
+    return create(profiler, path, std::move(node), ctor_tag{});
 }
 
 }

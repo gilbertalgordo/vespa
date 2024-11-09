@@ -14,7 +14,7 @@ using namespace vespalib;
 
 class Application {
 private:
-    vespalib::string _fileName;
+    std::string _fileName;
     char        _delimiter;
     bool        _quiet;
 
@@ -22,9 +22,9 @@ private:
     void usage(const char *self);
     void printQuiet(FileHeader &header);
     void printVerbose(FileHeader &header);
-    vespalib::string escape(const vespalib::string &str, char quote = '\0');
-    vespalib::string getTypeString(const FileHeader::Tag &tag);
-    vespalib::string getValueString(const FileHeader::Tag &tag);
+    std::string escape(const std::string &str, char quote = '\0');
+    std::string getTypeString(const FileHeader::Tag &tag);
+    std::string getValueString(const FileHeader::Tag &tag);
 
 public:
     Application();
@@ -146,12 +146,12 @@ Application::printVerbose(FileHeader &header)
          << "+" << std::string(valueWidth + 2, '-')
          << "+";
 
-    std::cout << std::left << line.str() << std::endl;
+    std::cout << std::left << line.view() << std::endl;
     std::cout << "| " << std::setw(nameWidth) << "Tag" << " "
               << "| " << std::setw(typeWidth) << "Type" << " "
               << "| " << std::setw(valueWidth)<< "Value" << " "
               << "| " << std::endl;
-    std::cout << line.str() << std::endl;
+    std::cout << line.view() << std::endl;
     for (uint32_t i = 0, len = header.getNumTags(); i < len; ++i) {
         const FileHeader::Tag &tag = header.getTag(i);
         std::cout << "| " << std::setw(nameWidth) << escape(tag.getName()) << " "
@@ -159,13 +159,13 @@ Application::printVerbose(FileHeader &header)
                   << "| " << std::setw(valueWidth) << escape(getValueString(tag)) << " "
                   << "| " << std::endl;
     }
-    std::cout << line.str() << std::endl;
+    std::cout << line.view() << std::endl;
 }
 
-vespalib::string
-Application::escape(const vespalib::string &str, char quote)
+std::string
+Application::escape(const std::string &str, char quote)
 {
-    vespalib::string ret = "";
+    std::string ret = "";
     for (uint32_t i = 0, len = str.size(); i < len; ++i) {
         char c = str[i];
         switch (c) {
@@ -191,7 +191,7 @@ Application::escape(const vespalib::string &str, char quote)
     return ret;
 }
 
-vespalib::string
+std::string
 Application::getTypeString(const FileHeader::Tag &tag)
 {
     switch (tag.getType()) {
@@ -207,7 +207,7 @@ Application::getTypeString(const FileHeader::Tag &tag)
     }
 }
 
-vespalib::string
+std::string
 Application::getValueString(const FileHeader::Tag &tag)
 {
     vespalib::asciistream out;

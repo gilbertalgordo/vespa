@@ -1,6 +1,7 @@
 // Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.hosted.provision.autoscale.awsnodes;
 
+import com.yahoo.config.provision.CloudAccount;
 import com.yahoo.config.provision.Flavor;
 import com.yahoo.config.provision.NodeResources;
 import com.yahoo.config.provision.NodeType;
@@ -43,7 +44,7 @@ public class AwsHostResourcesCalculatorImpl implements HostResourcesCalculator {
     }
 
     @Override
-    public NodeResources requestToReal(NodeResources advertisedResources, boolean exclusive, boolean bestCase) {
+    public NodeResources requestToReal(NodeResources advertisedResources, CloudAccount cloudAccount, boolean exclusive, boolean bestCase) {
         var consideredFlavors = consideredFlavorsGivenAdvertised(advertisedResources);
         double memoryOverhead = consideredFlavors.stream()
                                                  .mapToDouble(flavor -> resourcesCalculator.memoryOverhead(flavor, advertisedResources, false))
@@ -51,18 +52,18 @@ public class AwsHostResourcesCalculatorImpl implements HostResourcesCalculator {
         double diskOverhead   = consideredFlavors.stream()
                                                  .mapToDouble(flavor -> resourcesCalculator.diskOverhead(flavor, advertisedResources, false, exclusive))
                                                  .reduce(bestCase ? Double::min : Double::max).orElse(0);
-        return advertisedResources.withMemoryGb(advertisedResources.memoryGb() - memoryOverhead)
+        return advertisedResources.withMemoryGiB(advertisedResources.memoryGiB() - memoryOverhead)
                                   .withDiskGb(advertisedResources.diskGb() - diskOverhead);
     }
 
     @Override
-    public NodeResources realToRequest(NodeResources realResources, boolean exclusive, boolean bestCase) {
+    public NodeResources realToRequest(NodeResources realResources, CloudAccount cloudAccount, boolean exclusive, boolean bestCase) {
         double chosenMemoryOverhead = bestCase ? Integer.MAX_VALUE : 0;
         double chosenDiskOverhead = bestCase ? Integer.MAX_VALUE : 0;
         for (VespaFlavor flavor : consideredFlavorsGivenReal(realResources)) {
             double memoryOverhead = resourcesCalculator.memoryOverhead(flavor, realResources, true);
             double diskOverhead = resourcesCalculator.diskOverhead(flavor, realResources, true, exclusive);
-            NodeResources advertised = realResources.withMemoryGb(realResources.memoryGb() + memoryOverhead)
+            NodeResources advertised = realResources.withMemoryGiB(realResources.memoryGiB() + memoryOverhead)
                                                     .withDiskGb(realResources.diskGb() + diskOverhead);
             if ( ! flavor.advertisedResources().satisfies(advertised)) continue;
             if (bestCase ? memoryOverhead < chosenMemoryOverhead : memoryOverhead > chosenDiskOverhead)
@@ -70,7 +71,7 @@ public class AwsHostResourcesCalculatorImpl implements HostResourcesCalculator {
             if (bestCase ? diskOverhead < chosenDiskOverhead : diskOverhead > chosenDiskOverhead)
                 chosenDiskOverhead = diskOverhead;
         }
-        return realResources.withMemoryGb(realResources.memoryGb() + chosenMemoryOverhead)
+        return realResources.withMemoryGiB(realResources.memoryGiB() + chosenMemoryOverhead)
                             .withDiskGb(realResources.diskGb() + chosenDiskOverhead);
     }
 

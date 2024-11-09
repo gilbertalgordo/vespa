@@ -4,10 +4,10 @@
 
 namespace config {
 
-ConfigKey::ConfigKey(vespalib::stringref configId,
-                     vespalib::stringref defName,
-                     vespalib::stringref defNamespace,
-                     vespalib::stringref defMd5)
+ConfigKey::ConfigKey(std::string_view configId,
+                     std::string_view defName,
+                     std::string_view defNamespace,
+                     std::string_view defMd5)
     : _configId(configId),
       _defName(defName),
       _defNamespace(defNamespace),
@@ -16,10 +16,10 @@ ConfigKey::ConfigKey(vespalib::stringref configId,
       _key(_configId + _defName + _defNamespace)
 {}
 
-ConfigKey::ConfigKey(vespalib::stringref configId,
-                     vespalib::stringref defName,
-                     vespalib::stringref defNamespace,
-                     vespalib::stringref defMd5,
+ConfigKey::ConfigKey(std::string_view configId,
+                     std::string_view defName,
+                     std::string_view defNamespace,
+                     std::string_view defMd5,
                      const StringVector & defSchema)
     : _configId(configId),
       _defName(defName),
@@ -55,16 +55,16 @@ ConfigKey::operator==(const ConfigKey & rhs) const
     return _key.compare(rhs._key) == 0;
 }
 
-const vespalib::string & ConfigKey::getDefName() const { return _defName; }
-const vespalib::string & ConfigKey::getConfigId() const { return _configId; }
-const vespalib::string & ConfigKey::getDefNamespace() const { return _defNamespace; }
-const vespalib::string & ConfigKey::getDefMd5() const { return _defMd5; }
+const std::string & ConfigKey::getDefName() const { return _defName; }
+const std::string & ConfigKey::getConfigId() const { return _configId; }
+const std::string & ConfigKey::getDefNamespace() const { return _defNamespace; }
+const std::string & ConfigKey::getDefMd5() const { return _defMd5; }
 const StringVector & ConfigKey::getDefSchema() const { return _defSchema; }
 
-const vespalib::string
+const std::string
 ConfigKey::toString() const
 {
-    vespalib::string s;
+    std::string s;
     s.append("name=");
     s.append(_defNamespace);
     s.append(".");

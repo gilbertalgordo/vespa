@@ -67,6 +67,9 @@ public class InfrastructureMetricSet {
         addMetric(metrics, ConfigServerMetrics.CLUSTER_LOAD_IDEAL_CPU.max());
         addMetric(metrics, ConfigServerMetrics.CLUSTER_LOAD_IDEAL_MEMORY.max());
         addMetric(metrics, ConfigServerMetrics.CLUSTER_LOAD_IDEAL_DISK.max());
+        addMetric(metrics, ConfigServerMetrics.CLUSTER_LOAD_PEAK_CPU.max());
+        addMetric(metrics, ConfigServerMetrics.CLUSTER_LOAD_PEAK_MEMORY.max());
+        addMetric(metrics, ConfigServerMetrics.CLUSTER_LOAD_PEAK_DISK.max());
         addMetric(metrics, ConfigServerMetrics.NODES_EMPTY_EXCLUSIVE.max());
         addMetric(metrics, ConfigServerMetrics.NODES_EXPIRED_DEPROVISIONED.count());
         addMetric(metrics, ConfigServerMetrics.NODES_EXPIRED_DIRTY.count());
@@ -81,6 +84,8 @@ public class InfrastructureMetricSet {
         addMetric(metrics, ConfigServerMetrics.HAS_WIRE_GUARD_KEY.max());
         addMetric(metrics, ConfigServerMetrics.WANT_TO_DEPROVISION.max());
         addMetric(metrics, ConfigServerMetrics.SUSPENDED.max());
+        addMetric(metrics, ConfigServerMetrics.SUSPENDED_SECONDS.count());
+        addMetric(metrics, ConfigServerMetrics.ACTIVE_SECONDS.count());
         addMetric(metrics, ConfigServerMetrics.SOME_SERVICES_DOWN.max());
         addMetric(metrics, ConfigServerMetrics.NODE_FAILER_BAD_NODE.max());
         addMetric(metrics, ConfigServerMetrics.LOCK_ATTEMPT_LOCKED_LOAD, EnumSet.of(max,average));
@@ -114,6 +119,7 @@ public class InfrastructureMetricSet {
 
         addMetric(metrics, ConfigServerMetrics.LOCK_ATTEMPT_LOCKED_LOAD, EnumSet.of(max, average));
         addMetric(metrics, ConfigServerMetrics.MAINTENANCE_SUCCESS_FACTOR_DEVIATION.max());
+        addMetric(metrics, ConfigServerMetrics.MAINTENANCE_DURATION.max());
         addMetric(metrics, ConfigServerMetrics.MAINTENANCE_DEPLOYMENT_FAILURE.count());
         addMetric(metrics, ConfigServerMetrics.MAINTENANCE_DEPLOYMENT_TRANSIENT_FAILURE.count());
         addMetric(metrics, ConfigServerMetrics.OVERCOMMITTED_HOSTS.max());
@@ -157,6 +163,7 @@ public class InfrastructureMetricSet {
         addMetric(metrics, ControllerMetrics.DEPLOYMENT_DURATION.max());
         addMetric(metrics, ControllerMetrics.DEPLOYMENT_AVERAGE_DURATION.max());
         addMetric(metrics, ControllerMetrics.DEPLOYMENT_CONVERGENCE_FAILURE.count());
+        addMetric(metrics, ControllerMetrics.DEPLOYMENT_NODE_ALLOCATION_FAILURE.count());
         addMetric(metrics, ControllerMetrics.DEPLOYMENT_DEPLOYMENT_FAILURE.count());
         addMetric(metrics, ControllerMetrics.DEPLOYMENT_ERROR.count());
         addMetric(metrics, ControllerMetrics.DEPLOYMENT_FAILING_UPGRADES.min());
@@ -184,8 +191,12 @@ public class InfrastructureMetricSet {
         addMetric(metrics, ControllerMetrics.ZMS_QUOTA_USAGE.max());
         addMetric(metrics, ControllerMetrics.COREDUMP_PROCESSED.count());
         addMetric(metrics, ControllerMetrics.AUTH0_EXCEPTIONS.count());
-        addMetric(metrics, ControllerMetrics.CERTIFICATE_POOL_AVAILABLE.max());
+        addMetric(metrics, ControllerMetrics.BILLING_CREDITS.last());
         addMetric(metrics, ControllerMetrics.BILLING_EXCEPTIONS.count());
+        addMetric(metrics, ControllerMetrics.BILLING_WEBHOOK_FAILURES.count());
+        addMetric(metrics, ControllerMetrics.CERTIFICATE_POOL_AVAILABLE.max());
+        addMetric(metrics, ControllerMetrics.CERTIFICATE_COUNT.max());
+        addMetric(metrics, ControllerMetrics.CERTIFICATE_NAME_COUNT.max());
 
         addMetric(metrics, ControllerMetrics.METERING_AGE_SECONDS.min());
         addMetric(metrics, ControllerMetrics.METERING_LAST_REPORTED.max());
@@ -193,6 +204,11 @@ public class InfrastructureMetricSet {
         addMetric(metrics, ControllerMetrics.MAIL_SENT.count());
         addMetric(metrics, ControllerMetrics.MAIL_FAILED.count());
         addMetric(metrics, ControllerMetrics.MAIL_THROTTLED.count());
+
+        addMetric(metrics, ControllerMetrics.HUBSPOT_EXCEPTIONS.count());
+        addMetric(metrics, ControllerMetrics.HUBSPOT_LAST_SUCCESS.last());
+
+        addMetric(metrics, ControllerMetrics.TENANT_CREATED_LAST_SUCCESS.last());
 
         return metrics;
     }

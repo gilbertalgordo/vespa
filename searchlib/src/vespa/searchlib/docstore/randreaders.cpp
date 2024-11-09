@@ -10,7 +10,7 @@ LOG_SETUP(".search.docstore.randreaders");
 
 namespace search {
 
-DirectIORandRead::DirectIORandRead(const vespalib::string & fileName)
+DirectIORandRead::DirectIORandRead(const std::string & fileName)
     : _file(std::make_unique<FastOS_File>(fileName.c_str())),
       _alignment(1),
       _granularity(1),
@@ -26,6 +26,8 @@ DirectIORandRead::DirectIORandRead(const vespalib::string & fileName)
         throw SummaryException("Failed opening data file", *_file, VESPA_STRLOC);
     }
 }
+
+DirectIORandRead::~DirectIORandRead() = default;
 
 FileRandRead::FSP
 DirectIORandRead::read(size_t offset, vespalib::DataBuffer & buffer, size_t sz)
@@ -54,7 +56,7 @@ DirectIORandRead::getSize() const {
 }
 
 
-MMapRandRead::MMapRandRead(const vespalib::string & fileName, int mmapFlags, int fadviseOptions)
+MMapRandRead::MMapRandRead(const std::string & fileName, int mmapFlags, int fadviseOptions)
     : _file(std::make_unique<FastOS_File>(fileName.c_str()))
 {
     _file->enableMemoryMap(mmapFlags);
@@ -64,14 +66,17 @@ MMapRandRead::MMapRandRead(const vespalib::string & fileName, int mmapFlags, int
     }
 }
 
+MMapRandRead::~MMapRandRead() = default;
 
-NormalRandRead::NormalRandRead(const vespalib::string & fileName)
+NormalRandRead::NormalRandRead(const std::string & fileName)
     : _file(std::make_unique<FastOS_File>(fileName.c_str()))
 {
     if ( ! _file->OpenReadOnly()) {
         throw SummaryException("Failed opening data file", *_file, VESPA_STRLOC);
     }
 }
+
+NormalRandRead::~NormalRandRead() = default;
 
 FileRandRead::FSP
 MMapRandRead::read(size_t offset, vespalib::DataBuffer & buffer, size_t sz)
@@ -93,7 +98,7 @@ MMapRandRead::getMapping() {
     return _file->MemoryMapPtr(0);
 }
 
-MMapRandReadDynamic::MMapRandReadDynamic(const vespalib::string &fileName, int mmapFlags, int fadviseOptions)
+MMapRandReadDynamic::MMapRandReadDynamic(const std::string &fileName, int mmapFlags, int fadviseOptions)
     : _fileName(fileName),
       _holder(),
       _mmapFlags(mmapFlags),
@@ -102,6 +107,8 @@ MMapRandReadDynamic::MMapRandReadDynamic(const vespalib::string &fileName, int m
 {
     remap(0);
 }
+
+MMapRandReadDynamic::~MMapRandReadDynamic() = default;
 
 void
 MMapRandReadDynamic::remap(size_t sz)

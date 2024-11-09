@@ -4,8 +4,8 @@ package com.yahoo.vespa.config.server.http.v2;
 import ai.vespa.http.DomainName;
 import ai.vespa.http.HttpURL;
 import ai.vespa.http.HttpURL.Query;
-import com.yahoo.component.annotation.Inject;
 import com.yahoo.component.Version;
+import com.yahoo.component.annotation.Inject;
 import com.yahoo.config.application.api.ApplicationFile;
 import com.yahoo.config.model.api.Model;
 import com.yahoo.config.model.api.ServiceInfo;
@@ -31,11 +31,13 @@ import com.yahoo.slime.Slime;
 import com.yahoo.slime.SlimeUtils;
 import com.yahoo.text.StringUtilities;
 import com.yahoo.vespa.config.server.ApplicationRepository;
+import com.yahoo.vespa.config.server.ApplicationRepository.TesterSuspendedException;
 import com.yahoo.vespa.config.server.application.ApplicationReindexing;
 import com.yahoo.vespa.config.server.application.ClusterReindexing;
 import com.yahoo.vespa.config.server.application.ConfigConvergenceChecker;
 import com.yahoo.vespa.config.server.http.ContentHandler;
 import com.yahoo.vespa.config.server.http.ContentRequest;
+import com.yahoo.vespa.config.server.http.HttpErrorResponse;
 import com.yahoo.vespa.config.server.http.HttpHandler;
 import com.yahoo.vespa.config.server.http.JSONResponse;
 import com.yahoo.vespa.config.server.http.NotFoundException;
@@ -124,6 +126,14 @@ public class ApplicationHandler extends HttpHandler {
     }
 
     @Override
+    public HttpResponse handlePUT(HttpRequest request) {
+        Path path = new Path(request.getUri());
+
+        if (path.matches("/application/v2/tenant/{tenant}/application/{application}/environment/{ignore}/region/{ignore}/instance/{instance}/reindex")) return updateReindexing(applicationId(path), request);
+        return ErrorResponse.notFoundError("Nothing at " + path);
+    }
+
+    @Override
     public HttpResponse handleDELETE(HttpRequest request) {
         Path path = new Path(request.getUri());
 
@@ -205,9 +215,9 @@ public class ApplicationHandler extends HttpHandler {
     }
 
     private HttpResponse logs(ApplicationId applicationId, HttpRequest request) {
-        Optional<DomainName> hostname = Optional.ofNullable(request.getProperty("hostname")).map(DomainName::of);
-        String apiParams = Optional.ofNullable(request.getUri().getQuery()).map(q -> "?" + q).orElse("");
-        return applicationRepository.getLogs(applicationId, hostname, apiParams);
+        HttpURL requestURL = HttpURL.from(request.getUri());
+        Optional<DomainName> hostname = Optional.ofNullable(requestURL.query().lastEntries().get("hostname")).map(DomainName::of);
+        return applicationRepository.getLogs(applicationId, hostname, requestURL.query());
     }
 
     private HttpResponse searchNodeMetrics(ApplicationId applicationId) {
@@ -223,13 +233,18 @@ public class ApplicationHandler extends HttpHandler {
     }
 
     private HttpResponse testerRequest(ApplicationId applicationId, String command, HttpRequest request) {
-        return switch (command) {
-            case "status" -> applicationRepository.getTesterStatus(applicationId);
-            case "log"    -> applicationRepository.getTesterLog(applicationId, Long.valueOf(request.getProperty("after")));
-            case "ready"  -> applicationRepository.isTesterReady(applicationId);
-            case "report" -> applicationRepository.getTestReport(applicationId);
-            default       -> throw new IllegalArgumentException("Unknown tester command in request " + request.getUri().toString());
-        };
+        try {
+            return switch (command) {
+                case "status" -> applicationRepository.getTesterStatus(applicationId);
+                case "log" ->    applicationRepository.getTesterLog(applicationId, Long.valueOf(request.getProperty("after")));
+                case "ready" ->  applicationRepository.isTesterReady(applicationId);
+                case "report" -> applicationRepository.getTestReport(applicationId);
+                default -> throw new IllegalArgumentException("Unknown tester command in request " + request.getUri().toString());
+            };
+        }
+        catch (TesterSuspendedException e) {
+            return HttpErrorResponse.testerSuspended(e.getMessage());
+        }
     }
 
     private HttpResponse quotaUsage(ApplicationId applicationId) {
@@ -252,13 +267,40 @@ public class ApplicationHandler extends HttpHandler {
 
 
     private Model getActiveModelOrThrow(ApplicationId id) {
-        return applicationRepository.getActiveApplicationSet(id)
+        return applicationRepository.getActiveApplicationVersions(id)
                                     .orElseThrow(() -> new NotFoundException("Application '" + id + "' not found"))
                                     .getForVersionOrLatest(Optional.empty(), applicationRepository.clock().instant())
                 .getModel();
     }
 
     private HttpResponse triggerReindexing(ApplicationId applicationId, HttpRequest request) {
+        double speed = Double.parseDouble(Objects.requireNonNullElse(request.getProperty("speed"), "1"));
+        String cause = Objects.requireNonNullElse(request.getProperty("cause"), "reindexing for an unknown reason");
+        Instant now = applicationRepository.clock().instant();
+
+        return modifyReindexing(applicationId, request,
+                                (original, cluster, type) -> original.withReady(cluster, type, now, speed, cause),
+                                new StringJoiner(", ", "Reindexing document types ", " of application " + applicationId)
+                                        .setEmptyValue("Not reindexing any document types of application " + applicationId));
+    }
+
+    private HttpResponse updateReindexing(ApplicationId applicationId, HttpRequest request) {
+        String speedValue = request.getProperty("speed");
+        if (speedValue == null)
+            throw new IllegalArgumentException("request must specify 'speed' parameter");
+
+        return modifyReindexing(applicationId, request,
+                                (original, cluster, type) -> original.withSpeed(cluster, type, Double.parseDouble(speedValue)),
+                                new StringJoiner(", ", "Set reindexing speed to '" + speedValue + "' for document types ", " of application " + applicationId)
+                                        .setEmptyValue("Changed reindexing of no document types of application " + applicationId));
+    }
+
+    private interface ReindexingModification {
+        ApplicationReindexing apply(ApplicationReindexing original, String cluster, String type);
+    }
+
+    private HttpResponse modifyReindexing(ApplicationId applicationId, HttpRequest request,
+                                          ReindexingModification modification, StringJoiner messageBuilder) {
         Model model = getActiveModelOrThrow(applicationId);
         Map<String, Set<String>> documentTypes = model.documentTypesByCluster();
         Map<String, Set<String>> indexedDocumentTypes = model.indexedDocumentTypesByCluster();
@@ -266,11 +308,8 @@ public class ApplicationHandler extends HttpHandler {
         boolean indexedOnly = request.getBooleanProperty("indexedOnly");
         Set<String> clusters = StringUtilities.split(request.getProperty("clusterId"));
         Set<String> types = StringUtilities.split(request.getProperty("documentType"));
-        double speed = Double.parseDouble(Objects.requireNonNullElse(request.getProperty("speed"), "1"));
-        String cause = Objects.requireNonNullElse(request.getProperty("cause"), "reindexing for an unknown reason");
 
         Map<String, Set<String>> reindexed = new TreeMap<>();
-        Instant now = applicationRepository.clock().instant();
         applicationRepository.modifyReindexing(applicationId, reindexing -> {
             for (String cluster : clusters.isEmpty() ? documentTypes.keySet() : clusters) {
                 if ( ! documentTypes.containsKey(cluster))
@@ -283,7 +322,7 @@ public class ApplicationHandler extends HttpHandler {
                                                            String.join(", ", documentTypes.get(cluster)));
 
                     if ( ! indexedOnly || indexedDocumentTypes.get(cluster).contains(type)) {
-                        reindexing = reindexing.withReady(cluster, type, now, speed, cause);
+                        reindexing = modification.apply(reindexing, cluster, type);
                         reindexed.computeIfAbsent(cluster, __ -> new TreeSet<>()).add(type);
                     }
                 }
@@ -292,13 +331,10 @@ public class ApplicationHandler extends HttpHandler {
         });
 
         return new MessageResponse(reindexed.entrySet().stream()
-                                              .filter(cluster -> ! cluster.getValue().isEmpty())
-                                              .map(cluster -> "[" + String.join(", ", cluster.getValue()) + "] in '" + cluster.getKey() + "'")
-                                              .reduce(new StringJoiner(", ", "Reindexing document types ", " of application " + applicationId)
-                                                              .setEmptyValue("Not reindexing any document types of application " + applicationId),
-                                                      StringJoiner::add,
-                                                      StringJoiner::merge)
-                                              .toString());
+                                            .filter(cluster -> ! cluster.getValue().isEmpty())
+                                            .map(cluster -> "[" + String.join(", ", cluster.getValue()) + "] in '" + cluster.getKey() + "'")
+                                            .reduce(messageBuilder, StringJoiner::add, StringJoiner::merge)
+                                            .toString());
     }
 
     public HttpResponse disableReindexing(ApplicationId applicationId) {
@@ -312,10 +348,6 @@ public class ApplicationHandler extends HttpHandler {
     }
 
     private HttpResponse getReindexingStatus(ApplicationId applicationId) {
-        Tenant tenant = applicationRepository.getTenant(applicationId);
-        if (tenant == null)
-            throw new NotFoundException("Tenant '" + applicationId.tenant().value() + "' not found");
-
         try {
             Map<String, Set<String>> documentTypes = getActiveModelOrThrow(applicationId).documentTypesByCluster();
             ApplicationReindexing reindexing = applicationRepository.getReindexing(applicationId);

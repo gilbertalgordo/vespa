@@ -1,9 +1,6 @@
 // Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 /**
- * \class storage::TestServiceLayerApp
- * \ingroup common
- *
- * \brief Helper class for tests involving service layer.
+ * Helper class for tests involving service layer.
  *
  * Some components need some dependencies injected in order to work correctly.
  * This test class simplifies the process of creating these dependencies.
@@ -34,6 +31,8 @@
 #include <vespa/vespalib/util/sequencedtaskexecutor.h>
 #include <atomic>
 
+namespace config { class ConfigUri; }
+
 namespace storage {
 
 namespace spi { struct PersistenceProvider; }
@@ -51,7 +50,7 @@ class TestStorageApp
 protected:
     document::TestDocMan _docMan;
     TestNodeStateUpdater _nodeStateUpdater;
-    vespalib::string _configId;
+    std::string _configId;
     NodeIdentity _node_identity;
     std::atomic<bool> _initialized;
 
@@ -66,14 +65,15 @@ public:
      * from config themselves.
      */
     TestStorageApp(StorageComponentRegisterImpl::UP compReg,
-                   const lib::NodeType&, NodeIndex = NodeIndex(0xffff),
-                   vespalib::stringref configId = "");
+                   const lib::NodeType&, NodeIndex index,
+                   const config::ConfigUri& config_uri);
     ~TestStorageApp() override;
 
     // Set functions, to be able to modify content while running.
     void setDistribution(Redundancy, NodeCount);
     void setTypeRepo(std::shared_ptr<const document::DocumentTypeRepo> repo);
     void setClusterState(const lib::ClusterState&);
+    void set_cluster_state_bundle(std::shared_ptr<const lib::ClusterStateBundle>);
 
     // Utility functions for getting a hold of currently used bits. Practical
     // to avoid adding extra components in the tests.
@@ -82,7 +82,7 @@ public:
     std::shared_ptr<const document::DocumentTypeRepo> getTypeRepo() { return _compReg.getTypeRepo(); }
     const document::BucketIdFactory& getBucketIdFactory() { return _compReg.getBucketIdFactory(); }
     TestNodeStateUpdater& getStateUpdater() { return _nodeStateUpdater; }
-    std::shared_ptr<lib::Distribution> & getDistribution() { return _compReg.getDistribution(); }
+    std::shared_ptr<const lib::Distribution> getDistribution() { return _compReg.getDistribution(); }
     TestNodeStateUpdater& getNodeStateUpdater() { return _nodeStateUpdater; }
     uint16_t getIndex() const { return _compReg.getIndex(); }
     const NodeIdentity& node_identity() const noexcept { return _node_identity; }
@@ -110,8 +110,8 @@ class TestServiceLayerApp : public TestStorageApp
     HostInfo _host_info;
 
 public:
-    explicit TestServiceLayerApp(vespalib::stringref configId);
-    explicit TestServiceLayerApp(NodeIndex = NodeIndex(0xffff), vespalib::stringref configId = "");
+    TestServiceLayerApp(NodeIndex node_index, const config::ConfigUri& config_uri);
+    explicit TestServiceLayerApp(const config::ConfigUri& config_uri);
     ~TestServiceLayerApp() override;
 
     void setupDummyPersistence();
@@ -140,11 +140,11 @@ class TestDistributorApp : public TestStorageApp,
     uint64_t _lastUniqueTimestampRequested;
     uint32_t _uniqueTimestampCounter;
 
-    void configure(vespalib::stringref configId);
+    void configure(const config::ConfigUri& config_uri);
 
 public:
-    explicit TestDistributorApp(vespalib::stringref configId = "");
-    explicit TestDistributorApp(NodeIndex index, vespalib::stringref configId = "");
+    TestDistributorApp(NodeIndex index, const config::ConfigUri& config_uri);
+    explicit TestDistributorApp(const config::ConfigUri& config_uri);
     ~TestDistributorApp() override;
 
     DistributorComponentRegisterImpl& getComponentRegister() override {

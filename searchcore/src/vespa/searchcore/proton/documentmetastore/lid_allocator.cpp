@@ -2,10 +2,11 @@
 
 #include "lid_allocator.h"
 #include <vespa/searchlib/common/bitvectoriterator.h>
-#include <vespa/searchlib/fef/termfieldmatchdataarray.h>
 #include <vespa/searchlib/fef/matchdata.h>
-#include <vespa/searchlib/queryeval/full_search.h>
+#include <vespa/searchlib/fef/termfieldmatchdataarray.h>
 #include <vespa/searchlib/queryeval/blueprint.h>
+#include <vespa/searchlib/queryeval/flow_tuning.h>
+#include <vespa/searchlib/queryeval/full_search.h>
 #include <mutex>
 
 #include <vespa/log/log.h>
@@ -18,6 +19,8 @@ using search::queryeval::FullSearch;
 using search::queryeval::SearchIterator;
 using search::queryeval::SimpleLeafBlueprint;
 using vespalib::GenerationHolder;
+
+using namespace search::queryeval::flow;
 
 namespace proton::documentmetastore {
 
@@ -206,14 +209,16 @@ private:
         return search::BitVectorIterator::create(&_activeLids, get_docid_limit(), *tfmd, strict);
     }
     FlowStats calculate_flow_stats(uint32_t docid_limit) const override {
-        return default_flow_stats(docid_limit, _activeLids.size(), 0);
+        double rel_est = abs_to_rel_est(_activeLids.size(), docid_limit);
+        double do_not_make_me_strict = 1000.0;
+        return {rel_est, bitvector_cost(), do_not_make_me_strict * bitvector_strict_cost(rel_est)};
     }
     SearchIterator::UP
-    createLeafSearch(const TermFieldMatchDataArray &tfmda, bool strict) const override
+    createLeafSearch(const TermFieldMatchDataArray &tfmda) const override
     {
         assert(tfmda.size() == 0);
         (void) tfmda;
-        return create_search_helper(strict);
+        return create_search_helper(strict());
     }
 public:
     WhiteListBlueprint(const search::BitVector &activeLids, bool all_lids_active)
@@ -228,11 +233,11 @@ public:
 
     bool isWhiteList() const noexcept final { return true; }
 
-    SearchIterator::UP createFilterSearch(bool strict, FilterConstraint) const override {
+    SearchIterator::UP createFilterSearch(FilterConstraint) const override {
         if (_all_lids_active) {
             return std::make_unique<FullSearch>();
         }
-        return create_search_helper(strict);
+        return create_search_helper(strict());
     }
 
     ~WhiteListBlueprint() override {

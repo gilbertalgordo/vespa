@@ -36,8 +36,8 @@ using std::make_pair;
 using std::pair;
 using std::vector;
 using vespalib::nbostream;
-using vespalib::stringref;
-using vespalib::string;
+using std::string_view;
+using std::string;
 using vespalib::slime::BinaryFormat;
 using vespalib::compression::CompressionConfig;
 
@@ -320,7 +320,7 @@ VespaDocumentSerializer::write(const WeightedSetFieldValue &value) {
 void
 VespaDocumentSerializer::write(const TensorFieldValue &value) {
     vespalib::nbostream tmpStream;
-    auto tensor = value.getAsTensorPtr();
+    const auto* tensor = value.getAsTensorPtr();
     if (tensor) {
         encode_value(*tensor, tmpStream);
         assert( ! tmpStream.empty());
@@ -427,10 +427,10 @@ void VespaDocumentSerializer::write(const MapValueUpdate &value)
 namespace {
 
 // We must ensure that string passed is always zero-terminated, so take in
-// string instead of stringref. No extra allocs; function only ever called with
+// string instead of string_view. No extra allocs; function only ever called with
 // string arguments.
 void
-writeStringWithZeroTermination(nbostream & os, const vespalib::string& s)
+writeStringWithZeroTermination(nbostream & os, const std::string& s)
 {
     uint32_t sz(s.size() + 1);
     os << sz;

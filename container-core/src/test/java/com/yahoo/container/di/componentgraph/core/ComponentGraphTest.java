@@ -21,16 +21,23 @@ import com.yahoo.vespa.config.ConfigKey;
 import org.junit.jupiter.api.Test;
 
 import java.lang.annotation.Annotation;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 import java.util.function.Supplier;
 
 import static com.yahoo.container.di.componentgraph.core.ComponentGraph.isBindingAnnotation;
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
 /**
  * @author gjoranv
@@ -112,6 +119,33 @@ public class ComponentGraphTest {
         ComponentTakingComponent instance = componentGraph.getInstance(ComponentTakingComponent.class);
         assertNotNull(instance);
         assertSame(injectedComponent.instance.get(), instance.injectedComponent);
+    }
+
+    // This is to show that explicit injection cannot be used to prevent other components from having the
+    // injected component injected implicitly. Hence, explicit injection is only useful when there
+    // is a need to inject two different instances of the same component class to different target components.
+    // (The component graph fails to look up a component for injection when there are multiple global
+    // instances of the same class.)
+    @Test
+    void explicitly_injected_component_can_also_be_injected_implicitly() {
+        Node injected = mockComponentNode(SimpleComponent.class);
+        Node target = mockComponentNode(ComponentTakingComponent.class);
+        target.inject(injected);
+        Node implicit = mockComponentNode(ComponentTakingComponent.class);
+
+        ComponentGraph componentGraph = new ComponentGraph();
+        componentGraph.add(injected);
+        componentGraph.add(target);
+        componentGraph.add(implicit);
+        componentGraph.complete();
+
+        injected.constructInstance();
+        target.constructInstance();
+        implicit.constructInstance();
+
+        var targetInstance = (ComponentTakingComponent)target.constructedInstance().get();
+        var implicitInstance = (ComponentTakingComponent)implicit.constructedInstance().get();
+        assertSame(targetInstance.injectedComponent, implicitInstance.injectedComponent);
     }
 
     @Test
@@ -480,7 +514,7 @@ public class ComponentGraphTest {
         ComponentGraph graph = new ComponentGraph();
         graph.add(mockComponentNodeWithId(ExecutorProvider.class, "dummyId"));
         graph.complete();
-        graph.setAvailableConfigs(Collections.emptyMap());
+        graph.setAvailableConfigs(Map.of());
         return graph;
     }
 
@@ -607,7 +641,7 @@ public class ComponentGraphTest {
     }
 
     public static class ExecutorProvider implements Provider<Executor> {
-        private Executor executor = Executors.newSingleThreadExecutor();
+        private final Executor executor = Executors.newSingleThreadExecutor();
 
         public Executor get() {
             return executor;

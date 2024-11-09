@@ -19,9 +19,6 @@
 #include <vespa/searchlib/util/fileutil.h>
 #include <vespa/searchcommon/attribute/config.h>
 #include <vespa/vespalib/data/fileheader.h>
-#include <vespa/vespalib/stllike/asciistream.h>
-#include <vespa/vespalib/test/insertion_operators.h>
-#include <vespa/vespalib/testkit/test_kit.h>
 #include <vespa/vespalib/util/mmap_file_allocator_factory.h>
 #include <vespa/searchlib/util/bufferwriter.h>
 #include <vespa/vespalib/util/threadstackexecutor.h>
@@ -34,6 +31,7 @@
 #include <vespa/eval/eval/test/value_compare.h>
 #include <vespa/fastos/file.h>
 #include <filesystem>
+#include <vespa/vespalib/gtest/gtest.h>
 
 #include <vespa/log/log.h>
 LOG_SETUP("tensorattribute_test");
@@ -75,19 +73,24 @@ using vespalib::eval::ValueType;
 using DoubleVector = std::vector<double>;
 using generation_t = vespalib::GenerationHandler::generation_t;
 
-vespalib::string sparseSpec("tensor(x{},y{})");
-vespalib::string denseSpec("tensor(x[2],y[3])");
-vespalib::string vec_2d_spec("tensor(x[2])");
-vespalib::string vec_mixed_2d_spec("tensor(a{},x[2])");
+std::string sparseSpec("tensor(x{},y{})");
+std::string denseSpec("tensor(x[2],y[3])");
+std::string a_dimension("a");
+std::string b_dimension("b");
+std::string x_dimension("x");
+std::string vec_2d_spec("tensor(x[2])");
+std::string vec_mixed_1m_2d_spec("tensor(a{},x[2])");
+std::string vec_mixed_2m_2d_spec("tensor(a{},b{},x[2])");
+std::vector<std::string> vec_specs{vec_2d_spec, vec_mixed_1m_2d_spec, vec_mixed_2m_2d_spec};
 
 Value::UP createTensor(const TensorSpec &spec) {
     return value_from_spec(spec, FastValueBuilderFactory::get());
 }
 
-std::vector<vespalib::string>
-to_string_labels(vespalib::ConstArrayRef<vespalib::string_id> labels)
+std::vector<std::string>
+to_string_labels(std::span<const vespalib::string_id> labels)
 {
-    std::vector<vespalib::string> result;
+    std::vector<std::string> result;
     for (auto& label : labels) {
         result.emplace_back(SharedStringRepo::Handle::string_from_id(label));
     }
@@ -101,27 +104,31 @@ vec_2d(double x0, double x1)
 }
 
 TensorSpec
-vec_mixed_2d(std::vector<std::vector<double>> val)
+vec_mixed_2d(uint32_t mapped_dimensions, std::vector<std::vector<double>> val)
 {
-    TensorSpec spec(vec_mixed_2d_spec);
+    TensorSpec spec(vec_specs[mapped_dimensions]);
     for (uint32_t a = 0; a < val.size(); ++a) {
-        vespalib::asciistream a_stream;
-        a_stream << a;
-        vespalib::string a_as_string = a_stream.str();
+        TensorSpec::Address address;
+        address.insert(std::make_pair(a_dimension, std::to_string(a)));
+        if (mapped_dimensions > 1) {
+            address.insert(std::make_pair(b_dimension, std::to_string(a + 10)));
+        }
+        address.insert(std::make_pair(x_dimension, 0u));
         for (uint32_t x = 0; x < val[a].size(); ++x) {
-            spec.add({{"a", a_as_string.c_str()},{"x", x}}, val[a][x]);
+            address.find(x_dimension)->second = x;
+            spec.add(address, val[a][x]);
         }
     }
     return spec;
 }
 
 TensorSpec
-typed_vec_2d(HnswIndexType type, double x0, double x1)
+typed_vec_2d(uint32_t mapped_dimensions, double x0, double x1)
 {
-    if (type == HnswIndexType::SINGLE) {
+    if (mapped_dimensions == 0) {
         return vec_2d(x0, x1);
     } else {
-        return vec_mixed_2d({{x0, x1}});
+        return vec_mixed_2d(mapped_dimensions, {{x0, x1}});
     }
 }
 
@@ -209,21 +216,23 @@ public:
         EXPECT_TRUE(_complete_adds.empty());
     }
     void expect_entry(uint32_t exp_docid, const DoubleVector& exp_vector, const EntryVector& entries) const {
-        EXPECT_EQUAL(1u, entries.size());
-        EXPECT_EQUAL(exp_docid, entries.back().first);
-        EXPECT_EQUAL(exp_vector, entries.back().second);
+        EXPECT_EQ(1u, entries.size());
+        if (entries.size() >= 1u) {
+            EXPECT_EQ(exp_docid, entries.back().first);
+            EXPECT_EQ(exp_vector, entries.back().second);
+        }
     }
     void expect_add(uint32_t exp_docid, const DoubleVector& exp_vector) const {
         expect_entry(exp_docid, exp_vector, _adds);
     }
     void expect_adds(const EntryVector &exp_adds) const {
-        EXPECT_EQUAL(exp_adds, _adds);
+        EXPECT_EQ(exp_adds, _adds);
     }
     void expect_prepare_adds(const EntryVector &exp) const {
-        EXPECT_EQUAL(exp, _prepare_adds);
+        EXPECT_EQ(exp, _prepare_adds);
     }
     void expect_complete_adds(const EntryVector &exp) const {
-        EXPECT_EQUAL(exp, _complete_adds);
+        EXPECT_EQ(exp, _complete_adds);
     }
     void expect_empty_remove() const {
         EXPECT_TRUE(_removes.empty());
@@ -258,7 +267,7 @@ public:
                                std::unique_ptr<PrepareResult> prepare_result) override {
         auto* mock_result = dynamic_cast<MockPrepareResult*>(prepare_result.get());
         assert(mock_result);
-        EXPECT_EQUAL(docid, mock_result->docid);
+        EXPECT_EQ(docid, mock_result->docid);
         auto vector = _vectors.get_vector(docid, 0).typify<double>();
         _complete_adds.emplace_back(docid, DoubleVector(vector.begin(), vector.end()));
     }
@@ -329,6 +338,10 @@ public:
         static search::tensor::DistanceFunctionFactory::UP my_dist_fun = search::tensor::make_distance_function_factory(search::attribute::DistanceMetric::Euclidean, vespalib::eval::CellType::DOUBLE);
         return *my_dist_fun;
     }
+
+    uint32_t check_consistency(uint32_t) const noexcept override {
+        return 0;
+    }
 };
 
 class MockNearestNeighborIndexFactory : public NearestNeighborIndexFactory {
@@ -346,10 +359,10 @@ class MockNearestNeighborIndexFactory : public NearestNeighborIndexFactory {
     }
 };
 
-const vespalib::string test_dir = "test_data/";
-const vespalib::string attr_name = test_dir + "my_attr";
+const std::string test_dir = "test_data/";
+const std::string attr_name = test_dir + "my_attr";
 
-const vespalib::string hnsw_max_squared_norm = "hnsw.max_squared_norm";
+const std::string hnsw_max_squared_norm = "hnsw.max_squared_norm";
 
 struct FixtureTraits {
     bool use_dense_tensor_attribute = false;
@@ -407,6 +420,37 @@ struct FixtureTraits {
 
 };
 
+struct WrapValue {
+    std::unique_ptr<Value> _value;
+    WrapValue()
+        : _value()
+    {
+    }
+    WrapValue(std::unique_ptr<Value> value)
+        : _value(std::move(value))
+    {
+    }
+    WrapValue(const TensorSpec& spec)
+        : _value(createTensor(spec))
+    {
+    }
+    bool operator==(const WrapValue& rhs) const {
+        if (_value) {
+            return rhs._value && *_value == *rhs._value;
+        } else {
+            return !rhs._value;
+        }
+    }
+};
+
+void PrintTo(const WrapValue& value, std::ostream* os) {
+    if (value._value) {
+        *os << *value._value;
+    } else {
+        *os << "null";
+    }
+}
+
 struct Fixture {
     using BasicType = search::attribute::BasicType;
     using CollectionType = search::attribute::CollectionType;
@@ -414,8 +458,9 @@ struct Fixture {
 
     search::test::DirectoryHandler _dir_handler;
     Config _cfg;
-    vespalib::string _name;
-    vespalib::string _typeSpec;
+    std::string _name;
+    std::string _typeSpec;
+    ValueType _tensor_type;
     bool _use_mock_index;
     std::unique_ptr<NearestNeighborIndexFactory> _index_factory;
     std::shared_ptr<TensorAttribute> _tensorAttr;
@@ -423,9 +468,9 @@ struct Fixture {
     vespalib::ThreadStackExecutor _executor;
     bool _denseTensors;
     FixtureTraits _traits;
-    vespalib::string _mmap_allocator_base_dir;
+    std::string _mmap_allocator_base_dir;
 
-    explicit Fixture(const vespalib::string &typeSpec, FixtureTraits traits = FixtureTraits());
+    explicit Fixture(const std::string &typeSpec, FixtureTraits traits = FixtureTraits());
 
     ~Fixture();
 
@@ -541,30 +586,23 @@ struct Fixture {
         return _attr->getStatus();
     }
 
-    void assertGetNoTensor(uint32_t docId) {
+    WrapValue get_tensor(uint32_t docId) {
         AttributeGuard guard(_attr);
-        Value::UP actTensor = _tensorAttr->getTensor(docId);
-        EXPECT_FALSE(actTensor);
+        return { _tensorAttr->getTensor(docId) };
     }
 
-    void assertGetTensor(const TensorSpec &expSpec, uint32_t docId) {
-        Value::UP expTensor = createTensor(expSpec);
-        AttributeGuard guard(_attr);
-        Value::UP actTensor = _tensorAttr->getTensor(docId);
-        EXPECT_TRUE(static_cast<bool>(actTensor));
-        EXPECT_EQUAL(*expTensor, *actTensor);
+    bool save() {
+        auto result = _attr->save();
+        EXPECT_NE(0, _attr->size_on_disk());
+        return result;
     }
 
-    void save() {
-        bool saveok = _attr->save();
-        EXPECT_TRUE(saveok);
-    }
-
-    void load() {
+    bool load() {
         _tensorAttr = makeAttr();
         _attr = _tensorAttr;
-        bool loadok = _attr->load();
-        EXPECT_TRUE(loadok);
+        auto result = _attr->load();
+        EXPECT_NE(0, _attr->size_on_disk());
+        return result;
     }
 
     void loadWithExecutor() {
@@ -572,6 +610,7 @@ struct Fixture {
         _attr = _tensorAttr;
         bool loadok = _attr->load(&_executor);
         EXPECT_TRUE(loadok);
+        EXPECT_NE(0, _attr->size_on_disk());
     }
 
     TensorSpec expDenseTensor3() const {
@@ -590,9 +629,11 @@ struct Fixture {
         return {denseSpec};
     }
 
-    vespalib::string expEmptyDenseTensorSpec() const {
+    std::string expEmptyDenseTensorSpec() const {
         return denseSpec;
     }
+
+    uint32_t count_mapped_dimensions() { return _tensor_type.count_mapped_dimensions(); }
 
     vespalib::FileHeader get_file_header();
     void set_example_tensors();
@@ -610,11 +651,12 @@ struct Fixture {
     void test_mmap_file_allocator();
 };
 
-Fixture::Fixture(const vespalib::string &typeSpec, FixtureTraits traits)
+Fixture::Fixture(const std::string &typeSpec, FixtureTraits traits)
     : _dir_handler(test_dir),
       _cfg(BasicType::TENSOR, CollectionType::SINGLE),
       _name(attr_name),
       _typeSpec(typeSpec),
+      _tensor_type(ValueType::from_spec(typeSpec)),
       _index_factory(),
       _tensorAttr(),
       _attr(),
@@ -648,8 +690,8 @@ Fixture::set_example_tensors()
 void
 Fixture::assert_example_tensors()
 {
-    assertGetTensor(vec_2d(3, 5), 1);
-    assertGetTensor(vec_2d(7, 9), 2);
+    EXPECT_EQ(WrapValue(vec_2d(3, 5)), get_tensor(1));
+    EXPECT_EQ(WrapValue(vec_2d(7, 9)), get_tensor(2));
 }
 
 void
@@ -657,47 +699,50 @@ Fixture::save_example_tensors_with_mock_index()
 {
     set_example_tensors();
     mock_index().save_index_with_value(123);
-    save();
+    EXPECT_TRUE(save());
     EXPECT_TRUE(std::filesystem::exists(std::filesystem::path(_name + ".nnidx")));
 }
 
 void
 Fixture::testEmptyAttribute()
 {
-    EXPECT_EQUAL(1u, _attr->getNumDocs());
-    EXPECT_EQUAL(1u, _attr->getCommittedDocIdLimit());
+    SCOPED_TRACE("testEmptyAttribute");
+    EXPECT_EQ(1u, _attr->getNumDocs());
+    EXPECT_EQ(1u, _attr->getCommittedDocIdLimit());
 }
 
 void
 Fixture::testSetTensorValue()
 {
+    SCOPED_TRACE("testSetTensorValue");
     ensureSpace(4);
-    EXPECT_EQUAL(5u, _attr->getNumDocs());
-    TEST_DO(assertGetNoTensor(4));
-    EXPECT_EXCEPTION(set_tensor(4, TensorSpec("double")),
+    EXPECT_EQ(5u, _attr->getNumDocs());
+    EXPECT_EQ(WrapValue(), get_tensor(4));
+    VESPA_EXPECT_EXCEPTION(set_tensor(4, TensorSpec("double")),
                      WrongTensorTypeException,
                      "but other tensor type is 'double'");
-    TEST_DO(assertGetNoTensor(4));
+    EXPECT_EQ(WrapValue(), get_tensor(4));
     set_empty_tensor(4);
     if (_denseTensors) {
-        TEST_DO(assertGetTensor(expEmptyDenseTensor(), 4));
+        EXPECT_EQ(WrapValue(expEmptyDenseTensor()), get_tensor(4));
         set_tensor(3, expDenseTensor3());
-        TEST_DO(assertGetTensor(expDenseTensor3(), 3));
+        EXPECT_EQ(WrapValue(expDenseTensor3()), get_tensor(3));
     } else {
-        TEST_DO(assertGetTensor(TensorSpec(sparseSpec), 4));
+        EXPECT_EQ(WrapValue(TensorSpec(sparseSpec)), get_tensor(4));
         set_tensor(3, TensorSpec(sparseSpec)
                 .add({{"x", ""}, {"y", ""}}, 11));
-        TEST_DO(assertGetTensor(TensorSpec(sparseSpec)
-                                        .add({{"x", ""}, {"y", ""}}, 11), 3));
+        EXPECT_EQ(WrapValue(TensorSpec(sparseSpec)
+                                        .add({{"x", ""}, {"y", ""}}, 11)), get_tensor(3));
     }
-    TEST_DO(assertGetNoTensor(2));
-    TEST_DO(clearTensor(3));
-    TEST_DO(assertGetNoTensor(3));
+    EXPECT_EQ(WrapValue(), get_tensor(2));
+    clearTensor(3);
+    EXPECT_EQ(WrapValue(), get_tensor(3));
 }
 
 void
 Fixture::testSaveLoad()
 {
+    SCOPED_TRACE("testSaveLoad");
     ensureSpace(4);
     set_empty_tensor(4);
     if (_denseTensors) {
@@ -706,24 +751,25 @@ Fixture::testSaveLoad()
         set_tensor(3, TensorSpec(sparseSpec)
                 .add({{"x", ""}, {"y", "1"}}, 11));
     }
-    TEST_DO(save());
-    TEST_DO(load());
-    EXPECT_EQUAL(5u, _attr->getNumDocs());
-    EXPECT_EQUAL(5u, _attr->getCommittedDocIdLimit());
+    EXPECT_TRUE(save());
+    EXPECT_TRUE(load());
+    EXPECT_EQ(5u, _attr->getNumDocs());
+    EXPECT_EQ(5u, _attr->getCommittedDocIdLimit());
     if (_denseTensors) {
-        TEST_DO(assertGetTensor(expDenseTensor3(), 3));
-        TEST_DO(assertGetTensor(expEmptyDenseTensor(), 4));
+        EXPECT_EQ(WrapValue(expDenseTensor3()), get_tensor(3));
+        EXPECT_EQ(WrapValue(expEmptyDenseTensor()), get_tensor(4));
     } else {
-        TEST_DO(assertGetTensor(TensorSpec(sparseSpec)
-                                        .add({{"x", ""}, {"y", "1"}}, 11), 3));
-        TEST_DO(assertGetTensor(TensorSpec(sparseSpec), 4));
+        EXPECT_EQ(WrapValue(TensorSpec(sparseSpec)
+                                        .add({{"x", ""}, {"y", "1"}}, 11)), get_tensor(3));
+        EXPECT_EQ(WrapValue(TensorSpec(sparseSpec)), get_tensor(4));
     }
-    TEST_DO(assertGetNoTensor(2));
+    EXPECT_EQ(WrapValue(), get_tensor(2));
 }
 
 void
 Fixture::testCompaction()
 {
+    SCOPED_TRACE("testCompaction");
     ensureSpace(4);
     TensorSpec empty_xy_tensor(sparseSpec);
     TensorSpec simple_tensor = TensorSpec(sparseSpec)
@@ -761,14 +807,14 @@ Fixture::testCompaction()
         }
         oldStatus = newStatus;
     }
-    EXPECT_GREATER(iterLimit, iter);
+    EXPECT_GT(iterLimit, iter);
     LOG(info,
         "iter = %" PRIu64 ", memory usage %" PRIu64 " -> %" PRIu64,
         iter, oldStatus.getUsed(), newStatus.getUsed());
-    TEST_DO(assertGetNoTensor(1));
-    TEST_DO(assertGetTensor(fill_tensor, 2));
-    TEST_DO(assertGetTensor(simple_tensor, 3));
-    TEST_DO(assertGetTensor(empty_xy_tensor, 4));
+    EXPECT_EQ(WrapValue(), get_tensor(1));
+    EXPECT_EQ(WrapValue(fill_tensor), get_tensor(2));
+    EXPECT_EQ(WrapValue(simple_tensor), get_tensor(3));
+    EXPECT_EQ(WrapValue(empty_xy_tensor), get_tensor(4));
 }
 
 vespalib::FileHeader
@@ -776,7 +822,7 @@ Fixture::get_file_header()
 {
     vespalib::FileHeader header;
     FastOS_File file;
-    vespalib::string file_name = attr_name + ".dat";
+    std::string file_name = attr_name + ".dat";
     EXPECT_TRUE(file.OpenReadOnly(file_name.c_str()));
     (void) header.readFile(file);
     return header;
@@ -785,36 +831,39 @@ Fixture::get_file_header()
 void
 Fixture::testTensorTypeFileHeaderTag()
 {
+    SCOPED_TRACE("testTensorTypeFileHeaderTag");
     ensureSpace(4);
-    TEST_DO(save());
+    EXPECT_TRUE(save());
 
     auto header = get_file_header();
     EXPECT_TRUE(header.hasTag("tensortype"));
-    EXPECT_EQUAL(_typeSpec, header.getTag("tensortype").asString());
+    EXPECT_EQ(_typeSpec, header.getTag("tensortype").asString());
     if (_traits.use_dense_tensor_attribute) {
-        EXPECT_EQUAL(1u, header.getTag("version").asInteger());
+        EXPECT_EQ(1u, header.getTag("version").asInteger());
     } else {
-        EXPECT_EQUAL(0u, header.getTag("version").asInteger());
+        EXPECT_EQ(0u, header.getTag("version").asInteger());
     }
 }
 
 void
 Fixture::testEmptyTensor()
 {
+    SCOPED_TRACE("testEmptyTensor");
     const TensorAttribute &tensorAttr = *_tensorAttr;
     Value::UP emptyTensor = tensorAttr.getEmptyTensor();
     if (_denseTensors) {
-        vespalib::string expSpec = expEmptyDenseTensorSpec();
-        EXPECT_EQUAL(emptyTensor->type(), ValueType::from_spec(expSpec));
+        std::string expSpec = expEmptyDenseTensorSpec();
+        EXPECT_EQ(emptyTensor->type(), ValueType::from_spec(expSpec));
     } else {
-        EXPECT_EQUAL(emptyTensor->type(), tensorAttr.getConfig().tensorType());
-        EXPECT_EQUAL(emptyTensor->type(), ValueType::from_spec(_typeSpec));
+        EXPECT_EQ(emptyTensor->type(), tensorAttr.getConfig().tensorType());
+        EXPECT_EQ(emptyTensor->type(), ValueType::from_spec(_typeSpec));
     }
 }
 
 void
 Fixture::testSerializedTensorRef()
 {
+    SCOPED_TRACE("testSerializedTensorRef");
     const TensorAttribute &tensorAttr = *_tensorAttr;
     if (_traits.use_dense_tensor_attribute || _traits.use_direct_tensor_attribute) {
         EXPECT_FALSE(tensorAttr.supports_get_serialized_tensor_ref());
@@ -831,56 +880,59 @@ Fixture::testSerializedTensorRef()
     auto ref = tensorAttr.get_serialized_tensor_ref(3);
     auto vectors = ref.get_vectors();
     if (_denseTensors) {
-        EXPECT_EQUAL(1u, vectors.subspaces());
+        EXPECT_EQ(1u, vectors.subspaces());
         auto cells = vectors.cells(0).typify<double>();
         auto labels = ref.get_labels(0);
-        EXPECT_EQUAL(0u, labels.size());
-        EXPECT_EQUAL((std::vector<double>{0.0, 11.0, 0.0, 0.0, 0.0, 0.0}), (std::vector<double>{ cells.begin(), cells.end() }));
+        EXPECT_EQ(0u, labels.size());
+        EXPECT_EQ((std::vector<double>{0.0, 11.0, 0.0, 0.0, 0.0, 0.0}), (std::vector<double>{ cells.begin(), cells.end() }));
     } else {
-        EXPECT_EQUAL(2u, vectors.subspaces());
+        EXPECT_EQ(2u, vectors.subspaces());
         auto cells = vectors.cells(0).typify<double>();
         auto labels = ref.get_labels(0);
-        EXPECT_EQUAL((std::vector<vespalib::string>{"one", "two"}), to_string_labels(labels));
-        EXPECT_EQUAL((std::vector<double>{11.0}), (std::vector<double>{ cells.begin(), cells.end() }));
+        EXPECT_EQ((std::vector<std::string>{"one", "two"}), to_string_labels(labels));
+        EXPECT_EQ((std::vector<double>{11.0}), (std::vector<double>{ cells.begin(), cells.end() }));
         cells = vectors.cells(1).typify<double>();
         labels = ref.get_labels(1);
-        EXPECT_EQUAL((std::vector<vespalib::string>{"three", "four"}), to_string_labels(labels));
-        EXPECT_EQUAL((std::vector<double>{17.0}), (std::vector<double>{ cells.begin(), cells.end() }));
+        EXPECT_EQ((std::vector<std::string>{"three", "four"}), to_string_labels(labels));
+        EXPECT_EQ((std::vector<double>{17.0}), (std::vector<double>{ cells.begin(), cells.end() }));
     }
-    TEST_DO(clearTensor(3));
+    clearTensor(3);
 }
 
 void
 Fixture::testOnHoldAccounting()
 {
+    SCOPED_TRACE("testOnHoldAccounting");
     {
         AttributeGuard guard(_attr);
-        EXPECT_EQUAL(0u, getStatus().getOnHold());
+        EXPECT_EQ(0u, getStatus().getOnHold());
         set_empty_tensor(1);
         clearTensor(1);
-        EXPECT_NOT_EQUAL(0u, getStatus().getOnHold());
+        EXPECT_NE(0u, getStatus().getOnHold());
     }
-    EXPECT_EQUAL(0u, getStatus().getOnHold());
+    EXPECT_EQ(0u, getStatus().getOnHold());
 }
 
 void
 Fixture::test_populate_address_space_usage()
 {
+    SCOPED_TRACE("test_populate_address_space_usage");
     search::AddressSpaceUsage usage = _attr->getAddressSpaceUsage();
     const auto& all = usage.get_all();
     if (_denseTensors) {
-        EXPECT_EQUAL(1u, all.size());
-        EXPECT_EQUAL(1u, all.count("tensor-store"));
+        EXPECT_EQ(1u, all.size());
+        EXPECT_EQ(1u, all.count("tensor-store"));
     } else {
-        EXPECT_EQUAL(2u, all.size());
-        EXPECT_EQUAL(1u, all.count("tensor-store"));
-        EXPECT_EQUAL(1u, all.count("shared-string-repo"));
+        EXPECT_EQ(2u, all.size());
+        EXPECT_EQ(1u, all.count("tensor-store"));
+        EXPECT_EQ(1u, all.count("shared-string-repo"));
     }
 }
 
 void
 Fixture::test_mmap_file_allocator()
 {
+    SCOPED_TRACE("test_mmap_file_allocator");
     std::filesystem::path allocator_dir(_mmap_allocator_base_dir + "/0.my_attr");
     if (!_traits.use_mmap_file_allocator) {
         EXPECT_FALSE(std::filesystem::is_directory(allocator_dir));
@@ -888,66 +940,66 @@ Fixture::test_mmap_file_allocator()
         EXPECT_TRUE(std::filesystem::is_directory(allocator_dir));
         int entry_cnt = 0;
         for (auto& entry : std::filesystem::directory_iterator(allocator_dir)) {
-            EXPECT_LESS(0u, entry.file_size());
+            EXPECT_LT(0u, entry.file_size());
             ++entry_cnt;
         }
-        EXPECT_LESS(0, entry_cnt);
+        EXPECT_LT(0, entry_cnt);
     }
 }
 
 template <class MakeFixture>
 void testAll(MakeFixture &&f)
 {
-    TEST_DO(f()->testEmptyAttribute());
-    TEST_DO(f()->testSetTensorValue());
-    TEST_DO(f()->testSaveLoad());
-    TEST_DO(f()->testCompaction());
-    TEST_DO(f()->testTensorTypeFileHeaderTag());
-    TEST_DO(f()->testEmptyTensor());
-    TEST_DO(f()->testSerializedTensorRef());
-    TEST_DO(f()->testOnHoldAccounting());
-    TEST_DO(f()->test_populate_address_space_usage());
-    TEST_DO(f()->test_mmap_file_allocator());
+    f()->testEmptyAttribute();
+    f()->testSetTensorValue();
+    f()->testSaveLoad();
+    f()->testCompaction();
+    f()->testTensorTypeFileHeaderTag();
+    f()->testEmptyTensor();
+    f()->testSerializedTensorRef();
+    f()->testOnHoldAccounting();
+    f()->test_populate_address_space_usage();
+    f()->test_mmap_file_allocator();
 }
 
-TEST("Test sparse tensors with generic tensor attribute")
+TEST(TensorAttributeTest, Test_sparse_tensors_with_generic_tensor_attribute)
 {
     testAll([]() { return std::make_shared<Fixture>(sparseSpec); });
 }
 
-TEST("Test sparse tensors with generic tensor attribute, paged")
+TEST(TensorAttributeTest, Test_sparse_tensors_with_generic_tensor_attribute_with_paged_setting)
 {
     testAll([]() { return std::make_shared<Fixture>(sparseSpec, FixtureTraits().mmap_file_allocator()); });
 }
 
-TEST("Test sparse tensors with direct tensor attribute")
+TEST(TensorAttributeTest, Test_sparse_tensors_with_direct_tensor_attribute)
 {
     testAll([]() { return std::make_shared<Fixture>(sparseSpec, FixtureTraits().direct()); });
 }
 
-TEST("Test dense tensors with generic tensor attribute")
+TEST(TensorAttributeTest, Test_dense_tensors_with_generic_tensor_attribute)
 {
     testAll([]() { return std::make_shared<Fixture>(denseSpec); });
 }
 
-TEST("Test dense tensors with generic tensor attribute, paged")
+TEST(TensorAttributeTest, Test_dense_tensors_with_generic_tensor_attribute_with_paged_setting)
 {
     testAll([]() { return std::make_shared<Fixture>(denseSpec, FixtureTraits().mmap_file_allocator()); });
 }
 
-TEST("Test dense tensors with dense tensor attribute")
+TEST(TensorAttributeTest, Test_dense_tensors_with_dense_tensor_attribute)
 {
     testAll([]() { return std::make_shared<Fixture>(denseSpec, FixtureTraits().dense()); });
 }
 
-TEST("Test dense tensors with dense tensor attribute, paged")
+TEST(TensorAttributeTest, Test_dense_tensors_with_dense_tensor_attribute_with_paged_setting)
 {
     testAll([]() { return std::make_shared<Fixture>(denseSpec, FixtureTraits().dense().mmap_file_allocator()); });
 }
 
-TEST_F("Hnsw index is NOT instantiated in dense tensor attribute by default",
-       Fixture(vec_2d_spec, FixtureTraits().dense()))
+TEST(TensorAttributeTest, Hnsw_index_is_NOT_instantiated_in_dense_tensor_attribute_by_default)
 {
+    Fixture f(vec_2d_spec, FixtureTraits().dense());
     const auto& tensor = f.as_dense_tensor();
     EXPECT_TRUE(tensor.nearest_neighbor_index() == nullptr);
 }
@@ -957,7 +1009,7 @@ template <HnswIndexType type>
 class TensorAttributeHnswIndex : public Fixture
 {
 public:
-    TensorAttributeHnswIndex(const vespalib::string &type_spec, FixtureTraits traits)
+    TensorAttributeHnswIndex(const std::string &type_spec, FixtureTraits traits)
         : Fixture(type_spec, traits)
     {
     }
@@ -972,42 +1024,43 @@ TensorAttributeHnswIndex<type>::test_setup()
 {
     auto& index = hnsw_typed_index<type>();
     const auto& cfg = index.config();
-    EXPECT_EQUAL(8u, cfg.max_links_at_level_0());
-    EXPECT_EQUAL(4u, cfg.max_links_on_inserts());
-    EXPECT_EQUAL(20u, cfg.neighbors_to_explore_at_construction());
+    EXPECT_EQ(8u, cfg.max_links_at_level_0());
+    EXPECT_EQ(4u, cfg.max_links_on_inserts());
+    EXPECT_EQ(20u, cfg.neighbors_to_explore_at_construction());
     EXPECT_TRUE(cfg.heuristic_select_neighbors());
 }
 
 void
 expect_level_0(uint32_t exp_nodeid, const HnswTestNode& node)
 {
-    ASSERT_GREATER_EQUAL(node.size(), 1u);
-    ASSERT_EQUAL(1u, node.level(0).size());
-    EXPECT_EQUAL(exp_nodeid, node.level(0)[0]);
+    ASSERT_GE(node.size(), 1u);
+    ASSERT_EQ(1u, node.level(0).size());
+    EXPECT_EQ(exp_nodeid, node.level(0)[0]);
 }
 
 template <HnswIndexType type>
 void
 TensorAttributeHnswIndex<type>::test_save_load(bool multi_node)
 {
+    uint32_t mapped_dimensions = count_mapped_dimensions();
     // Set two points that will be linked together in level 0 of the hnsw graph.
     if (multi_node) {
-        set_tensor(1, vec_mixed_2d({{3, 5}, {7, 9}}));
+        set_tensor(1, vec_mixed_2d(mapped_dimensions, {{3, 5}, {7, 9}}));
     } else {
-        set_tensor(1, typed_vec_2d(type, 3, 5));
-        set_tensor(2, typed_vec_2d(type, 7, 9));
+        set_tensor(1, typed_vec_2d(mapped_dimensions, 3, 5));
+        set_tensor(2, typed_vec_2d(mapped_dimensions, 7, 9));
     }
 
     auto old_attr = _attr;
     auto &index_a = hnsw_typed_index<type>();
     expect_level_0(2, index_a.get_node(1));
     expect_level_0(1, index_a.get_node(2));
-    save();
+    EXPECT_TRUE(save());
     EXPECT_TRUE(std::filesystem::exists(std::filesystem::path(attr_name + ".nnidx")));
 
-    load();
+    EXPECT_TRUE(load());
     auto &index_b = hnsw_typed_index<type>();
-    EXPECT_NOT_EQUAL(&index_a, &index_b);
+    EXPECT_NE(&index_a, &index_b);
     expect_level_0(2, index_b.get_node(1));
     expect_level_0(1, index_b.get_node(2));
 }
@@ -1019,13 +1072,13 @@ TensorAttributeHnswIndex<type>::test_address_space_usage()
     bool dense = type == HnswIndexType::SINGLE;
     search::AddressSpaceUsage usage = _attr->getAddressSpaceUsage();
     const auto& all = usage.get_all();
-    EXPECT_EQUAL(dense ? 3u : 5u, all.size());
-    EXPECT_EQUAL(1u, all.count("tensor-store"));
-    EXPECT_EQUAL(1u, all.count("hnsw-levels-store"));
-    EXPECT_EQUAL(1u, all.count("hnsw-links-store"));
+    EXPECT_EQ(dense ? 3u : 5u, all.size());
+    EXPECT_EQ(1u, all.count("tensor-store"));
+    EXPECT_EQ(1u, all.count("hnsw-levels-store"));
+    EXPECT_EQ(1u, all.count("hnsw-links-store"));
     if (!dense) {
-        EXPECT_EQUAL(1u, all.count("hnsw-nodeid-mapping"));
-        EXPECT_EQUAL(1u, all.count("shared-string-repo"));
+        EXPECT_EQ(1u, all.count("hnsw-nodeid-mapping"));
+        EXPECT_EQ(1u, all.count("shared-string-repo"));
     }
 }
 
@@ -1036,51 +1089,86 @@ public:
 
 class MixedTensorAttributeHnswIndex : public TensorAttributeHnswIndex<HnswIndexType::MULTI> {
 public:
-    MixedTensorAttributeHnswIndex() : TensorAttributeHnswIndex<HnswIndexType::MULTI>(vec_mixed_2d_spec, FixtureTraits().mixed_hnsw()) {}
+    MixedTensorAttributeHnswIndex(uint32_t mapped_dimensions) : TensorAttributeHnswIndex<HnswIndexType::MULTI>(vec_specs[mapped_dimensions], FixtureTraits().mixed_hnsw()) {}
 };
 
-TEST_F("Hnsw index is instantiated in dense tensor attribute when specified in config", DenseTensorAttributeHnswIndex)
+class MixedTensorAttributeTest : public ::testing::TestWithParam<uint32_t> {
+protected:
+    MixedTensorAttributeTest();
+    ~MixedTensorAttributeTest() override;
+};
+
+MixedTensorAttributeTest::MixedTensorAttributeTest()
+    : ::testing::TestWithParam<uint32_t>()
 {
+}
+
+MixedTensorAttributeTest::~MixedTensorAttributeTest() = default;
+
+TEST(TensorAttributeTest, Hnsw_index_is_instantiated_in_dense_tensor_attribute_when_specified_in_config)
+{
+    DenseTensorAttributeHnswIndex f;
     f.test_setup();
 }
 
-TEST_F("Hnsw index is integrated in dense tensor attribute and can be saved and loaded", DenseTensorAttributeHnswIndex)
+TEST(TensorAttributeTest, Hnsw_index_is_integrated_in_dense_tensor_attribute_and_can_be_saved_and_loaded)
 {
+    DenseTensorAttributeHnswIndex f;
     f.test_save_load(false);
 }
 
-TEST_F("Hnsw index is instantiated in mixed tensor attribute when specified in config", MixedTensorAttributeHnswIndex)
+TEST_P(MixedTensorAttributeTest, Hnsw_index_is_instantiated_in_mixed_tensor_attribute_when_specified_in_config)
 {
+    MixedTensorAttributeHnswIndex f(GetParam());
     f.test_setup();
 }
 
-TEST_F("Hnsw index is integrated in mixed tensor attribute and can be saved and loaded", MixedTensorAttributeHnswIndex)
+TEST_P(MixedTensorAttributeTest, Hnsw_index_is_integrated_in_mixed_tensor_attribute_and_can_be_saved_and_loaded)
 {
+    MixedTensorAttributeHnswIndex f(GetParam());
     f.test_save_load(false);
 }
 
-TEST_F("Hnsw index is integrated in mixed tensor attribute and can be saved and loaded with multiple points per document", MixedTensorAttributeHnswIndex)
+TEST_P(MixedTensorAttributeTest, Hnsw_index_is_integrated_in_mixed_tensor_attribute_and_can_be_saved_and_loaded_with_multiple_points_per_document)
 {
+    MixedTensorAttributeHnswIndex f(GetParam());
     f.test_save_load(true);
 }
 
-TEST_F("Populates address space usage in dense tensor attribute with hnsw index", DenseTensorAttributeHnswIndex)
+TEST(TensorAttributeTest, Populates_address_space_usage_in_dense_tensor_attribute_with_hnsw_index)
 {
+    DenseTensorAttributeHnswIndex f;
     f.test_address_space_usage();
 }
 
-TEST_F("Populates address space usage in mixed tensor attribute with hnsw index", MixedTensorAttributeHnswIndex)
+TEST_P(MixedTensorAttributeTest, Populates_address_space_usage_in_mixed_tensor_attribute_with_hnsw_index)
 {
+    MixedTensorAttributeHnswIndex f(GetParam());
     f.test_address_space_usage();
 }
 
 class DenseTensorAttributeMockIndex : public Fixture {
 public:
     DenseTensorAttributeMockIndex() : Fixture(vec_2d_spec, FixtureTraits().mock_hnsw()) {}
+    void add_vec_a();
 };
 
-TEST_F("setTensor() updates nearest neighbor index", DenseTensorAttributeMockIndex)
+void
+DenseTensorAttributeMockIndex::add_vec_a()
 {
+    auto& index = mock_index();
+    auto vec_a = vec_2d(3, 5);
+    auto prepare_result = prepare_set_tensor(1, vec_a);
+    index.expect_prepare_add(1, {3, 5});
+    complete_set_tensor(1, vec_a, std::move(prepare_result));
+    EXPECT_EQ(WrapValue(vec_a), get_tensor(1));
+    index.expect_complete_add(1, {3, 5});
+    index.clear();
+}
+
+TEST(TensorAttributeTest, setTensor_updates_nearest_neighbor_index)
+{
+    DenseTensorAttributeMockIndex f;
     auto& index = f.mock_index();
 
     f.set_tensor(1, vec_2d(3, 5));
@@ -1094,18 +1182,11 @@ TEST_F("setTensor() updates nearest neighbor index", DenseTensorAttributeMockInd
     index.expect_add(1, {7, 9});
 }
 
-TEST_F("nearest neighbor index can be updated in two phases", DenseTensorAttributeMockIndex)
+TEST(TensorAttributeTest, nearest_neighbor_index_can_be_updated_in_two_phases)
 {
+    DenseTensorAttributeMockIndex f;
     auto& index = f.mock_index();
-    {
-        auto vec_a = vec_2d(3, 5);
-        auto prepare_result = f.prepare_set_tensor(1, vec_a);
-        index.expect_prepare_add(1, {3, 5});
-        f.complete_set_tensor(1, vec_a, std::move(prepare_result));
-        f.assertGetTensor(vec_a, 1);
-        index.expect_complete_add(1, {3, 5});
-    }
-    index.clear();
+    f.add_vec_a();
     {
         // Replaces previous value.
         auto vec_b = vec_2d(7, 9);
@@ -1113,23 +1194,16 @@ TEST_F("nearest neighbor index can be updated in two phases", DenseTensorAttribu
         index.expect_prepare_add(1, {7, 9});
         f.complete_set_tensor(1, vec_b, std::move(prepare_result));
         index.expect_remove(1, {3, 5});
-        f.assertGetTensor(vec_b, 1);
+        EXPECT_EQ(WrapValue(vec_b), f.get_tensor(1));
         index.expect_complete_add(1, {7, 9});
     }
 }
 
-TEST_F("nearest neighbor index is NOT updated when tensor value is unchanged", DenseTensorAttributeMockIndex)
+TEST(TensorAttributeTest, nearest_neighbor_index_is_NOT_updated_when_tensor_value_is_unchanged)
 {
+    DenseTensorAttributeMockIndex f;
     auto& index = f.mock_index();
-    {
-        auto vec_a = vec_2d(3, 5);
-        auto prepare_result = f.prepare_set_tensor(1, vec_a);
-        index.expect_prepare_add(1, {3, 5});
-        f.complete_set_tensor(1, vec_a, std::move(prepare_result));
-        f.assertGetTensor(vec_a, 1);
-        index.expect_complete_add(1, {3, 5});
-    }
-    index.clear();
+    f.add_vec_a();
     {
         // Replaces previous value with the same value
         auto vec_b = vec_2d(3, 5);
@@ -1137,13 +1211,48 @@ TEST_F("nearest neighbor index is NOT updated when tensor value is unchanged", D
         EXPECT_TRUE(prepare_result.get() == nullptr);
         index.expect_empty_prepare_add();
         f.complete_set_tensor(1, vec_b, std::move(prepare_result));
-        f.assertGetTensor(vec_b, 1);
+        EXPECT_EQ(WrapValue(vec_b), f.get_tensor(1));
         index.expect_empty_complete_add();
+        index.expect_empty_add();
     }
 }
 
-TEST_F("clearDoc() updates nearest neighbor index", DenseTensorAttributeMockIndex)
+TEST(TensorAttributeTest, nearest_neighbor_index_is_updated_when_value_changes_from_A_to_B_to_A)
 {
+    DenseTensorAttributeMockIndex f;
+    auto& index = f.mock_index();
+    f.add_vec_a();
+    {
+        // Prepare replace of A with B
+        auto vec_b = vec_2d(7, 9);
+        auto prepare_result_b = f.prepare_set_tensor(1, vec_b);
+        index.expect_prepare_add(1, {7, 9});
+        index.clear();
+        // Prepare replace of B with A, but prepare sees original A
+        auto vec_a = vec_2d(3, 5);
+        auto prepare_result_a = f.prepare_set_tensor(1, vec_a);
+        EXPECT_TRUE(prepare_result_a.get() == nullptr);
+        index.expect_empty_prepare_add();
+        index.clear();
+        // Complete set B
+        f.complete_set_tensor(1, vec_b, std::move(prepare_result_b));
+        index.expect_remove(1, {3, 5});
+        EXPECT_EQ(WrapValue(vec_b), f.get_tensor(1));
+        index.expect_complete_add(1, {7, 9});
+        index.expect_empty_add();
+        index.clear();
+        // Complete set A, no prepare result but tensor cells changed
+        f.complete_set_tensor(1, vec_a, std::move(prepare_result_a));
+        index.expect_remove(1, {7, 9});
+        index.expect_empty_complete_add();
+        index.expect_add(1, {3, 5});
+        EXPECT_EQ(WrapValue(vec_a), f.get_tensor(1));
+    }
+}
+
+TEST(TensorAttributeTest, clearDoc_updates_nearest_neighbor_index)
+{
+    DenseTensorAttributeMockIndex f;
     auto& index = f.mock_index();
 
     // Nothing to clear.
@@ -1159,15 +1268,16 @@ TEST_F("clearDoc() updates nearest neighbor index", DenseTensorAttributeMockInde
     index.expect_empty_add();
 }
 
-TEST_F("commit() ensures transfer and trim hold lists on nearest neighbor index", DenseTensorAttributeMockIndex)
+TEST(TensorAttributeTest, commit_ensures_transfer_and_trim_hold_lists_on_nearest_neighbor_index)
 {
+    DenseTensorAttributeMockIndex f;
     auto& index = f.mock_index();
     TensorSpec spec = vec_2d(3, 5);
 
     f.set_tensor(1, spec);
     generation_t gen_1 = f.get_current_gen();
-    EXPECT_EQUAL(gen_1 - 1, index.get_transfer_gen());
-    EXPECT_EQUAL(gen_1, index.get_trim_gen());
+    EXPECT_EQ(gen_1 - 1, index.get_transfer_gen());
+    EXPECT_EQ(gen_1, index.get_trim_gen());
 
     generation_t gen_2 = 0;
     {
@@ -1175,102 +1285,110 @@ TEST_F("commit() ensures transfer and trim hold lists on nearest neighbor index"
         auto guard = f._attr->makeReadGuard(false);
         f.set_tensor(2, spec);
         gen_2 = f.get_current_gen();
-        EXPECT_GREATER(gen_2, gen_1);
-        EXPECT_EQUAL(gen_2 - 1, index.get_transfer_gen());
-        EXPECT_EQUAL(gen_1, index.get_trim_gen());
+        EXPECT_GT(gen_2, gen_1);
+        EXPECT_EQ(gen_2 - 1, index.get_transfer_gen());
+        EXPECT_EQ(gen_1, index.get_trim_gen());
     }
 
     f.set_tensor(3, spec);
     generation_t gen_3 = f.get_current_gen();
-    EXPECT_GREATER(gen_3, gen_2);
-    EXPECT_EQUAL(gen_3 - 1, index.get_transfer_gen());
-    EXPECT_EQUAL(gen_3, index.get_trim_gen());
+    EXPECT_GT(gen_3, gen_2);
+    EXPECT_EQ(gen_3 - 1, index.get_transfer_gen());
+    EXPECT_EQ(gen_3, index.get_trim_gen());
 }
 
-TEST_F("Memory usage is extracted from index when updating stats on attribute", DenseTensorAttributeMockIndex)
+TEST(TensorAttributeTest, Memory_usage_is_extracted_from_index_when_updating_stats_on_attribute)
 {
+    DenseTensorAttributeMockIndex f;
     size_t before = f.mock_index().memory_usage_cnt();
     f.getStatus();
     size_t after = f.mock_index().memory_usage_cnt();
-    EXPECT_EQUAL(before + 1, after);
+    EXPECT_EQ(before + 1, after);
 }
 
-TEST_F("Nearest neighbor index can be saved to disk and then loaded from file", DenseTensorAttributeMockIndex)
+TEST(TensorAttributeTest, Nearest_neighbor_index_can_be_saved_to_disk_and_then_loaded_from_file)
 {
+    DenseTensorAttributeMockIndex f;
     f.save_example_tensors_with_mock_index();
 
-    f.load(); // index is loaded from saved file
+    EXPECT_TRUE(f.load()); // index is loaded from saved file
     auto& index = f.mock_index();
-    EXPECT_EQUAL(123, index.get_index_value());
+    EXPECT_EQ(123, index.get_index_value());
     index.expect_adds({});
 }
 
-TEST_F("onLoad() reconstructs nearest neighbor index if save file does not exists", DenseTensorAttributeMockIndex)
+TEST(TensorAttributeTest, onLoad_reconstructs_nearest_neighbor_index_if_save_file_does_not_exists)
 {
+    DenseTensorAttributeMockIndex f;
     f.set_example_tensors();
-    f.save();
+    EXPECT_TRUE(f.save());
     EXPECT_FALSE(std::filesystem::exists(std::filesystem::path(attr_name + ".nnidx")));
 
-    f.load(); // index is reconstructed by adding all loaded tensors
+    EXPECT_TRUE(f.load()); // index is reconstructed by adding all loaded tensors
     auto& index = f.mock_index();
-    EXPECT_EQUAL(0, index.get_index_value());
+    EXPECT_EQ(0, index.get_index_value());
     index.expect_adds({{1, {3, 5}}, {2, {7, 9}}});
 }
 
-TEST_F("onLoads() ignores saved nearest neighbor index if not enabled in config", DenseTensorAttributeMockIndex)
+TEST(TensorAttributeTest, onLoad_ignores_saved_nearest_neighbor_index_if_not_enabled_in_config)
 {
+    DenseTensorAttributeMockIndex f;
     f.save_example_tensors_with_mock_index();
     f.disable_hnsw_index();
-    f.load();
+    EXPECT_TRUE(f.load());
     f.assert_example_tensors();
-    EXPECT_EQUAL(f.as_dense_tensor().nearest_neighbor_index(), nullptr);
+    EXPECT_EQ(f.as_dense_tensor().nearest_neighbor_index(), nullptr);
 }
 
-TEST_F("onLoad() uses executor if major index parameters are changed", DenseTensorAttributeMockIndex)
+TEST(TensorAttributeTest, onLoad_uses_executor_if_major_index_parameters_are_changed)
 {
+    DenseTensorAttributeMockIndex f;
     f.save_example_tensors_with_mock_index();
     f.set_hnsw_index_params(HnswIndexParams(5, 20, DistanceMetric::Euclidean));
-    EXPECT_EQUAL(0ul, f._executor.getStats().acceptedTasks);
+    EXPECT_EQ(0ul, f._executor.getStats().acceptedTasks);
     f.loadWithExecutor();
-    EXPECT_EQUAL(2ul, f._executor.getStats().acceptedTasks);
+    EXPECT_EQ(2ul, f._executor.getStats().acceptedTasks);
     f.assert_example_tensors();
     auto& index = f.mock_index();
-    EXPECT_EQUAL(0, index.get_index_value());
+    EXPECT_EQ(0, index.get_index_value());
     index.expect_adds({});
     index.expect_prepare_adds({{1, {3, 5}}, {2, {7, 9}}});
     index.expect_complete_adds({{1, {3, 5}}, {2, {7, 9}}});
 }
 
-TEST_F("onLoad() ignores saved nearest neighbor index if major index parameters are changed", DenseTensorAttributeMockIndex)
+TEST(TensorAttributeTest, onLoad_ignores_saved_nearest_neighbor_index_if_major_index_parameters_are_changed)
 {
+    DenseTensorAttributeMockIndex f;
     f.save_example_tensors_with_mock_index();
     f.set_hnsw_index_params(HnswIndexParams(5, 20, DistanceMetric::Euclidean));
-    EXPECT_EQUAL(0ul, f._executor.getStats().acceptedTasks);
-    f.load();
-    EXPECT_EQUAL(0ul, f._executor.getStats().acceptedTasks);
+    EXPECT_EQ(0ul, f._executor.getStats().acceptedTasks);
+    EXPECT_TRUE(f.load());
+    EXPECT_EQ(0ul, f._executor.getStats().acceptedTasks);
     f.assert_example_tensors();
     auto& index = f.mock_index();
-    EXPECT_EQUAL(0, index.get_index_value());
+    EXPECT_EQ(0, index.get_index_value());
     index.expect_adds({{1, {3, 5}}, {2, {7, 9}}});
 }
 
-TEST_F("onLoad() uses saved nearest neighbor index if only minor index parameters are changed", DenseTensorAttributeMockIndex)
+TEST(TensorAttributeTest, onLoad_uses_saved_nearest_neighbor_index_if_only_minor_index_parameters_are_changed)
 {
+    DenseTensorAttributeMockIndex f;
     f.save_example_tensors_with_mock_index();
     f.set_hnsw_index_params(HnswIndexParams(4, 21, DistanceMetric::Euclidean));
-    f.load();
+    EXPECT_TRUE(f.load());
     f.assert_example_tensors();
     auto& index = f.mock_index();
-    EXPECT_EQUAL(123, index.get_index_value());
+    EXPECT_EQ(123, index.get_index_value());
     index.expect_adds({});
 }
 
-TEST_F("Nearest neighbor index type is added to attribute file header", DenseTensorAttributeMockIndex)
+TEST(TensorAttributeTest, Nearest_neighbor_index_type_is_added_to_attribute_file_header)
 {
+    DenseTensorAttributeMockIndex f;
     f.save_example_tensors_with_mock_index();
     auto header = f.get_file_header();
     EXPECT_TRUE(header.hasTag("nearest_neighbor_index"));
-    EXPECT_EQUAL("hnsw", header.getTag("nearest_neighbor_index").asString());
+    EXPECT_EQ("hnsw", header.getTag("nearest_neighbor_index").asString());
 }
 
 class DenseTensorAttributeMipsIndex : public Fixture {
@@ -1278,16 +1396,17 @@ public:
     DenseTensorAttributeMipsIndex() : Fixture(vec_2d_spec, FixtureTraits().mips_hnsw()) {}
 };
 
-TEST_F("Nearest neighbor index with mips distance metrics stores square of max distance", DenseTensorAttributeMipsIndex)
+TEST(TensorAttributeTest, Nearest_neighbor_index_with_mips_distance_metrics_stores_square_of_max_distance)
 {
+    DenseTensorAttributeMipsIndex f;
     f.set_example_tensors();
-    f.save();
+    EXPECT_TRUE(f.save());
     auto header = f.get_file_header();
     EXPECT_TRUE(header.hasTag(hnsw_max_squared_norm));
-    EXPECT_EQUAL(130.0, header.getTag(hnsw_max_squared_norm).asFloat());
-    f.load();
+    EXPECT_EQ(130.0, header.getTag(hnsw_max_squared_norm).asFloat());
+    EXPECT_TRUE(f.load());
     auto& norm_store = dynamic_cast<MipsDistanceFunctionFactoryBase&>(f.hnsw_index().distance_function_factory()).get_max_squared_norm_store();
-    EXPECT_EQUAL(130.0, norm_store.get_max());
+    EXPECT_EQ(130.0, norm_store.get_max());
 }
 
 template <typename ParentT>
@@ -1311,6 +1430,8 @@ public:
         this->set_tensor(10, vec_2d(0, 0));
     }
 
+    ~NearestNeighborBlueprintFixtureBase();
+
     const Value& create_query_tensor(const TensorSpec& spec) {
         _query_tensor = SimpleValue::from_spec(spec);
         return *_query_tensor;
@@ -1326,11 +1447,14 @@ public:
                                                  create_query_tensor(vec_2d(17, 42))),
             3, approximate, 5, 100100.25,
             global_filter_lower_limit, 1.0, target_hits_max_adjustment_factor, vespalib::Doom::never());
-        EXPECT_EQUAL(11u, bp->getState().estimate().estHits);
-        EXPECT_EQUAL(100100.25 * 100100.25, bp->get_distance_threshold());
+        EXPECT_EQ(11u, bp->getState().estimate().estHits);
+        EXPECT_EQ(100100.25 * 100100.25, bp->get_distance_threshold());
         return bp;
     }
 };
+
+template <typename ParentT>
+NearestNeighborBlueprintFixtureBase<ParentT>::~NearestNeighborBlueprintFixtureBase() = default;
 
 class DenseTensorAttributeWithoutIndex : public Fixture {
 public:
@@ -1341,53 +1465,58 @@ using NNBA = NearestNeighborBlueprint::Algorithm;
 using NearestNeighborBlueprintFixture = NearestNeighborBlueprintFixtureBase<DenseTensorAttributeMockIndex>;
 using NearestNeighborBlueprintWithoutIndexFixture = NearestNeighborBlueprintFixtureBase<DenseTensorAttributeWithoutIndex>;
 
-TEST_F("NN blueprint can use brute force", NearestNeighborBlueprintFixture)
+TEST(TensorAttributeTest, NN_blueprint_can_use_brute_force)
 {
+    NearestNeighborBlueprintFixture f;
     auto bp = f.make_blueprint(false);
-    EXPECT_EQUAL(NNBA::EXACT, bp->get_algorithm());
+    EXPECT_EQ(NNBA::EXACT, bp->get_algorithm());
 }
 
-TEST_F("NN blueprint handles empty filter (post-filtering)", NearestNeighborBlueprintFixture)
+TEST(TensorAttributeTest, NN_blueprint_handles_empty_filter_for_post_filtering)
 {
+    NearestNeighborBlueprintFixture f;
     auto bp = f.make_blueprint();
     auto empty_filter = GlobalFilter::create();
     bp->set_global_filter(*empty_filter, 0.6);
     // targetHits is adjusted based on the estimated hit ratio of the query.
-    EXPECT_EQUAL(3u, bp->get_target_hits());
-    EXPECT_EQUAL(5u, bp->get_adjusted_target_hits());
-    EXPECT_EQUAL(5u, bp->getState().estimate().estHits);
-    EXPECT_EQUAL(NNBA::INDEX_TOP_K, bp->get_algorithm());
+    EXPECT_EQ(3u, bp->get_target_hits());
+    EXPECT_EQ(5u, bp->get_adjusted_target_hits());
+    EXPECT_EQ(5u, bp->getState().estimate().estHits);
+    EXPECT_EQ(NNBA::INDEX_TOP_K, bp->get_algorithm());
 }
 
-TEST_F("NN blueprint adjustment of targetHits is bound (post-filtering)", NearestNeighborBlueprintFixture)
+TEST(TensorAttributeTest, NN_blueprint_adjustment_of_targetHits_is_bound_for_post_filtering)
 {
+    NearestNeighborBlueprintFixture f;
     auto bp = f.make_blueprint(true, 0.05, 3.5);
     auto empty_filter = GlobalFilter::create();
     bp->set_global_filter(*empty_filter, 0.2);
     // targetHits is adjusted based on the estimated hit ratio of the query,
     // but bound by target-hits-max-adjustment-factor
-    EXPECT_EQUAL(3u, bp->get_target_hits());
-    EXPECT_EQUAL(10u, bp->get_adjusted_target_hits());
-    EXPECT_EQUAL(10u, bp->getState().estimate().estHits);
-    EXPECT_EQUAL(NNBA::INDEX_TOP_K, bp->get_algorithm());
+    EXPECT_EQ(3u, bp->get_target_hits());
+    EXPECT_EQ(10u, bp->get_adjusted_target_hits());
+    EXPECT_EQ(10u, bp->getState().estimate().estHits);
+    EXPECT_EQ(NNBA::INDEX_TOP_K, bp->get_algorithm());
 }
 
-TEST_F("NN blueprint handles strong filter (pre-filtering)", NearestNeighborBlueprintFixture)
+TEST(TensorAttributeTest, NN_blueprint_handles_strong_filter_for_pre_filtering)
 {
+    NearestNeighborBlueprintFixture f;
     auto bp = f.make_blueprint();
     auto filter = search::BitVector::create(1,11);
     filter->setBit(3);
     filter->invalidateCachedCount();
     auto strong_filter = GlobalFilter::create(std::move(filter));
     bp->set_global_filter(*strong_filter, 0.25);
-    EXPECT_EQUAL(3u, bp->get_target_hits());
-    EXPECT_EQUAL(3u, bp->get_adjusted_target_hits());
-    EXPECT_EQUAL(1u, bp->getState().estimate().estHits);
-    EXPECT_EQUAL(NNBA::INDEX_TOP_K_WITH_FILTER, bp->get_algorithm());
+    EXPECT_EQ(3u, bp->get_target_hits());
+    EXPECT_EQ(3u, bp->get_adjusted_target_hits());
+    EXPECT_EQ(1u, bp->getState().estimate().estHits);
+    EXPECT_EQ(NNBA::INDEX_TOP_K_WITH_FILTER, bp->get_algorithm());
 }
 
-TEST_F("NN blueprint handles weak filter (pre-filtering)", NearestNeighborBlueprintFixture)
+TEST(TensorAttributeTest, NN_blueprint_handles_weak_filter_for_pre_filtering)
 {
+    NearestNeighborBlueprintFixture f;
     auto bp = f.make_blueprint();
     auto filter = search::BitVector::create(1,11);
     filter->setBit(1);
@@ -1398,42 +1527,50 @@ TEST_F("NN blueprint handles weak filter (pre-filtering)", NearestNeighborBluepr
     filter->invalidateCachedCount();
     auto weak_filter = GlobalFilter::create(std::move(filter));
     bp->set_global_filter(*weak_filter, 0.6);
-    EXPECT_EQUAL(3u, bp->get_target_hits());
-    EXPECT_EQUAL(3u, bp->get_adjusted_target_hits());
-    EXPECT_EQUAL(3u, bp->getState().estimate().estHits);
-    EXPECT_EQUAL(NNBA::INDEX_TOP_K_WITH_FILTER, bp->get_algorithm());
+    EXPECT_EQ(3u, bp->get_target_hits());
+    EXPECT_EQ(3u, bp->get_adjusted_target_hits());
+    EXPECT_EQ(3u, bp->getState().estimate().estHits);
+    EXPECT_EQ(NNBA::INDEX_TOP_K_WITH_FILTER, bp->get_algorithm());
 }
 
-TEST_F("NN blueprint handles strong filter triggering exact search", NearestNeighborBlueprintFixture)
+TEST(TensorAttributeTest, NN_blueprint_handles_strong_filter_triggering_exact_search)
 {
+    NearestNeighborBlueprintFixture f;
     auto bp = f.make_blueprint(true, 0.2);
     auto filter = search::BitVector::create(1,11);
     filter->setBit(3);
     filter->invalidateCachedCount();
     auto strong_filter = GlobalFilter::create(std::move(filter));
     bp->set_global_filter(*strong_filter, 0.6);
-    EXPECT_EQUAL(3u, bp->get_target_hits());
-    EXPECT_EQUAL(3u, bp->get_adjusted_target_hits());
-    EXPECT_EQUAL(11u, bp->getState().estimate().estHits);
-    EXPECT_EQUAL(NNBA::EXACT_FALLBACK, bp->get_algorithm());
+    EXPECT_EQ(3u, bp->get_target_hits());
+    EXPECT_EQ(3u, bp->get_adjusted_target_hits());
+    EXPECT_EQ(11u, bp->getState().estimate().estHits);
+    EXPECT_EQ(NNBA::EXACT_FALLBACK, bp->get_algorithm());
 }
 
-TEST_F("NN blueprint wants global filter when having index", NearestNeighborBlueprintFixture)
+TEST(TensorAttributeTest, NN_blueprint_wants_global_filter_when_having_index)
 {
+    NearestNeighborBlueprintFixture f;
     auto bp = f.make_blueprint();
     EXPECT_TRUE(bp->getState().want_global_filter());
 }
 
-TEST_F("NN blueprint do NOT want global filter when explicitly using brute force", NearestNeighborBlueprintFixture)
+TEST(TensorAttributeTest, NN_blueprint_do_NOT_want_global_filter_when_explicitly_using_brute_force)
 {
+    NearestNeighborBlueprintFixture f;
     auto bp = f.make_blueprint(false);
     EXPECT_FALSE(bp->getState().want_global_filter());
 }
 
-TEST_F("NN blueprint do NOT want global filter when NOT having index (implicit brute force)", NearestNeighborBlueprintWithoutIndexFixture)
+TEST(TensorAttributeTest, NN_blueprint_do_NOT_want_global_filter_when_NOT_having_index_for_implicit_brute_force)
 {
+    NearestNeighborBlueprintWithoutIndexFixture f;
     auto bp = f.make_blueprint();
     EXPECT_FALSE(bp->getState().want_global_filter());
 }
 
-TEST_MAIN() { TEST_RUN_ALL(); }
+auto test_values = ::testing::Values(1u, 2u);
+
+INSTANTIATE_TEST_SUITE_P(MixedTensors, MixedTensorAttributeTest, test_values, testing::PrintToStringParamName());
+
+GTEST_MAIN_RUN_ALL_TESTS()

@@ -21,15 +21,15 @@ namespace config {
 
 SlimeConfigRequest::SlimeConfigRequest(Connection * connection,
                                        const ConfigKey & key,
-                                       const vespalib::string & configXxhash64,
+                                       const std::string & configXxhash64,
                                        int64_t currentGeneration,
-                                       const vespalib::string & hostName,
+                                       const std::string & hostName,
                                        duration serverTimeout,
                                        const Trace & trace,
                                        const VespaVersion & vespaVersion,
                                        int64_t protocolVersion,
                                        const CompressionType & compressionType,
-                                       const vespalib::string & methodName)
+                                       const std::string & methodName)
     : FRTConfigRequest(connection, key),
       _data()
 {
@@ -43,15 +43,15 @@ SlimeConfigRequest::~SlimeConfigRequest() = default;
 bool
 SlimeConfigRequest::verifyState(const ConfigState & state) const
 {
-    return (state.xxhash64.compare(_data[REQUEST_CONFIG_XXHASH64].asString().make_stringref()) == 0 &&
+    return (state.xxhash64.compare(_data[REQUEST_CONFIG_XXHASH64].asString().make_stringview()) == 0 &&
             state.generation == _data[REQUEST_CURRENT_GENERATION].asLong());
 }
 
 void
 SlimeConfigRequest::populateSlimeRequest(const ConfigKey & key,
-                                         const vespalib::string & configXxhash64,
+                                         const std::string & configXxhash64,
                                          int64_t currentGeneration,
-                                         const vespalib::string & hostName,
+                                         const std::string & hostName,
                                          duration serverTimeout,
                                          const Trace & trace,
                                          const VespaVersion & vespaVersion,
@@ -75,7 +75,7 @@ SlimeConfigRequest::populateSlimeRequest(const ConfigKey & key,
     root.setString(REQUEST_VESPA_VERSION, Memory(vespaVersion.toString()));
 }
 
-vespalib::string
+std::string
 SlimeConfigRequest::createJsonFromSlime(const Slime & data)
 {
     SimpleBuffer buf;

@@ -2,11 +2,12 @@
 
 #include "string_stuff.h"
 #include <vespa/vespalib/util/stringfmt.h>
+#include <cctype>
 
 namespace vespalib::eval {
 
-vespalib::string as_quoted_string(const vespalib::string &str) {
-    vespalib::string res;
+std::string as_quoted_string(const std::string &str) {
+    std::string res;
     res.push_back('"');
     for (char c: str) {
         switch (c) {
@@ -45,22 +46,22 @@ vespalib::string as_quoted_string(const vespalib::string &str) {
     return res;
 }
 
-bool is_number(const vespalib::string &str) {
-    for (char c: str) {
-        if (!isdigit(c)) {
+bool is_number(const std::string &str) {
+    for (char c : str) {
+        if (!std::isdigit(static_cast<unsigned char>(c))) {
             return false;
         }
     }
     return true;
 }
 
-size_t as_number(const vespalib::string &str) {
+size_t as_number(const std::string &str) {
     return atoi(str.c_str());
 }
 
-vespalib::string as_string(const TensorSpec::Address &address) {
+std::string as_string(const TensorSpec::Address &address) {
     CommaTracker label_list;
-    vespalib::string str = "{";
+    std::string str = "{";
     for (const auto &label: address) {
         label_list.maybe_add_comma(str);
         if (label.second.is_mapped()) {

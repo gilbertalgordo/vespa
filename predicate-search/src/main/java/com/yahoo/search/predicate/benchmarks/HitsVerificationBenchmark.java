@@ -46,6 +46,7 @@ public class HitsVerificationBenchmark {
     public static void main(String[] rawArgs) throws IOException {
         Optional<BenchmarkArguments> wrappedArgs = getArguments(rawArgs);
         if (wrappedArgs.isEmpty()) return;
+
         BenchmarkArguments args = wrappedArgs.get();
         Map<String, Object> output = new TreeMap<>();
         addArgsToOutput(output, args);
@@ -63,7 +64,7 @@ public class HitsVerificationBenchmark {
         writeOutputToStandardOut(output);
     }
 
-    private static PredicateIndex getIndex(BenchmarkArguments args, Config config, Map<String, Object> output) throws IOException {
+    static PredicateIndex getIndex(BenchmarkArguments args, Config config, Map<String, Object> output) throws IOException {
         if (args.feedFile != null) {
             PredicateIndexBuilder builder = new PredicateIndexBuilder(config);
             AtomicInteger idCounter = new AtomicInteger();
@@ -170,13 +171,13 @@ public class HitsVerificationBenchmark {
                 "Query format. Valid formats are either 'vespa' (obsolete query property format) or 'json'.")
         public Format format = Format.VESPA;
 
-        @Option(name = {"-ff", "--feed-file"}, description = "File path to feed file (Vespa XML feed)")
+        @Option(name = {"-ff", "--feed-file"}, description = "File path to feed file (Vespa Json feed)")
         public String feedFile;
 
         @Option(name = {"-if", "--index-file"}, description = "File path to index file (Serialized index)")
         public String indexFile;
 
-        @Option(name = {"-quf", "--query-file"}, description = "File path to a query file")
+        @Option(name = {"-quf", "--query-file"}, description = "File path to query file")
         public String queryFile;
 
         @Arguments(title = "Output file", description = "File path to output file")

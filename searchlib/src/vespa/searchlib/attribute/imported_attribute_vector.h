@@ -4,7 +4,9 @@
 
 #include "readable_attribute_vector.h"
 #include <vespa/searchcommon/attribute/i_document_meta_store_context.h>
-#include <vespa/vespalib/stllike/string.h>
+#include <string>
+
+namespace vespalib { class MemoryUsage; }
 
 namespace search::attribute {
 
@@ -26,13 +28,13 @@ class ImportedAttributeVector : public ReadableAttributeVector {
 public:
     using SP = std::shared_ptr<ImportedAttributeVector>;
     using MetaStoreReadGuard = search::IDocumentMetaStoreContext::IReadGuard;
-    ImportedAttributeVector(vespalib::stringref name,
+    ImportedAttributeVector(std::string_view name,
                             std::shared_ptr<ReferenceAttribute> reference_attribute,
                             std::shared_ptr<IDocumentMetaStoreContext> document_meta_store,
                             std::shared_ptr<ReadableAttributeVector> target_attribute,
                             std::shared_ptr<const IDocumentMetaStoreContext> target_document_meta_store,
                             bool use_search_cache);
-    ImportedAttributeVector(vespalib::stringref name,
+    ImportedAttributeVector(std::string_view name,
                             std::shared_ptr<ReferenceAttribute> reference_attribute,
                             std::shared_ptr<IDocumentMetaStoreContext> document_meta_store,
                             std::shared_ptr<ReadableAttributeVector> target_attribute,
@@ -56,15 +58,16 @@ public:
         return _search_cache;
     }
     void clearSearchCache();
-    const vespalib::string &getName() const {
+    const std::string &getName() const {
         return _name;
     }
 
     std::unique_ptr<AttributeReadGuard> makeReadGuard(bool stableEnumGuard) const override;
     virtual std::unique_ptr<AttributeReadGuard> makeReadGuard(std::shared_ptr<MetaStoreReadGuard> targetMetaStoreReadGuard, bool stableEnumGuard) const;
+    vespalib::MemoryUsage get_memory_usage() const;
 
 protected:
-    vespalib::string                           _name;
+    std::string                           _name;
     std::shared_ptr<ReferenceAttribute>        _reference_attribute;
     std::shared_ptr<IDocumentMetaStoreContext> _document_meta_store;
     std::shared_ptr<ReadableAttributeVector>   _target_attribute;

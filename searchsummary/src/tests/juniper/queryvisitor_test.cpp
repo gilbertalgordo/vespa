@@ -1,11 +1,11 @@
 // Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 #include <memory>
-#include <vespa/vespalib/testkit/testapp.h>
+#include <vespa/vespalib/testkit/test_kit.h>
 
 #include <vespa/juniper/queryhandle.h>
 #include <vespa/juniper/queryvisitor.h>
 #include <vespa/juniper/query_item.h>
-#include <vespa/vespalib/stllike/string.h>
+#include <string>
 
 using namespace juniper;
 
@@ -16,7 +16,7 @@ struct MyQueryItem : public QueryItem
     { }
     ~MyQueryItem() override = default;
 
-    vespalib::stringref get_index() const override { return {}; }
+    std::string_view get_index() const override { return {}; }
     int get_weight() const override { return 0; }
     ItemCreator get_creator() const override { return ItemCreator::CREA_ORIG; }
 };
@@ -24,10 +24,10 @@ struct MyQueryItem : public QueryItem
 class MyQuery : public juniper::IQuery
 {
 private:
-    vespalib::string _term;
+    std::string _term;
 
 public:
-    explicit MyQuery(const vespalib::string &term) : _term(term) {}
+    explicit MyQuery(const std::string &term) : _term(term) {}
 
     bool Traverse(IQueryVisitor* v) const override {
         MyQueryItem item;
@@ -45,7 +45,7 @@ struct Fixture
     QueryModifier modifier;
     QueryHandle handle;
     QueryVisitor visitor;
-    explicit Fixture(const vespalib::string &term)
+    explicit Fixture(const std::string &term)
         : query(term),
           modifier(),
           handle(query, "", modifier),
@@ -62,7 +62,7 @@ TEST_F("require that terms are picked up by the query visitor", Fixture("my_term
     EXPECT_EQUAL(1, node->_arity);
     QueryTerm *term = node->_children[0]->AsTerm();
     ASSERT_TRUE(term != nullptr);
-    EXPECT_EQUAL("my_term", vespalib::string(term->term()));
+    EXPECT_EQUAL("my_term", std::string(term->term()));
 }
 
 TEST_F("require that empty terms are ignored by the query visitor", Fixture(""))

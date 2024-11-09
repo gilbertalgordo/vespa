@@ -16,7 +16,7 @@ using namespace search::docstore;
 using document::BucketId;
 using vespalib::compression::CompressionConfig;
 
-vespalib::string
+std::string
 createPayload(BucketId b) {
     constexpr const char * BUF = "Buffer for testing Bucket drain order.";
     vespalib::asciistream os;
@@ -30,7 +30,7 @@ createBucketId(size_t i) {
     constexpr size_t USED_BITS=5;
     vespalib::asciistream os;
     os << "id:a:b:n=" << userId(i) << ":" << i;
-    document::DocumentId docId(os.str());
+    document::DocumentId docId(os.view());
     BucketId b = docId.getGlobalId().convertToBucketId();
     EXPECT_EQUAL(userId(i), docId.getGlobalId().getLocationSpecificBits());
     b.setUsedBits(USED_BITS);
@@ -39,7 +39,7 @@ createBucketId(size_t i) {
 void
 add(StoreByBucket & sbb, size_t i) {
     BucketId b = createBucketId(i);
-    vespalib::string s = createPayload(b);
+    std::string s = createPayload(b);
     sbb.add(b, i%10, i, {s.c_str(), s.size()});
 }
 

@@ -1390,6 +1390,7 @@
       "public abstract java.util.Optional size()",
       "public abstract com.yahoo.tensor.TensorType$Dimension$Type type()",
       "public abstract com.yahoo.tensor.TensorType$Dimension withName(java.lang.String)",
+      "public com.yahoo.tensor.TensorType$Dimension withSize(long)",
       "public boolean isIndexed()",
       "public boolean isMapped()",
       "public abstract java.lang.String toString()",
@@ -1523,6 +1524,19 @@
     ],
     "fields" : [ ]
   },
+  "com.yahoo.tensor.Tensors" : {
+    "superClass" : "java.lang.Object",
+    "interfaces" : [ ],
+    "attributes" : [
+      "public"
+    ],
+    "methods" : [
+      "public void <init>()",
+      "public static varargs com.yahoo.tensor.Tensor toSparse(com.yahoo.tensor.Tensor, java.lang.String[])",
+      "public static com.yahoo.tensor.Tensor packBits(com.yahoo.tensor.Tensor)"
+    ],
+    "fields" : [ ]
+  },
   "com.yahoo.tensor.TypeResolver" : {
     "superClass" : "java.lang.Object",
     "interfaces" : [ ],
@@ -1570,7 +1584,8 @@
       "public void put(java.lang.String, com.yahoo.tensor.Tensor)",
       "public com.yahoo.tensor.TensorType getType(java.lang.String)",
       "public com.yahoo.tensor.TensorType getType(com.yahoo.tensor.evaluation.Name)",
-      "public com.yahoo.tensor.Tensor getTensor(java.lang.String)"
+      "public com.yahoo.tensor.Tensor getTensor(java.lang.String)",
+      "public java.lang.String resolveBinding(java.lang.String)"
     ],
     "fields" : [ ]
   },
@@ -1599,7 +1614,8 @@
     ],
     "methods" : [
       "public abstract com.yahoo.tensor.TensorType getType(com.yahoo.tensor.evaluation.Name)",
-      "public abstract com.yahoo.tensor.TensorType getType(java.lang.String)"
+      "public abstract com.yahoo.tensor.TensorType getType(java.lang.String)",
+      "public abstract java.lang.String resolveBinding(java.lang.String)"
     ],
     "fields" : [ ]
   },
@@ -1685,7 +1701,7 @@
     ],
     "methods" : [
       "public void <init>()",
-      "public final com.yahoo.tensor.TensorType type(com.yahoo.tensor.evaluation.TypeContext)",
+      "public com.yahoo.tensor.TensorType type(com.yahoo.tensor.evaluation.TypeContext)",
       "public com.yahoo.tensor.Tensor evaluate(com.yahoo.tensor.evaluation.EvaluationContext)"
     ],
     "fields" : [ ]
@@ -1809,6 +1825,7 @@
       "public java.util.List arguments()",
       "public com.yahoo.tensor.functions.TensorFunction withArguments(java.util.List)",
       "public com.yahoo.tensor.functions.PrimitiveTensorFunction toPrimitive()",
+      "public final com.yahoo.tensor.TensorType type(com.yahoo.tensor.evaluation.TypeContext)",
       "public java.lang.String toString(com.yahoo.tensor.functions.ToStringContext)",
       "public int hashCode()"
     ],
@@ -2920,6 +2937,7 @@
     "methods" : [
       "public static com.yahoo.tensor.functions.ToStringContext empty()",
       "public abstract java.lang.String getBinding(java.lang.String)",
+      "public java.lang.String resolveBinding(java.lang.String)",
       "public java.util.Optional typeContext()",
       "public abstract com.yahoo.tensor.functions.ToStringContext parent()"
     ],
@@ -3456,7 +3474,8 @@
       "public static java.util.Optional getChildValue(org.w3c.dom.Element, java.lang.String)",
       "public static java.lang.String getNodePath(org.w3c.dom.Node, java.lang.String)",
       "public static boolean isName(java.lang.CharSequence)",
-      "public static javax.xml.transform.TransformerFactory createTransformerFactory()"
+      "public static javax.xml.transform.TransformerFactory createTransformerFactory()",
+      "public static java.lang.String toString(org.w3c.dom.Node)"
     ],
     "fields" : [ ]
   },
@@ -4077,6 +4096,26 @@
     ],
     "fields" : [ ]
   },
+  "ai.vespa.llm.InferenceParameters" : {
+    "superClass" : "java.lang.Object",
+    "interfaces" : [ ],
+    "attributes" : [
+      "public"
+    ],
+    "methods" : [
+      "public void <init>(java.util.function.Function)",
+      "public void <init>(java.lang.String, java.util.function.Function)",
+      "public void setApiKey(java.lang.String)",
+      "public java.util.Optional getApiKey()",
+      "public void setEndpoint(java.lang.String)",
+      "public java.util.Optional getEndpoint()",
+      "public java.util.Optional get(java.lang.String)",
+      "public java.util.Optional getDouble(java.lang.String)",
+      "public java.util.Optional getInt(java.lang.String)",
+      "public void ifPresent(java.lang.String, java.util.function.Consumer)"
+    ],
+    "fields" : [ ]
+  },
   "ai.vespa.llm.LanguageModel" : {
     "superClass" : "java.lang.Object",
     "interfaces" : [ ],
@@ -4086,23 +4125,20 @@
       "abstract"
     ],
     "methods" : [
-      "public abstract java.util.List complete(ai.vespa.llm.completion.Prompt)",
-      "public abstract java.util.concurrent.CompletableFuture completeAsync(ai.vespa.llm.completion.Prompt, java.util.function.Consumer)"
+      "public abstract java.util.List complete(ai.vespa.llm.completion.Prompt, ai.vespa.llm.InferenceParameters)",
+      "public abstract java.util.concurrent.CompletableFuture completeAsync(ai.vespa.llm.completion.Prompt, ai.vespa.llm.InferenceParameters, java.util.function.Consumer)"
     ],
     "fields" : [ ]
   },
-  "ai.vespa.llm.client.openai.OpenAiClient$Builder" : {
-    "superClass" : "java.lang.Object",
+  "ai.vespa.llm.LanguageModelException" : {
+    "superClass" : "java.lang.RuntimeException",
     "interfaces" : [ ],
     "attributes" : [
       "public"
     ],
     "methods" : [
-      "public void <init>(java.lang.String)",
-      "public ai.vespa.llm.client.openai.OpenAiClient$Builder model(java.lang.String)",
-      "public ai.vespa.llm.client.openai.OpenAiClient$Builder temperature(double)",
-      "public ai.vespa.llm.client.openai.OpenAiClient$Builder maxTokens(long)",
-      "public ai.vespa.llm.client.openai.OpenAiClient build()"
+      "public void <init>(int, java.lang.String)",
+      "public int code()"
     ],
     "fields" : [ ]
   },
@@ -4115,8 +4151,9 @@
       "public"
     ],
     "methods" : [
-      "public java.util.List complete(ai.vespa.llm.completion.Prompt)",
-      "public java.util.concurrent.CompletableFuture completeAsync(ai.vespa.llm.completion.Prompt, java.util.function.Consumer)"
+      "public void <init>()",
+      "public java.util.List complete(ai.vespa.llm.completion.Prompt, ai.vespa.llm.InferenceParameters)",
+      "public java.util.concurrent.CompletableFuture completeAsync(ai.vespa.llm.completion.Prompt, ai.vespa.llm.InferenceParameters, java.util.function.Consumer)"
     ],
     "fields" : [ ]
   },
@@ -4135,7 +4172,8 @@
     "fields" : [
       "public static final enum ai.vespa.llm.completion.Completion$FinishReason length",
       "public static final enum ai.vespa.llm.completion.Completion$FinishReason stop",
-      "public static final enum ai.vespa.llm.completion.Completion$FinishReason none"
+      "public static final enum ai.vespa.llm.completion.Completion$FinishReason none",
+      "public static final enum ai.vespa.llm.completion.Completion$FinishReason error"
     ]
   },
   "ai.vespa.llm.completion.Completion" : {
@@ -4151,6 +4189,7 @@
       "public java.lang.String text()",
       "public ai.vespa.llm.completion.Completion$FinishReason finishReason()",
       "public static ai.vespa.llm.completion.Completion from(java.lang.String)",
+      "public static ai.vespa.llm.completion.Completion from(java.lang.String, ai.vespa.llm.completion.Completion$FinishReason)",
       "public final java.lang.String toString()",
       "public final int hashCode()",
       "public final boolean equals(java.lang.Object)"
@@ -4212,8 +4251,8 @@
     ],
     "methods" : [
       "public void <init>(ai.vespa.llm.test.MockLanguageModel$Builder)",
-      "public java.util.List complete(ai.vespa.llm.completion.Prompt)",
-      "public java.util.concurrent.CompletableFuture completeAsync(ai.vespa.llm.completion.Prompt, java.util.function.Consumer)"
+      "public java.util.List complete(ai.vespa.llm.completion.Prompt, ai.vespa.llm.InferenceParameters)",
+      "public java.util.concurrent.CompletableFuture completeAsync(ai.vespa.llm.completion.Prompt, ai.vespa.llm.InferenceParameters, java.util.function.Consumer)"
     ],
     "fields" : [ ]
   }

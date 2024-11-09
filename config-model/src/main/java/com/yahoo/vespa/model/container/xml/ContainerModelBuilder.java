@@ -80,6 +80,7 @@ import com.yahoo.vespa.model.container.component.Component;
 import com.yahoo.vespa.model.container.component.ConnectionLogComponent;
 import com.yahoo.vespa.model.container.component.FileStatusHandlerComponent;
 import com.yahoo.vespa.model.container.component.Handler;
+import com.yahoo.vespa.model.container.component.SignificanceModelRegistry;
 import com.yahoo.vespa.model.container.component.SimpleComponent;
 import com.yahoo.vespa.model.container.component.SystemBindingPattern;
 import com.yahoo.vespa.model.container.component.UserBindingPattern;
@@ -113,7 +114,6 @@ import java.security.cert.X509Certificate;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
-import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -139,6 +139,8 @@ public class ContainerModelBuilder extends ConfigModelBuilder<ContainerModel> {
 
     // Default path to vip status file for container in Hosted Vespa.
     static final String HOSTED_VESPA_STATUS_FILE = Defaults.getDefaults().underVespaHome("var/vespa/load-balancer/status.html");
+
+    static final String HOSTED_VESPA_TENANT_PARENT_DOMAIN = "vespa.tenant.";
 
     //Path to vip status file for container in Hosted Vespa. Only used if set, else use HOSTED_VESPA_STATUS_FILE
     private static final String HOSTED_VESPA_STATUS_FILE_SETTING = "VESPA_LB_STATUS_FILE";
@@ -209,6 +211,7 @@ public class ContainerModelBuilder extends ConfigModelBuilder<ContainerModel> {
 
         addConfiguredComponents(deployState, cluster, spec);
         addSecretStore(cluster, spec, deployState);
+        addSecrets(cluster, spec, deployState);
 
         addProcessing(deployState, spec, cluster, context);
         addSearch(deployState, spec, cluster, context);
@@ -235,6 +238,7 @@ public class ContainerModelBuilder extends ConfigModelBuilder<ContainerModel> {
         // Must be added after nodes:
         addDeploymentSpecConfig(cluster, context, deployState.getDeployLogger());
         addZooKeeper(cluster, spec);
+        addAthenzServiceIdentityProvider(cluster, context);
 
         addParameterStoreValidationHandler(cluster, deployState);
     }
@@ -298,6 +302,26 @@ public class ContainerModelBuilder extends ConfigModelBuilder<ContainerModel> {
         return new SimpleComponent(new ComponentModel(idSpec, null, "zookeeper-server", configId));
     }
 
+    private void addSecrets(ApplicationContainerCluster cluster, Element spec, DeployState deployState) {
+        if ( ! deployState.isHosted() || ! cluster.getZone().system().isPublic())
+            return;
+        Element secretsElement = XML.getChild(spec, "secrets");
+        if (secretsElement != null) {
+            CloudSecrets secretsConfig = new CloudSecrets();
+            for (Element element : XML.getChildren(secretsElement)) {
+                String key = element.getTagName();
+                String name = element.getAttribute("name");
+                String vault = element.getAttribute("vault");
+                secretsConfig.addSecret(key, name, vault);
+            }
+            cluster.addComponent(secretsConfig);
+            cluster.addComponent(new CloudAsmSecrets(deployState.getProperties().ztsUrl(),
+                                                     deployState.getProperties().tenantSecretDomain(),
+                                                     deployState.zone().system(),
+                                                     deployState.getProperties().applicationId().tenant()));
+        }
+    }
+
     private void addSecretStore(ApplicationContainerCluster cluster, Element spec, DeployState deployState) {
 
         Element secretStoreElement = XML.getChild(spec, "secret-store");
@@ -336,12 +360,27 @@ public class ContainerModelBuilder extends ConfigModelBuilder<ContainerModel> {
                 throw new IllegalArgumentException("No configured secret store named " + account);
 
             if (secretStore.getExternalId().isEmpty())
-                throw new IllegalArgumentException("No external ID has been set");
+                throw new IllegalArgumentException("No external ID has been set for secret store " + secretStore.getName());
 
             cloudSecretStore.addConfig(account, region, secretStore.getAwsId(), secretStore.getRole(), secretStore.getExternalId().get());
         }
 
         cluster.addComponent(cloudSecretStore);
+    }
+
+    private void addAthenzServiceIdentityProvider(ApplicationContainerCluster cluster, ConfigModelContext context) {
+        if ( ! context.getDeployState().isHosted()) return;
+        if ( ! context.getDeployState().zone().system().isPublic()) return; // Non-public is handled by deployment spec config.
+        if ( ! context.properties().launchApplicationAthenzService()) return;
+        var appContext = context.getDeployState().zone().environment().isManuallyDeployed() ? "sandbox" : "production";
+        addIdentityProvider(cluster,
+                            context.getDeployState().getProperties().configServerSpecs(),
+                            context.getDeployState().getProperties().loadBalancerName(),
+                            context.getDeployState().getProperties().ztsUrl(),
+                            context.getDeployState().getProperties().athenzDnsSuffix(),
+                            context.getDeployState().zone(),
+                            AthenzDomain.from(HOSTED_VESPA_TENANT_PARENT_DOMAIN + context.properties().applicationId().tenant().value()),
+                            AthenzService.from("%s-%s".formatted(context.properties().applicationId().application().value(), appContext)));
     }
 
     private void addDeploymentSpecConfig(ApplicationContainerCluster cluster, ConfigModelContext context, DeployLogger deployLogger) {
@@ -506,6 +545,13 @@ public class ContainerModelBuilder extends ConfigModelBuilder<ContainerModel> {
             boolean atLeastOneClientWithCertificate = clients.stream().anyMatch(client -> !client.certificates().isEmpty());
             if (!atLeastOneClientWithCertificate)
                 throw new IllegalArgumentException("At least one client must require a certificate");
+
+            List<String> duplicates = clients.stream().collect(Collectors.groupingBy(Client::id))
+                    .entrySet().stream().filter(entry -> entry.getValue().size() > 1)
+                    .map(Map.Entry::getKey).sorted().toList();
+            if (! duplicates.isEmpty()) {
+                throw new IllegalArgumentException("Duplicate client ids: " + duplicates);
+            }
         }
 
         List<X509Certificate> operatorAndTesterCertificates = deployState.getProperties().operatorCertificates();
@@ -598,9 +644,10 @@ public class ContainerModelBuilder extends ConfigModelBuilder<ContainerModel> {
 
         // If the deployment contains certificate/private key reference, setup TLS port
         var builder = HostedSslConnectorFactory.builder(serverName, getMtlsDataplanePort(state))
-                .proxyProtocol(true, state.getProperties().featureFlags().enableProxyProtocolMixedMode())
+                .proxyProtocol(state.zone().cloud().useProxyProtocol())
                 .tlsCiphersOverride(state.getProperties().tlsCiphersOverride())
-                .endpointConnectionTtl(state.getProperties().endpointConnectionTtl());
+                .endpointConnectionTtl(state.getProperties().endpointConnectionTtl())
+                .requestPrefixForLoggingContent(state.getProperties().requestPrefixForLoggingContent());
         var endpointCert = state.endpointCertificateSecrets().orElse(null);
         if (endpointCert != null) {
             builder.endpointCertificate(endpointCert);
@@ -657,12 +704,13 @@ public class ContainerModelBuilder extends ConfigModelBuilder<ContainerModel> {
         // Setup dedicated connector
         var connector = HostedSslConnectorFactory.builder(server.getComponentId().getName()+"-token", tokenPort)
                 .tokenEndpoint(true)
-                .proxyProtocol(false, false)
+                .proxyProtocol(false)
                 .endpointCertificate(endpointCert)
                 .remoteAddressHeader("X-Forwarded-For")
                 .remotePortHeader("X-Forwarded-Port")
                 .clientAuth(SslClientAuth.NEED)
                 .knownServerNames(tokenEndpoints)
+                .requestPrefixForLoggingContent(state.getProperties().requestPrefixForLoggingContent())
                 .build();
         server.addConnector(connector);
 
@@ -765,6 +813,16 @@ public class ContainerModelBuilder extends ConfigModelBuilder<ContainerModel> {
         addSearchHandler(deployState, cluster, searchElement, context);
 
         validateAndAddConfiguredComponents(deployState, cluster, searchElement, "renderer", ContainerModelBuilder::validateRendererElement);
+
+        addSignificance(deployState, searchElement, cluster);
+    }
+
+    private void addSignificance(DeployState deployState, Element spec, ApplicationContainerCluster cluster) {
+        Element significanceElement = XML.getChild(spec, "significance");
+
+        SignificanceModelRegistry significanceModelRegistry = new SignificanceModelRegistry(deployState, significanceElement);
+        cluster.addComponent(significanceModelRegistry);
+
     }
 
     private void addModelEvaluation(Element spec, ApplicationContainerCluster cluster, ConfigModelContext context) {
@@ -798,8 +856,9 @@ public class ContainerModelBuilder extends ConfigModelBuilder<ContainerModel> {
                                                                                         !container.getHostResource().realResources().gpuResources().isZero());
                 onnxModel.setGpuDevice(gpuDevice, hasGpu);
             }
-            cluster.onnxModelCostCalculator().registerModel(context.getApplicationPackage().getFile(onnxModel.getFilePath()), onnxModel.onnxModelOptions());
         }
+        for (OnnxModel onnxModel : models.asMap().values())
+            cluster.onnxModelCostCalculator().registerModel(context.getApplicationPackage().getFile(onnxModel.getFilePath()), onnxModel.onnxModelOptions());
 
         cluster.setModelEvaluation(new ContainerModelEvaluation(cluster, profiles, models));
     }
@@ -881,7 +940,7 @@ public class ContainerModelBuilder extends ConfigModelBuilder<ContainerModel> {
 
     private void addStandaloneNode(ApplicationContainerCluster cluster, DeployState deployState) {
         ApplicationContainer container = new ApplicationContainer(cluster, "standalone", cluster.getContainers().size(), deployState);
-        cluster.addContainers(Collections.singleton(container));
+        cluster.addContainers(List.of(container));
     }
 
     private static String buildJvmGCOptions(ConfigModelContext context, String jvmGCOptions) {
@@ -1002,7 +1061,7 @@ public class ContainerModelBuilder extends ConfigModelBuilder<ContainerModel> {
             return containers;
         } else if (nodesElement.hasAttribute("count")) // regular, hosted node spec
             return createNodesFromNodeCount(cluster, containerElement, nodesElement, context);
-        else if (cluster.isHostedVespa() && cluster.getZone().environment().isManuallyDeployed()) // default to 1 in manual zones
+        else if (cluster.isHostedVespa()) // default to 1 if node count is not specified
             return createNodesFromNodeCount(cluster, containerElement, nodesElement, context);
         else // the non-hosted option
             return createNodesFromNodeList(context.getDeployState(), cluster, nodesElement);
@@ -1020,7 +1079,7 @@ public class ContainerModelBuilder extends ConfigModelBuilder<ContainerModel> {
         }
         catch (NumberFormatException e) {
             throw new IllegalArgumentException("The memory percentage given for nodes in " + cluster +
-                                               " must be an integer percentage ending by the '%' sign", e);
+                                               " must be given as an integer followe by '%'", e);
         }
     }
 
@@ -1055,9 +1114,21 @@ public class ContainerModelBuilder extends ConfigModelBuilder<ContainerModel> {
         return List.of(node);
     }
 
+    private static void requireFixedSizeSingularNodeIfTester(ConfigModelContext context, NodesSpecification nodes) {
+        if ( ! context.properties().hostedVespa() || ! context.properties().applicationId().instance().isTester())
+            return;
+
+        if ( ! nodes.maxResources().equals(nodes.minResources()))
+            throw new IllegalArgumentException("tester resources must be absolute, but min and max resources differ: " + nodes);
+
+        if (nodes.maxResources().nodes() > 1)
+            throw new IllegalArgumentException("tester cannot run on more than 1 node, but " + nodes.maxResources().nodes() + " nodes were specified");
+    }
+
     private List<ApplicationContainer> createNodesFromNodeCount(ApplicationContainerCluster cluster, Element containerElement, Element nodesElement, ConfigModelContext context) {
         try {
             var nodesSpecification = NodesSpecification.from(new ModelElement(nodesElement), context);
+            requireFixedSizeSingularNodeIfTester(context, nodesSpecification);
             var clusterId = ClusterSpec.Id.from(cluster.name());
             Map<HostResource, ClusterMembership> hosts = nodesSpecification.provision(cluster.getRoot().hostSystem(),
                                                                                       ClusterSpec.Type.container,
@@ -1263,37 +1334,36 @@ public class ContainerModelBuilder extends ConfigModelBuilder<ContainerModel> {
         }
     }
 
-    private void addIdentityProvider(ApplicationContainerCluster cluster,
-                                     List<ConfigServerSpec> configServerSpecs,
-                                     HostName loadBalancerName,
-                                     URI ztsUrl,
-                                     String athenzDnsSuffix,
-                                     Zone zone,
-                                     DeploymentSpec spec) {
-        spec.athenzDomain()
-            .ifPresent(domain -> {
-                AthenzService service = spec.athenzService(app.getApplicationId().instance(), zone.environment(), zone.region())
-                                            .orElseThrow(() -> new IllegalArgumentException("Missing Athenz service configuration in instance '" +
-                                                                                            app.getApplicationId().instance() + "'"));
-            String zoneDnsSuffix = zone.environment().value() + "-" + zone.region().value() + "." + athenzDnsSuffix;
-            IdentityProvider identityProvider = new IdentityProvider(domain,
-                                                                     service,
-                                                                     getLoadBalancerName(loadBalancerName, configServerSpecs),
-                                                                     ztsUrl,
-                                                                     zoneDnsSuffix,
-                                                                     zone);
+    private void addIdentityProvider(ApplicationContainerCluster cluster, List<ConfigServerSpec> configServerSpecs, HostName loadBalancerName,
+                                     URI ztsUrl, String athenzDnsSuffix, Zone zone, DeploymentSpec spec) {
+        spec.athenzDomain().ifPresent(domain -> {
+            AthenzService service = spec.athenzService(app.getApplicationId().instance(), zone.environment(), zone.region())
+                                        .orElseThrow(() -> new IllegalArgumentException("Missing Athenz service configuration in instance '" +
+                                                                                        app.getApplicationId().instance() + "'"));
+            addIdentityProvider(cluster, configServerSpecs, loadBalancerName, ztsUrl, athenzDnsSuffix, zone, domain, service);
+        });
+    }
 
-            // Replace AthenzIdentityProviderProvider
-            cluster.removeComponent(ComponentId.fromString("com.yahoo.container.jdisc.AthenzIdentityProviderProvider"));
-            cluster.addComponent(identityProvider);
+    private void addIdentityProvider(ApplicationContainerCluster cluster, List<ConfigServerSpec> configServerSpecs, HostName loadBalancerName,
+                                     URI ztsUrl, String athenzDnsSuffix, Zone zone, AthenzDomain domain, AthenzService service) {
+        String zoneDnsSuffix = zone.environment().value() + "-" + zone.region().value() + "." + athenzDnsSuffix;
+        IdentityProvider identityProvider = new IdentityProvider(domain,
+                                                                 service,
+                                                                 getLoadBalancerName(loadBalancerName, configServerSpecs),
+                                                                 ztsUrl,
+                                                                 zoneDnsSuffix,
+                                                                 zone);
 
-            var serviceIdentityProviderProvider = "com.yahoo.vespa.athenz.identityprovider.client.ServiceIdentityProviderProvider";
-            cluster.addComponent(new SimpleComponent(new ComponentModel(serviceIdentityProviderProvider, serviceIdentityProviderProvider, "vespa-athenz")));
+        // Replace AthenzIdentityProviderProvider
+        cluster.removeComponent(ComponentId.fromString("com.yahoo.container.jdisc.AthenzIdentityProviderProvider"));
+        cluster.addComponent(identityProvider);
 
-            cluster.getContainers().forEach(container -> {
-                container.setProp("identity.domain", domain.value());
-                container.setProp("identity.service", service.value());
-            });
+        var serviceIdentityProviderProvider = "com.yahoo.vespa.athenz.identityprovider.client.ServiceIdentityProviderProvider";
+        cluster.addComponent(new SimpleComponent(new ComponentModel(serviceIdentityProviderProvider, serviceIdentityProviderProvider, "vespa-athenz")));
+
+        cluster.getContainers().forEach(container -> {
+            container.setProp("identity.domain", domain.value());
+            container.setProp("identity.service", service.value());
         });
     }
 

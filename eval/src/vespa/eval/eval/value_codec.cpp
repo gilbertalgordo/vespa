@@ -113,7 +113,7 @@ ValueType decode_type(nbostream &input, const Format &format) {
     if (format.has_sparse) {
         size_t cnt = input.getInt1_4Bytes();
         for (size_t i = 0; i < cnt; ++i) {
-            vespalib::string name;
+            std::string name;
             input.readSmallString(name);
             dim_list.emplace_back(name);
         }
@@ -121,7 +121,7 @@ ValueType decode_type(nbostream &input, const Format &format) {
     if (format.has_dense) {
         size_t cnt = input.getInt1_4Bytes();
         for (size_t i = 0; i < cnt; ++i) {
-            vespalib::string name;
+            std::string name;
             input.readSmallString(name);
             dim_list.emplace_back(name, input.getInt1_4Bytes());
         }
@@ -143,21 +143,21 @@ size_t maybe_decode_num_blocks(nbostream &input, bool has_mapped_dims, const For
 
 void encode_mapped_labels(nbostream &output, size_t num_mapped_dims, const SmallVector<string_id> &addr) {
     for (size_t i = 0; i < num_mapped_dims; ++i) {
-        vespalib::string str = SharedStringRepo::Handle::string_from_id(addr[i]);
+        std::string str = SharedStringRepo::Handle::string_from_id(addr[i]);
         output.writeSmallString(str);
     }
 }
 
-void decode_mapped_labels(nbostream &input, size_t num_mapped_dims, SmallVector<vespalib::stringref> &addr) {
+void decode_mapped_labels(nbostream &input, size_t num_mapped_dims, SmallVector<std::string_view> &addr) {
     for (size_t i = 0; i < num_mapped_dims; ++i) {
         size_t strSize = input.getInt1_4Bytes();
-        addr[i] = vespalib::stringref(input.peek(), strSize);
+        addr[i] = std::string_view(input.peek(), strSize);
         input.adjustReadPos(strSize);
     }
 }
 
 template<typename T>
-void decode_cells(nbostream &input, size_t num_cells, ArrayRef<T> dst)
+void decode_cells(nbostream &input, size_t num_cells, std::span<T> dst)
 {
     assert(num_cells == dst.size());
     for (size_t i = 0; i < num_cells; ++i) {
@@ -175,7 +175,7 @@ struct DecodeState {
 struct ContentDecoder {
     template<typename T>
     static std::unique_ptr<Value> invoke(nbostream &input, const DecodeState &state, const ValueBuilderFactory &factory) {
-        SmallVector<vespalib::stringref> address(state.num_mapped_dims);
+        SmallVector<std::string_view> address(state.num_mapped_dims);
         if (state.num_blocks * state.subspace_size * sizeof(T) > input.size()) {
             auto err = fmt("serialized input claims %zu blocks of size %zu*%zu, but only %zu bytes available",
                            state.num_blocks, state.subspace_size, sizeof(T), input.size());
@@ -200,9 +200,9 @@ struct ContentDecoder {
 struct CreateValueFromTensorSpec {
     template <typename T> static std::unique_ptr<Value> invoke(const ValueType &type, const TensorSpec &spec, const ValueBuilderFactory &factory) {
         size_t dense_size = type.dense_subspace_size();
-        ArrayArrayMap<vespalib::stringref,T> map(type.count_mapped_dimensions(), dense_size,
+        ArrayArrayMap<std::string_view,T> map(type.count_mapped_dimensions(), dense_size,
                                                  std::max(spec.cells().size() / dense_size, size_t(1)));
-        SmallVector<vespalib::stringref> sparse_key;
+        SmallVector<std::string_view> sparse_key;
         for (const auto &entry: spec.cells()) {
             sparse_key.clear();
             size_t dense_key = 0;
@@ -221,17 +221,17 @@ struct CreateValueFromTensorSpec {
             }
             assert(binding == entry.first.end());
             assert(dense_key < map.values_per_entry());
-            auto [tag, ignore] = map.lookup_or_add_entry(ConstArrayRef<vespalib::stringref>(sparse_key));
+            auto [tag, ignore] = map.lookup_or_add_entry(std::span<const std::string_view>(sparse_key));
             map.get_values(tag)[dense_key] = entry.second;
         }
         // if spec is missing the required dense space, add it here:
         if ((map.keys_per_entry() == 0) && (map.size() == 0)) {
-            map.add_entry(ConstArrayRef<vespalib::stringref>());
+            map.add_entry(std::span<const std::string_view>());
         }
         auto builder = factory.create_value_builder<T>(type, map.keys_per_entry(), map.values_per_entry(), map.size());
         map.each_entry([&](const auto &keys, const auto &values)
                        {
-                           memcpy(builder->add_subspace(keys).begin(), values.begin(), values.size() * sizeof(T));
+                           memcpy(builder->add_subspace(keys).data(), values.data(), values.size() * sizeof(T));
                        });
         return builder->build(std::move(builder));
     }

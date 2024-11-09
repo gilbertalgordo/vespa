@@ -1,7 +1,7 @@
 // Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.indexinglanguage.expressions;
 
-import com.yahoo.document.DataType;
+import com.yahoo.collections.LazyMap;
 import com.yahoo.document.FieldPath;
 import com.yahoo.document.datatypes.FieldValue;
 import com.yahoo.language.Language;
@@ -10,23 +10,25 @@ import com.yahoo.language.detect.Detection;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * @author Simon Thoresen Hult
  */
-public class ExecutionContext implements FieldTypeAdapter, FieldValueAdapter, Cloneable {
+public class ExecutionContext {
 
     private final Map<String, FieldValue> variables = new HashMap<>();
-    private final FieldValueAdapter adapter;
-    private FieldValue value;
+    private final FieldValueAdapter fieldValue;
+    private FieldValue currentValue;
     private Language language;
+    private final Map<Object, Object> cache = LazyMap.newHashMap();
 
     public ExecutionContext() {
         this(null);
     }
 
-    public ExecutionContext(FieldValueAdapter adapter) {
-        this.adapter = adapter;
+    public ExecutionContext(FieldValueAdapter fieldValue) {
+        this.fieldValue = fieldValue;
         this.language = Language.UNKNOWN;
     }
 
@@ -40,45 +42,24 @@ public class ExecutionContext implements FieldTypeAdapter, FieldValueAdapter, Cl
      * Returns whether this is for a complete execution of all statements of a script,
      * or a partial execution of only the statements accessing the available data.
      */
-    public boolean isComplete() { return adapter == null ? false : adapter.isComplete(); }
-
-    @Override
-    public DataType getInputType(Expression exp, String fieldName) {
-        return adapter.getInputType(exp, fieldName);
+    public boolean isComplete() {
+        return fieldValue != null && fieldValue.isComplete();
     }
 
-    @Override
-    public FieldValue getInputValue(String fieldName) {
-        if (adapter == null) {
-            throw new IllegalStateException("Can not get field '" + fieldName + "' because adapter is null");
-        }
-        return adapter.getInputValue(fieldName);
+    public FieldValue getFieldValue(String fieldName) {
+        return fieldValue.getInputValue(fieldName);
     }
 
-    @Override
-    public FieldValue getInputValue(FieldPath fieldPath) {
-        if (adapter == null) {
-            throw new IllegalStateException("Can not get field '" + fieldPath + "' because adapter is null");
-        }
-        return adapter.getInputValue(fieldPath);
+    public FieldValue getFieldValue(FieldPath fieldPath) {
+        return fieldValue.getInputValue(fieldPath);
     }
 
-    @Override
-    public void tryOutputType(Expression exp, String fieldName, DataType valueType) {
-        adapter.tryOutputType(exp, fieldName, valueType);
-    }
-
-    @Override
-    public ExecutionContext setOutputValue(Expression exp, String fieldName, FieldValue fieldValue) {
-        if (adapter == null)
-            throw new IllegalStateException("Can not set field '" + fieldName + "' because adapter is null");
-        adapter.setOutputValue(exp, fieldName, fieldValue);
+    public ExecutionContext setFieldValue(String fieldName, FieldValue fieldValue, Expression expression) {
+        this.fieldValue.setOutputValue(expression, fieldName, fieldValue);
         return this;
     }
 
-    public FieldValueAdapter getAdapter() {
-        return adapter;
-    }
+    public FieldValueAdapter getFieldValue() { return fieldValue; }
 
     public FieldValue getVariable(String name) {
         return variables.get(name);
@@ -89,53 +70,57 @@ public class ExecutionContext implements FieldTypeAdapter, FieldValueAdapter, Cl
         return this;
     }
 
-    public Language getLanguage() {
-        return language;
-    }
+    public FieldValue getCurrentValue() { return currentValue; }
 
-    public ExecutionContext setLanguage(Language language) {
-        language.getClass();
-        this.language = language;
+    public ExecutionContext setCurrentValue(FieldValue value) {
+        this.currentValue = value;
         return this;
     }
 
-    public Language resolveLanguage(Linguistics linguistics) {
-        if (language != null && language != Language.UNKNOWN) {
-            return language;
-        }
-        if (linguistics == null) {
-            return Language.ENGLISH;
-        }
-        Detection detection = linguistics.getDetector().detect(String.valueOf(value), null);
-        if (detection == null) {
-            return Language.ENGLISH;
-        }
-        Language detected = detection.getLanguage();
-        if (detected == Language.UNKNOWN) {
-            return Language.ENGLISH;
-        }
-        return detected;
+    /** Returns a cached value, or null if not present. */
+    public Object getCachedValue(Object key) {
+        return cache.get(key);
     }
 
-    public FieldValue getValue() {
-        return value;
+    public void putCachedValue(String key, Object value) {
+        cache.put(key, value);
     }
 
-    public ExecutionContext setValue(FieldValue value) {
-        this.value = value;
-        return this;
-    }
-
-    public ExecutionContext clear() {
-        variables.clear();
-        value = null;
-        return this;
+    /** Returns a mutable reference to the cache of this. */
+    public Map<Object, Object> getCache() {
+        return cache;
     }
 
     void fillVariableTypes(VerificationContext vctx) {
         for (var entry : variables.entrySet()) {
             vctx.setVariable(entry.getKey(), entry.getValue().getDataType());
         }
+    }
+
+    public Language getLanguage() { return language; }
+
+    public ExecutionContext setLanguage(Language language) {
+        this.language = Objects.requireNonNull(language);
+        return this;
+    }
+
+    public Language resolveLanguage(Linguistics linguistics) {
+        if (language != Language.UNKNOWN) return language;
+        if (linguistics == null) return Language.ENGLISH;
+
+        Detection detection = linguistics.getDetector().detect(String.valueOf(currentValue), null);
+        if (detection == null) return Language.ENGLISH;
+
+        Language detected = detection.getLanguage();
+        if (detected == Language.UNKNOWN) return Language.ENGLISH;
+        return detected;
+    }
+
+    /** Clears all state in this except the cache. */
+    public ExecutionContext clear() {
+        variables.clear();
+        currentValue = null;
+        return this;
     }
 
 }

@@ -26,26 +26,25 @@ class DocumentType final : public StructuredDataType {
 public:
     class FieldSet {
     public:
-        using Fields = std::set<vespalib::string>;
-        FieldSet(const vespalib::string & name, Fields fields,
-                 const DocumentType & doc_type);
-
+        using Fields = std::set<std::string>;
+        FieldSet(const std::string & name, Fields fields, const DocumentType & doc_type);
+        ~FieldSet();
         FieldSet(const FieldSet&) = default;
         FieldSet(FieldSet&&) noexcept = default;
         FieldSet& operator=(const FieldSet&) = default;
         FieldSet& operator=(FieldSet&&) noexcept = default;
 
-        const vespalib::string & getName() const noexcept { return _name; }
+        const std::string & getName() const noexcept { return _name; }
         const Fields & getFields() const noexcept { return _fields; }
         const FieldCollection & asCollection() const { return _field_collection; }
     private:
-        vespalib::string _name;
+        std::string _name;
         Fields           _fields;
         FieldCollection  _field_collection;
     };
 private:
-    using FieldSetMap = std::map<vespalib::string, FieldSet>;
-    using ImportedFieldNames = vespalib::hash_set<vespalib::string>;
+    using FieldSetMap = std::map<std::string, FieldSet>;
+    using ImportedFieldNames = vespalib::hash_set<std::string>;
 
     std::vector<const DocumentType *> _inheritedTypes;
     StructDataType::SP                _ownedFields;
@@ -57,11 +56,11 @@ public:
     using UP = std::unique_ptr<DocumentType>;
     using SP = std::shared_ptr<DocumentType>;
 
-    DocumentType(vespalib::stringref name, int32_t id);
-    DocumentType(vespalib::stringref name, int32_t id, const StructDataType& fields);
+    DocumentType(std::string_view name, int32_t id);
+    DocumentType(std::string_view name, int32_t id, const StructDataType& fields);
 
-    explicit DocumentType(vespalib::stringref name);
-    DocumentType(vespalib::stringref name, const StructDataType& fields);
+    explicit DocumentType(std::string_view name);
+    DocumentType(std::string_view name, const StructDataType& fields);
     DocumentType(const DocumentType &);   // TODO remove usage
     DocumentType & operator = (const DocumentType &);  // TODO remove usage
 
@@ -90,9 +89,9 @@ public:
     uint32_t getFieldCount() const noexcept override {
         return _fields->getFieldCount();
     }
-    const Field & getField(vespalib::stringref name) const override;
+    const Field & getField(std::string_view name) const override;
     const Field & getField(int fieldId) const override;
-    bool hasField(vespalib::stringref name) const noexcept override {
+    bool hasField(std::string_view name) const noexcept override {
         return _fields->hasField(name);
     }
     bool hasField(int fieldId) const noexcept override {
@@ -100,16 +99,16 @@ public:
     }
     Field::Set getFieldSet() const override;
 
-    DocumentType & addFieldSet(const vespalib::string & name, FieldSet::Fields fields);
-    const FieldSet * getFieldSet(const vespalib::string & name) const;
+    DocumentType & addFieldSet(const std::string & name, FieldSet::Fields fields);
+    const FieldSet * getFieldSet(const std::string & name) const;
     const FieldSetMap & getFieldSets() const { return _fieldSets; }
 
     const ImportedFieldNames& imported_field_names() const noexcept {
         return _imported_field_names;
     }
-    bool has_imported_field_name(const vespalib::string& name) const noexcept;
+    bool has_imported_field_name(const std::string& name) const noexcept;
     // Ideally the type would be immutable, but this is how it's built today.
-    void add_imported_field_name(const vespalib::string& name);
+    void add_imported_field_name(const std::string& name);
 };
 
 } // document

@@ -1,8 +1,6 @@
 // Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 /**
- * @file persistence.h
- *
- * Persistence related commands, like put, get & remove
+  * Persistence related commands, like put, get & remove
  */
 #pragma once
 
@@ -10,6 +8,7 @@
 #include <vespa/storageapi/defs.h>
 #include <vespa/document/base/documentid.h>
 #include <vespa/documentapi/messagebus/messages/testandsetcondition.h>
+#include <optional>
 
 namespace document {
     class DocumentUpdate;
@@ -71,7 +70,7 @@ public:
     void set_create_if_non_existent(bool value) noexcept { _create_if_non_existent = value; }
     bool get_create_if_non_existent() const noexcept { return _create_if_non_existent; }
 
-    vespalib::string getSummary() const override;
+    std::string getSummary() const override;
     void print(std::ostream& out, bool verbose, const std::string& indent) const override;
 
     DECLARE_STORAGECOMMAND(PutCommand, onPut);
@@ -117,22 +116,34 @@ class UpdateCommand : public TestAndSetCommand {
     std::shared_ptr<document::DocumentUpdate> _update;
     Timestamp _timestamp;
     Timestamp _oldTimestamp;
+    std::optional<bool> _create_if_missing; // caches the value held (possibly lazily deserialized) in _update
 
 public:
     UpdateCommand(const document::Bucket &bucket,
                   const std::shared_ptr<document::DocumentUpdate>&, Timestamp);
     ~UpdateCommand() override;
 
-    void setTimestamp(Timestamp ts) { _timestamp = ts; }
-    void setOldTimestamp(Timestamp ts) { _oldTimestamp = ts; }
+    void setTimestamp(Timestamp ts) noexcept { _timestamp = ts; }
+    void setOldTimestamp(Timestamp ts) noexcept { _oldTimestamp = ts; }
+
+    [[nodiscard]] bool has_cached_create_if_missing() const noexcept {
+        return _create_if_missing.has_value();
+    }
+    // It is the caller's responsibility to ensure this value matches that of _update->getCreateIfNonExisting()
+    void set_cached_create_if_missing(bool create) noexcept {
+        _create_if_missing = create;
+    }
 
     const std::shared_ptr<document::DocumentUpdate>& getUpdate() const { return _update; }
     const document::DocumentId& getDocumentId() const override;
     Timestamp getTimestamp() const { return _timestamp; }
     Timestamp getOldTimestamp() const { return _oldTimestamp; }
 
+    // May throw iff has_cached_create_if_missing() == false, otherwise noexcept.
+    [[nodiscard]] bool create_if_missing() const;
+
     const document::DocumentType * getDocumentType() const override;
-    vespalib::string getSummary() const override;
+    std::string getSummary() const override;
 
     void print(std::ostream& out, bool verbose, const std::string& indent) const override;
 
@@ -190,18 +201,18 @@ public:
 class GetCommand : public BucketInfoCommand {
     document::DocumentId    _docId;
     Timestamp               _beforeTimestamp;
-    vespalib::string        _fieldSet;
+    std::string        _fieldSet;
     TestAndSetCondition     _condition;
     InternalReadConsistency _internal_read_consistency;
 public:
     GetCommand(const document::Bucket &bucket, const document::DocumentId&,
-               vespalib::stringref fieldSet, Timestamp before = MAX_TIMESTAMP);
+               std::string_view fieldSet, Timestamp before = MAX_TIMESTAMP);
     ~GetCommand() override;
     void setBeforeTimestamp(Timestamp ts) { _beforeTimestamp = ts; }
     const document::DocumentId& getDocumentId() const { return _docId; }
     Timestamp getBeforeTimestamp() const { return _beforeTimestamp; }
-    const vespalib::string& getFieldSet() const { return _fieldSet; }
-    void setFieldSet(vespalib::stringref fieldSet) { _fieldSet = fieldSet; }
+    const std::string& getFieldSet() const { return _fieldSet; }
+    void setFieldSet(std::string_view fieldSet) { _fieldSet = fieldSet; }
     [[nodiscard]] bool has_condition() const noexcept { return _condition.isPresent(); }
     [[nodiscard]] const TestAndSetCondition& condition() const noexcept { return _condition; }
     void set_condition(TestAndSetCondition cond) { _condition = std::move(cond); }
@@ -212,7 +223,7 @@ public:
         _internal_read_consistency = consistency;
     }
 
-    vespalib::string getSummary() const override;
+    std::string getSummary() const override;
     void print(std::ostream& out, bool verbose, const std::string& indent) const override;
 
     api::LockingRequirements lockingRequirements() const noexcept override {
@@ -230,7 +241,7 @@ public:
  */
 class GetReply : public BucketInfoReply {
     document::DocumentId _docId; // In case of not found, we want id still
-    vespalib::string _fieldSet;
+    std::string _fieldSet;
     DocumentSP _doc; // Null pointer if not found
     Timestamp _beforeTimestamp;
     Timestamp _lastModifiedTime;
@@ -249,7 +260,7 @@ public:
 
     const DocumentSP& getDocument() const { return _doc; }
     const document::DocumentId& getDocumentId() const { return _docId; }
-    const vespalib::string& getFieldSet() const { return _fieldSet; }
+    const std::string& getFieldSet() const { return _fieldSet; }
 
     Timestamp getLastModifiedTimestamp() const noexcept { return _lastModifiedTime; }
     Timestamp getBeforeTimestamp() const noexcept { return _beforeTimestamp; }
@@ -280,7 +291,7 @@ public:
     void setTimestamp(Timestamp ts) { _timestamp = ts; }
     const document::DocumentId& getDocumentId() const override { return _docId; }
     Timestamp getTimestamp() const { return _timestamp; }
-    vespalib::string getSummary() const override;
+    std::string getSummary() const override;
     void print(std::ostream& out, bool verbose, const std::string& indent) const override;
     DECLARE_STORAGECOMMAND(RemoveCommand, onRemove)
 };

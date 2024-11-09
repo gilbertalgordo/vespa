@@ -39,10 +39,10 @@ ExternPolicy::ExternPolicy(const string &param) :
 
     // Activate supervisor and register mirror.
     MirrorAPI::StringList spec;
-    vespalib::string lst = param.substr(0, pos);
+    std::string lst = param.substr(0, pos);
     vespalib::StringTokenizer slobrokList(lst, ",");
-    for (uint32_t j = 0; j < slobrokList.size(); j++) {
-        spec.push_back(slobrokList[j]);
+    for (auto slobrok : slobrokList) {
+        spec.emplace_back(slobrok);
     }
 
     if (spec.empty()) {

@@ -17,13 +17,15 @@ class VisitorAdapter : public search::fef::IDumpFeatureVisitor
 public:
     explicit VisitorAdapter(search::fef::BlueprintResolver &resolver)
         : _resolver(resolver) {}
-    void visitDumpFeature(const vespalib::string &name) override {
+    void visitDumpFeature(const std::string &name) override {
         _resolver.addSeed(name);
     }
 };
 } // namespace <unnamed>
 
 namespace search::fef {
+
+RankSetup::MutateOperation::~MutateOperation() = default;
 
 using namespace indexproperties;
 
@@ -50,7 +52,8 @@ RankSetup::RankSetup(const BlueprintFactory &factory, const IIndexEnvironment &i
       _degradationMaxFilterCoverage(1.0),
       _degradationSamplePercentage(0.2),
       _degradationPostFilterMultiplier(1.0),
-      _rankScoreDropLimit(0),
+      _first_phase_rank_score_drop_limit(),
+      _second_phase_rank_score_drop_limit(),
       _match_features(),
       _summaryFeatures(),
       _dumpFeatures(),
@@ -71,6 +74,9 @@ RankSetup::RankSetup(const BlueprintFactory &factory, const IIndexEnvironment &i
       _global_filter_lower_limit(0.0),
       _global_filter_upper_limit(1.0),
       _target_hits_max_adjustment_factor(20.0),
+      _weakand_range(0.0),
+      _weakand_stop_word_adjust_limit(matching::WeakAndStopWordAdjustLimit::DEFAULT_VALUE),
+      _weakand_stop_word_drop_limit(matching::WeakAndStopWordDropLimit::DEFAULT_VALUE),
       _fuzzy_matching_algorithm(vespalib::FuzzyMatchingAlgorithm::DfaTable),
       _mutateOnMatch(),
       _mutateOnFirstPhase(),
@@ -89,12 +95,12 @@ RankSetup::configure()
     for (const auto &feature: match::Feature::lookup(_indexEnv.getProperties())) {
         add_match_feature(feature);
     }
-    std::vector<vespalib::string> summaryFeatures = summary::Feature::lookup(_indexEnv.getProperties());
+    std::vector<std::string> summaryFeatures = summary::Feature::lookup(_indexEnv.getProperties());
     for (const auto & feature : summaryFeatures) {
         addSummaryFeature(feature);
     }
     setIgnoreDefaultRankFeatures(dump::IgnoreDefaultFeatures::check(_indexEnv.getProperties()));
-    std::vector<vespalib::string> dumpFeatures = dump::Feature::lookup(_indexEnv.getProperties());
+    std::vector<std::string> dumpFeatures = dump::Feature::lookup(_indexEnv.getProperties());
     for (const auto & feature : dumpFeatures) {
         addDumpFeature(feature);
     }
@@ -119,13 +125,17 @@ RankSetup::configure()
     setDiversityCutoffStrategy(matchphase::DiversityCutoffStrategy::lookup(_indexEnv.getProperties()));
     setEstimatePoint(hitcollector::EstimatePoint::lookup(_indexEnv.getProperties()));
     setEstimateLimit(hitcollector::EstimateLimit::lookup(_indexEnv.getProperties()));
-    setRankScoreDropLimit(hitcollector::RankScoreDropLimit::lookup(_indexEnv.getProperties()));
+    set_first_phase_rank_score_drop_limit(hitcollector::FirstPhaseRankScoreDropLimit::lookup(_indexEnv.getProperties()));
+    set_second_phase_rank_score_drop_limit(hitcollector::SecondPhaseRankScoreDropLimit::lookup(_indexEnv.getProperties()));
     setSoftTimeoutEnabled(softtimeout::Enabled::lookup(_indexEnv.getProperties()));
     setSoftTimeoutTailCost(softtimeout::TailCost::lookup(_indexEnv.getProperties()));
     set_global_filter_lower_limit(matching::GlobalFilterLowerLimit::lookup(_indexEnv.getProperties()));
     set_global_filter_upper_limit(matching::GlobalFilterUpperLimit::lookup(_indexEnv.getProperties()));
     set_target_hits_max_adjustment_factor(matching::TargetHitsMaxAdjustmentFactor::lookup(_indexEnv.getProperties()));
     set_fuzzy_matching_algorithm(matching::FuzzyAlgorithm::lookup(_indexEnv.getProperties()));
+    set_weakand_range(temporary::WeakAndRange::lookup(_indexEnv.getProperties()));
+    set_weakand_stop_word_adjust_limit(matching::WeakAndStopWordAdjustLimit::lookup(_indexEnv.getProperties()));
+    set_weakand_stop_word_drop_limit(matching::WeakAndStopWordDropLimit::lookup(_indexEnv.getProperties()));
     _mutateOnMatch._attribute = mutate::on_match::Attribute::lookup(_indexEnv.getProperties());
     _mutateOnMatch._operation = mutate::on_match::Operation::lookup(_indexEnv.getProperties());
     _mutateOnFirstPhase._attribute = mutate::on_first_phase::Attribute::lookup(_indexEnv.getProperties());
@@ -140,35 +150,35 @@ RankSetup::configure()
 }
 
 void
-RankSetup::setFirstPhaseRank(const vespalib::string &featureName)
+RankSetup::setFirstPhaseRank(const std::string &featureName)
 {
     assert(!_compiled);
     _firstPhaseRankFeature = featureName;
 }
 
 void
-RankSetup::setSecondPhaseRank(const vespalib::string &featureName)
+RankSetup::setSecondPhaseRank(const std::string &featureName)
 {
     assert(!_compiled);
     _secondPhaseRankFeature = featureName;
 }
 
 void
-RankSetup::add_match_feature(const vespalib::string &match_feature)
+RankSetup::add_match_feature(const std::string &match_feature)
 {
     assert(!_compiled);
     _match_features.push_back(match_feature);
 }
 
 void
-RankSetup::addSummaryFeature(const vespalib::string &summaryFeature)
+RankSetup::addSummaryFeature(const std::string &summaryFeature)
 {
     assert(!_compiled);
     _summaryFeatures.push_back(summaryFeature);
 }
 
 void
-RankSetup::addDumpFeature(const vespalib::string &dumpFeature)
+RankSetup::addDumpFeature(const std::string &dumpFeature)
 {
     assert(!_compiled);
     _dumpFeatures.push_back(dumpFeature);
@@ -193,7 +203,7 @@ RankSetup::compile()
             _firstPhaseRankFeature = parser.featureName();
             _first_phase_resolver->addSeed(_firstPhaseRankFeature);
         } else {
-            vespalib::string e = fmt("invalid feature name for initial rank: '%s'", _firstPhaseRankFeature.c_str());
+            std::string e = fmt("invalid feature name for first phase rank: '%s'", _firstPhaseRankFeature.c_str());
             _warnings.emplace_back(e);
             _compileError = true;
         }
@@ -204,7 +214,7 @@ RankSetup::compile()
             _secondPhaseRankFeature = parser.featureName();
             _second_phase_resolver->addSeed(_secondPhaseRankFeature);
         } else {
-            vespalib::string e = fmt("invalid feature name for final rank: '%s'", _secondPhaseRankFeature.c_str());
+            std::string e = fmt("invalid feature name for second phase rank: '%s'", _secondPhaseRankFeature.c_str());
             _warnings.emplace_back(e);
             _compileError = true;
         }
@@ -251,7 +261,7 @@ RankSetup::prepareSharedState(const IQueryEnvironment &queryEnv, IObjectStore &o
     }
 }
 
-vespalib::string
+std::string
 RankSetup::getJoinedWarnings() const {
     vespalib::asciistream os;
     for (const auto & m : _warnings) {

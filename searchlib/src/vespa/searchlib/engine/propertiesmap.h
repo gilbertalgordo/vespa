@@ -15,7 +15,7 @@ class PropertiesMap
 {
 private:
     using Props = search::fef::Properties;
-    using PropsMap = vespalib::hash_map<vespalib::string, Props>;
+    using PropsMap = vespalib::hash_map<std::string, Props>;
 
     static Props _emptyProperties;
     PropsMap     _propertiesMap;
@@ -28,7 +28,7 @@ private:
      * @param name name of properties
      * @return the properties
      **/
-    const Props &lookup(vespalib::stringref name) const;
+    const Props &lookup(std::string_view name) const;
 
 public:
     using ITR = PropsMap::const_iterator;
@@ -46,7 +46,7 @@ public:
      * @param name name of properties
      * @return the properties
      **/
-    Props &lookupCreate(vespalib::stringref name);
+    Props &lookupCreate(std::string_view name);
 
     /**
      * Obtain the number of named collection of properties held by

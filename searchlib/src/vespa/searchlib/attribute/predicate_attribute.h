@@ -38,14 +38,14 @@ public:
     using IntervalRange = uint16_t;
     using IntervalRangeVector = vespalib::RcuVectorBase<IntervalRange>;
 
-    PredicateAttribute(const vespalib::string &base_file_name);
-    PredicateAttribute(const vespalib::string &base_file_name, const Config &config);
+    PredicateAttribute(const std::string &base_file_name);
+    PredicateAttribute(const std::string &base_file_name, const Config &config);
 
     ~PredicateAttribute() override;
 
     predicate::PredicateIndex &getIndex() { return *_index; }
 
-    std::unique_ptr<AttributeSaver> onInitSave(vespalib::stringref fileName) override;
+    std::unique_ptr<AttributeSaver> onInitSave(std::string_view fileName) override;
     bool onLoad(vespalib::Executor *executor) override;
     void onCommit() override;
     void reclaim_memory(generation_t oldest_used_gen) override;

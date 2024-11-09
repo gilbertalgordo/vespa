@@ -30,15 +30,15 @@ public class ToDoubleTestCase {
         Expression exp = new ToDoubleExpression();
         assertVerify(DataType.INT, exp, DataType.DOUBLE);
         assertVerify(DataType.STRING, exp, DataType.DOUBLE);
-        assertVerifyThrows(null, exp, "Expected any input, but no input is specified");
+        assertVerifyThrows("Invalid expression 'to_double': Expected any input, but no input is specified", null, exp);
     }
 
     @Test
     public void requireThatValueIsConverted() {
         ExecutionContext ctx = new ExecutionContext(new SimpleTestAdapter());
-        ctx.setValue(new StringFieldValue("6.9")).execute(new ToDoubleExpression());
+        ctx.setCurrentValue(new StringFieldValue("6.9")).execute(new ToDoubleExpression());
 
-        FieldValue val = ctx.getValue();
+        FieldValue val = ctx.getCurrentValue();
         assertTrue(val instanceof DoubleFieldValue);
         assertEquals(6.9, ((DoubleFieldValue)val).getDouble(), 1e-6);
     }

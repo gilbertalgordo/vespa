@@ -78,7 +78,7 @@ MemoryIndex::MemoryIndex(const Schema& schema,
 MemoryIndex::~MemoryIndex() = default;
 
 void
-MemoryIndex::insertDocument(uint32_t docId, const document::Document &doc, OnWriteDoneType on_write_done)
+MemoryIndex::insertDocument(uint32_t docId, const document::Document &doc, const OnWriteDoneType& on_write_done)
 {
     if (_frozen) {
         LOG(warning, "Memory index frozen: ignoring insert of document '%s'(%u): '%s'",
@@ -112,7 +112,7 @@ MemoryIndex::removeDocuments(LidVector lids)
 }
 
 void
-MemoryIndex::commit(OnWriteDoneType on_write_done)
+MemoryIndex::commit(const OnWriteDoneType& on_write_done)
 {
     auto& inverter = _inverters->get_active_inverter();
     inverter.pushDocuments(on_write_done);
@@ -155,7 +155,7 @@ public:
 
     template <class TermNode>
     void visitTerm(TermNode &n) {
-        const vespalib::string termStr = queryeval::termAsString(n);
+        const std::string termStr = queryeval::termAsString(n);
         LOG(debug, "searching for '%s' in '%s'",
             termStr.c_str(), _field.getName().c_str());
         IFieldIndex* fieldIndex = _fieldIndexes.getFieldIndex(_fieldId);
@@ -197,6 +197,14 @@ MemoryIndex::createBlueprint(const IRequestContext & requestContext,
     return visitor.getResult();
 }
 
+std::unique_ptr<queryeval::Blueprint>
+MemoryIndex::createBlueprint(const queryeval::IRequestContext & requestContext,
+                             const queryeval::FieldSpecList &fields,
+                             const query::Node &term)
+{
+    return queryeval::Searchable::createBlueprint(requestContext, fields, term);
+}
+
 vespalib::MemoryUsage
 MemoryIndex::getMemoryUsage() const
 {
@@ -236,7 +244,7 @@ MemoryIndex::pruneRemovedFields(const Schema &schema)
     }
 }
 
-Schema::SP
+std::shared_ptr<const Schema>
 MemoryIndex::getPrunedSchema() const
 {
     std::lock_guard lock(_lock);
@@ -244,7 +252,7 @@ MemoryIndex::getPrunedSchema() const
 }
 
 FieldLengthInfo
-MemoryIndex::get_field_length_info(const vespalib::string& field_name) const
+MemoryIndex::get_field_length_info(const std::string& field_name) const
 {
     uint32_t field_id = _schema.getIndexFieldId(field_name);
     if (field_id != Schema::UNKNOWN_FIELD_ID) {

@@ -95,7 +95,7 @@ void ensure_openssl_initialized_once() {
     (void) openssl_resources;
 }
 
-BioPtr bio_from_string(vespalib::stringref str) {
+BioPtr bio_from_string(std::string_view str) {
     LOG_ASSERT(str.size() <= INT_MAX);
 #if (OPENSSL_VERSION_NUMBER >= 0x10002000L)
     BioPtr bio(::BIO_new_mem_buf(str.data(), static_cast<int>(str.size())));
@@ -117,10 +117,10 @@ bool has_pem_eof_on_stack() {
             && (ERR_GET_REASON(err) == PEM_R_NO_START_LINE));
 }
 
-vespalib::string ssl_error_from_stack() {
+std::string ssl_error_from_stack() {
     char buf[256];
     ::ERR_error_string_n(::ERR_get_error(), buf, sizeof(buf));
-    return vespalib::string(buf);
+    return std::string(buf);
 }
 
 // Several OpenSSL functions take a magical user passphrase argument with
@@ -234,7 +234,7 @@ OpenSslTlsContextImpl::~OpenSslTlsContextImpl() {
     }
 }
 
-void OpenSslTlsContextImpl::add_certificate_authorities(vespalib::stringref ca_pem) {
+void OpenSslTlsContextImpl::add_certificate_authorities(std::string_view ca_pem) {
     auto bio = bio_from_string(ca_pem);
     ::X509_STORE* cert_store = ::SSL_CTX_get_cert_store(_ctx.get()); // Internal pointer, not owned by us.
     while (true) {
@@ -248,7 +248,7 @@ void OpenSslTlsContextImpl::add_certificate_authorities(vespalib::stringref ca_p
     }
 }
 
-void OpenSslTlsContextImpl::add_certificate_chain(vespalib::stringref chain_pem) {
+void OpenSslTlsContextImpl::add_certificate_chain(std::string_view chain_pem) {
     auto bio = bio_from_string(chain_pem);
     // First certificate in the chain is the node's own (trusted) certificate.
     auto own_cert = read_trusted_x509_from_bio(*bio);
@@ -273,7 +273,7 @@ void OpenSslTlsContextImpl::add_certificate_chain(vespalib::stringref chain_pem)
     }
 }
 
-void OpenSslTlsContextImpl::use_private_key(vespalib::stringref key_pem) {
+void OpenSslTlsContextImpl::use_private_key(std::string_view key_pem) {
     auto bio = bio_from_string(key_pem);
     EvpPkeyPtr key(::PEM_read_bio_PrivateKey(bio.get(), nullptr, nullptr, empty_passphrase()));
     if (!key) {
@@ -376,7 +376,7 @@ struct GeneralNamesDeleter {
 };
 
 // Returns empty string if unsupported type or bad content.
-vespalib::string get_ia5_string(const ASN1_IA5STRING* ia5_str) {
+std::string get_ia5_string(const ASN1_IA5STRING* ia5_str) {
     if ((ia5_str->type == V_ASN1_IA5STRING) && (ia5_str->data != nullptr) && (ia5_str->length > 0)) {
 #if (OPENSSL_VERSION_NUMBER >= 0x10100000L)
         const char* data  = reinterpret_cast<const char*>(::ASN1_STRING_get0_data(ia5_str));
@@ -509,8 +509,8 @@ void OpenSslTlsContextImpl::set_ssl_ctx_self_reference() {
     SSL_CTX_set_app_data(_ctx.get(), this);
 }
 
-void OpenSslTlsContextImpl::set_accepted_cipher_suites(const std::vector<vespalib::string>& ciphers) {
-    vespalib::string openssl_ciphers;
+void OpenSslTlsContextImpl::set_accepted_cipher_suites(const std::vector<std::string>& ciphers) {
+    std::string openssl_ciphers;
     size_t bad_ciphers = 0;
     for (const auto& iana_cipher : ciphers) {
         auto our_cipher = iana_cipher_suite_to_openssl(iana_cipher);

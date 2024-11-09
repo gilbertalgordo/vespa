@@ -28,7 +28,6 @@ import org.junit.jupiter.api.AfterEach;
 import java.io.IOException;
 import java.time.Duration;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
@@ -86,7 +85,7 @@ public abstract class FleetControllerTest implements Waiter {
     protected static FleetControllerOptions.Builder defaultOptions(Collection<ConfiguredNode> nodes) {
         var builder = new FleetControllerOptions.Builder("mycluster", nodes);
         builder.enableTwoPhaseClusterStateActivation(true); // Enable by default, tests can explicitly disable.
-        builder.setStorageDistribution(DistributionBuilder.forFlatCluster(builder.nodes().size()));
+        builder.setDistributionConfig(DistributionBuilder.configForFlatCluster(builder.nodes().size()));
         builder.setZooKeeperServerAddress("localhost:2181");
         return builder;
     }
@@ -121,7 +120,7 @@ public abstract class FleetControllerTest implements Waiter {
                                           RpcServer rpcServer,
                                           boolean start) {
         waiter = createWaiter(timer);
-        var metricUpdater = new MetricUpdater(new NoMetricReporter(), options.fleetControllerIndex(), options.clusterName());
+        var metricUpdater = new MetricUpdater(new NoMetricReporter(), timer, options.fleetControllerIndex(), options.clusterName());
         var log = new EventLog(timer, metricUpdater);
         var cluster = new ContentCluster(options.clusterName(), options.nodes(), options.storageDistribution());
         var stateGatherer = new NodeStateGatherer(timer, timer, log);
@@ -221,7 +220,7 @@ public abstract class FleetControllerTest implements Waiter {
     }
 
     static Set<Integer> asIntSet(Integer... idx) {
-        return new HashSet<>(Arrays.asList(idx));
+        return new HashSet<>(List.of(idx));
     }
 
     static Set<ConfiguredNode> asConfiguredNodes(Set<Integer> indices) {

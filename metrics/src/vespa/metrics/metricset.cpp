@@ -5,10 +5,11 @@
 #include <vespa/vespalib/stllike/hash_map.hpp>
 #include <vespa/vespalib/util/exceptions.h>
 #include <vespa/vespalib/util/stringfmt.h>
-#include <list>
-#include <cassert>
 #include <algorithm>
+#include <cassert>
+#include <list>
 #include <ostream>
+#include <string>
 
 #include <vespa/log/log.h>
 LOG_SETUP(".metrics.metricsset");
@@ -50,7 +51,7 @@ MetricSet::clone(std::vector<Metric::UP> &ownerList, CopyType type, MetricSet* o
 
 
 const Metric*
-MetricSet::getMetricInternal(stringref name) const
+MetricSet::getMetricInternal(string_view name) const
 {
     for (const Metric* metric : _metricOrder) {
         if (metric->getMangledName() == name) {
@@ -60,30 +61,30 @@ MetricSet::getMetricInternal(stringref name) const
     return 0;
 }
 
-int64_t MetricSet::getLongValue(stringref) const {
+int64_t MetricSet::getLongValue(string_view) const {
     assert(false);
     return 0;
 }
-double MetricSet::getDoubleValue(stringref) const {
+double MetricSet::getDoubleValue(string_view) const {
     assert(false);
     return 0;
 }
 
 const Metric*
-MetricSet::getMetric(stringref name) const
+MetricSet::getMetric(string_view name) const
 {
-    vespalib::string::size_type pos = name.find('.');
-    if (pos == vespalib::string::npos) {
+    std::string::size_type pos = name.find('.');
+    if (pos == std::string::npos) {
         return getMetricInternal(name);
     } else {
-        stringref child(name.substr(0, pos));
-        stringref rest(name.substr(pos+1));
+        string_view child(name.substr(0, pos));
+        string_view rest(name.substr(pos + 1));
         const Metric* m(getMetricInternal(child));
         if (m == 0) return 0;
         if (!m->isMetricSet()) {
             throw vespalib::IllegalStateException(
-                    "Metric " + child + " is not a metric set. Cannot retrieve "
-                    "metric at path " + name + " within metric " + getPath(),
+                    "Metric " + std::string(child) + " is not a metric set. Cannot retrieve "
+                    "metric at path " + std::string(name) + " within metric " + getPath(),
                     VESPA_STRLOC);
         }
         return static_cast<const MetricSet*>(m)->getMetric(rest);
@@ -190,7 +191,7 @@ MetricSet::unregisterMetric(Metric& metric)
 }
 
 namespace {
-    using TmpString = vespalib::stringref;
+    using TmpString = std::string_view;
     class StringMetric {
     public:
         StringMetric(const TmpString & s, Metric * m) : first(s), second(m) { }

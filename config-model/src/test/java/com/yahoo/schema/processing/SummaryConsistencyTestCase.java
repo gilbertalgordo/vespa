@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Test;
 
 import static com.yahoo.config.model.test.TestUtil.joinLines;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 public class SummaryConsistencyTestCase {
 
@@ -42,4 +43,24 @@ public class SummaryConsistencyTestCase {
         Schema schema = ApplicationBuilder.createFromString(sd).getSchema();
         assertEquals(SummaryTransform.ATTRIBUTECOMBINER, schema.getSummaryField("elem_array_unfiltered").getTransform());
     }
+
+    @Test
+    void testDocumentSummaryWithInheritanceOfNonExistingSummary() {
+        String schemaString = """
+                schema foo {
+                  document foo {
+                    field foo type string {
+                        indexing: summary
+                    }
+                  }
+                  document-summary foo_summary inherits non-existent {
+                    summary foo {
+                        source: foo
+                    }
+                  }
+                }
+                """;
+        assertThrows(IllegalArgumentException.class, () -> ApplicationBuilder.createFromString(schemaString).getSchema());
+    }
+
 }

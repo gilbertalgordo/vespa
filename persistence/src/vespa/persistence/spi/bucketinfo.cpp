@@ -2,6 +2,7 @@
 
 #include "bucketinfo.h"
 #include <vespa/vespalib/stllike/asciistream.h>
+#include <ostream>
 
 namespace storage::spi {
 
@@ -45,7 +46,7 @@ BucketInfo::operator==(const BucketInfo& o) const
             && _active == o._active);
 }
 
-vespalib::string
+std::string
 BucketInfo::toString() const {
     vespalib::asciistream out;
     out << "BucketInfo(";

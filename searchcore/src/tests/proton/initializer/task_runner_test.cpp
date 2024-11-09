@@ -1,13 +1,13 @@
 // Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 #include <vespa/log/log.h>
 LOG_SETUP("task_runner_test");
-#include <vespa/vespalib/testkit/testapp.h>
 #include <vespa/searchcore/proton/initializer/initializer_task.h>
 #include <vespa/searchcore/proton/initializer/task_runner.h>
-#include <vespa/vespalib/stllike/string.h>
+#include <vespa/vespalib/gtest/gtest.h>
 #include <vespa/vespalib/util/size_literals.h>
 #include <vespa/vespalib/util/threadstackexecutor.h>
 #include <mutex>
+#include <string>
 
 using proton::initializer::InitializerTask;
 using proton::initializer::TaskRunner;
@@ -15,7 +15,7 @@ using proton::initializer::TaskRunner;
 struct TestLog
 {
     std::mutex _lock;
-    vespalib::string _log;
+    std::string _log;
     using UP = std::unique_ptr<TestLog>;
 
     TestLog()
@@ -24,22 +24,22 @@ struct TestLog
     {
     }
 
-    void append(vespalib::string str) {
+    void append(std::string str) {
         std::lock_guard<std::mutex> guard(_lock);
         _log += str;
     }
 
-    vespalib::string result() const { return _log; }
+    std::string result() const { return _log; }
 };
 
 class NamedTask : public InitializerTask
 {
 protected:
-    vespalib::string  _name;
+    std::string  _name;
     TestLog          &_log;
     size_t            _transient_memory_usage;
 public:
-    NamedTask(const vespalib::string &name, TestLog &log, size_t transient_memory_usage = 0)
+    NamedTask(const std::string &name, TestLog &log, size_t transient_memory_usage = 0)
         : _name(name),
           _log(log),
           _transient_memory_usage(transient_memory_usage)
@@ -124,30 +124,33 @@ struct Fixture
 
 Fixture::~Fixture() = default;
 
-TEST_F("1 thread, 2 dependees, 1 depender", Fixture(1))
+TEST(TaskRunnerTest, 1_thread_2_dependees_1_depender)
 {
+    Fixture f(1);
     TestJob job = TestJob::setupCDependsOnAandB();
     f.run(job._root);
-    EXPECT_EQUAL("ABC", job._log->result());
+    EXPECT_EQ("ABC", job._log->result());
 }
 
-TEST_F("1 thread, dag graph", Fixture(1))
+TEST(TaskRunnerTest, 1_thread_dag_graph)
 {
+    Fixture f(1);
     for (int iter = 0; iter < 1000; ++iter) {
         TestJob job = TestJob::setupDiamond();
         f.run(job._root);
-        EXPECT_EQUAL("DABC", job._log->result());
+        EXPECT_EQ("DABC", job._log->result());
     }
 }
 
-TEST_F("multiple threads, dag graph", Fixture(10))
+TEST(TaskRunnerTest, multiple_threads_dag_graph)
 {
+    Fixture f(10);
     int dabc_count = 0;
     int dbac_count = 0;
     for (int iter = 0; iter < 1000; ++iter) {
         TestJob job = TestJob::setupDiamond();
         f.run(job._root);
-        vespalib::string result = job._log->result();
+        std::string result = job._log->result();
         EXPECT_TRUE("DABC" == result || "DBAC" == result);
         if ("DABC" == result) {
             ++dabc_count;
@@ -159,14 +162,12 @@ TEST_F("multiple threads, dag graph", Fixture(10))
     LOG(info, "dabc=%d, dbac=%d", dabc_count, dbac_count);
 }
 
-TEST_F("single thread with resource using tasks", Fixture(1))
+TEST(TaskRunnerTest, single_thread_with_resource_using_tasks)
 {
+    Fixture f(1);
     auto job = TestJob::setupResourceUsingTasks();
     f.run(job._root);
-    EXPECT_EQUAL("BDCAE", job._log->result());
+    EXPECT_EQ("BDCAE", job._log->result());
 }
 
-TEST_MAIN()
-{
-    TEST_RUN_ALL();
-}
+GTEST_MAIN_RUN_ALL_TESTS()

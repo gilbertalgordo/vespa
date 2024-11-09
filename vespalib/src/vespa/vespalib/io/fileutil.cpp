@@ -22,7 +22,7 @@ namespace vespalib {
 namespace {
 
 FileInfo::UP
-processStat(struct stat& filestats, bool result, stringref path) {
+processStat(struct stat& filestats, bool result, std::string_view path) {
     FileInfo::UP resval;
     if (result) {
         resval = std::make_unique<FileInfo>();
@@ -33,10 +33,10 @@ processStat(struct stat& filestats, bool result, stringref path) {
         asciistream ost;
         ost << "An IO error occured while statting '" << path << "'. "
             << "errno(" << errno << "): " << getErrorString(errno);
-        throw IoException(ost.str(), IoException::getErrorType(errno), VESPA_STRLOC);
+        throw IoException(ost.view(), IoException::getErrorType(errno), VESPA_STRLOC);
     }
     LOG(debug, "stat(%s): Existed? %s, Plain file? %s, Directory? %s, Size: %" PRIu64,
-        string(path).c_str(),
+        std::string(path).c_str(),
         resval.get() ? "true" : "false",
         resval.get() && resval->_plainfile ? "true" : "false",
         resval.get() && resval->_directory ? "true" : "false",
@@ -44,7 +44,7 @@ processStat(struct stat& filestats, bool result, stringref path) {
     return resval;
 }
 
-string
+std::string
 safeStrerror(int errnum)
 {
     return getErrorString(errnum);
@@ -52,7 +52,7 @@ safeStrerror(int errnum)
 
 }
 
-File::File(stringref filename)
+File::File(std::string_view filename)
     : _fd(-1),
       _filename(filename)
 { }
@@ -63,15 +63,15 @@ File::~File()
 }
 
 namespace {
-int openAndCreateDirsIfMissing(const string & filename, int flags, bool createDirsIfMissing)
+int openAndCreateDirsIfMissing(const std::string & filename, int flags, bool createDirsIfMissing)
 {
     int fd = ::open(filename.c_str(), flags, 0644);
     if (fd < 0 && errno == ENOENT && ((flags & O_CREAT) != 0)
         && createDirsIfMissing)
     {
         auto pos = filename.rfind('/');
-        if (pos != string::npos) {
-            string path(filename.substr(0, pos));
+        if (pos != std::string::npos) {
+            std::string path(filename.substr(0, pos));
             fs::create_directories(fs::path(path));
             LOG(spam, "open(%s, %d): Retrying open after creating parent directories.", filename.c_str(), flags);
             fd = ::open(filename.c_str(), flags, 0644);
@@ -102,7 +102,7 @@ File::open(int flags, bool autoCreateDirectories) {
         asciistream ost;
         ost << "open(" << _filename << ", 0x" << hex << flags << dec
             << "): Failed, errno(" << errno << "): " << safeStrerror(errno);
-        throw IoException(ost.str(), IoException::getErrorType(errno), VESPA_STRLOC);
+        throw IoException(ost.view(), IoException::getErrorType(errno), VESPA_STRLOC);
     }
     if (_fd != -1) close();
     _fd = fd;
@@ -137,7 +137,7 @@ File::resize(off_t size)
     if (ftruncate(_fd, size) != 0) {
         asciistream ost;
         ost << "resize(" << _filename << ", " << size << "): Failed, errno(" << errno << "): " << safeStrerror(errno);
-        throw IoException(ost.str(), IoException::getErrorType(errno), VESPA_STRLOC);
+        throw IoException(ost.view(), IoException::getErrorType(errno), VESPA_STRLOC);
     }
     LOG(debug, "resize(%s): Resized to %" PRIu64 " bytes.", _filename.c_str(), size);
 }
@@ -162,7 +162,7 @@ File::write(const void *buf, size_t bufsize, off_t offset)
             asciistream ost;
             ost << "write(" << _fd << ", " << buf << ", " << left << ", " << offset
                 << "), Failed, errno(" << errno << "): " << safeStrerror(errno);
-            throw IoException(ost.str(), IoException::getErrorType(errno), VESPA_STRLOC);
+            throw IoException(ost.view(), IoException::getErrorType(errno), VESPA_STRLOC);
         }
     }
     return bufsize;
@@ -188,16 +188,16 @@ File::read(void *buf, size_t bufsize, off_t offset) const
             asciistream ost;
             ost << "read(" << _fd << ", " << buf << ", " << remaining << ", "
                 << offset << "): Failed, errno(" << errno << "): " << safeStrerror(errno);
-            throw IoException(ost.str(), IoException::getErrorType(errno), VESPA_STRLOC);
+            throw IoException(ost.view(), IoException::getErrorType(errno), VESPA_STRLOC);
         }
     }
     return bufsize - remaining;
 }
 
-vespalib::string
+std::string
 File::readAll() const
 {
-    vespalib::string content;
+    std::string content;
 
     // Limit ourselves to 4K on the stack. If this becomes a problem we should
     // allocate on the heap.
@@ -216,8 +216,8 @@ File::readAll() const
     }
 }
 
-vespalib::string
-File::readAll(vespalib::stringref path)
+std::string
+File::readAll(std::string_view path)
 {
     File file(path);
     file.open(File::READONLY);
@@ -240,7 +240,7 @@ File::sync()
 }
 
 void
-File::sync(vespalib::stringref path)
+File::sync(std::string_view path)
 {
     File file(path);
     file.open(READONLY);
@@ -276,20 +276,22 @@ File::unlink()
 }
 
 DirectoryList
-listDirectory(const string & path)
+listDirectory(const std::string & path)
 {
     DIR* dir = ::opendir(path.c_str());
     struct dirent* entry;
     DirectoryList result;
-    if (dir) while ((entry = readdir(dir))) {
-        string name(reinterpret_cast<const char*>(&entry->d_name));
-        assert(!name.empty());
-        if (name[0] == '.' && (name.size() == 1
-                               || (name.size() == 2 && name[1] == '.')))
-        {
-            continue; // Ignore '.' and '..' files
+    if (dir) {
+        while ((entry = readdir(dir))) {
+            std::string name(reinterpret_cast<const char*>(&entry->d_name));
+            assert(!name.empty());
+            if (name[0] == '.' && (name.size() == 1
+                                   || (name.size() == 2 && name[1] == '.')))
+            {
+                continue; // Ignore '.' and '..' files
+            }
+            result.push_back(name);
         }
-        result.push_back(name);
     } else {
         throw IoException("Failed to list directory '" + path + "'",
                           IoException::getErrorType(errno), VESPA_STRLOC);
@@ -298,22 +300,23 @@ listDirectory(const string & path)
     return result;
 }
 
-string dirname(stringref name)
+std::string dirname(std::string_view name)
 {
     size_t found = name.rfind('/');
-    if (found == string::npos) {
-        return string(".");
+    if (found == std::string::npos) {
+        return std::string(".");
     } else if (found == 0) {
-        return string("/");
+        return std::string("/");
     } else {
-        return name.substr(0, found);
+        return std::string(name.substr(0, found));
     }
 }
 
 namespace {
 
-void addStat(asciistream &os, const string & name)
+void addStat(asciistream &os, std::string_view name_view)
 {
+    std::string name(name_view);
     struct ::stat filestat;
     memset(&filestat, '\0', sizeof(filestat));
     int statres = ::stat(name.c_str(), &filestat);
@@ -335,11 +338,11 @@ void addStat(asciistream &os, const string & name)
 
 }
 
-string
-getOpenErrorString(const int osError, stringref filename)
+std::string
+getOpenErrorString(const int osError, std::string_view filename)
 {
     asciistream os;
-    string dirName(dirname(filename));
+    std::string dirName(dirname(filename));
     os << "error="  << osError << "(\"" << getErrorString(osError) << "\") fileStat";
     addStat(os, filename);
     os << " dirStat";

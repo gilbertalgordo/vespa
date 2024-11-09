@@ -1,14 +1,14 @@
 // Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
-#include <vespa/vespalib/hwaccelrated/iaccelrated.h>
-#include <vespa/vespalib/stllike/string.h>
+#include <vespa/vespalib/hwaccelerated/iaccelerated.h>
 #include <vespa/vespalib/stllike/hash_map.h>
-#include <iostream>
-#include <vector>
-#include <thread>
 #include <functional>
+#include <iostream>
+#include <thread>
+#include <string>
+#include <vector>
 
 using namespace vespalib;
-using vespalib::hwaccelrated::IAccelrated;
+using vespalib::hwaccelerated::IAccelerated;
 
 class Benchmark {
 public:
@@ -54,14 +54,14 @@ public:
 private:
     std::vector<T> _values;
     std::vector<T> _query;
-    const IAccelrated & _dp;
+    const IAccelerated & _dp;
 };
 
 template <typename T>
 FullBenchmark<T>::FullBenchmark(size_t numDocs, size_t numValues)
     : _values(numDocs*numValues),
       _query(numValues),
-      _dp(IAccelrated::getAccelerator())
+      _dp(IAccelerated::getAccelerator())
 {
     for (size_t i(0); i < numDocs; i++) {
         for (size_t j(0); j < numValues; j++) {
@@ -181,7 +181,7 @@ int main(int argc, char *argv[])
     size_t numValues(1000);
     size_t numQueries(1000000);
     size_t stride(1);
-    string type("full");
+    std::string type("full");
     if ( argc > 1) {
         type = argv[1];
     }

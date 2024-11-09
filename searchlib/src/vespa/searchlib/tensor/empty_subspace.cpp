@@ -3,6 +3,8 @@
 #include "empty_subspace.h"
 #include "subspace_type.h"
 
+using vespalib::eval::TypedCells;
+
 namespace search::tensor {
 
 EmptySubspace::EmptySubspace(const SubspaceType& type)
@@ -10,7 +12,7 @@ EmptySubspace::EmptySubspace(const SubspaceType& type)
       _cells()
 {
     _empty_space.resize(type.mem_size());
-    _cells = vespalib::eval::TypedCells(&_empty_space[0], type.cell_type(), type.size());
+    _cells = TypedCells::create_non_existing_attribute_value(_empty_space.data(), type.cell_type(), type.size());
 }
 
 EmptySubspace::~EmptySubspace() = default;

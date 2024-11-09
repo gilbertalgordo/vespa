@@ -24,7 +24,6 @@ using std::runtime_error;
 using vespalib::CpuUsage;
 using vespalib::IllegalArgumentException;
 using vespalib::make_string;
-using vespalib::stringref;
 using namespace std::chrono_literals;
 
 namespace search::transactionlog {
@@ -80,19 +79,19 @@ VESPA_THREAD_STACK_TAG(tls_executor);
 
 }
 
-TransLogServer::TransLogServer(FNET_Transport & transport, const vespalib::string &name, int listenPort, const vespalib::string &baseDir,
+TransLogServer::TransLogServer(FNET_Transport & transport, const std::string &name, int listenPort, const std::string &baseDir,
                                const FileHeaderContext &fileHeaderContext)
     : TransLogServer(transport, name, listenPort, baseDir, fileHeaderContext,
                      DomainConfig().setEncoding(Encoding(Encoding::xxh64, Encoding::Compression::zstd))
                                         .setPartSizeLimit(0x10000000).setChunkSizeLimit(0x40000))
 {}
 
-TransLogServer::TransLogServer(FNET_Transport & transport, const vespalib::string &name, int listenPort, const vespalib::string &baseDir,
+TransLogServer::TransLogServer(FNET_Transport & transport, const std::string &name, int listenPort, const std::string &baseDir,
                                const FileHeaderContext &fileHeaderContext, const DomainConfig &  cfg)
     : TransLogServer(transport, name, listenPort, baseDir, fileHeaderContext, cfg, 4)
 {}
 
-TransLogServer::TransLogServer(FNET_Transport & transport, const vespalib::string &name, int listenPort, const vespalib::string &baseDir,
+TransLogServer::TransLogServer(FNET_Transport & transport, const std::string &name, int listenPort, const std::string &baseDir,
                                const FileHeaderContext &fileHeaderContext, const DomainConfig & cfg, size_t maxThreads)
     : FRT_Invokable(),
       _name(name),
@@ -111,7 +110,7 @@ TransLogServer::TransLogServer(FNET_Transport & transport, const vespalib::strin
         if ((retval = makeDirectory(dir())) == 0) {
             std::ifstream domainDir(domainList().c_str());
             while (domainDir.good() && !domainDir.eof()) {
-                vespalib::string domainName;
+                std::string domainName;
                 domainDir >> domainName;
                 if ( ! domainName.empty()) {
                     try {
@@ -226,10 +225,10 @@ TransLogServer::getDomainStats() const
     return retval;
 }
 
-std::vector<vespalib::string>
+std::vector<std::string>
 TransLogServer::getDomainNames()
 {
-    std::vector<vespalib::string> names;
+    std::vector<std::string> names;
     ReadGuard guard(_domainMutex);
     for(const auto &domain: _domains) {
         names.push_back(domain.first);
@@ -238,14 +237,14 @@ TransLogServer::getDomainNames()
 }
 
 Domain::SP
-TransLogServer::findDomain(stringref domainName) const
+TransLogServer::findDomain(std::string_view domainName) const
 {
     ReadGuard domainGuard(_domainMutex);
-    auto found(_domains.find(domainName));
+    auto found(_domains.find(std::string(domainName)));
     if (found != _domains.end()) {
         return found->second;
     }
-    return DomainSP();
+    return {};
 }
 
 void
@@ -339,12 +338,12 @@ constexpr double NEVER(-1.0);
 
 void
 writeDomainDir(std::shared_lock<std::shared_mutex> &guard,
-               vespalib::string dir,
-               vespalib::string domainList,
-               const std::map<vespalib::string, std::shared_ptr<Domain>> &domains)
+               std::string dir,
+               std::string domainList,
+               const std::map<std::string, std::shared_ptr<Domain>> &domains)
 {
     (void) guard;
-    vespalib::string domainListTmp(domainList + ".tmp");
+    std::string domainListTmp(domainList + ".tmp");
     std::filesystem::remove(std::filesystem::path(domainListTmp));
     std::ofstream domainDir(domainListTmp.c_str(), std::ios::trunc);
     for (const auto &domainEntry : domains) {
@@ -369,7 +368,7 @@ public:
         return _ok;
     }
 
-    bool send(int32_t id, const vespalib::string & domain, const Packet & packet) override {
+    bool send(int32_t id, const std::string & domain, const Packet & packet) override {
         FRT_RPCRequest *req = _supervisor.AllocRPCRequest();
         req->SetMethodName("visitCallback");
         req->GetParams()->AddString(domain.c_str());
@@ -378,7 +377,7 @@ public:
         return send(req);
     }
 
-    bool sendDone(int32_t id, const vespalib::string & domain) override {
+    bool sendDone(int32_t id, const std::string & domain) override {
         FRT_RPCRequest *req = _supervisor.AllocRPCRequest();
         req->SetMethodName("eofCallback");
         req->GetParams()->AddString(domain.c_str());
@@ -459,7 +458,7 @@ void
 TransLogServer::deleteDomain(FRT_RPCRequest *req)
 {
     uint32_t retval(0);
-    vespalib::string msg("ok");
+    std::string msg("ok");
     FRT_Values & params = *req->GetParams();
     FRT_Values & ret    = *req->GetReturn();
 
@@ -517,7 +516,7 @@ TransLogServer::listDomains(FRT_RPCRequest *req)
     FRT_Values & ret    = *req->GetReturn();
     LOG(debug, "listDomains()");
 
-    vespalib::string domains;
+    std::string domains;
     ReadGuard domainGuard(_domainMutex);
     for (const auto& elem : _domains) {
         domains += elem.second->name();
@@ -549,7 +548,7 @@ TransLogServer::domainStatus(FRT_RPCRequest *req)
 }
 
 std::shared_ptr<Writer>
-TransLogServer::getWriter(const vespalib::string & domainName) const
+TransLogServer::getWriter(const std::string & domainName) const
 {
     Domain::SP domain(findDomain(domainName));
     if (domain) {

@@ -33,15 +33,15 @@ public class ToArrayTestCase {
         Expression exp = new ToArrayExpression();
         assertVerify(DataType.INT, exp, DataType.getArray(DataType.INT));
         assertVerify(DataType.STRING, exp, DataType.getArray(DataType.STRING));
-        assertVerifyThrows(null, exp, "Expected any input, but no input is specified");
+        assertVerifyThrows("Invalid expression 'to_array': Expected any input, but no input is specified", null, exp);
     }
 
     @Test
     public void requireThatValueIsConverted() {
         ExecutionContext ctx = new ExecutionContext(new SimpleTestAdapter());
-        ctx.setValue(new StringFieldValue("69")).execute(new ToArrayExpression());
+        ctx.setCurrentValue(new StringFieldValue("69")).execute(new ToArrayExpression());
 
-        FieldValue val = ctx.getValue();
+        FieldValue val = ctx.getCurrentValue();
         assertEquals(Array.class, val.getClass());
 
         Array arr = (Array)val;

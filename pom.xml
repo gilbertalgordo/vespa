@@ -56,6 +56,7 @@
         <module>container-dev</module>
         <module>container-disc</module>
         <module>container-documentapi</module>
+        <module>container-llama</module>
         <module>container-messagebus</module>
         <module>container-onnxruntime</module>
         <module>container-search-and-docproc</module>
@@ -141,6 +142,8 @@
         <module>zookeeper-command-line-client</module>
         <module>zookeeper-common</module>
         <module>zookeeper-server</module>
+        <module>integration/schema-language-server/language-server</module>
+        <module>integration/schema-language-server/lemminx-vespa</module>
     </modules>
 
     <properties>

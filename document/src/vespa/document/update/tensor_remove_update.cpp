@@ -88,7 +88,7 @@ std::unique_ptr<vespalib::eval::Value>
 TensorRemoveUpdate::apply_to(const Value &old_tensor,
                              const ValueBuilderFactory &factory) const
 {
-    if (auto addressTensor = _tensor->getAsTensorPtr()) {
+    if (const auto* addressTensor = _tensor->getAsTensorPtr()) {
         return TensorPartialUpdate::remove(old_tensor, *addressTensor, factory);
     }
     return {};
@@ -99,7 +99,7 @@ TensorRemoveUpdate::applyTo(FieldValue &value) const
 {
     if (value.isA(FieldValue::Type::TENSOR)) {
         TensorFieldValue &tensorFieldValue = static_cast<TensorFieldValue &>(value);
-        auto oldTensor = tensorFieldValue.getAsTensorPtr();
+        const auto* oldTensor = tensorFieldValue.getAsTensorPtr();
         if (oldTensor) {
             auto newTensor = applyTo(*oldTensor);
             if (newTensor) {
@@ -107,7 +107,7 @@ TensorRemoveUpdate::applyTo(FieldValue &value) const
             }
         }
     } else {
-        vespalib::string err = make_string("Unable to perform a tensor remove update on a '%s' field value",
+        std::string err = make_string("Unable to perform a tensor remove update on a '%s' field value",
                                            value.className());
         throw IllegalStateException(err, VESPA_STRLOC);
     }

@@ -22,6 +22,15 @@ public class QueryCanonicalizerTestCase {
     }
 
     @Test
+    void testNoCanonicalizationWithWhereTrue() {
+        CompositeItem root = new AndItem();
+
+        root.addItem(new TrueItem());
+        root.addItem(new WordItem("word"));
+        assertCanonicalized("AND TRUE word", null, root);
+    }
+
+    @Test
     void testSingleLevelSingleItemNonReducibleComposite() {
         CompositeItem root = new WeakAndItem();
 
@@ -390,6 +399,19 @@ public class QueryCanonicalizerTestCase {
         q.prepare();
         assertEquals("0.5", q.getRanking().getProperties().get("vespa.term.1.significance").get(0));
         assertEquals("0.95", q.getRanking().getProperties().get("vespa.term.2.significance").get(0));
+    }
+
+    @Test
+    void testDocumentFrequency() {
+        Query q = new Query("?query=a%20b");
+        CompositeItem root = (CompositeItem) q.getModel().getQueryTree().getRoot();
+        ((WordItem) root.getItem(0)).setDocumentFrequency(new DocumentFrequency(13, 100));
+        ((WordItem) root.getItem(1)).setDocumentFrequency(new DocumentFrequency(14, 110));;
+        q.prepare();
+        assertEquals("13", q.getRanking().getProperties().get("vespa.term.1.docfreq").get(0));
+        assertEquals("100", q.getRanking().getProperties().get("vespa.term.1.docfreq").get(1));
+        assertEquals("14", q.getRanking().getProperties().get("vespa.term.2.docfreq").get(0));
+        assertEquals("110", q.getRanking().getProperties().get("vespa.term.2.docfreq").get(1));
     }
 
     @Test

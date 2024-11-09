@@ -32,16 +32,10 @@ public:
     struct Config
     {
         const StoreOnlyDocSubDB::Config _storeOnlyCfg;
-        const bool                      _hasAttributes;
-        const bool                      _addMetrics;
         const bool                      _fastAccessAttributesOnly;
         Config(const StoreOnlyDocSubDB::Config &storeOnlyCfg,
-               bool hasAttributes,
-               bool addMetrics,
                bool fastAccessAttributesOnly)
         : _storeOnlyCfg(storeOnlyCfg),
-          _hasAttributes(hasAttributes),
-          _addMetrics(addMetrics),
           _fastAccessAttributesOnly(fastAccessAttributesOnly)
         { }
     };
@@ -68,7 +62,6 @@ private:
     using AttributesConfig = vespa::config::search::AttributesConfig;
     using Configurer = FastAccessDocSubDBConfigurer;
 
-    const bool                    _hasAttributes;
     const bool                    _fastAccessAttributesOnly;
     std::shared_ptr<AttributeManager> _initAttrMgr;
     Configurer::FeedViewVarHolder _fastAccessFeedView;
@@ -88,14 +81,13 @@ private:
 protected:
     using Parent = StoreOnlyDocSubDB;
 
-    const bool           _addMetrics;
     MetricsWireService  &_metricsWireService;
     std::shared_ptr<search::attribute::Interlock> _attribute_interlock;
     DocIdLimit           _docIdLimit;
 
     std::shared_ptr<AttributeManager> getAndResetInitAttributeManager();
     virtual IFlushTargetList getFlushTargetsInternal() override;
-    void reconfigureAttributeMetrics(const IAttributeManager &newMgr, const IAttributeManager &oldMgr);
+    void reconfigure_attribute_metrics(const IAttributeManager& mgr);
 
     IReprocessingTask::UP createReprocessingTask(IReprocessingInitializer &initializer,
                                                  const std::shared_ptr<const document::DocumentTypeRepo> &docTypeRepo) const;
@@ -104,7 +96,7 @@ protected:
 
 public:
     FastAccessDocSubDB(const Config &cfg, const Context &ctx);
-    ~FastAccessDocSubDB();
+    ~FastAccessDocSubDB() override;
 
     std::unique_ptr<DocumentSubDbInitializer>
     createInitializer(const DocumentDBConfig &configSnapshot, SerialNum configSerialNum,
@@ -121,7 +113,7 @@ public:
 
     std::shared_ptr<IAttributeWriter> get_attribute_writer() const override;
     std::shared_ptr<IAttributeManager> getAttributeManager() const override;
-    IDocumentRetriever::UP getDocumentRetriever() override;
+    std::shared_ptr<IDocumentRetriever> getDocumentRetriever() override;
     void onReplayDone() override;
     void onReprocessDone(SerialNum serialNum) override;
     SerialNum getOldestFlushedSerial() override;

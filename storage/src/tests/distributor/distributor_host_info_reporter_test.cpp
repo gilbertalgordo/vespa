@@ -9,6 +9,7 @@
 #include <vespa/vespalib/stllike/asciistream.h>
 #include <chrono>
 #include <vespa/vespalib/gtest/gtest.h>
+#include <vespa/vespalib/testkit/test_path.h>
 
 namespace storage::distributor {
 
@@ -21,9 +22,9 @@ using BucketSpacesStats = BucketSpacesStatsProvider::BucketSpacesStats;
 using namespace ::testing;
 
 struct DistributorHostInfoReporterTest : Test {
-    static void verifyBucketSpaceStats(const vespalib::Slime& root, uint16_t nodeIndex, const vespalib::string& bucketSpaceName,
+    static void verifyBucketSpaceStats(const vespalib::Slime& root, uint16_t nodeIndex, const std::string& bucketSpaceName,
                                        size_t bucketsTotal, size_t bucketsPending);
-    static void verifyBucketSpaceStats(const vespalib::Slime& root, uint16_t nodeIndex, const vespalib::string& bucketSpaceName);
+    static void verifyBucketSpaceStats(const vespalib::Slime& root, uint16_t nodeIndex, const std::string& bucketSpaceName);
 };
 
 using ms = std::chrono::milliseconds;
@@ -76,11 +77,11 @@ getMinReplica(const vespalib::Slime& root, uint16_t nodeIndex)
 }
 
 const vespalib::slime::Inspector&
-getBucketSpaceStats(const vespalib::Slime& root, uint16_t nodeIndex, const vespalib::string& bucketSpaceName)
+getBucketSpaceStats(const vespalib::Slime& root, uint16_t nodeIndex, const std::string& bucketSpaceName)
 {
     const auto& bucketSpaces = getNode(root, nodeIndex)["bucket-spaces"];
     for (size_t i = 0; i < bucketSpaces.entries(); ++i) {
-        if (bucketSpaces[i]["name"].asString().make_stringref() == bucketSpaceName) {
+        if (bucketSpaces[i]["name"].asString().make_stringview() == bucketSpaceName) {
             return bucketSpaces[i];
         }
     }
@@ -92,7 +93,7 @@ getBucketSpaceStats(const vespalib::Slime& root, uint16_t nodeIndex, const vespa
 void
 DistributorHostInfoReporterTest::verifyBucketSpaceStats(const vespalib::Slime& root,
                                                         uint16_t nodeIndex,
-                                                        const vespalib::string& bucketSpaceName,
+                                                        const std::string& bucketSpaceName,
                                                         size_t bucketsTotal,
                                                         size_t bucketsPending)
 {
@@ -105,7 +106,7 @@ DistributorHostInfoReporterTest::verifyBucketSpaceStats(const vespalib::Slime& r
 void
 DistributorHostInfoReporterTest::verifyBucketSpaceStats(const vespalib::Slime& root,
                                                         uint16_t nodeIndex,
-                                                        const vespalib::string& bucketSpaceName)
+                                                        const std::string& bucketSpaceName)
 {
     const auto &stats = getBucketSpaceStats(root, nodeIndex, bucketSpaceName);
     EXPECT_FALSE(stats["buckets"].valid());
@@ -180,9 +181,9 @@ TEST_F(DistributorHostInfoReporterTest, generate_example_json) {
     stream << End();
     stream.finalize();
 
-    std::string jsonString = json.str();
+    std::string_view jsonString = json.view();
 
-    std::string path = "../../../../protocols/getnodestate/distributor.json";
+    std::string path = TEST_PATH("../../../../protocols/getnodestate/distributor.json");
     std::string goldenString = File::readAll(path);
 
     vespalib::Memory goldenMemory(goldenString);
@@ -217,7 +218,7 @@ TEST_F(DistributorHostInfoReporterTest, bucket_spaces_stats_are_reported) {
         verifyBucketSpaceStats(root, 3, "global");
         FAIL() << "No exception thrown";
     } catch (const std::runtime_error& ex) {
-        EXPECT_EQ("No bucket space found with name global", vespalib::string(ex.what()));
+        EXPECT_EQ("No bucket space found with name global", std::string(ex.what()));
     }
 }
 

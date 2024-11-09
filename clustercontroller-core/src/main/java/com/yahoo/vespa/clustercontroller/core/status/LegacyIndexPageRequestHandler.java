@@ -10,6 +10,7 @@ import com.yahoo.vespa.clustercontroller.core.ClusterStateHistoryEntry;
 import com.yahoo.vespa.clustercontroller.core.ContentCluster;
 import com.yahoo.vespa.clustercontroller.core.EventLog;
 import com.yahoo.vespa.clustercontroller.core.FleetControllerOptions;
+import com.yahoo.vespa.clustercontroller.core.GlobalBucketSyncStatsCalculator;
 import com.yahoo.vespa.clustercontroller.core.LeafGroups;
 import com.yahoo.vespa.clustercontroller.core.MasterElectionHandler;
 import com.yahoo.vespa.clustercontroller.core.NodeInfo;
@@ -108,6 +109,7 @@ public class LegacyIndexPageRequestHandler implements StatusPageServer.RequestHa
     public void writeHtmlState(StateVersionTracker stateVersionTracker, StringBuilder sb) {
         sb.append("<h2 id=\"clusterstates\">Cluster states</h2>\n");
         writeClusterStates(sb, stateVersionTracker.getVersionedClusterStateBundle());
+        writeDistributionConfig(sb, stateVersionTracker.getVersionedClusterStateBundle());
 
         if ( ! stateVersionTracker.getClusterStateHistory().isEmpty()) {
             TimeZone tz = TimeZone.getTimeZone("UTC");
@@ -126,10 +128,25 @@ public class LegacyIndexPageRequestHandler implements StatusPageServer.RequestHa
     }
 
     private static void writeClusterStates(StringBuilder sb, ClusterStateBundle clusterStates) {
-        sb.append("<p>Baseline cluster state:<br><code>").append(clusterStates.getBaselineClusterState().toString()).append("</code></p>\n");
+        sb.append("<p>Baseline cluster state:<br><code>")
+          .append(escaped(clusterStates.getBaselineClusterState().toString()))
+          .append("</code></p>\n");
         clusterStates.getDerivedBucketSpaceStates().forEach((bucketSpace, state) -> {
-            sb.append("<p>" + bucketSpace + " cluster state:<br><code>").append(state.getClusterState().toString()).append("</code></p>\n");
+            sb.append("<p>").append(bucketSpace).append(" cluster state:<br><code>")
+              .append(escaped(state.getClusterState().toString()))
+              .append("</code></p>\n");
         });
+    }
+
+    private static void writeDistributionConfig(StringBuilder sb, ClusterStateBundle stateBundle) {
+        // If distribution config is not pushed by the cluster controller, the state bundle will
+        // not contain it. To avoid confusing output, simply avoid printing anything in this case.
+        if (stateBundle.distributionConfig().isEmpty()) {
+            return;
+        }
+        sb.append("<h3 id=\"distribution-config\">Current distribution config</h3>\n<p>")
+          .append(escaped(stateBundle.distributionConfig().get().highLevelDescription()))
+          .append("</p>\n");
     }
 
     private void writeClusterStateEntry(ClusterStateHistoryEntry entry, StringBuilder sb, TimeZone tz) {
@@ -174,11 +191,8 @@ public class LegacyIndexPageRequestHandler implements StatusPageServer.RequestHa
         VdsClusterHtmlRenderer.Table table = renderer.createNewClusterHtmlTable(cluster.getName(), cluster.getSlobrokGenerationCount());
 
         ClusterStateBundle state = stateVersionTracker.getVersionedClusterStateBundle();
-        if (state.clusterFeedIsBlocked()) { // Implies FeedBlock != null
-            table.appendRaw("<h3 style=\"color: red\">Cluster feeding is blocked!</h3>\n");
-            table.appendRaw(String.format("<p>Summary: <strong>%s</strong></p>\n",
-                                          HtmlTable.escape(state.getFeedBlockOrNull().getDescription())));
-        }
+        renderClusterFeedBlockIfPresent(state, table);
+        renderClusterOutOfSyncRatio(state, stateVersionTracker, table);
 
         List<Group> groups = LeafGroups.enumerateFrom(cluster.getDistribution().getRootGroup());
         for (Group group : groups) {
@@ -206,6 +220,53 @@ public class LegacyIndexPageRequestHandler implements StatusPageServer.RequestHa
         table.addTable(sb, options.stableStateTimePeriod());
     }
 
+    private static void renderClusterFeedBlockIfPresent(ClusterStateBundle state, VdsClusterHtmlRenderer.Table table) {
+        if (state.clusterFeedIsBlocked()) { // Implies FeedBlock != null
+            table.appendRaw("<h3 style=\"color: red\">Cluster feeding is blocked!</h3>\n");
+            table.appendRaw(String.format("<p>Summary: <strong>%s</strong></p>\n",
+                                          escaped(state.getFeedBlockOrNull().getDescription())));
+        }
+    }
+
+    private static void renderClusterOutOfSyncRatio(ClusterStateBundle state, StateVersionTracker stateVersionTracker,
+                                                    VdsClusterHtmlRenderer.Table table) {
+        var stats = stateVersionTracker.getAggregatedClusterStats().getAggregatedStats();
+        if (!stats.hasUpdatesFromAllDistributors()) {
+            table.appendRaw("<p>Current cluster out of sync ratio cannot be computed, as not all " +
+                            "distributors have reported in statistics for the most recent cluster state.</p>\n");
+            return;
+        }
+        var outOfSync = GlobalBucketSyncStatsCalculator.clusterBucketsOutOfSyncRatio(stats.getGlobalStats());
+        if (outOfSync.isEmpty()) {
+            table.appendRaw("<p>Current cluster out of sync ratio cannot be computed, as not all " +
+                            "distributors have reported valid statistics.</p>\n");
+            return;
+        }
+        boolean hasMaintenance = stateHasAtLeastOneMaintenanceNode(state);
+        if (!hasMaintenance && outOfSync.get() == 0.0) {
+            table.appendRaw("<p>Cluster is currently in sync.</p>\n");
+        } else {
+            table.appendRaw("<p>Cluster is currently <strong>%.2f%% out of sync</strong>.</p>\n".formatted(outOfSync.get() * 100.0));
+            if (hasMaintenance) {
+                // It is intentional that a cluster with no pending buckets but with nodes in maintenance mode rather
+                // emits "0% out of sync" with a caveat rather than "in sync", as we don't know the latter for sure.
+                table.appendRaw("<p><strong>Note:</strong> since one or more nodes are currently in " +
+                                "Maintenance mode, the true out of sync ratio may be higher.</p>\n");
+            }
+        }
+    }
+
+    private static boolean stateHasAtLeastOneMaintenanceNode(ClusterStateBundle state) {
+        var baseline = state.getBaselineClusterState();
+        int nodes = baseline.getNodeCount(NodeType.STORAGE);
+        for (int i = 0; i < nodes; ++i) {
+            if (baseline.getNodeState(Node.ofStorage(i)).getState().oneOf("m")) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private void storeNodeInfo(ContentCluster cluster, int nodeIndex, NodeType nodeType, Map<Integer, NodeInfo> nodeInfoByIndex) {
         NodeInfo nodeInfo = cluster.getNodeInfo(new Node(nodeType, nodeIndex));
         if (nodeInfo == null) return;
@@ -221,15 +282,15 @@ public class LegacyIndexPageRequestHandler implements StatusPageServer.RequestHa
         sb.append("<h1>Current config</h1>\n")
           .append("<table border=\"1\" cellspacing=\"0\"><tr><th>Property</th><th>Value</th></tr>\n");
 
-        sb.append("<tr><td><nobr>Cluster name</nobr></td><td align=\"right\">").append(options.clusterName()).append("</td></tr>");
+        sb.append("<tr><td><nobr>Cluster name</nobr></td><td align=\"right\">").append(escaped(options.clusterName())).append("</td></tr>");
         sb.append("<tr><td><nobr>Fleet controller index</nobr></td><td align=\"right\">").append(options.fleetControllerIndex()).append("/").append(options.fleetControllerCount()).append("</td></tr>");
 
-        sb.append("<tr><td><nobr>Slobrok connection spec</nobr></td><td align=\"right\">").append(slobrokspecs).append("</td></tr>");
+        sb.append("<tr><td><nobr>Slobrok connection spec</nobr></td><td align=\"right\">").append(escaped(slobrokspecs)).append("</td></tr>");
         sb.append("<tr><td><nobr>RPC port</nobr></td><td align=\"right\">").append(options.rpcPort() == 0 ? "Pick random available" : options.rpcPort()).append("</td></tr>");
         sb.append("<tr><td><nobr>HTTP port</nobr></td><td align=\"right\">").append(options.httpPort() == 0 ? "Pick random available" : options.httpPort()).append("</td></tr>");
         sb.append("<tr><td><nobr>Master cooldown period</nobr></td><td align=\"right\">").append(RealTimer.printDuration(options.masterZooKeeperCooldownPeriod())).append("</td></tr>");
         String zooKeeperAddress = splitZooKeeperAddress(options.zooKeeperServerAddress());
-        sb.append("<tr><td><nobr>Zookeeper server address</nobr></td><td align=\"right\">").append(zooKeeperAddress).append("</td></tr>");
+        sb.append("<tr><td><nobr>Zookeeper server address</nobr></td><td align=\"right\">").append(escaped(zooKeeperAddress)).append("</td></tr>");
         sb.append("<tr><td><nobr>Zookeeper session timeout</nobr></td><td align=\"right\">").append(RealTimer.printDuration(options.zooKeeperSessionTimeout())).append("</td></tr>");
 
         sb.append("<tr><td><nobr>Cycle wait time</nobr></td><td align=\"right\">").append(options.cycleWaitTime()).append(" ms</td></tr>");
@@ -262,11 +323,15 @@ public class LegacyIndexPageRequestHandler implements StatusPageServer.RequestHa
           .append(options.clusterFeedBlockEnabled()).append("</td></tr>");
         sb.append("<tr><td><nobr>Feed block limits</nobr></td><td align=\"right\">")
           .append(options.clusterFeedBlockLimit().entrySet().stream()
-                                       .map(kv -> String.format("%s: %.2f%%", kv.getKey(), kv.getValue() * 100.0))
+                                       .map(kv -> String.format("%s: %.2f%%", escaped(kv.getKey()), kv.getValue() * 100.0))
                                        .sorted()
                                        .collect(Collectors.joining("<br/>"))).append("</td></tr>");
 
         sb.append("</table>");
+    }
+
+    private static String escaped(String input) {
+        return HtmlTable.escape(input);
     }
 
     private static String splitZooKeeperAddress(String s) {

@@ -12,11 +12,14 @@
 #include <vespa/searchlib/attribute/blob_sequence_reader.h>
 #include <vespa/searchlib/attribute/load_utils.h>
 #include <vespa/searchlib/attribute/readerbase.h>
+#include <vespa/searchlib/util/disk_space_calculator.h>
 #include <vespa/vespalib/util/arrayqueue.hpp>
 #include <vespa/vespalib/util/cpu_usage.h>
 #include <vespa/vespalib/util/lambdatask.h>
-#include <mutex>
+#include <vespa/vespalib/objects/nbostream.h>
 #include <condition_variable>
+#include <filesystem>
+#include <mutex>
 
 #include <vespa/log/log.h>
 LOG_SETUP(".searchlib.tensor.tensor_attribute_loader");
@@ -32,7 +35,7 @@ namespace search::tensor {
 inline namespace loader {
 
 constexpr uint32_t LOAD_COMMIT_INTERVAL = 256;
-const vespalib::string tensorTypeTag("tensortype");
+const std::string tensorTypeTag("tensortype");
 
 bool
 can_use_index_save_file(const search::attribute::Config &config, const AttributeHeader& header)
@@ -289,6 +292,17 @@ TensorAttributeLoader::load_index()
     return true;
 }
 
+uint64_t
+TensorAttributeLoader::get_index_size_on_disk()
+{
+    auto name = _attr.getBaseFileName() + "." + TensorAttributeSaver::index_file_suffix();
+    if (!std::filesystem::exists(name)) {
+        return 0;
+    }
+    DiskSpaceCalculator disk_space_calculator;
+    return disk_space_calculator(std::filesystem::file_size(name));
+}
+
 bool
 TensorAttributeLoader::on_load(vespalib::Executor* executor)
 {
@@ -311,6 +325,7 @@ TensorAttributeLoader::on_load(vespalib::Executor* executor)
     _attr.commit();
     _attr.getStatus().setNumDocs(docid_limit);
     _attr.setCommittedDocIdLimit(docid_limit);
+    _attr.set_size_on_disk(reader.size_on_disk() + get_index_size_on_disk());
     if (_index != nullptr) {
         bool use_index_file = false;
         if (has_index_file(_attr)) {
@@ -321,11 +336,25 @@ TensorAttributeLoader::on_load(vespalib::Executor* executor)
             if (!load_index()) {
                 return false;
             }
+            if (dense_store == nullptr) {
+                check_consistency(docid_limit);
+            }
         } else {
             build_index(executor, docid_limit);
         }
     }
     return true;
+}
+
+void
+TensorAttributeLoader::check_consistency(uint32_t docid_limit)
+{
+    auto before = vespalib::steady_clock::now();
+    uint32_t inconsistencies = _index->check_consistency(docid_limit);
+    auto after = vespalib::steady_clock::now();
+    double elapsed = vespalib::to_s(after - before);
+    LOG(info, "%u inconsistencies detected after loading index for attribute %s, (check used %6.3fs)",
+        inconsistencies, _attr.getName().c_str(), elapsed);
 }
 
 }

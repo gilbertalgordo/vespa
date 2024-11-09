@@ -3,10 +3,10 @@
 
 #include <vespa/vespalib/util/executor.h>
 #include <vespa/vespalib/util/executor_stats.h>
-#include <vespa/vespalib/stllike/string.h>
 #include <vespa/vespalib/util/lambdatask.h>
-#include <vector>
 #include <mutex>
+#include <string>
+#include <vector>
 
 namespace vespalib {
 
@@ -41,7 +41,7 @@ public:
     virtual ExecutorId getExecutorId(uint64_t componentId) const = 0;
     uint32_t getNumExecutors() const { return _numExecutors; }
 
-    ExecutorId getExecutorIdFromName(stringref componentId) const;
+    ExecutorId getExecutorIdFromName(std::string_view componentId) const;
 
     /**
      * Returns an executor id that is NOT equal to the given executor id,

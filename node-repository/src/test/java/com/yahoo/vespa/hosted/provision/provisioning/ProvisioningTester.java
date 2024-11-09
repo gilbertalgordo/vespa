@@ -16,6 +16,7 @@ import com.yahoo.config.provision.DockerImage;
 import com.yahoo.config.provision.Environment;
 import com.yahoo.config.provision.Flavor;
 import com.yahoo.config.provision.HostFilter;
+import com.yahoo.config.provision.HostName;
 import com.yahoo.config.provision.HostSpec;
 import com.yahoo.config.provision.InstanceName;
 import com.yahoo.config.provision.NodeFlavors;
@@ -43,6 +44,7 @@ import com.yahoo.vespa.hosted.provision.NodeList;
 import com.yahoo.vespa.hosted.provision.NodeRepository;
 import com.yahoo.vespa.hosted.provision.Nodelike;
 import com.yahoo.vespa.hosted.provision.autoscale.MemoryMetricsDb;
+import com.yahoo.vespa.hosted.provision.backup.SnapshotStoreMock;
 import com.yahoo.vespa.hosted.provision.lb.LoadBalancerServiceMock;
 import com.yahoo.vespa.hosted.provision.node.Agent;
 import com.yahoo.vespa.hosted.provision.node.IP;
@@ -92,9 +94,9 @@ public class ProvisioningTester {
     private final NodeRepository nodeRepository;
     private final HostProvisioner hostProvisioner;
     private final NodeRepositoryProvisioner provisioner;
-    private final CapacityPolicies capacityPolicies;
     private final InMemoryProvisionLogger provisionLogger;
     private final LoadBalancerServiceMock loadBalancerService;
+    private final SnapshotStoreMock snapshotStore;
 
     private int nextHost = 0;
     private int nextIP = 0;
@@ -115,7 +117,8 @@ public class ProvisioningTester {
         this.nodeFlavors = nodeFlavors;
         this.clock = clock;
         this.hostProvisioner = hostProvisioner;
-        ProvisionServiceProvider provisionServiceProvider = new MockProvisionServiceProvider(loadBalancerService, hostProvisioner, resourcesCalculator);
+        this.snapshotStore = new SnapshotStoreMock();
+        ProvisionServiceProvider provisionServiceProvider = new MockProvisionServiceProvider(loadBalancerService, hostProvisioner, resourcesCalculator, snapshotStore);
         this.nodeRepository = new NodeRepository(nodeFlavors,
                                                  provisionServiceProvider,
                                                  curator,
@@ -131,7 +134,6 @@ public class ProvisioningTester {
                                                  true,
                                                  spareCount);
         this.provisioner = new NodeRepositoryProvisioner(nodeRepository, zone, provisionServiceProvider, new MockMetric());
-        this.capacityPolicies = new CapacityPolicies(nodeRepository);
         this.provisionLogger = new InMemoryProvisionLogger();
         this.loadBalancerService = loadBalancerService;
     }
@@ -159,14 +161,14 @@ public class ProvisioningTester {
     public NodeRepositoryProvisioner provisioner() { return provisioner; }
     public HostProvisioner hostProvisioner() { return hostProvisioner; }
     public LoadBalancerServiceMock loadBalancerService() { return loadBalancerService; }
-    public CapacityPolicies capacityPolicies() { return capacityPolicies; }
+    public SnapshotStoreMock snapshotStore() { return snapshotStore; }
     public NodeList getNodes(ApplicationId id, Node.State ... inState) { return nodeRepository.nodes().list(inState).owner(id); }
     public InMemoryFlagSource flagSource() { return (InMemoryFlagSource) nodeRepository.flagSource(); }
     public InMemoryProvisionLogger provisionLogger() { return provisionLogger; }
     public Node node(String hostname) { return nodeRepository.nodes().node(hostname).get(); }
 
     public int decideSize(Capacity capacity, ApplicationId application) {
-        return capacityPolicies.applyOn(capacity, application, false).minResources().nodes();
+        return nodeRepository.capacityPoliciesFor(application).applyOn(capacity, false).minResources().nodes();
     }
 
     public Node patchNode(Node node, UnaryOperator<Node> patcher) {
@@ -332,8 +334,8 @@ public class ProvisioningTester {
                        expected.justNonNumbers().compatibleWith(node.resources().justNonNumbers()));
             assertEquals(explanation + ": Vcpu: Expected " + expected.vcpu() + " but was " + node.resources().vcpu(),
                          expected.vcpu(), node.resources().vcpu(), 0.05);
-            assertEquals(explanation + ": Memory: Expected " + expected.memoryGb() + " but was " + node.resources().memoryGb(),
-                         expected.memoryGb(), node.resources().memoryGb(), 0.05);
+            assertEquals(explanation + ": Memory: Expected " + expected.memoryGiB() + " but was " + node.resources().memoryGiB(),
+                         expected.memoryGiB(), node.resources().memoryGiB(), 0.05);
             assertEquals(explanation + ": Disk: Expected " + expected.diskGb() + " but was " + node.resources().diskGb(),
                          expected.diskGb(), node.resources().diskGb(), 0.05);
         }
@@ -450,14 +452,16 @@ public class ProvisioningTester {
             String ipv6 = String.format("::%x", nextIP);
 
             nameResolver.addRecord(hostname, ipv4, ipv6);
-            var hostIps = new ArrayList<String>();
+            List<String> hostIps = new ArrayList<>();
             hostIps.add(ipv4);
             hostIps.add(ipv6);
 
-            var ipAddressPool = new ArrayList<String>();
+            List<String> ipAddressPool = new ArrayList<>();
+            List<HostName> nodeHostnames = new ArrayList<>();
             for (int poolIp = 1; poolIp <= ipAddressPoolSize; poolIp++) {
                 nextIP++;
                 String nodeHostname = hostnameParts[0] + "-" + poolIp + (hostnameParts.length > 1 ? "." + hostnameParts[1] : "");
+                nodeHostnames.add(HostName.of(nodeHostname));
                 String ipv6Addr = String.format("::%x", nextIP);
                 ipAddressPool.add(ipv6Addr);
                 nameResolver.addRecord(nodeHostname, ipv6Addr);
@@ -467,7 +471,7 @@ public class ProvisioningTester {
                     nameResolver.addRecord(nodeHostname, ipv4Addr);
                 }
             }
-            Node.Builder builder = Node.create(hostname, IP.Config.of(hostIps, ipAddressPool), hostname, flavor, type)
+            Node.Builder builder = Node.create(hostname, IP.Config.of(hostIps, ipAddressPool, nodeHostnames), hostname, flavor, type)
                     .cloudAccount(cloudAccount);
             reservedTo.ifPresent(builder::reservedTo);
             nodes.add(builder.build());
@@ -772,14 +776,14 @@ public class ProvisioningTester {
             FlavorsConfig.Flavor.Builder flavor = new FlavorsConfig.Flavor.Builder();
             flavor.name(flavorName);
             flavor.minCpuCores(resources.vcpu());
-            flavor.minMainMemoryAvailableGb(resources.memoryGb());
+            flavor.minMainMemoryAvailableGb(resources.memoryGiB());
             flavor.minDiskAvailableGb(resources.diskGb());
             flavor.bandwidth(resources.bandwidthGbps() * 1000);
             flavor.fastDisk(resources.diskSpeed().compatibleWith(com.yahoo.config.provision.NodeResources.DiskSpeed.fast));
             flavor.remoteStorage(resources.storageType().compatibleWith(com.yahoo.config.provision.NodeResources.StorageType.remote));
             flavor.architecture(resources.architecture().toString());
             flavor.gpuCount(resources.gpuResources().count());
-            flavor.gpuMemoryGb(resources.gpuResources().memoryGb());
+            flavor.gpuMemoryGb(resources.gpuResources().memoryGiB());
             return flavor;
         }
 
@@ -799,7 +803,7 @@ public class ProvisioningTester {
         public NodeResources realResourcesOf(Nodelike node, NodeRepository nodeRepository) {
             NodeResources resources = node.resources();
             if (node.type() == NodeType.host) return resources;
-            return resources.withMemoryGb(resources.memoryGb() - memoryTaxGb)
+            return resources.withMemoryGiB(resources.memoryGiB() - memoryTaxGb)
                             .withDiskGb(resources.diskGb() - ( resources.storageType() == local ? localDiskTax : 0));
         }
 
@@ -807,18 +811,18 @@ public class ProvisioningTester {
         public NodeResources advertisedResourcesOf(Flavor flavor) {
             NodeResources resources = flavor.resources();
             if ( ! flavor.isConfigured()) return resources;
-            return resources.withMemoryGb(resources.memoryGb() + memoryTaxGb);
+            return resources.withMemoryGiB(resources.memoryGiB() + memoryTaxGb);
         }
 
         @Override
-        public NodeResources requestToReal(NodeResources resources, boolean exclusive, boolean bestCase) {
-            return resources.withMemoryGb(resources.memoryGb() - memoryTaxGb)
+        public NodeResources requestToReal(NodeResources resources, CloudAccount cloudAccount, boolean exclusive, boolean bestCase) {
+            return resources.withMemoryGiB(resources.memoryGiB() - memoryTaxGb)
                             .withDiskGb(resources.diskGb() - ( resources.storageType() == local ? localDiskTax : 0) );
         }
 
         @Override
-        public NodeResources realToRequest(NodeResources resources, boolean exclusive, boolean bestCase) {
-            return resources.withMemoryGb(resources.memoryGb() + memoryTaxGb)
+        public NodeResources realToRequest(NodeResources resources, CloudAccount cloudAccount, boolean exclusive, boolean bestCase) {
+            return resources.withMemoryGiB(resources.memoryGiB() + memoryTaxGb)
                             .withDiskGb(resources.diskGb() + ( resources.storageType() == local ? localDiskTax : 0) );
         }
 

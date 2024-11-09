@@ -7,7 +7,10 @@
 #include <vespa/searchlib/attribute/attribute_blueprint_params.h>
 #include <vespa/searchlib/attribute/attribute_operation.h>
 #include <vespa/searchlib/attribute/diversity.h>
+#include <vespa/searchlib/queryeval/flow.h>
+#include <vespa/searchlib/queryeval/wand/wand_parts.h>
 #include <vespa/searchlib/engine/trace.h>
+#include <vespa/searchlib/features/first_phase_rank_lookup.h>
 #include <vespa/searchlib/fef/indexproperties.h>
 #include <vespa/searchlib/fef/ranksetup.h>
 #include <vespa/vespalib/util/issue.h>
@@ -33,6 +36,8 @@ namespace {
 using search::fef::Properties;
 using search::fef::RankSetup;
 using search::fef::IIndexEnvironment;
+using search::queryeval::InFlow;
+using search::queryeval::wand::StopWordStrategy;
 
 using namespace vespalib::literals;
 
@@ -50,7 +55,7 @@ bool contains_all(const HandleRecorder::HandleMap &old_map,
 }
 
 DegradationParams
-extractDegradationParams(const RankSetup &rankSetup, const vespalib::string & attribute, const Properties &rankProperties)
+extractDegradationParams(const RankSetup &rankSetup, const std::string & attribute, const Properties &rankProperties)
 {
     return { attribute,
              DegradationMaxHits::lookup(rankProperties, rankSetup.getDegradationMaxHits()),
@@ -165,8 +170,8 @@ MatchToolsFactory(QueryLimiter               & queryLimiter,
                   ISearchContext             & searchContext,
                   IAttributeContext          & attributeContext,
                   search::engine::Trace      & root_trace,
-                  vespalib::stringref          queryStack,
-                  const vespalib::string     & location,
+                  std::string_view             queryStack,
+                  const std::string          & location,
                   const ViewResolver         & viewResolver,
                   const IDocumentMetaStore   & metaStore,
                   const IIndexEnvironment    & indexEnv,
@@ -188,7 +193,9 @@ MatchToolsFactory(QueryLimiter               & queryLimiter,
       _rankSetup(rankSetup),
       _featureOverrides(featureOverrides),
       _diversityParams(),
-      _valid(false)
+      _valid(false),
+      _first_phase_rank_lookup(nullptr),
+      _metaStore(metaStore)
 {
     if (doom.soft_doom()) return;
     auto trace = root_trace.make_trace();
@@ -202,12 +209,16 @@ MatchToolsFactory(QueryLimiter               & queryLimiter,
         _query.extractLocations(_queryEnv.locations());
         trace.addEvent(5, "Build query execution plan");
         _query.reserveHandles(_requestContext, searchContext, _mdl);
+        if (trace.getLevel() >= 6) { // will dump blueprint later
+            _query.enumerate_blueprint_nodes();
+        }
         trace.addEvent(5, "Optimize query execution plan");
         bool sort_by_cost = SortBlueprintsByCost::check(_queryEnv.getProperties(), rankSetup.sort_blueprints_by_cost());
-        _query.optimize(sort_by_cost);
-        trace.addEvent(4, "Perform dictionary lookups and posting lists initialization");
         double hitRate = std::min(1.0, double(maxNumHits)/double(searchContext.getDocIdLimit()));
-        _query.fetchPostings(ExecuteInfo::create(is_search, hitRate, _requestContext.getDoom(), thread_bundle));
+        auto in_flow = InFlow(is_search, hitRate);
+        _query.optimize(in_flow, sort_by_cost);
+        trace.addEvent(4, "Perform dictionary lookups and posting lists initialization");
+        _query.fetchPostings(ExecuteInfo::create(in_flow.rate(), _requestContext.getDoom(), thread_bundle));
         if (is_search) {
             _query.handle_global_filter(_requestContext, searchContext.getDocIdLimit(),
                                         _attribute_blueprint_params.global_filter_lower_limit,
@@ -216,8 +227,9 @@ MatchToolsFactory(QueryLimiter               & queryLimiter,
         _query.freeze();
         trace.addEvent(5, "Prepare shared state for multi-threaded rank executors");
         _rankSetup.prepareSharedState(_queryEnv, _queryEnv.getObjectStore());
+        _first_phase_rank_lookup = FirstPhaseRankLookup::get_mutable_shared_state(_queryEnv.getObjectStore());
         _diversityParams = extractDiversityParams(_rankSetup, rankProperties);
-        vespalib::string attribute = DegradationAttribute::lookup(rankProperties, _rankSetup.getDegradationAttribute());
+        std::string attribute = DegradationAttribute::lookup(rankProperties, _rankSetup.getDegradationAttribute());
         DegradationParams degradationParams = extractDegradationParams(_rankSetup, attribute, rankProperties);
 
         if (degradationParams.enabled()) {
@@ -248,7 +260,7 @@ MatchToolsFactory::createMatchTools() const
 }
 
 std::unique_ptr<IDiversifier>
-MatchToolsFactory::createDiversifier(uint32_t heapSize) const
+MatchToolsFactory::createDiversifier(uint32_t want_hits) const
 {
     if ( !_diversityParams.enabled() ) {
         return {};
@@ -258,22 +270,24 @@ MatchToolsFactory::createDiversifier(uint32_t heapSize) const
         Issue::report("Skipping diversity due to no %s attribute.", _diversityParams.attribute.c_str());
         return {};
     }
-    size_t max_per_group = heapSize/_diversityParams.min_groups;
-    return DiversityFilter::create(*attr, heapSize, max_per_group, _diversityParams.min_groups,
+    size_t max_per_group = std::max(size_t(1), size_t(want_hits / _diversityParams.min_groups));
+    return DiversityFilter::create(*attr, want_hits, max_per_group, _diversityParams.min_groups,
                                    _diversityParams.cutoff_strategy == DiversityParams::CutoffStrategy::STRICT);
 }
 
 std::unique_ptr<AttributeOperationTask>
-MatchToolsFactory::createTask(vespalib::stringref attribute, vespalib::stringref operation) const {
+MatchToolsFactory::createTask(std::string_view attribute, std::string_view operation) const {
     return (!attribute.empty() && ! operation.empty())
            ? std::make_unique<AttributeOperationTask>(_requestContext, attribute, operation)
            : std::unique_ptr<AttributeOperationTask>();
 }
+
 std::unique_ptr<AttributeOperationTask>
 MatchToolsFactory::createOnMatchTask() const {
     const auto & op = _rankSetup.getMutateOnMatch();
     return createTask(op._attribute, op._operation);
 }
+
 std::unique_ptr<AttributeOperationTask>
 MatchToolsFactory::createOnFirstPhaseTask() const {
     const auto & op = _rankSetup.getMutateOnFirstPhase();
@@ -286,6 +300,7 @@ MatchToolsFactory::createOnFirstPhaseTask() const {
         return createTask(op._attribute, op._operation);
     }
 }
+
 std::unique_ptr<AttributeOperationTask>
 MatchToolsFactory::createOnSecondPhaseTask() const {
     const auto & op = _rankSetup.getMutateOnSecondPhase();
@@ -296,6 +311,7 @@ MatchToolsFactory::createOnSecondPhaseTask() const {
         return createTask(op._attribute, op._operation);
     }
 }
+
 std::unique_ptr<AttributeOperationTask>
 MatchToolsFactory::createOnSummaryTask() const {
     const auto & op = _rankSetup.getMutateOnSummary();
@@ -337,6 +353,9 @@ MatchToolsFactory::extract_attribute_blueprint_params(const RankSetup& rank_setu
     double upper_limit = GlobalFilterUpperLimit::lookup(rank_properties, rank_setup.get_global_filter_upper_limit());
     double target_hits_max_adjustment_factor = TargetHitsMaxAdjustmentFactor::lookup(rank_properties, rank_setup.get_target_hits_max_adjustment_factor());
     auto fuzzy_matching_algorithm = FuzzyAlgorithm::lookup(rank_properties, rank_setup.get_fuzzy_matching_algorithm());
+    double weakand_range = temporary::WeakAndRange::lookup(rank_properties, rank_setup.get_weakand_range());
+    double weakand_stop_word_adjust_limit = WeakAndStopWordAdjustLimit::lookup(rank_properties, rank_setup.get_weakand_stop_word_adjust_limit());
+    double weakand_stop_word_drop_limit = WeakAndStopWordDropLimit::lookup(rank_properties, rank_setup.get_weakand_stop_word_drop_limit());
 
     // Note that we count the reserved docid 0 as active.
     // This ensures that when searchable-copies=1, the ratio is 1.0.
@@ -345,11 +364,14 @@ MatchToolsFactory::extract_attribute_blueprint_params(const RankSetup& rank_setu
     return {lower_limit * active_hit_ratio,
             upper_limit * active_hit_ratio,
             target_hits_max_adjustment_factor,
-            fuzzy_matching_algorithm};
+            fuzzy_matching_algorithm,
+            weakand_range,
+            StopWordStrategy(weakand_stop_word_adjust_limit,
+                                                      weakand_stop_word_drop_limit, docid_limit)};
 }
 
 AttributeOperationTask::AttributeOperationTask(const RequestContext & requestContext,
-                                               vespalib::stringref attribute, vespalib::stringref operation)
+                                               std::string_view attribute, std::string_view operation)
     : _requestContext(requestContext),
       _attribute(attribute),
       _operation(operation)

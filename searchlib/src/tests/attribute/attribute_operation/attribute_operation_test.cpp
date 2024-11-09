@@ -5,7 +5,7 @@
 #include <vespa/searchlib/attribute/attribute.h>
 #include <vespa/searchlib/common/bitvector.h>
 #include <vespa/searchcommon/attribute/config.h>
-#include <vespa/vespalib/testkit/testapp.h>
+#include <vespa/vespalib/testkit/test_kit.h>
 
 #include <vespa/log/log.h>
 LOG_SETUP("attribute_operation_test");
@@ -46,7 +46,7 @@ TEST("test illegal operations on float attribute") {
 }
 
 AttributeVector::SP
-createAttribute(BasicType basicType, const vespalib::string &fieldName, bool fastSearch = false, bool immutable = false)
+createAttribute(BasicType basicType, const std::string &fieldName, bool fastSearch = false, bool immutable = false)
 {
     constexpr size_t NUM_DOCS = 20;
     Config cfg(basicType, CollectionType::SINGLE);
@@ -64,7 +64,7 @@ createAttribute(BasicType basicType, const vespalib::string &fieldName, bool fas
 }
 
 template <typename T, typename A, typename R>
-void verify(BasicType type, vespalib::stringref operation, AttributeVector & attr, T initial, T expected, std::vector<uint32_t> docs, R result)
+void verify(BasicType type, std::string_view operation, AttributeVector & attr, T initial, T expected, std::vector<uint32_t> docs, R result)
 {
     auto & attrT = dynamic_cast<A &>(attr);
     for (uint32_t docid(0); docid < attr.getNumDocs(); docid++) {
@@ -85,7 +85,7 @@ void verify(BasicType type, vespalib::stringref operation, AttributeVector & att
 }
 
 template <typename T, typename R>
-void verify2(BasicType typeClaimed, vespalib::stringref operation, AttributeVector & attr, T initial, T expected, std::vector<uint32_t> docs, R result) {
+void verify2(BasicType typeClaimed, std::string_view operation, AttributeVector & attr, T initial, T expected, std::vector<uint32_t> docs, R result) {
     BasicType::Type type = attr.getBasicType();
     if (type == BasicType::INT64) {
         verify<int64_t, search::IntegerAttributeTemplate<int64_t>, R>(typeClaimed, operation, attr, initial, expected, docs, std::move(result));
@@ -101,7 +101,7 @@ void verify2(BasicType typeClaimed, vespalib::stringref operation, AttributeVect
 }
 
 template <typename T>
-void verify(BasicType typeClaimed, vespalib::stringref operation, AttributeVector & attr, T initial, T expected) {
+void verify(BasicType typeClaimed, std::string_view operation, AttributeVector & attr, T initial, T expected) {
     std::vector<uint32_t> docs = {1,4,7,9,10,17,19};
     {
         verify2<T, std::vector<uint32_t>>(typeClaimed, operation, attr, initial, expected, docs, docs);
@@ -143,7 +143,7 @@ void verify(BasicType typeClaimed, vespalib::stringref operation, AttributeVecto
 }
 
 template <typename T>
-void verify(vespalib::stringref operation, AttributeVector & attr, T initial, T expected) {
+void verify(std::string_view operation, AttributeVector & attr, T initial, T expected) {
     verify<T>(attr.getBasicType(), operation, attr, initial, expected);
 }
 

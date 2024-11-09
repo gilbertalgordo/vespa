@@ -36,12 +36,12 @@ namespace {
 using vespalib::getLastErrorString;
 
 void
-writePidFile(const vespalib::string& pidfile)
+writePidFile(const std::string& pidfile)
 {
     ssize_t rv = -1;
-    vespalib::string mypid = vespalib::make_string("%d\n", getpid());
+    std::string mypid = vespalib::make_string("%d\n", getpid());
     size_t lastSlash = pidfile.rfind('/');
-    if (lastSlash != vespalib::string::npos) {
+    if (lastSlash != std::string::npos) {
         std::filesystem::create_directories(std::filesystem::path(pidfile.substr(0, lastSlash)));
     }
     int fd = open(pidfile.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0644);
@@ -56,7 +56,7 @@ writePidFile(const vespalib::string& pidfile)
 }
 
 void
-removePidFile(const vespalib::string& pidfile)
+removePidFile(const std::string& pidfile)
 {
     if (unlink(pidfile.c_str()) != 0) {
         LOG(warning, "Failed to delete pidfile '%s': %s",
@@ -92,6 +92,7 @@ StorageNode::StorageNode(
       _statusMetrics(),
       _stateReporter(),
       _stateManager(),
+      _state_manager_ptr(nullptr),
       _chain(),
       _configLock(),
       _initial_config_mutex(),
@@ -140,18 +141,20 @@ StorageNode::initialize(const NodeStateReporter & nodeStateReporter)
     // Initializing state manager early, as others use it init time to
     // update node state according min used bits etc.
     // Needs node type to be set right away. Needs thread pool, index and
-    // dead lock detector too, but not before open()
+    // deadlock detector too, but not before open()
     _stateManager = std::make_unique<StateManager>(
             _context.getComponentRegister(),
             std::move(_hostInfo),
             nodeStateReporter,
             _singleThreadedDebugMode);
+    _stateManager->set_require_strictly_increasing_cluster_state_versions(server_config().requireStrictlyIncreasingClusterStateVersions);
+    _state_manager_ptr = _stateManager.get();
     _context.getComponentRegister().setNodeStateUpdater(*_stateManager);
 
-    // Create VDS root folder, in case it doesn't already exist.
-    // Maybe better to rather fail if it doesn't exist, but tests
-    // might break if we do that. Might alter later.
-    std::filesystem::create_directories(std::filesystem::path(_rootFolder));
+    // Create storage root folder, in case it doesn't already exist.
+    if (!_rootFolder.empty()) {
+        std::filesystem::create_directories(std::filesystem::path(_rootFolder));
+    } // else: running as part of unit tests
 
     initializeNodeSpecific();
 
@@ -192,13 +195,16 @@ StorageNode::initialize(const NodeStateReporter & nodeStateReporter)
 
     initializeStatusWebServer();
 
+    if (server_config().writePidFileOnStartup) {
+        assert(!_rootFolder.empty());
         // Write pid file as the last thing we do. If we fail initialization
         // due to an exception we won't run shutdown. Thus we won't remove the
         // pid file if something throws after writing it in initialization.
         // Initialize _pidfile here, such that we can know that we didn't create
         // it in shutdown code for shutdown during init.
-    _pidFile = _rootFolder + "/pidfile";
-    writePidFile(_pidFile);
+        _pidFile = _rootFolder + "/pidfile";
+        writePidFile(_pidFile);
+    }
 }
 
 void
@@ -242,12 +248,21 @@ StorageNode::handleLiveConfigUpdate(const InitialGuard & initGuard)
         DIFFERWARN(clusterName, "Cannot alter cluster name of node live");
         DIFFERWARN(nodeIndex, "Cannot alter node index of node live");
         DIFFERWARN(isDistributor, "Cannot alter role of node live");
-        _server_config.active = std::make_unique<StorServerConfig>(oldC); // TODO this overwrites from ServiceLayerNode
+        [[maybe_unused]] bool updated = false; // magically touched by ASSIGN() macro. TODO rewrite this fun stuff.
+        if (DIFFER(requireStrictlyIncreasingClusterStateVersions)) {
+            LOG(info, "Live config update: require strictly increasing cluster state versions: %s -> %s",
+                (oldC.requireStrictlyIncreasingClusterStateVersions ? "true" : "false"),
+                (newC.requireStrictlyIncreasingClusterStateVersions ? "true" : "false"));
+            ASSIGN(requireStrictlyIncreasingClusterStateVersions);
+        }
+        _server_config.active = std::make_unique<StorServerConfig>(oldC);
         _server_config.staging.reset();
         _deadLockDetector->enableWarning(server_config().enableDeadLockDetectorWarnings);
         _deadLockDetector->enableShutdown(server_config().enableDeadLockDetector);
         _deadLockDetector->setProcessSlack(vespalib::from_s(server_config().deadLockDetectorTimeoutSlack));
         _deadLockDetector->setWaitSlack(vespalib::from_s(server_config().deadLockDetectorTimeoutSlack));
+        assert(_state_manager_ptr);
+        _state_manager_ptr->set_require_strictly_increasing_cluster_state_versions(server_config().requireStrictlyIncreasingClusterStateVersions);
     }
     if (_distribution_config.staging) {
         StorDistributionConfigBuilder oldC(*_distribution_config.active);
@@ -437,11 +452,17 @@ StorageNode::stage_config_change(ConfigWrapper<ConfigT>& cfg, std::unique_ptr<Co
     // else is doing configuration work, and then we write the new config
     // to a variable where we can find it later when processing config
     // updates
+    // TODO bail if we're shutting down to avoid racing with chain destruction?
+    //   - only relevant for distribution config since it's not pushed by main thread
+    //   - or have some way of injecting config changes from that level...? must be done atomically!
+    //     - ideally want to expose cluster state _bundles_ to relevant components, not config alone!
+    bool live_update;
     {
         std::lock_guard config_lock_guard(_configLock);
         cfg.staging = std::move(new_cfg);
+        live_update = static_cast<bool>(cfg.active);
     }
-    if (cfg.active) {
+    if (live_update) {
         InitialGuard concurrent_config_guard(_initial_config_mutex);
         handleLiveConfigUpdate(concurrent_config_guard);
     }
@@ -477,7 +498,7 @@ StorageNode::waitUntilInitialized(vespalib::duration timeout) {
 }
 
 void
-StorageNode::requestShutdown(vespalib::stringref reason)
+StorageNode::requestShutdown(std::string_view reason)
 {
     bool was_stopped = false;
     const bool stop_now = _attemptedStopped.compare_exchange_strong(was_stopped, true,

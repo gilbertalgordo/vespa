@@ -4,6 +4,7 @@
 #include <vespa/vespalib/stllike/hash_map.hpp>
 #include <vespa/vespalib/stllike/hash_map_equal.hpp>
 #include <cassert>
+#include <string>
 
 namespace search::fef {
 
@@ -48,18 +49,24 @@ Properties::~Properties()
 }
 
 Properties &
-Properties::add(vespalib::stringref key, vespalib::stringref value)
+Properties::add(std::string_view key, std::string_view value)
 {
     if (!key.empty()) {
-        Value & v = _data[key];
-        v.emplace_back(value);
+        auto node = _data.find(key);
+        Value * v = nullptr;
+        if (node != _data.end()) {
+            v = &node->second;
+        } else {
+            v = &_data[std::string(key)];
+        }
+        v->emplace_back(value);
         ++_numValues;
     }
     return *this;
 }
 
 uint32_t
-Properties::count(vespalib::stringref key) const noexcept
+Properties::count(std::string_view key) const noexcept
 {
     if (!key.empty()) {
         auto node = _data.find(key);
@@ -71,7 +78,7 @@ Properties::count(vespalib::stringref key) const noexcept
 }
 
 Properties &
-Properties::remove(vespalib::stringref key)
+Properties::remove(std::string_view key)
 {
     if (!key.empty()) {
         auto node = _data.find(key);
@@ -142,16 +149,15 @@ Properties::visitProperties(IPropertiesVisitor &visitor) const
 }
 
 void
-Properties::visitNamespace(vespalib::stringref ns,
-                           IPropertiesVisitor &visitor) const
+Properties::visitNamespace(std::string_view ns, IPropertiesVisitor &visitor) const
 {
-    vespalib::string tmp;
-    vespalib::string prefix = ns + ".";
+    std::string tmp;
+    std::string prefix = std::string(ns) + ".";
     for (const auto& elem : _data) {
         if ((elem.first.find(prefix) == 0) &&
             (elem.first.size() > prefix.size()))
         {
-            tmp = vespalib::stringref(elem.first.data() + prefix.size(),
+            tmp = std::string_view(elem.first.data() + prefix.size(),
                                       elem.first.size() - prefix.size());
             visitor.visitProperty(tmp, Property(elem.second));
         }
@@ -159,7 +165,7 @@ Properties::visitNamespace(vespalib::stringref ns,
 }
 
 Property
-Properties::lookup(vespalib::stringref key) const noexcept
+Properties::lookup(std::string_view key) const noexcept
 {
     if (key.empty()) {
         return {};
@@ -171,39 +177,38 @@ Properties::lookup(vespalib::stringref key) const noexcept
     return {node->second};
 }
 
-Property Properties::lookup(vespalib::stringref namespace1,
-                            vespalib::stringref key) const noexcept
+Property Properties::lookup(std::string_view namespace1, std::string_view key) const noexcept
 {
     if (namespace1.empty() || key.empty()) {
         return {};
     }
-    vespalib::string fullKey(namespace1);
-    fullKey.append('.').append(key);
+    std::string fullKey(namespace1);
+    fullKey.append(".").append(key);
     return lookup(fullKey);
 }
 
-Property Properties::lookup(vespalib::stringref namespace1,
-                            vespalib::stringref namespace2,
-                            vespalib::stringref key) const noexcept
+Property Properties::lookup(std::string_view namespace1,
+                            std::string_view namespace2,
+                            std::string_view key) const noexcept
 {
     if (namespace1.empty() || namespace2.empty() || key.empty()) {
         return {};
     }
-    vespalib::string fullKey(namespace1);
-    fullKey.append('.').append(namespace2).append('.').append(key);
+    std::string fullKey(namespace1);
+    fullKey.append(".").append(namespace2).append(".").append(key);
     return lookup(fullKey);
 }
 
-Property Properties::lookup(vespalib::stringref namespace1,
-                            vespalib::stringref namespace2,
-                            vespalib::stringref namespace3,
-                            vespalib::stringref key) const noexcept
+Property Properties::lookup(std::string_view namespace1,
+                            std::string_view namespace2,
+                            std::string_view namespace3,
+                            std::string_view key) const noexcept
 {
     if (namespace1.empty() || namespace2.empty() || namespace3.empty() || key.empty()) {
         return {};
     }
-    vespalib::string fullKey(namespace1);
-    fullKey.append('.').append(namespace2).append('.').append(namespace3).append('.').append(key);
+    std::string fullKey(namespace1);
+    fullKey.append(".").append(namespace2).append(".").append(namespace3).append(".").append(key);
     return lookup(fullKey);
 }
 
@@ -215,4 +220,4 @@ void Properties::swap(Properties & rhs) noexcept
 
 }
 
-VESPALIB_HASH_MAP_INSTANTIATE(vespalib::string, search::fef::Property::Values);
+VESPALIB_HASH_MAP_INSTANTIATE(std::string, search::fef::Property::Values);

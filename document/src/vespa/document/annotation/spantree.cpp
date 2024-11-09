@@ -5,7 +5,7 @@
 #include <vespa/vespalib/stllike/asciistream.h>
 
 using std::unique_ptr;
-using vespalib::stringref;
+using std::string_view;
 
 namespace document {
 
@@ -38,7 +38,7 @@ SpanTree::compare(const SpanTree &other) const {
     return toString().compare(other.toString());
 }
 
-vespalib::string
+std::string
 SpanTree::toString() const {
     vespalib::asciistream os;
     os << "SpanTree(\"" << _name << "\"" << "\n  ";

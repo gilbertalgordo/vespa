@@ -31,7 +31,6 @@ import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
@@ -39,6 +38,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
+
+import static com.yahoo.yolean.Exceptions.uncheck;
 
 /**
  * For testing purposes only
@@ -83,8 +84,7 @@ public class MockApplicationPackage implements ApplicationPackage {
         this.failOnValidateXml = failOnValidateXml;
         queryProfileRegistry = new QueryProfileXMLReader().read(asNamedReaderList(queryProfileType),
                                                                 asNamedReaderList(queryProfile));
-        applicationMetaData = new ApplicationMetaData("dir",
-                                                      0L,
+        applicationMetaData = new ApplicationMetaData(0L,
                                                       false,
                                                       ApplicationId.from(tenantName,
                                                                          ApplicationName.from(APPLICATION_NAME),
@@ -143,7 +143,7 @@ public class MockApplicationPackage implements ApplicationPackage {
 
     @Override
     public Map<ConfigDefinitionKey, UnparsedConfigDefinition> getAllExistingConfigDefs() {
-        return Collections.emptyMap();
+        return Map.of();
     }
 
     @Override
@@ -203,7 +203,7 @@ public class MockApplicationPackage implements ApplicationPackage {
     }
 
     public List<ComponentInfo> getComponentsInfo(Version vespaVersion) {
-        return Collections.emptyList();
+        return List.of();
     }
 
     public QueryProfileRegistry getQueryProfiles() { return queryProfileRegistry; }
@@ -240,7 +240,7 @@ public class MockApplicationPackage implements ApplicationPackage {
         private File root = new File("nonexisting");
         private String hosts = null;
         private String services = null;
-        private List<String> schemas = Collections.emptyList();
+        private List<String> schemas = List.of();
         private Map<Path, MockApplicationFile> files = new LinkedHashMap<>();
         private String schemaDir = null;
         private String deploymentSpec = null;
@@ -276,13 +276,13 @@ public class MockApplicationPackage implements ApplicationPackage {
             return this;
         }
 
-        public Builder withSearchDefinition(String searchDefinition) {
-            this.schemas = Collections.singletonList(searchDefinition);
+        public Builder withSchema(String schema) {
+            this.schemas = List.of(schema);
             return this;
         }
 
-        public Builder withSchemas(List<String> searchDefinition) {
-            this.schemas = Collections.unmodifiableList(searchDefinition);
+        public Builder withSchemas(List<String> schemas) {
+            this.schemas = List.copyOf(schemas);
             return this;
         }
 
@@ -369,8 +369,8 @@ public class MockApplicationPackage implements ApplicationPackage {
     }
 
     private List<NamedReader> asNamedReaderList(String value) {
-        if (value == null) return Collections.emptyList();
-        return Collections.singletonList(new NamedReader(extractId(value) + ".xml", new StringReader(value)));
+        if (value == null) return List.of();
+        return List.of(new NamedReader(extractId(value) + ".xml", new StringReader(value)));
     }
 
     private String extractId(String xmlStringWithIdAttribute) {
@@ -446,14 +446,20 @@ public class MockApplicationPackage implements ApplicationPackage {
 
         @Override
         public ApplicationFile writeFile(Reader input) {
-            try {
-                if (content != null) throw new UnsupportedOperationException("Not implemented for mock file content");
-                IOUtils.writeFile(file, IOUtils.readAll(input), false);
-                return this;
-            }
-            catch (IOException e) {
-                throw new UncheckedIOException(e);
-            }
+            if (content != null) throw new UnsupportedOperationException("Not implemented for mock file content");
+            uncheck(() -> IOUtils.writeFile(file, IOUtils.readAll(input), false));
+            return this;
+        }
+
+        @Override
+        public ApplicationFile writeFile(InputStream input) {
+            return uncheck(() -> writeFile(input.readAllBytes()));
+        }
+
+        private ApplicationFile writeFile(byte[] input) {
+            if (content != null) throw new UnsupportedOperationException("Not implemented for mock file content");
+            uncheck(() -> Files.write(file.toPath(), input));
+            return this;
         }
 
         @Override

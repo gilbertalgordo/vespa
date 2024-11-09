@@ -7,24 +7,19 @@
 #include <vespa/messagebus/testlib/testserver.h>
 #include <vespa/messagebus/ireplyhandler.h>
 #include <vespa/messagebus/routing/routingcontext.h>
-#include <vespa/vespalib/testkit/testapp.h>
+#include <vespa/vespalib/testkit/test_kit.h>
 #include <vespa/vespalib/component/vtag.h>
 
 using namespace mbus;
 
-TEST_SETUP(Test);
-
-int
-Test::Main()
-{
-    TEST_INIT("simpleprotocol_test");
+TEST("simpleprotocol_test") {
 
     vespalib::Version version = vespalib::Vtag::currentVersion;
     SimpleProtocol protocol;
     EXPECT_TRUE(protocol.getName() == "Simple");
 
-    EXPECT_EQUAL(152u, sizeof(Result));
-    EXPECT_EQUAL(136u, sizeof(Error));
+    EXPECT_EQUAL(24u + 2 *sizeof(std::string), sizeof(Result));
+    EXPECT_EQUAL(8u + 2 *sizeof(std::string), sizeof(Error));
     EXPECT_EQUAL(56u, sizeof(Routable));
     {
         // test protocol
@@ -35,7 +30,7 @@ Test::Main()
     {
         // test SimpleMessage
         EXPECT_EQUAL(104u, sizeof(Message));
-        EXPECT_EQUAL(184u, sizeof(SimpleMessage));
+        EXPECT_EQUAL(120u + sizeof(std::string), sizeof(SimpleMessage));
         auto msg = std::make_unique<SimpleMessage>("test");
         EXPECT_TRUE(!msg->isReply());
         EXPECT_TRUE(msg->getProtocol() == SimpleProtocol::NAME);
@@ -54,7 +49,7 @@ Test::Main()
     {
         // test SimpleReply
         EXPECT_EQUAL(96u, sizeof(Reply));
-        EXPECT_EQUAL(160u, sizeof(SimpleReply));
+        EXPECT_EQUAL(96u + sizeof(std::string), sizeof(SimpleReply));
         auto reply = std::make_unique<SimpleReply>("reply");
         EXPECT_TRUE(reply->isReply());
         EXPECT_TRUE(reply->getProtocol() == SimpleProtocol::NAME);
@@ -69,5 +64,6 @@ Test::Main()
         EXPECT_TRUE(tmp->getType() == SimpleProtocol::REPLY);
         EXPECT_TRUE(static_cast<SimpleReply&>(*tmp).getValue() == "reply");
     }
-    TEST_DONE();
 }
+
+TEST_MAIN() { TEST_RUN_ALL(); }

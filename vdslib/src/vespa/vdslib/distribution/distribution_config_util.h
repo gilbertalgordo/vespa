@@ -2,14 +2,15 @@
 
 #pragma once
 
-#include <vespa/vespalib/stllike/string.h>
+#include <cstdint>
+#include <string>
 #include <vector>
 
 namespace storage::lib {
 
 struct DistributionConfigUtil {
     // Converts an input string of the form "1.2.3" to a returned vector {1, 2, 3}
-    static std::vector<uint16_t> getGroupPath(vespalib::stringref path);
+    static std::vector<uint16_t> getGroupPath(std::string_view path);
 };
 
 }

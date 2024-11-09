@@ -30,15 +30,15 @@ public class ToFloatTestCase {
         Expression exp = new ToFloatExpression();
         assertVerify(DataType.INT, exp, DataType.FLOAT);
         assertVerify(DataType.STRING, exp, DataType.FLOAT);
-        assertVerifyThrows(null, exp, "Expected any input, but no input is specified");
+        assertVerifyThrows("Invalid expression 'to_float': Expected any input, but no input is specified", null, exp);
     }
 
     @Test
     public void requireThatValueIsConverted() {
         ExecutionContext ctx = new ExecutionContext(new SimpleTestAdapter());
-        ctx.setValue(new StringFieldValue("6.9f")).execute(new ToFloatExpression());
+        ctx.setCurrentValue(new StringFieldValue("6.9f")).execute(new ToFloatExpression());
 
-        FieldValue val = ctx.getValue();
+        FieldValue val = ctx.getCurrentValue();
         assertTrue(val instanceof FloatFieldValue);
         assertEquals(6.9f, ((FloatFieldValue)val).getFloat(), 1e-6);
     }

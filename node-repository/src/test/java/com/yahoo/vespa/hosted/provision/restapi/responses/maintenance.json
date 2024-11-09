@@ -17,6 +17,9 @@
       "name": "FailedExpirer"
     },
     {
+      "name": "HostRenamer"
+    },
+    {
       "name": "InactiveExpirer"
     },
     {
@@ -63,6 +66,9 @@
     },
     {
       "name": "ScalingSuggestionsMaintainer"
+    },
+    {
+      "name": "SnapshotExpirer"
     },
     {
       "name": "SpareCapacityMaintainer"

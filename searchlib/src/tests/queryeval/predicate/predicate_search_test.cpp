@@ -7,7 +7,7 @@ LOG_SETUP("predicate_search_test");
 #include <vespa/searchlib/fef/termfieldmatchdata.h>
 #include <vespa/searchlib/fef/termfieldmatchdataarray.h>
 #include <vespa/searchlib/queryeval/predicate_search.h>
-#include <vespa/vespalib/testkit/testapp.h>
+#include <vespa/vespalib/testkit/test_kit.h>
 #include <vespa/vespalib/util/arraysize.h>
 
 using search::fef::TermFieldMatchData;
@@ -367,8 +367,7 @@ TEST("require that subquery bitmap is unpacked to subqueries.") {
     search.initFullRange();
     EXPECT_TRUE(search.seek(2));
     search.unpack(2);
-    EXPECT_EQUAL(0xffffffffffffffffULL,
-                 static_cast<unsigned long long>(data.getSubqueries()));
+    EXPECT_EQUAL(0xffffffffffffffffUL, data.getSubqueries());
 }
 
 

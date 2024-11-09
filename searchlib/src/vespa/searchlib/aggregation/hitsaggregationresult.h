@@ -11,13 +11,13 @@ class HitsAggregationResult : public AggregationResult
 {
 public:
     using FloatResultNode = expression::FloatResultNode;
-    using SummaryClassType = vespalib::string;
+    using SummaryClassType = std::string;
 
     class SummaryGenerator
     {
     public:
         virtual ~SummaryGenerator() = default;
-        virtual vespalib::ConstBufferRef fillSummary(DocId lid, vespalib::stringref summaryClass) = 0;
+        virtual vespalib::ConstBufferRef fillSummary(DocId lid, std::string_view summaryClass) = 0;
     };
 
 private:
@@ -26,7 +26,7 @@ private:
     void onAggregate(const ResultNode &result, const document::Document & doc, HitRank rank) override;
     const ResultNode & onGetRank() const override;
 
-    vespalib::string          _summaryClass;
+    std::string          _summaryClass;
     uint32_t                  _maxHits;
     HitList                   _hits;
     bool                      _isOrdered;
@@ -50,8 +50,8 @@ public:
     ~HitsAggregationResult() override;
     void postMerge() override { _hits.postMerge(_maxHits); }
     void setSummaryGenerator(SummaryGenerator & summaryGenerator) { _summaryGenerator = &summaryGenerator; }
-    const vespalib::string & getSummaryClass() const { return _summaryClass; }
-    HitsAggregationResult setSummaryClass(vespalib::stringref summaryClass) { _summaryClass = summaryClass; return *this; }
+    const std::string & getSummaryClass() const { return _summaryClass; }
+    HitsAggregationResult setSummaryClass(std::string_view summaryClass) { _summaryClass = summaryClass; return *this; }
     HitsAggregationResult &setMaxHits(uint32_t maxHits) {
         _maxHits = (maxHits == 0) ? std::numeric_limits<uint32_t>::max() : maxHits;
         return *this;

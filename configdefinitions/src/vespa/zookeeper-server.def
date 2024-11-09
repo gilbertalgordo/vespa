@@ -24,7 +24,10 @@ autopurge.snapRetainCount int default=15
 
 # Vespa home is prepended if the file is relative
 myidFile string default="var/zookeeper/myid"
-# Change from default of 1 Mb in zookeeper to 50 Mb
+
+# Jute maxbuffer. Used by zookeeper to determine max buffer when serializing/deserializing
+# Note: If decreasing it one must be sure that no node has stored more bytes than this
+# See also corresponding field in curator.def
 juteMaxBuffer int default=52428800
 
 myid int restart
@@ -43,7 +46,9 @@ server[].retired bool default=false
 # TODO: Consider setting this to false by default (and override where appropriate)
 trustEmptySnapshot bool default=true
 
+# Whether to enable support for dynamic reconfiguration of the ZooKeeper ensemble.
 dynamicReconfiguration bool default=false
+
 # Set the snapshot compression method: "gz" for GZIP or "snappy" for Snappy. Any other value disables compression.
 snapshotMethod string default=""
 
@@ -52,3 +57,7 @@ vespaTlsConfigFile string default=""
 
 leaderCloseSocketAsync bool default=false
 learnerAsyncSending bool default=false
+
+# Whether the ZooKeeper ensemble should be reconfigured automatically if servers change. This only has an effect if
+# dynamicReconfiguration=true.
+reconfigureEnsemble bool default=true

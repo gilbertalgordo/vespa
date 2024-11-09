@@ -23,6 +23,7 @@ import com.yahoo.vespa.config.content.core.BucketspacesConfig;
 import com.yahoo.vespa.config.content.core.StorDistributormanagerConfig;
 import com.yahoo.vespa.model.AbstractService;
 import com.yahoo.vespa.model.HostResource;
+import com.yahoo.vespa.model.VespaModel;
 import com.yahoo.vespa.model.admin.Admin;
 import com.yahoo.vespa.model.admin.clustercontroller.ClusterControllerCluster;
 import com.yahoo.vespa.model.admin.clustercontroller.ClusterControllerComponent;
@@ -39,13 +40,13 @@ import com.yahoo.vespa.model.content.ClusterControllerConfig;
 import com.yahoo.vespa.model.content.ClusterResourceLimits;
 import com.yahoo.vespa.model.content.ContentSearch;
 import com.yahoo.vespa.model.content.ContentSearchCluster;
-import com.yahoo.vespa.model.content.DistributionBitCalculator;
 import com.yahoo.vespa.model.content.DistributorCluster;
 import com.yahoo.vespa.model.content.GlobalDistributionValidator;
 import com.yahoo.vespa.model.content.IndexedHierarchicDistributionValidator;
 import com.yahoo.vespa.model.content.Redundancy;
 import com.yahoo.vespa.model.content.ReservedDocumentTypeNameValidator;
 import com.yahoo.vespa.model.content.StorageGroup;
+import com.yahoo.vespa.model.content.StorageNode;
 import com.yahoo.vespa.model.content.engines.PersistenceEngine;
 import com.yahoo.vespa.model.content.engines.ProtonEngine;
 import com.yahoo.vespa.model.content.storagecluster.StorageCluster;
@@ -64,6 +65,7 @@ import java.util.Set;
 import java.util.TreeMap;
 import java.util.logging.Level;
 
+import static com.yahoo.vespa.model.content.DistributionBitCalculator.getDistributionBits;
 import static java.util.logging.Level.WARNING;
 
 /**
@@ -95,6 +97,7 @@ public class ContentCluster extends TreeConfigProducer<AnyConfigProducer> implem
     private final String clusterId;
     private Integer maxNodesPerMerge;
     private final Zone zone;
+    private final Optional<Integer> distributionBitsInPreviousModel;
 
     public enum DistributionMode { LEGACY, STRICT, LOOSE }
     private DistributionMode distributionMode;
@@ -121,7 +124,7 @@ public class ContentCluster extends TreeConfigProducer<AnyConfigProducer> implem
             String clusterId = getClusterId(contentElement);
             ContentCluster c = new ContentCluster(context.getParentProducer(), clusterId, documentDefinitions,
                                                   globallyDistributedDocuments, routingSelection,
-                                                  deployState.zone(), deployState.isHosted());
+                                                  deployState);
             var resourceLimits = new ClusterResourceLimits.Builder(stateIsHosted(deployState),
                                                                    deployState.featureFlags().resourceLimitDisk(),
                                                                    deployState.featureFlags().resourceLimitMemory())
@@ -137,6 +140,7 @@ public class ContentCluster extends TreeConfigProducer<AnyConfigProducer> implem
             c.rootGroup = new StorageGroup.Builder(contentElement, context).buildRootGroup(deployState, c, c.search.isStreaming());
             c.clusterControllerConfig = createClusterControllerConfig(contentElement, deployState, c, resourceLimits);
             validateThatGroupSiblingsAreUnique(c.clusterId, c.rootGroup);
+            warnIfDistributionKeyRangeIsSuboptimal(c.clusterId, c.rootGroup, deployState);
             c.search.handleRedundancy(c.redundancy);
             setupSearchCluster(c.search, contentElement, deployState.getDeployLogger());
 
@@ -247,7 +251,7 @@ public class ContentCluster extends TreeConfigProducer<AnyConfigProducer> implem
             for (ContainerModel containerModel : containers) {
                 Optional<String> hostClusterId = containerModel.getCluster().getHostClusterId();
                 if (hostClusterId.isPresent() && hostClusterId.get().equals(clusterId) && containerModel.getCluster().getMemoryPercentage().isPresent()) {
-                    return containerModel.getCluster().getMemoryPercentage().get().percentage() * 0.01;
+                    return containerModel.getCluster().getMemoryPercentage().get().ofContainerAvailable() * 0.01;
                 }
             }
             return 0.0;
@@ -272,6 +276,38 @@ public class ContentCluster extends TreeConfigProducer<AnyConfigProducer> implem
             validateGroupSiblings(cluster, group);
             for (StorageGroup g : group.getSubgroups()) {
                 validateThatGroupSiblingsAreUnique(cluster, g);
+            }
+        }
+
+        private static class HighestDistributionKeyAggregator {
+            public int nodeCount = 0;
+            public int highestNodeDistributionKey = 0;
+
+            void aggregateNodeStats(StorageGroup group) {
+                for (StorageNode n : group.getNodes()) {
+                    nodeCount++;
+                    highestNodeDistributionKey = Math.max(highestNodeDistributionKey, n.getDistributionKey());
+                }
+                for (StorageGroup g : group.getSubgroups()) {
+                    aggregateNodeStats(g);
+                }
+            }
+        }
+
+        private void warnIfDistributionKeyRangeIsSuboptimal(String clusterId, StorageGroup rootGroup, DeployState deployState) {
+            if (rootGroup == null) {
+                return; // Unit testing case
+            }
+            var aggr = new HighestDistributionKeyAggregator();
+            aggr.aggregateNodeStats(rootGroup);
+            int warnThreshold = 100; // ... Not scientifically chosen
+            if (!deployState.isHosted() && (aggr.highestNodeDistributionKey - aggr.nodeCount) >= warnThreshold) {
+                deployState.getDeployLogger().logApplicationPackage(WARNING,
+                        ("Content cluster '%s' has %d node(s), but the highest distribution key is %d. " +
+                         "Having much higher distribution keys than the number of nodes is not recommended, " +
+                         "as it may negatively affect performance. " +
+                         "See https://docs.vespa.ai/en/reference/services-content.html#node")
+                        .formatted(clusterId, aggr.nodeCount, aggr.highestNodeDistributionKey));
             }
         }
 
@@ -393,14 +429,15 @@ public class ContentCluster extends TreeConfigProducer<AnyConfigProducer> implem
     private ContentCluster(TreeConfigProducer<?> parent, String clusterId,
                            Map<String, NewDocumentType> documentDefinitions,
                            Set<NewDocumentType> globallyDistributedDocuments,
-                           String routingSelection, Zone zone, boolean isHosted) {
+                           String routingSelection, DeployState deployState) {
         super(parent, clusterId);
-        this.isHosted = isHosted;
+        this.isHosted = deployState.isHosted();
         this.clusterId = clusterId;
         this.documentDefinitions = documentDefinitions;
         this.globallyDistributedDocuments = globallyDistributedDocuments;
         this.documentSelection = routingSelection;
-        this.zone = zone;
+        this.zone = deployState.zone();
+        this.distributionBitsInPreviousModel = distributionBitsInPreviousModel(deployState, clusterId);
     }
 
     public ClusterSpec.Id id() { return ClusterSpec.Id.from(clusterId); }
@@ -437,6 +474,10 @@ public class ContentCluster extends TreeConfigProducer<AnyConfigProducer> implem
     public final ContentSearchCluster getSearch() { return search; }
 
     public Redundancy getRedundancy() { return redundancy; }
+
+    public int groupSize() {
+        return getNodeCount() / getRootGroup().getNumberOfLeafGroups();
+    }
 
     public ContentCluster setRedundancy(Redundancy redundancy) {
         this.redundancy = redundancy;
@@ -507,14 +548,21 @@ public class ContentCluster extends TreeConfigProducer<AnyConfigProducer> implem
      * in config and not remove it again if they reduce the node count.
      */
     public int distributionBits() {
+        int distributionBits;
         if (zoneEnvImplies16DistributionBits() && ! zone.equals(Zone.defaultZone())) {
-            return 16;
+            distributionBits = 16;
         }
         else { // hosted test zone, or self-hosted system
             // hosted test zones: have few nodes and use visiting in tests: This is slow with 16 bits (too many buckets)
             // self-hosted systems: should probably default to 16 bits, but the transition may cause problems
-            return DistributionBitCalculator.getDistributionBits(getNodeCountPerGroup(), getDistributionMode());
+            distributionBits = getDistributionBits(getNodeCountPerGroup(), getDistributionMode());
         }
+
+        // Avoid number of distribution bits being reduced
+        if (distributionBitsInPreviousModel.isPresent() && distributionBitsInPreviousModel.get() > distributionBits)
+            return distributionBitsInPreviousModel.get();
+        else
+            return distributionBits;
     }
 
     private boolean zoneEnvImplies16DistributionBits() {
@@ -664,6 +712,12 @@ public class ContentCluster extends TreeConfigProducer<AnyConfigProducer> implem
     @Override
     public String toString() {
         return "content cluster '" + clusterId + "'";
+    }
+
+    private static Optional<Integer> distributionBitsInPreviousModel(DeployState deployState, String clusterId) {
+        return deployState.getPreviousModel()
+                .map(model -> ((VespaModel) model).getContentClusters().get(clusterId))
+                .map(ContentCluster::distributionBits);
     }
 
 }

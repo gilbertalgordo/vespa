@@ -2,17 +2,17 @@
 
 #pragma once
 
-#include <vespa/vespalib/stllike/string.h>
 #include <vespa/vespalib/util/compressionconfig.h>
 #include <vespa/vespalib/util/memory.h>
-#include <vector>
 #include <atomic>
+#include <string>
+#include <vector>
 
 class FNET_DataBuffer;
 
 namespace search::fs4transport {
 
-using vespalib::string;
+using std::string;
 
 class FS4PersistentPacketStreamer {
     using CompressionConfig = vespalib::compression::CompressionConfig;
@@ -44,10 +44,10 @@ private:
     using KeyValueVector = std::vector<Entry>;
 
     KeyValueVector   _entries;
-    vespalib::string _name;
-    vespalib::string _backing;
+    std::string _name;
+    std::string _backing;
     const char * c_str(size_t sz) const { return _backing.c_str() + sz; }
-    void set(StringRef & e, vespalib::stringref s);
+    void set(StringRef & e, std::string_view s);
     void allocEntries(uint32_t cnt);
 public:
     FS4Properties(FS4Properties &&) noexcept;
@@ -58,28 +58,28 @@ public:
     FS4Properties();
     ~FS4Properties();
     void setName(const char *name, uint32_t nameSize) { _name.assign(name, nameSize); }
-    void setName(vespalib::stringref val) {
+    void setName(std::string_view val) {
         setName(val.data(), val.size());
     }
     void setKey(uint32_t entry, const char *key, uint32_t keySize);
-    void setKey(uint32_t entry, vespalib::stringref val) {
+    void setKey(uint32_t entry, std::string_view val) {
         setKey(entry, val.data(), val.size());
     }
     void setValue(uint32_t entry, const char *value, uint32_t valueSize);
-    void setValue(uint32_t entry, vespalib::stringref val) {
+    void setValue(uint32_t entry, std::string_view val) {
         setValue(entry, val.data(), val.size());
     }
     uint32_t size() const noexcept { return _entries.size(); }
-    const vespalib::string & name() const noexcept { return _name; }
-    vespalib::stringref key(uint32_t entry) const noexcept;
-    vespalib::stringref value(uint32_t entry) const noexcept;
+    const std::string & name() const noexcept { return _name; }
+    std::string_view key(uint32_t entry) const noexcept;
+    std::string_view value(uint32_t entry) const noexcept;
 
     // sub-packet methods below
     uint32_t getLength() const noexcept;
 
     void encode(FNET_DataBuffer &dst);
     bool decode(FNET_DataBuffer &src, uint32_t &len);
-    vespalib::string toString(uint32_t indent = 0) const;
+    std::string toString(uint32_t indent = 0) const;
 };
 
 }

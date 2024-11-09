@@ -2,19 +2,15 @@
 package com.yahoo.vespa.documentmodel;
 
 import com.yahoo.config.application.api.DeployLogger;
-import com.yahoo.schema.RankProfile;
 import com.yahoo.schema.Schema;
-import com.yahoo.searchlib.rankingexpression.Reference;
 
 import java.util.ArrayList;
-import java.util.Collections;
-import java.util.HashMap;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
-import java.util.logging.Level;
+
+import static java.util.logging.Level.WARNING;
 
 /**
  * A document summary definition - a list of summary fields.
@@ -25,7 +21,7 @@ public class DocumentSummary extends FieldView {
 
     private boolean fromDisk = false;
     private boolean omitSummaryFeatures = false;
-    private List<String> inherited = new ArrayList<>();
+    private final List<String> inherited = new ArrayList<>();
 
     private final Schema owner;
 
@@ -115,7 +111,7 @@ public class DocumentSummary extends FieldView {
 
     /** Returns the parent of this, if any */
     public List<DocumentSummary> inherited() {
-        return inherited.stream().map(name -> owner.getSummary(name)).toList();
+        return inherited.stream().map(owner::getSummary).toList();
     }
 
     @Override
@@ -126,13 +122,12 @@ public class DocumentSummary extends FieldView {
     public void validate(DeployLogger logger) {
         for (var inheritedName : inherited) {
             var inheritedSummary = owner.getSummary(inheritedName);
-            if (inheritedSummary == null) {
-                // TODO Vespa 9: Throw IllegalArgumentException instead
-                logger.logApplicationPackage(Level.WARNING,
-                                             this + " inherits '" + inheritedName + "' but this" + " is not present in " + owner);
-            }
+            // TODO: Throw when no one is doing this anymore
+            if (inheritedName.equals("default"))
+                logger.logApplicationPackage(WARNING, this + " inherits '" + inheritedName + "', which makes no sense. Remove this inheritance");
+            else if (inheritedSummary == null )
+                throw new IllegalArgumentException(this + " inherits '" + inheritedName + "', but this is not present in " + owner);
         }
-
     }
 
 }

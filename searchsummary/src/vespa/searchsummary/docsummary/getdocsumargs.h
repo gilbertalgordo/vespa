@@ -11,12 +11,12 @@ namespace search::docsummary {
 class GetDocsumArgs
 {
 private:
-    using FieldSet = vespalib::hash_set<vespalib::string>;
-    vespalib::string   _resultClassName;
+    using FieldSet = vespalib::hash_set<std::string>;
+    std::string   _resultClassName;
     bool               _dumpFeatures;
     bool               _locations_possible;
     std::vector<char>  _stackDump;
-    vespalib::string   _location;
+    std::string   _location;
     vespalib::duration _timeout;
     fef::Properties    _highlightTerms;
     FieldSet           _fields;
@@ -28,17 +28,17 @@ public:
 
     void initFromDocsumRequest(const search::engine::DocsumRequest &req);
 
-    void setResultClassName(vespalib::stringref name) { _resultClassName = name; }
+    void setResultClassName(std::string_view name) { _resultClassName = name; }
     void setStackDump(uint32_t stackDumpLen, const char *stackDump);
     void locations_possible(bool value) { _locations_possible = value; }
     bool locations_possible() const { return _locations_possible; }
-    const vespalib::string &getLocation() const { return _location; }
-    void setLocation(const vespalib::string & location) { _location = location; }
+    const std::string &getLocation() const { return _location; }
+    void setLocation(const std::string & location) { _location = location; }
     void setTimeout(vespalib::duration timeout) { _timeout = timeout; }
     vespalib::duration getTimeout() const { return _timeout; }
 
-    const vespalib::string & getResultClassName()      const { return _resultClassName; }
-    vespalib::stringref getStackDump() const {
+    const std::string & getResultClassName()      const { return _resultClassName; }
+    std::string_view getStackDump() const {
         return {_stackDump.data(), _stackDump.size()};
     }
 
@@ -49,7 +49,7 @@ public:
     void highlightTerms(fef::Properties & terms) { _highlightTerms = terms; }
     void set_fields(const FieldSet& fields_in) { _fields = fields_in; }
     const FieldSet& get_fields() const { return _fields; }
-    bool need_field(vespalib::stringref field) const;
+    bool need_field(std::string_view field) const;
 };
 
 }

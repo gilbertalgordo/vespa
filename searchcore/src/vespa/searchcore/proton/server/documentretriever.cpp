@@ -96,8 +96,8 @@ DocumentRetriever
     Field::Set::Builder attrBuilder;
     for (const Field* field : fields) {
         if ((field->getDataType().getId() == positionDataTypeId) || is_array_of_position_type(field->getDataType())) {
-            LOG(debug, "Field '%s' is a position field", field->getName().data());
-            const vespalib::string & zcurve_name = PositionDataType::getZCurveFieldName(field->getName());
+            LOG(debug, "Field '%s' is a position field", field->getName().c_str());
+            const std::string & zcurve_name = PositionDataType::getZCurveFieldName(field->getName());
             AttributeGuard::UP attr = attr_manager.getAttribute(zcurve_name);
             if (attr && attr->valid()) {
                 LOG(debug, "Field '%s' is a registered attribute field", zcurve_name.c_str());
@@ -106,7 +106,7 @@ DocumentRetriever
                 _areAllFieldsAttributes = false;
             }
         } else {
-            const vespalib::string &name = field->getName();
+            const std::string &name = field->getName();
             AttributeGuard::UP attr = attr_manager.getAttribute(name);
             if (attr && attr->valid()
                 && !_schema.isIndexField(field->getName())
@@ -202,9 +202,9 @@ fillInPositionFields(Document &doc, DocumentIdT lid, const DocumentRetriever::Po
 class PopulateVisitor : public search::IDocumentVisitor
 {
 public:
-    PopulateVisitor(const DocumentRetriever & retriever, search::IDocumentVisitor & visitor) :
-        _retriever(retriever),
-        _visitor(visitor)
+    PopulateVisitor(const DocumentRetriever & retriever, search::IDocumentVisitor & visitor) noexcept
+        : _retriever(retriever),
+          _visitor(visitor)
     { }
     void visit(uint32_t lid, document::Document::UP doc) override {
         if (doc) {

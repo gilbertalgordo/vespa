@@ -2,14 +2,14 @@
 vespa_define_module(
     DEPENDS
     vespalog
-    config_cloudconfig
+    vespa_config
     vespalib
-    fnet
-    document
-    slobrok
-    messagebus
-    configdefinitions
-    vdslib
+    vespa_fnet
+    vespa_document
+    vespa_slobrok
+    vespa_messagebus
+    vespa_configdefinitions
+    vespa_vdslib
 
     LIBS
     src/vespa/documentapi
@@ -18,7 +18,7 @@ vespa_define_module(
     src/vespa/documentapi/messagebus/policies
 
     TEST_DEPENDS
-    messagebus_messagebus-test
+    vespa_messagebus-test
 
     TESTS
     src/tests/messagebus

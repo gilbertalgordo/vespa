@@ -12,7 +12,7 @@ using document::DocumentUpdate;
 
 namespace search::bmcluster {
 
-StorageApiBmFeedHandlerBase::StorageApiBmFeedHandlerBase(const vespalib::string &base_name, const IBmDistribution &distribution, bool distributor)
+StorageApiBmFeedHandlerBase::StorageApiBmFeedHandlerBase(const std::string &base_name, const IBmDistribution &distribution, bool distributor)
     : _name(base_name + "(" + (distributor ? "distributor" : "service-layer") + ")"),
       _distribution(distribution),
       _distributor(distributor)
@@ -51,13 +51,13 @@ StorageApiBmFeedHandlerBase::remove(const document::Bucket& bucket, const Docume
 }
 
 void
-StorageApiBmFeedHandlerBase::get(const document::Bucket& bucket, vespalib::stringref field_set_string, const document::DocumentId& document_id, PendingTracker& tracker)
+StorageApiBmFeedHandlerBase::get(const document::Bucket& bucket, std::string_view field_set_string, const document::DocumentId& document_id, PendingTracker& tracker)
 {
     auto cmd = std::make_unique<storage::api::GetCommand>(bucket, document_id, field_set_string);
     send_cmd(std::move(cmd), tracker);
 }
 
-const vespalib::string&
+const std::string&
 StorageApiBmFeedHandlerBase::get_name() const
 {
     return _name;

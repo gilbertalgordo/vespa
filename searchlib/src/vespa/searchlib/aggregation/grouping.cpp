@@ -92,8 +92,11 @@ public:
     void execute(vespalib::Identifiable & obj) override {
         FS4Hit & hit = static_cast<FS4Hit &>(obj);
         document::GlobalId gid;
-        _metaStore.getGid(hit.getDocId(), gid);
-        hit.setGlobalId(gid);
+        if (_metaStore.getGidEvenIfMoved(hit.getDocId(), gid)) {
+            hit.setGlobalId(gid);
+        } else {
+            LOG(warning, "Missing globalid for grouping hit %u", hit.getDocId());
+        }
         LOG(debug, "GlobalIdConverter: lid(%u) -> gid(%s)", hit.getDocId(), hit.getGlobalId().toString().c_str());
     }
     bool check(const vespalib::Identifiable & obj) const override {
@@ -106,9 +109,15 @@ struct ResolveCurrentIndex : vespalib::ObjectOperation, vespalib::ObjectPredicat
     const CurrentIndexSetup &setup;
     ResolveCurrentIndex(const CurrentIndexSetup &setup_in) noexcept : setup(setup_in) {}
     void execute(vespalib::Identifiable &obj) override {
-        auto &attr = static_cast<AttributeNode &>(obj);
-        if (attr.getCurrentIndex() == nullptr) {
-            attr.setCurrentIndex(setup.resolve(attr.getAttributeName()));
+        if (obj.getClass().equal(AttributeNode::classId)) {
+            // Only resolve current index for actual attributes.
+            // Pseudo-attributes are allowed to satisfy the check
+            // before being ignored here to avoid looking at their
+            // children.
+            auto &attr = static_cast<AttributeNode &>(obj);
+            if (attr.getCurrentIndex() == nullptr) {
+                attr.setCurrentIndex(setup.resolve(attr.getAttributeName()));
+            }
         }
     }
     bool check(const vespalib::Identifiable &obj) const override {

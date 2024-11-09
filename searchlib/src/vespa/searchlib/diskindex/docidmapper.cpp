@@ -43,7 +43,7 @@ DocIdMapping::setup(uint32_t docIdLimit, const SelectorArray *selector, uint8_t 
 
 
 bool
-DocIdMapping::readDocIdLimit(const vespalib::string &mergedDir)
+DocIdMapping::readDocIdLimit(const std::string &mergedDir)
 {
     uint32_t docIdLimit = 0;
     if (!search::docsummary::DocumentSummary::readDocIdLimit(mergedDir, docIdLimit)) {
@@ -53,6 +53,14 @@ DocIdMapping::readDocIdLimit(const vespalib::string &mergedDir)
     return true;
 }
 
-
+std::span<const uint8_t>
+DocIdMapping::get_selector_view() const
+{
+    if (_selector != nullptr) {
+        return { _selector->data(), _selector->size()};
+    } else {
+        return {};
+    }
+}
 
 }

@@ -1,7 +1,6 @@
 // Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 //
 #include "blockingoperationstarter.h"
-#include "bucket_space_distribution_configs.h"
 #include "top_level_bucket_db_updater.h"
 #include "top_level_distributor.h"
 #include "distributor_bucket_space.h"
@@ -16,7 +15,6 @@
 #include "throttlingoperationstarter.h"
 #include <vespa/document/bucket/fixed_bucket_spaces.h>
 #include <vespa/storage/common/bucket_stripe_utils.h>
-#include <vespa/storage/common/global_bucket_space_distribution_converter.h>
 #include <vespa/storage/common/hostreporter/hostinfo.h>
 #include <vespa/storage/common/node_identity.h>
 #include <vespa/storage/common/nodestateupdater.h>
@@ -25,7 +23,9 @@
 #include <vespa/storageapi/message/persistence.h>
 #include <vespa/storageapi/message/visitor.h>
 #include <vespa/storageframework/generic/status/xmlstatusreporter.h>
+#include <vespa/vdslib/distribution/bucket_space_distribution_configs.h>
 #include <vespa/vdslib/distribution/distribution.h>
+#include <vespa/vdslib/distribution/global_bucket_space_distribution_converter.h>
 #include <vespa/vespalib/util/memoryusage.h>
 #include <algorithm>
 
@@ -50,6 +50,7 @@ TopLevelDistributor::TopLevelDistributor(DistributorComponentRegister& compReg,
       _comp_reg(compReg),
       _done_init_handler(done_init_handler),
       _done_initializing(false),
+      _cc_is_distribution_source_of_truth(false),
       _total_metrics(std::make_shared<DistributorTotalMetrics>(num_distributor_stripes)),
       _ideal_state_total_metrics(std::make_shared<IdealStateTotalMetrics>(num_distributor_stripes)),
       _messageSender(messageSender),
@@ -306,6 +307,12 @@ void
 TopLevelDistributor::storageDistributionChanged()
 {
     std::lock_guard guard(_distribution_mutex);
+    if (_cc_is_distribution_source_of_truth) {
+        LOG(debug, "Received changed distribution config %s, but ignoring it since we have received "
+                   "at least one config injection from the cluster controller",
+            _component.getDistribution()->toString().c_str());
+        return;
+    }
     if (!_distribution || (*_component.getDistribution() != *_distribution)) {
         LOG(debug, "Distribution changed to %s, must re-fetch bucket information",
             _component.getDistribution()->toString().c_str());
@@ -323,9 +330,44 @@ TopLevelDistributor::enable_next_distribution_if_changed()
     if (_next_distribution) {
         _distribution = _next_distribution;
         _next_distribution = std::shared_ptr<lib::Distribution>();
-        auto new_configs = BucketSpaceDistributionConfigs::from_default_distribution(_distribution);
+        auto new_configs = lib::BucketSpaceDistributionConfigs::from_default_distribution(_distribution);
         _bucket_db_updater->storage_distribution_changed(new_configs); // Transitively updates all stripes' configs
     }
+}
+
+bool
+TopLevelDistributor::receive_distribution_from_cluster_controller(std::shared_ptr<const lib::Distribution> distribution)
+{
+    std::lock_guard guard(_distribution_mutex);
+    LOG(debug, "Received distribution config '%s' from the cluster controller. Any subsequent "
+               "distribution configs that do NOT originate from the cluster controller will be ignored.",
+        distribution->toString().c_str());
+    // Signal that from now on we should explicitly ignore distribution config that is not received
+    // from the cluster controller. Otherwise, we'd introduce at least as many race conditions as
+    // we'd attempt to eliminate in the first place.
+    _cc_is_distribution_source_of_truth = true;
+    const bool changed = !_distribution || (*distribution != *_distribution);
+    _distribution = std::move(distribution);
+    return changed;
+}
+
+bool
+TopLevelDistributor::cluster_controller_is_distribution_source_of_truth() const noexcept
+{
+    std::lock_guard guard(_distribution_mutex);
+    return _cc_is_distribution_source_of_truth;
+}
+
+void
+TopLevelDistributor::revert_distribution_source_of_truth_to_node_internal_config()
+{
+    {
+        std::lock_guard guard(_distribution_mutex);
+        LOG(debug, "Reverting to use node-internal config as distribution config source of truth");
+        _cc_is_distribution_source_of_truth = false;
+    }
+    // Re-sync internal distribution config with that received from the config server
+    storageDistributionChanged();
 }
 
 void
@@ -334,7 +376,7 @@ TopLevelDistributor::propagate_default_distribution_thread_unsafe(
 {
     // Should only be called at ctor time, at which point the pool is not yet running.
     assert(_stripe_pool.stripe_count() == 0);
-    auto new_configs = BucketSpaceDistributionConfigs::from_default_distribution(std::move(distribution));
+    auto new_configs = lib::BucketSpaceDistributionConfigs::from_default_distribution(std::move(distribution));
     for (auto& stripe : _stripes) {
         stripe->update_distribution_config(new_configs);
     }
@@ -562,7 +604,7 @@ TopLevelDistributor::work_was_done() const noexcept
     return !_tickResult.waitWanted();
 }
 
-vespalib::string
+std::string
 TopLevelDistributor::getReportContentType(const framework::HttpUrlPath& path) const
 {
     if (path.hasAttribute("page")) {

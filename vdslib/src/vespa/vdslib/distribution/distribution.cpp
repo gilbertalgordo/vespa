@@ -52,7 +52,7 @@ Distribution::Distribution()
     vespalib::asciistream ost;
     config::AsciiConfigWriter writer(ost);
     writer.write(config.get());
-    _serialized = ost.str();
+    _serialized = ost.view();
     configure(config.get());
 }
 
@@ -78,6 +78,11 @@ Distribution::ConfigWrapper::ConfigWrapper(std::unique_ptr<DistributionConfig> c
 
 Distribution::ConfigWrapper::~ConfigWrapper() = default;
 
+std::unique_ptr<Distribution::DistributionConfig>
+Distribution::ConfigWrapper::steal() noexcept {
+    return std::move(_cfg);
+}
+
 Distribution::Distribution(const ConfigWrapper & config) :
     Distribution(config.get())
 { }
@@ -95,11 +100,11 @@ Distribution::Distribution(const vespa::config::content::StorDistributionConfig 
     vespalib::asciistream ost;
     config::AsciiConfigWriter writer(ost);
     writer.write(config);
-    _serialized = ost.str();
+    _serialized = ost.view();
     configure(config);
 }
 
-Distribution::Distribution(const vespalib::string& serialized)
+Distribution::Distribution(const std::string& serialized)
     : _distributionBitMasks(getDistributionBitMasks()),
       _nodeGraph(),
       _node2Group(),
@@ -206,7 +211,7 @@ Distribution::getStorageSeed(const document::BucketId& bucket, const ClusterStat
 
 void
 Distribution::print(std::ostream& out, bool, const std::string&) const {
-    out << serialize();
+    out << serialized();
 }
 
 namespace {
@@ -367,7 +372,7 @@ Distribution::getIdealNodes(const NodeType& nodeType, const ClusterState& cluste
         ost << "Cannot get ideal state for bucket " << bucket << " using "
             << bucket.getUsedBits() << " bits when cluster uses "
             << clusterState.getDistributionBitCount() << " distribution bits.";
-        throw TooFewBucketBitsInUseException(ost.str(), VESPA_STRLOC);
+        throw TooFewBucketBitsInUseException(ost.view(), VESPA_STRLOC);
     }
     // Find what hierarchical groups we should have copies in
     std::vector<ResultGroup> _groupDistribution;
@@ -381,7 +386,7 @@ Distribution::getIdealNodes(const NodeType& nodeType, const ClusterState& cluste
         if (group == nullptr) {
             vespalib::asciistream ss;
             ss << "There is no legal distributor target in state with version " << clusterState.getVersion();
-            throw NoDistributorsAvailableException(ss.str(), VESPA_STRLOC);
+            throw NoDistributorsAvailableException(ss.view(), VESPA_STRLOC);
         }
         _groupDistribution.emplace_back(*group, 1);
     }
@@ -466,13 +471,13 @@ Distribution::getIdealDistributorNode(const ClusterState& state, const document:
     if (nodes.empty()) {
         vespalib::asciistream ss;
         ss << "There is no legal distributor target in state with version " << state.getVersion();
-        throw NoDistributorsAvailableException(ss.str(), VESPA_STRLOC);
+        throw NoDistributorsAvailableException(ss.view(), VESPA_STRLOC);
     }
     return nodes[0];
 }
 
 std::vector<Distribution::IndexList>
-Distribution::splitNodesIntoLeafGroups(vespalib::ConstArrayRef<uint16_t> nodeList) const
+Distribution::splitNodesIntoLeafGroups(std::span<const uint16_t> nodeList) const
 {
     vespalib::hash_map<uint16_t, IndexList> nodes(nodeList.size());
     for (auto node : nodeList) {

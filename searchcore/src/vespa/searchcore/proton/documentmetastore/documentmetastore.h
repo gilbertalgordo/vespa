@@ -41,7 +41,7 @@ public:
     using GlobalId = documentmetastore::IStore::GlobalId;
     using BucketId = documentmetastore::IStore::BucketId;
     using Timestamp = documentmetastore::IStore::Timestamp;
-    using MetaDataView = vespalib::ConstArrayRef<RawDocumentMetaData>;
+    using MetaDataView = std::span<const RawDocumentMetaData>;
     using UnboundMetaDataView = const RawDocumentMetaData *;
 
     // If using proton::DocumentMetaStore directly, the
@@ -93,7 +93,7 @@ private:
     // Implements AttributeVector
     void before_inc_generation(generation_t current_gen) override;
     void reclaim_memory(generation_t oldest_used_gen) override;
-    std::unique_ptr<search::AttributeSaver> onInitSave(vespalib::stringref fileName) override;
+    std::unique_ptr<search::AttributeSaver> onInitSave(std::string_view fileName) override;
     bool onLoad(vespalib::Executor *executor) override;
 
     template <typename TreeView>
@@ -147,9 +147,9 @@ public:
         sizeof(Timestamp);
 
     explicit DocumentMetaStore(BucketDBOwnerSP bucketDB);
-    DocumentMetaStore(BucketDBOwnerSP bucketDB, const vespalib::string & name);
+    DocumentMetaStore(BucketDBOwnerSP bucketDB, const std::string & name);
     DocumentMetaStore(BucketDBOwnerSP bucketDB,
-                      const vespalib::string & name,
+                      const std::string & name,
                       const search::GrowStrategy & grow,
                       SubDbType subDbType = SubDbType::READY);
     ~DocumentMetaStore() override;

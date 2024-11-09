@@ -2,9 +2,9 @@
 #pragma once
 
 #include "private_key.h"
-#include <vespa/vespalib/stllike/string.h>
 #include <chrono>
 #include <memory>
+#include <string>
 #include <vector>
 
 namespace vespalib::crypto {
@@ -26,17 +26,17 @@ class X509Certificate {
 public:
     virtual ~X509Certificate() = default;
 
-    virtual vespalib::string to_pem() const = 0;
+    virtual std::string to_pem() const = 0;
 
     struct DistinguishedName {
-        vespalib::string _country;             // "C"
-        vespalib::string _state;               // "ST"
-        vespalib::string _locality;            // "L"
-        vespalib::string _organization;        // "O"
-        vespalib::string _organizational_unit; // "OU"
+        std::string _country;             // "C"
+        std::string _state;               // "ST"
+        std::string _locality;            // "L"
+        std::string _organization;        // "O"
+        std::string _organizational_unit; // "OU"
         // Should only be 1 entry in normal certs, but X509 supports more and
         // we want to be able to test this edge case.
-        std::vector<vespalib::string> _common_names; // "CN"
+        std::vector<std::string> _common_names; // "CN"
 
         DistinguishedName() noexcept;
         DistinguishedName(const DistinguishedName&);
@@ -46,15 +46,15 @@ public:
         ~DistinguishedName();
 
         // TODO could add rvalue overloads as well...
-        DistinguishedName& country(vespalib::stringref c)      { _country = c; return *this; }
-        DistinguishedName& state(vespalib::stringref st)       { _state = st; return *this; }
-        DistinguishedName& locality(vespalib::stringref l)     { _locality = l; return *this; }
-        DistinguishedName& organization(vespalib::stringref o) { _organization = o; return *this; }
-        DistinguishedName& organizational_unit(vespalib::stringref ou) {
+        DistinguishedName& country(std::string_view c)      { _country = c; return *this; }
+        DistinguishedName& state(std::string_view st)       { _state = st; return *this; }
+        DistinguishedName& locality(std::string_view l)     { _locality = l; return *this; }
+        DistinguishedName& organization(std::string_view o) { _organization = o; return *this; }
+        DistinguishedName& organizational_unit(std::string_view ou) {
             _organizational_unit = ou;
             return *this;
         }
-        DistinguishedName& add_common_name(vespalib::stringref cn) {
+        DistinguishedName& add_common_name(std::string_view cn) {
             _common_names.emplace_back(cn);
             return *this;
         }
@@ -62,7 +62,7 @@ public:
 
     struct SubjectInfo {
         DistinguishedName dn;
-        std::vector<vespalib::string> subject_alt_names;
+        std::vector<std::string> subject_alt_names;
 
         SubjectInfo() noexcept;
         explicit SubjectInfo(DistinguishedName dn_) noexcept;
@@ -72,7 +72,7 @@ public:
         SubjectInfo & operator=(SubjectInfo &&) noexcept;
         ~SubjectInfo();
 
-        SubjectInfo& add_subject_alt_name(vespalib::string san) {
+        SubjectInfo& add_subject_alt_name(std::string san) {
             subject_alt_names.emplace_back(std::move(san));
             return *this;
         }

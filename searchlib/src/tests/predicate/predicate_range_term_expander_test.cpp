@@ -1,16 +1,14 @@
 // Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 // Unit tests for predicate_range_term_expander.
 
-#include <vespa/log/log.h>
-LOG_SETUP("predicate_range_term_expander_test");
-
 #include <vespa/searchlib/predicate/predicate_range_term_expander.h>
 #include <vespa/vespalib/btree/btreestore.hpp>
-#include <vespa/vespalib/testkit/testapp.h>
+#include <vespa/vespalib/testkit/test_kit.h>
+#include <string>
 
 using search::predicate::PredicateRangeTermExpander;
 using std::vector;
-using vespalib::string;
+using std::string;
 
 namespace {
 
@@ -22,13 +20,13 @@ struct MyRangeHandler {
     ~MyRangeHandler() {
         EXPECT_EQUAL(expected_labels.size(), i);
     }
-    void handleRange(const string &label) {
-        TEST_STATE(("handleRange: " + label).c_str());
+    void handleRange(std::string_view label) {
+        TEST_STATE(("handleRange: " + std::string(label)).c_str());
         ASSERT_TRUE(i < expected_labels.size());
         EXPECT_EQUAL(expected_labels[i++], label);
     }
-    void handleEdge(const string &label, uint64_t value) {
-        TEST_STATE(("handleEdge: " + label).c_str());
+    void handleEdge(std::string_view label, uint64_t value) {
+        TEST_STATE(("handleEdge: " + std::string(label)).c_str());
         EXPECT_EQUAL(expected_edge_label, label);
         EXPECT_EQUAL(expected_edge_value, value);
     }
@@ -328,5 +326,3 @@ TEST("require that search close to max uneven upper bound is sensible") {
 }
 
 }  // namespace
-
-TEST_MAIN() { TEST_RUN_ALL(); }

@@ -12,18 +12,18 @@ using search::util::LogUtil;
 namespace searchcorespi::index {
 
 void
-EventLogger::diskIndexLoadStart(const vespalib::string &indexDir)
+EventLogger::diskIndexLoadStart(const std::string &indexDir)
 {
     JSONStringer jstr;
     jstr.beginObject();
     jstr.appendKey("input");
     LogUtil::logDir(jstr, indexDir, 6);
     jstr.endObject();
-    EV_STATE("diskindex.load.start", jstr.toString().data());
+    EV_STATE("diskindex.load.start", jstr.str().c_str() );
 }
 
 void
-EventLogger::diskIndexLoadComplete(const vespalib::string &indexDir,
+EventLogger::diskIndexLoadComplete(const std::string &indexDir,
                                    int64_t elapsedTimeMs)
 {
     JSONStringer jstr;
@@ -32,12 +32,12 @@ EventLogger::diskIndexLoadComplete(const vespalib::string &indexDir,
     jstr.appendKey("input");
     LogUtil::logDir(jstr, indexDir, 6);
     jstr.endObject();
-    EV_STATE("diskindex.load.complete", jstr.toString().data());
+    EV_STATE("diskindex.load.complete", jstr.str().c_str() );
 }
 
 void
-EventLogger::diskFusionStart(const std::vector<vespalib::string> &sources,
-                             const vespalib::string &fusionDir)
+EventLogger::diskFusionStart(const std::vector<std::string> &sources,
+                             const std::string &fusionDir)
 {
     JSONStringer jstr;
     jstr.beginObject();
@@ -50,11 +50,11 @@ EventLogger::diskFusionStart(const std::vector<vespalib::string> &sources,
     jstr.appendKey("output");
     LogUtil::logDir(jstr, fusionDir, 6);
     jstr.endObject();
-    EV_STATE("fusion.start", jstr.toString().data());
+    EV_STATE("fusion.start", jstr.str().c_str() );
 }
 
 void
-EventLogger::diskFusionComplete(const vespalib::string &fusionDir,
+EventLogger::diskFusionComplete(const std::string &fusionDir,
                                 int64_t elapsedTimeMs)
 {
     JSONStringer jstr;
@@ -63,7 +63,7 @@ EventLogger::diskFusionComplete(const vespalib::string &fusionDir,
     jstr.appendKey("output");
     LogUtil::logDir(jstr, fusionDir, 6);
     jstr.endObject();
-    EV_STATE("fusion.complete", jstr.toString().data());
+    EV_STATE("fusion.complete", jstr.str().c_str() );
 }
 
 }

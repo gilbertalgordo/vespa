@@ -16,7 +16,7 @@ namespace search::queryeval::test {
 
 constexpr search::queryeval::Source default_source = 0;
 
-DiskIndexBuilder::DiskIndexBuilder(const Schema& schema, vespalib::stringref index_dir, uint32_t docid_limit, uint64_t num_words)
+DiskIndexBuilder::DiskIndexBuilder(const Schema& schema, std::string_view index_dir, uint32_t docid_limit, uint64_t num_words)
     : _schema(schema),
       _field_length_inspector(),
       _tune_file_indexing(),
@@ -35,7 +35,7 @@ DiskIndexBuilder::DiskIndexBuilder(const Schema& schema, vespalib::stringref ind
 }
 
 void
-DiskIndexBuilder::add_word(vespalib::stringref word, search::BitVector& docids, uint32_t num_occs)
+DiskIndexBuilder::add_word(std::string_view word, search::BitVector& docids, uint32_t num_occs)
 {
     DocIdAndPosOccFeatures diaf;
     diaf.word_positions().reserve(num_occs);
@@ -61,7 +61,7 @@ private:
 public:
     DiskIndexSearchable(std::unique_ptr<DiskIndex> index) : _index(std::move(index)) {}
     ~DiskIndexSearchable() {
-        vespalib::string index_dir = _index->getIndexDir();
+        std::string index_dir = _index->getIndexDir();
         _index.reset();
         std::filesystem::remove_all(std::filesystem::path(index_dir));
     }
@@ -79,7 +79,7 @@ DiskIndexBuilder::build()
 {
     _field_builder.reset();
     _selector.extractSaveInfo(_index_dir + "/selector")->save(_tune_file_attributes, _file_header_ctx);
-    auto index = std::make_unique<DiskIndex>(_index_dir);
+    auto index = std::make_unique<DiskIndex>(_index_dir, std::shared_ptr<search::diskindex::IPostingListCache>());
     bool setup = index->setup(_tune_file_search);
     assert(setup);
     return std::make_unique<DiskIndexSearchable>(std::move(index));

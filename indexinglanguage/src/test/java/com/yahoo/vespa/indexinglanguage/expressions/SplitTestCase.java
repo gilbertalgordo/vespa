@@ -37,17 +37,17 @@ public class SplitTestCase {
     public void requireThatExpressionCanBeVerified() {
         Expression exp = new SplitExpression(";");
         assertVerify(DataType.STRING, exp, DataType.getArray(DataType.STRING));
-        assertVerifyThrows(null, exp, "Expected string input, but no input is specified");
-        assertVerifyThrows(DataType.INT, exp, "Expected string input, got int");
+        assertVerifyThrows("Invalid expression 'split \";\"': Expected string input, but no input is specified", null, exp);
+        assertVerifyThrows("Invalid expression 'split \";\"': Expected string input, got int", DataType.INT, exp);
     }
 
     @Test
     public void requireThatValueIsSplit() {
         ExecutionContext ctx = new ExecutionContext(new SimpleTestAdapter());
-        ctx.setValue(new StringFieldValue("6;9"));
+        ctx.setCurrentValue(new StringFieldValue("6;9"));
         new SplitExpression(";").execute(ctx);
 
-        FieldValue val = ctx.getValue();
+        FieldValue val = ctx.getCurrentValue();
         assertTrue(val.getDataType().equals(DataType.getArray(DataType.STRING)));
         assertTrue(val instanceof Array);
 
@@ -61,16 +61,16 @@ public class SplitTestCase {
         ExecutionContext ctx = new ExecutionContext(new SimpleTestAdapter());
         new SplitExpression(";").execute(ctx);
 
-        assertNull(ctx.getValue());
+        assertNull(ctx.getCurrentValue());
     }
 
     @Test
     public void requireThatEmptyInputProducesEmptyArray() {
         ExecutionContext ctx = new ExecutionContext(new SimpleTestAdapter());
-        ctx.setValue(new StringFieldValue(""));
+        ctx.setCurrentValue(new StringFieldValue(""));
         new SplitExpression(";").execute(ctx);
 
-        FieldValue val = ctx.getValue();
+        FieldValue val = ctx.getCurrentValue();
         assertTrue(val.getDataType().equals(DataType.getArray(DataType.STRING)));
         assertTrue(val instanceof Array);
         assertEquals(0, ((Array)val).size());

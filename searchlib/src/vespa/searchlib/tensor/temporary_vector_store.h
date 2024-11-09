@@ -2,30 +2,52 @@
 
 #pragma once
 
-#include <memory>
-#include <vespa/eval/eval/cell_type.h>
 #include <vespa/eval/eval/typed_cells.h>
-#include <vespa/vespalib/util/arrayref.h>
 
 namespace search::tensor {
 
-/** helper class - temporary storage of possibly-converted vector cells */
-template <typename FloatType>
+/**
+ * Helper class containing temporary memory storage for possibly converted vector cells.
+ */
+template <typename FloatTypeT>
 class TemporaryVectorStore {
-private:
-    std::vector<FloatType> _tmpSpace;
-    vespalib::ConstArrayRef<FloatType> internal_convert(vespalib::eval::TypedCells cells, size_t offset);
 public:
-    TemporaryVectorStore(size_t vectorSize) : _tmpSpace(vectorSize * 2) {}
-    vespalib::ConstArrayRef<FloatType> storeLhs(vespalib::eval::TypedCells cells) {
+    using FloatType = FloatTypeT;
+private:
+    using TypedCells = vespalib::eval::TypedCells;
+    std::vector<FloatType> _tmpSpace;
+    std::span<const FloatType> internal_convert(TypedCells cells, size_t offset) noexcept;
+public:
+    explicit TemporaryVectorStore(size_t vectorSize) noexcept : _tmpSpace(vectorSize * 2) {}
+    std::span<const FloatType> storeLhs(TypedCells cells) noexcept {
         return internal_convert(cells, 0);
     }
-    vespalib::ConstArrayRef<FloatType> convertRhs(vespalib::eval::TypedCells cells) {
+    std::span<const FloatType> convertRhs(TypedCells cells) {
         if (vespalib::eval::get_cell_type<FloatType>() == cells.type) [[likely]] {
             return cells.unsafe_typify<FloatType>();
         } else {
             return internal_convert(cells, cells.size);
         }
+    }
+};
+
+/**
+ * Helper class used when TypedCells vector memory is just referenced,
+ * and used directly in calculations without any transforms.
+ */
+template <typename FloatTypeT>
+class ReferenceVectorStore {
+public:
+    using FloatType = FloatTypeT;
+private:
+    using TypedCells = vespalib::eval::TypedCells;
+public:
+    explicit ReferenceVectorStore(size_t vector_size) noexcept { (void) vector_size; }
+    std::span<const FloatType> storeLhs(TypedCells cells) noexcept {
+        return cells.unsafe_typify<FloatType>();
+    }
+    std::span<const FloatType> convertRhs(TypedCells cells) noexcept {
+        return cells.unsafe_typify<FloatType>();
     }
 };
 

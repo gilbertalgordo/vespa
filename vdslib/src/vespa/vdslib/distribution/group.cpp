@@ -11,7 +11,7 @@
 
 namespace storage::lib {
 
-Group::Group(uint16_t index, vespalib::stringref name) noexcept
+Group::Group(uint16_t index, std::string_view name) noexcept
     : _name(name),
       _index(index),
       _distributionHash(0),
@@ -21,7 +21,7 @@ Group::Group(uint16_t index, vespalib::stringref name) noexcept
 {
 }
 
-Group::Group(uint16_t index, vespalib::stringref name,
+Group::Group(uint16_t index, std::string_view name,
              const Distribution& d, uint16_t redundancy)
     : _name(name),
       _index(index),
@@ -124,7 +124,7 @@ Group::setCapacity(vespalib::Double capacity)
         vespalib::asciistream ost;
         ost << "Illegal capacity '" << capacity << "'. Capacity "
             "must be a positive floating point number";
-        throw vespalib::IllegalArgumentException(ost.str(), VESPA_STRLOC);
+        throw vespalib::IllegalArgumentException(ost.view(), VESPA_STRLOC);
     }
     _capacity = capacity;
 }
@@ -189,7 +189,7 @@ Group::getConfigHash(vespalib::asciistream& out) const
     out << ')';
 }
 
-vespalib::string
+std::string
 Group::getDistributionConfigHash() const {
     vespalib::asciistream ost;
     getConfigHash(ost);

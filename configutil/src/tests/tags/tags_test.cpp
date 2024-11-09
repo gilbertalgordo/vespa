@@ -1,12 +1,12 @@
 // Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
-#include <vespa/vespalib/testkit/testapp.h>
+#include <vespa/vespalib/testkit/test_kit.h>
 #include <lib/tags.h>
 
 using namespace configdefinitions;
 
 TEST("upcase") {
-    EXPECT_EQUAL(vespalib::string("A"), upcase(vespalib::string("a")));
-    EXPECT_EQUAL(vespalib::string("A"), upcase(vespalib::string("A")));
+    EXPECT_EQUAL(std::string("A"), upcase(std::string("a")));
+    EXPECT_EQUAL(std::string("A"), upcase(std::string("A")));
 }
 
 TEST("tagsContain") {

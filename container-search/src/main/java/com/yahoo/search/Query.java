@@ -384,9 +384,11 @@ public class Query extends com.yahoo.processing.Request implements Cloneable {
             // We need special handling for "select" because it can be both the prefix of the nested JSON select
             // parameters, and a plain select expression. The latter will be disallowed by query profile types
             // since they contain the former.
-            String select = requestMap.get(Select.SELECT);
+            Object select = requestMap.get(Select.SELECT);
+            if (select == null)
+                select = queryProfile.get(Select.SELECT, requestMap);
             if (select != null)
-                properties().set(Select.SELECT, select);
+                properties().set(Select.SELECT, select.toString());
         }
         else { // bypass these complications if there is no query profile to get values from and validate against
             properties().
@@ -605,7 +607,7 @@ public class Query extends com.yahoo.processing.Request implements Cloneable {
      */
     public void setHits(int hits) {
         if (hits < 0)
-            throw new IllegalArgumentException("Must be a positive number");
+            throw new IllegalArgumentException("'hits' must be a positive number, not " + hits);
         this.hits = hits;
     }
 
@@ -614,12 +616,12 @@ public class Query extends com.yahoo.processing.Request implements Cloneable {
      */
     public void setOffset(int offset) {
         if (offset < 0)
-            throw new IllegalArgumentException("Must be a positive number");
+            throw new IllegalArgumentException("'offset' must be a positive number, not " + offset);
         this.offset = offset;
     }
 
     /** Convenience method to set both the offset and the number of hits to return */
-    public void setWindow(int offset,int hits) {
+    public void setWindow(int offset, int hits) {
         setOffset(offset);
         setHits(hits);
     }
@@ -772,7 +774,7 @@ public class Query extends com.yahoo.processing.Request implements Cloneable {
 
     private String serializeSortingAndLimits(boolean includeHitsAndOffset) {
         StringBuilder insert = new StringBuilder();
-        if (getRanking().getSorting() != null && getRanking().getSorting().fieldOrders().size() > 0) {
+        if (getRanking().getSorting() != null && !getRanking().getSorting().fieldOrders().isEmpty()) {
             serializeSorting(insert);
         }
         if (includeHitsAndOffset) {
@@ -905,6 +907,9 @@ public class Query extends com.yahoo.processing.Request implements Cloneable {
 
     /** Returns the select to be used for this query, never null */
     public Select getSelect() { return select; }
+
+    /** Sets the select (grouping) parameter from a string. */
+    public void setSelect(String groupingString) { select.setGroupingExpressionString(groupingString); }
 
     /** Returns the ranking to be used for this query, never null */
     public Ranking getRanking() { return ranking; }

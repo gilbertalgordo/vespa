@@ -39,10 +39,11 @@ using search::queryeval::Blueprint;
 using search::queryeval::GlobalFilter;
 using search::queryeval::IRequestContext;
 using search::queryeval::IntermediateBlueprint;
+using search::queryeval::MatchingPhase;
 using search::queryeval::RankBlueprint;
 using search::queryeval::SearchIterator;
 using vespalib::Issue;
-using vespalib::string;
+using std::string;
 using std::vector;
 
 namespace proton::matching {
@@ -146,7 +147,7 @@ Query::Query() = default;
 Query::~Query() = default;
 
 bool
-Query::buildTree(vespalib::stringref stack, const string &location,
+Query::buildTree(std::string_view stack, const string &location,
                  const ViewResolver &resolver, const IIndexEnvironment &indexEnv,
                  bool always_mark_phrase_expensive)
 {
@@ -198,10 +199,17 @@ Query::reserveHandles(const IRequestContext & requestContext, ISearchContext &co
 }
 
 void
-Query::optimize(bool sort_by_cost)
+Query::enumerate_blueprint_nodes() noexcept
 {
-    auto opts = Blueprint::Options::all().sort_by_cost(sort_by_cost);
-    _blueprint = Blueprint::optimize_and_sort(std::move(_blueprint), true, opts);
+    _blueprint->enumerate(1);
+}
+
+void
+Query::optimize(InFlow in_flow, bool sort_by_cost)
+{
+    _in_flow = in_flow;
+    auto opts = Blueprint::Options().sort_by_cost(sort_by_cost).allow_force_strict(sort_by_cost);
+    _blueprint = Blueprint::optimize_and_sort(std::move(_blueprint), in_flow, opts);
     LOG(debug, "optimized blueprint:\n%s\n", _blueprint->asString().c_str());
 }
 
@@ -223,11 +231,11 @@ Query::handle_global_filter(const IRequestContext & requestContext, uint32_t doc
     }
     // optimized order may change after accounting for global filter:
     trace.addEvent(5, "Optimize query execution plan to account for global filter");
-    auto opts = Blueprint::Options::all().sort_by_cost(sort_by_cost);
-    _blueprint = Blueprint::optimize_and_sort(std::move(_blueprint), true, opts);
+    auto opts = Blueprint::Options().sort_by_cost(sort_by_cost).allow_force_strict(sort_by_cost);
+    _blueprint = Blueprint::optimize_and_sort(std::move(_blueprint), _in_flow, opts);
     LOG(debug, "blueprint after handle_global_filter:\n%s\n", _blueprint->asString().c_str());
     // strictness may change if optimized order changed:
-    fetchPostings(ExecuteInfo::create(true, 1.0, requestContext.getDoom(), requestContext.thread_bundle()));
+    fetchPostings(ExecuteInfo::create(_in_flow.rate(), requestContext.getDoom(), requestContext.thread_bundle()));
 }
 
 bool
@@ -279,6 +287,12 @@ Query::freeze()
     _blueprint->freeze();
 }
 
+void
+Query::set_matching_phase(MatchingPhase matching_phase) const noexcept
+{
+    _blueprint->set_matching_phase(matching_phase);
+}
+
 Blueprint::HitEstimate
 Query::estimate() const
 {
@@ -288,7 +302,7 @@ Query::estimate() const
 SearchIterator::UP
 Query::createSearch(MatchData &md) const
 {
-    return _blueprint->createSearch(md, true);
+    return _blueprint->createSearch(md);
 }
 
 }

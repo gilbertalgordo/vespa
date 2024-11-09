@@ -6,6 +6,8 @@
 #include <vespa/vespalib/util/require.h>
 #include <vespa/vespalib/data/slime/slime.h>
 #include <vespa/searchlib/queryeval/profiled_iterator.h>
+#include <vespa/searchlib/queryeval/wand/weak_and_heap.h>
+#include <vespa/searchlib/queryeval/wand/weak_and_search.h>
 #include <vespa/searchlib/queryeval/simplesearch.h>
 #include <vespa/searchlib/queryeval/sourceblendersearch.h>
 #include <vespa/searchlib/queryeval/andsearch.h>
@@ -84,7 +86,20 @@ SearchIterator::UP create_iterator_tree() {
                      t({2,4,6,8}), 5));
 }
 
-void collect(std::map<vespalib::string,size_t> &counts, const auto &node) {
+SearchIterator::UP create_weak_and() {
+    struct DummyHeap : WeakAndHeap {
+        void adjust(score_t *, score_t *) override {}
+        DummyHeap() : WeakAndHeap(100) {}
+    };
+    static DummyHeap dummy_heap;
+    WeakAndSearch::Terms terms;
+    terms.emplace_back(T({1,2,3}).release(), 100, 3);
+    terms.emplace_back(T({5,6}).release(), 200, 2);
+    terms.emplace_back(T({8}).release(), 300, 1);
+    return WeakAndSearch::create(terms, wand::MatchParams(dummy_heap), wand::TermFrequencyScorer(), 100, true, true);
+}
+
+void collect(std::map<std::string,size_t> &counts, const auto &node) {
     if (!node.valid()) {
         return;
     }
@@ -100,13 +115,13 @@ void collect(std::map<vespalib::string,size_t> &counts, const auto &node) {
     }
 };
 
-std::map<vespalib::string,size_t> collect_counts(const auto &root) {
-    std::map<vespalib::string,size_t> counts;
+std::map<std::string,size_t> collect_counts(const auto &root) {
+    std::map<std::string,size_t> counts;
     collect(counts, root);
     return counts;
 }
 
-void print_counts(const std::map<vespalib::string,size_t> &counts) {
+void print_counts(const std::map<std::string,size_t> &counts) {
     for (const auto &[name, count]: counts) {
         fprintf(stderr, "%s: %zu\n", name.c_str(), count);
     }
@@ -132,7 +147,7 @@ void verify_termwise_result(SearchIterator &search, const std::vector<uint32_t> 
     }
 }
 
-void verify_operation(ExecutionProfiler &profiler, std::map<vespalib::string,size_t> &seen, const vespalib::string &expect) {
+void verify_operation(ExecutionProfiler &profiler, std::map<std::string,size_t> &seen, const std::string &expect) {
     Slime slime;
     profiler.report(slime.setObject());
     auto counts = collect_counts(slime.get());
@@ -147,7 +162,7 @@ void verify_operation(ExecutionProfiler &profiler, std::map<vespalib::string,siz
 
 TEST(ProfiledIteratorTest, init_seek_unpack_termwise_is_profiled) {
     ExecutionProfiler profiler(64);
-    std::map<vespalib::string,size_t> seen;
+    std::map<std::string,size_t> seen;
     auto root = ProfiledIterator::profile(profiler, T({1,2,3}));
     root->initRange(1,4);
     verify_operation(profiler, seen, "/SimpleSearch/init");
@@ -188,6 +203,27 @@ TEST(ProfiledIteratorTest, iterator_tree_can_be_profiled) {
     EXPECT_EQ(counts["/1/SourceBlenderSearchNonStrict/init"], 2);
     EXPECT_EQ(counts["/1/0/SimpleSearch/init"], 2);
     EXPECT_EQ(counts["/1/1/SimpleSearch/init"], 2);
+}
+
+TEST(ProfiledIteratorTest, weak_and_can_be_profiled) {
+    ExecutionProfiler profiler(64);
+    auto root = create_weak_and();
+    root = ProfiledIterator::profile(profiler, std::move(root));
+    fprintf(stderr, "%s", root->asString().c_str());
+    verify_result(*root, {1,2,3,5,6,8});
+    Slime slime;
+    profiler.report(slime.setObject());
+    fprintf(stderr, "%s", slime.toString().c_str());
+    auto counts = collect_counts(slime.get());
+    print_counts(counts);
+    EXPECT_EQ(counts["/WeakAndSearchLR/init"], 1);
+    EXPECT_EQ(counts["/0/SimpleSearch/init"], 1);
+    EXPECT_EQ(counts["/1/SimpleSearch/init"], 1);
+    EXPECT_EQ(counts["/2/SimpleSearch/init"], 1);
+    EXPECT_EQ(counts["/WeakAndSearchLR/seek"], 7);
+    EXPECT_EQ(counts["/0/SimpleSearch/seek"], 4);
+    EXPECT_EQ(counts["/1/SimpleSearch/seek"], 3);
+    EXPECT_EQ(counts["/2/SimpleSearch/seek"], 2);
 }
 
 GTEST_MAIN_RUN_ALL_TESTS()

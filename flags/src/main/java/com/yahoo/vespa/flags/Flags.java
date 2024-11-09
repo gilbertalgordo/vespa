@@ -14,8 +14,6 @@ import java.util.TreeMap;
 import java.util.function.Predicate;
 
 import static com.yahoo.vespa.flags.Dimension.APPLICATION;
-import static com.yahoo.vespa.flags.Dimension.ARCHITECTURE;
-import static com.yahoo.vespa.flags.Dimension.CLAVE;
 import static com.yahoo.vespa.flags.Dimension.CLOUD_ACCOUNT;
 import static com.yahoo.vespa.flags.Dimension.CONSOLE_USER_EMAIL;
 import static com.yahoo.vespa.flags.Dimension.HOSTNAME;
@@ -48,6 +46,14 @@ import static com.yahoo.vespa.flags.Dimension.VESPA_VERSION;
 public class Flags {
 
     private static volatile TreeMap<FlagId, FlagDefinition> flags = new TreeMap<>();
+
+    public static final UnboundIntFlag CLEAR_CONNTRACK = defineIntFlag(
+            "clear-conntrack", 3,
+            List.of("hakonhall"), "2024-10-28", "2024-11-28",
+            "Clear the conntrack table:" +
+            " bit 0: after NAT/NPT rules changes." +
+            " bit 1: after WireGuard changes.",
+            "See description");
 
     public static final UnboundDoubleFlag DEFAULT_TERM_WISE_LIMIT = defineDoubleFlag(
             "default-term-wise-limit", 1.0,
@@ -178,6 +184,7 @@ public class Flags {
             "Will trigger a heap dump during if container shutdown times out",
             "Takes effect at redeployment",
             INSTANCE_ID);
+
     public static final UnboundBooleanFlag LOAD_CODE_AS_HUGEPAGES = defineFeatureFlag(
             "load-code-as-hugepages", false,
             List.of("baldersheim"), "2022-05-13", "2024-12-31",
@@ -192,16 +199,9 @@ public class Flags {
             "Takes effect at redeployment",
             INSTANCE_ID);
 
-    // TODO: Move to a permanent flag
-    public static final UnboundListFlag<String> ALLOWED_ATHENZ_PROXY_IDENTITIES = defineListFlag(
-            "allowed-athenz-proxy-identities", List.of(), String.class,
-            List.of("bjorncs", "tokle"), "2021-02-10", "2024-04-01",
-            "Allowed Athenz proxy identities",
-            "takes effect at redeployment");
-
     public static final UnboundIntFlag MAX_ACTIVATION_INHIBITED_OUT_OF_SYNC_GROUPS = defineIntFlag(
             "max-activation-inhibited-out-of-sync-groups", 0,
-            List.of("vekterli"), "2021-02-19", "2024-06-01",
+            List.of("vekterli"), "2021-02-19", "2025-02-01",
             "Allows replicas in up to N content groups to not be activated " +
             "for query visibility if they are out of sync with a majority of other replicas",
             "Takes effect at redeployment",
@@ -209,7 +209,7 @@ public class Flags {
 
     public static final UnboundDoubleFlag MIN_NODE_RATIO_PER_GROUP = defineDoubleFlag(
             "min-node-ratio-per-group", 0.0,
-            List.of("geirst", "vekterli"), "2021-07-16", "2024-06-01",
+            List.of("geirst", "vekterli"), "2021-07-16", "2025-02-01",
             "Minimum ratio of nodes that have to be available (i.e. not Down) in any hierarchic content cluster group for the group to be Up",
             "Takes effect at redeployment",
             INSTANCE_ID);
@@ -232,14 +232,6 @@ public class Flags {
             "Takes effect on next tick.",
             NODE_TYPE);
 
-    public static final UnboundBooleanFlag ENABLED_HORIZON_DASHBOARD = defineFeatureFlag(
-            "enabled-horizon-dashboard", false,
-            List.of("olaa"), "2021-09-13", "2024-09-01",
-            "Enable Horizon dashboard",
-            "Takes effect immediately",
-            TENANT_ID, CONSOLE_USER_EMAIL
-    );
-
     public static final UnboundBooleanFlag USE_V8_GEO_POSITIONS = defineFeatureFlag(
             "use-v8-geo-positions", true,
             List.of("arnej"), "2021-11-15", "2024-12-31",
@@ -256,7 +248,7 @@ public class Flags {
 
     public static final UnboundBooleanFlag ENABLE_PROXY_PROTOCOL_MIXED_MODE = defineFeatureFlag(
             "enable-proxy-protocol-mixed-mode", true,
-            List.of("tokle"), "2022-05-09", "2024-04-01",
+            List.of("tokle"), "2022-05-09", "2025-02-01",
             "Enable or disable proxy protocol mixed mode",
             "Takes effect on redeployment",
             INSTANCE_ID);
@@ -268,13 +260,6 @@ public class Flags {
             "Takes effect immediately",
             INSTANCE_ID);
 
-    public static final UnboundBooleanFlag SEPARATE_METRIC_CHECK_CONFIG = defineFeatureFlag(
-            "separate-metric-check-config", false,
-            List.of("olaa"), "2022-07-04", "2024-09-01",
-            "Determines whether one metrics config check should be written per Vespa node",
-            "Takes effect on next tick",
-            HOSTNAME);
-
     public static final UnboundStringFlag TLS_CAPABILITIES_ENFORCEMENT_MODE = defineStringFlag(
             "tls-capabilities-enforcement-mode", "disable",
             List.of("bjorncs", "vekterli"), "2022-07-21", "2025-01-01",
@@ -285,14 +270,14 @@ public class Flags {
 
     public static final UnboundBooleanFlag ENABLE_OTELCOL = defineFeatureFlag(
             "enable-otel-collector", false,
-            List.of("olaa"), "2022-09-23", "2024-09-01",
+            List.of("olaa"), "2022-09-23", "2025-01-01",
             "Whether an OpenTelemetry collector should be enabled",
             "Takes effect at next tick",
             INSTANCE_ID);
 
     public static final UnboundListFlag<String> OTELCOL_LOGS = defineListFlag(
             "otelcol-logs", List.of(), String.class,
-            List.of("olaa"), "2024-01-15", "2024-09-01",
+            List.of("olaa"), "2024-01-15", "2025-01-01",
             "Determines log files handled by the OpenTelemetry collector",
             "Takes effect at next tick",
             INSTANCE_ID, HOSTNAME
@@ -300,88 +285,74 @@ public class Flags {
 
     public static final UnboundStringFlag CORE_ENCRYPTION_PUBLIC_KEY_ID = defineStringFlag(
             "core-encryption-public-key-id", "",
-            List.of("vekterli"), "2022-11-03", "2024-06-01",
+            List.of("vekterli"), "2022-11-03", "2025-02-01",
             "Specifies which public key to use for core dump encryption.",
             "Takes effect on the next tick.",
             NODE_TYPE, HOSTNAME);
 
     public static final UnboundListFlag<String> ZONAL_WEIGHTED_ENDPOINT_RECORDS = defineListFlag(
-            "zonal-weighted-endpoint-records", List.of(), String.class, List.of("jonmv"), "2023-12-15", "2024-06-01",
+            "zonal-weighted-endpoint-records", List.of(), String.class, List.of("jonmv"), "2023-12-15", "2024-12-01",
             "A list of weighted (application) endpoint fqdns for which we should use zonal endpoints as targets, not LBs.",
             "Takes effect at redeployment from controller");
 
     public static final UnboundListFlag<String> WEIGHTED_ENDPOINT_RECORD_TTL = defineListFlag(
-            "weighted-endpoint-record-ttl", List.of(), String.class, List.of("jonmv"), "2023-05-16", "2024-06-01",
+            "weighted-endpoint-record-ttl", List.of(), String.class, List.of("jonmv"), "2023-05-16", "2024-12-01",
             "A list of endpoints and custom TTLs, on the form \"endpoint-fqdn:TTL-seconds\". " +
             "Where specified, CNAME records are used instead of the default ALIAS records, which have a default 60s TTL.",
             "Takes effect at redeployment from controller");
 
     public static final UnboundBooleanFlag SORT_BLUEPRINTS_BY_COST = defineFeatureFlag(
             "sort-blueprints-by-cost", false,
-            List.of("baldersheim"), "2023-12-19", "2024-05-31",
+            List.of("baldersheim"), "2023-12-19", "2025-01-10",
             "If true blueprints are sorted based on cost estimate, rather that absolute estimated hits",
             "Takes effect at redeployment",
             INSTANCE_ID);
 
     public static final UnboundBooleanFlag ALWAYS_MARK_PHRASE_EXPENSIVE = defineFeatureFlag(
             "always-mark-phrase-expensive", false,
-            List.of("baldersheim"), "2023-11-20", "2024-05-31",
+            List.of("baldersheim"), "2023-11-20", "2025-01-10",
             "If true all phrases will be marked expensive, independent of parents",
             "Takes effect at redeployment",
             INSTANCE_ID);
 
     public static final UnboundBooleanFlag WRITE_CONFIG_SERVER_SESSION_DATA_AS_ONE_BLOB = defineFeatureFlag(
             "write-config-server-session-data-as-blob", false,
-            List.of("hmusum"), "2023-07-19", "2024-09-01",
+            List.of("hmusum"), "2023-07-19", "2025-01-10",
             "Whether to write config server session data in one blob or as individual paths",
             "Takes effect immediately");
 
     public static final UnboundBooleanFlag READ_CONFIG_SERVER_SESSION_DATA_AS_ONE_BLOB = defineFeatureFlag(
             "read-config-server-session-data-as-blob", false,
-            List.of("hmusum"), "2023-07-19", "2024-09-01",
+            List.of("hmusum"), "2023-07-19", "2025-01-10",
             "Whether to read config server session data from session data blob or from individual paths",
             "Takes effect immediately");
 
     public static final UnboundBooleanFlag MORE_WIREGUARD = defineFeatureFlag(
             "more-wireguard", false,
-            List.of("andreer"), "2023-08-21", "2024-03-24",
+            List.of("andreer"), "2023-08-21", "2025-01-01",
             "Use wireguard in INternal enCLAVES",
             "Takes effect on next host-admin run",
             HOSTNAME, CLOUD_ACCOUNT);
 
     public static final UnboundBooleanFlag IPV6_AWS_TARGET_GROUPS = defineFeatureFlag(
             "ipv6-aws-target-groups", false,
-            List.of("andreer"), "2023-08-28", "2024-03-24",
+            List.of("andreer"), "2023-08-28", "2025-01-01",
             "Always use IPv6 target groups for load balancers in aws",
             "Takes effect on next load-balancer provisioning",
             HOSTNAME, CLOUD_ACCOUNT);
 
     public static final UnboundBooleanFlag PROVISION_IPV6_ONLY_AWS = defineFeatureFlag(
             "provision-ipv6-only", false,
-            List.of("andreer"), "2023-08-28", "2024-03-24",
+            List.of("andreer"), "2023-08-28", "2025-01-01",
             "Provision without private IPv4 addresses in INternal enCLAVES in AWS",
             "Takes effect on next host provisioning / run of host-admin",
             HOSTNAME, CLOUD_ACCOUNT);
 
     public static final UnboundIntFlag CONTENT_LAYER_METADATA_FEATURE_LEVEL = defineIntFlag(
             "content-layer-metadata-feature-level", 0,
-            List.of("vekterli"), "2022-09-12", "2024-06-01",
+            List.of("vekterli"), "2022-09-12", "2024-12-01",
             "Value semantics: 0) legacy behavior, 1) operation cancellation, 2) operation " +
             "cancellation and ephemeral content node sequence numbers for bucket replicas",
-            "Takes effect at redeployment",
-            INSTANCE_ID);
-
-    public static final UnboundBooleanFlag DYNAMIC_HEAP_SIZE = defineFeatureFlag(
-            "dynamic-heap-size", true,
-            List.of("bjorncs"), "2023-09-21", "2024-04-15",
-            "Whether to calculate JVM heap size based on predicted Onnx model memory requirements",
-            "Takes effect at redeployment",
-            INSTANCE_ID);
-
-    public static final UnboundStringFlag UNKNOWN_CONFIG_DEFINITION = defineStringFlag(
-            "unknown-config-definition", "warn",
-            List.of("hmusum"), "2023-09-25", "2024-09-01",
-            "How to handle user config referencing unknown config definitions. Valid values are 'warn' and 'fail'",
             "Takes effect at redeployment",
             INSTANCE_ID);
 
@@ -394,7 +365,7 @@ public class Flags {
 
     public static final UnboundStringFlag ENDPOINT_CONFIG = defineStringFlag(
             "endpoint-config", "legacy",
-            List.of("mpolden", "tokle"), "2023-10-06", "2024-06-01",
+            List.of("mpolden", "tokle"), "2023-10-06", "2025-09-01",
             "Set the endpoint config to use for an application. Must be 'legacy', 'combined' or 'generated'. See EndpointConfig for further details",
             "Takes effect on next deployment through controller",
             TENANT_ID, APPLICATION, INSTANCE_ID);
@@ -405,11 +376,113 @@ public class Flags {
             "Whether to send cloud trial email notifications",
             "Takes effect immediately");
 
-    public static UnboundBooleanFlag CALYPSO_ENABLED = defineFeatureFlag(
-            "calypso-enabled", false,
-            List.of("mortent"), "2024-02-19", "2024-05-01",
-            "Whether to enable calypso for host",
-            "Takes effect immediately", HOSTNAME);
+    public static final UnboundIntFlag PERSISTENCE_THREAD_MAX_FEED_OP_BATCH_SIZE = defineIntFlag(
+            "persistence-thread-max-feed-op-batch-size", 64,
+            List.of("vekterli"), "2024-04-12", "2025-01-01",
+            "Maximum number of enqueued feed operations (put/update/remove) bound "+
+            "towards the same bucket that can be async dispatched as part of the " +
+            "same write-locked batch by a persistence thread.",
+            "Takes effect at redeployment",
+            INSTANCE_ID);
+
+    public static UnboundBooleanFlag LOGSERVER_OTELCOL_AGENT = defineFeatureFlag(
+            "logserver-otelcol-agent", false,
+            List.of("olaa"), "2024-04-03", "2024-12-31",
+            "Whether logserver container should run otel agent",
+            "Takes effect at redeployment", INSTANCE_ID);
+
+    public static UnboundBooleanFlag HUBSPOT_SYNC_TENANTS = defineFeatureFlag(
+            "hubspot-sync-tenants", false,
+            List.of("bjorncs"), "2024-05-07", "2025-01-01",
+            "Whether to sync tenants to HubSpot",
+            "Takes effect immediately");
+
+    public static final UnboundBooleanFlag SYMMETRIC_PUT_AND_ACTIVATE_REPLICA_SELECTION = defineFeatureFlag(
+            "symmetric-put-and-activate-replica-selection", false,
+            List.of("vekterli"), "2024-05-23", "2024-12-01",
+            "Iff true there will be an 1-1 symmetry between the replicas chosen as feed targets " +
+            "for Put operations and the replica selection logic for bucket activation. If false, " +
+            "legacy feed behavior is used.",
+            "Takes effect immediately",
+            INSTANCE_ID);
+
+    public static final UnboundBooleanFlag ENABLE_NEW_TRIAL = defineFeatureFlag(
+            "enable-new-trial", false,
+            List.of("bjorncs"), "2024-06-18", "2025-01-01",
+            "Whether to enable the new trial experience",
+            "Takes effect immediately",
+            TENANT_ID);
+
+    public static final UnboundBooleanFlag ENFORCE_STRICTLY_INCREASING_CLUSTER_STATE_VERSIONS = defineFeatureFlag(
+            "enforce-strictly-increasing-cluster-state-versions", true,
+            List.of("vekterli"), "2024-06-03", "2024-12-01",
+            "Iff true, received cluster state versions that are lower than the current active " +
+            "state version on the node will be explicitly rejected.",
+            "Takes effect immediately",
+            INSTANCE_ID);
+
+    public static final UnboundBooleanFlag LAUNCH_APPLICATION_ATHENZ_SERVICE = defineFeatureFlag(
+            "launch-application-athenz-service", false,
+            List.of("jonmv"), "2024-06-11", "2025-01-10",
+            "Whether to launch an Athenz service unique to the application. Only valid in public systems!",
+            "Takes effect on next deployment",
+            INSTANCE_ID);
+
+    public static final UnboundBooleanFlag HUBSPOT_SYNC_CONTACTS = defineFeatureFlag(
+            "hubspot-sync-contacts", false,
+            List.of("bjorncs"), "2024-05-27", "2025-01-01",
+            "Whether to sync contacts to HubSpot",
+            "Takes effect immediately");
+
+    public static final UnboundBooleanFlag DISTRIBUTION_CONFIG_FROM_CLUSTER_CONTROLLER = defineFeatureFlag(
+            "distribution-config-from-cluster-controller", false,
+            List.of("vekterli"), "2024-07-01", "2024-12-01",
+            "Iff true, the cluster controller will be the authoritative source of distribution " +
+            "config changes in a content cluster, and distribution changes will be part of explicitly " +
+            "versioned cluster states.",
+            "Takes effect immediately",
+            INSTANCE_ID);
+
+    public static final UnboundBooleanFlag USE_LEGACY_WAND_QUERY_PARSING = defineFeatureFlag(
+            "use-legacy-wand-query-parsing", true,
+            List.of("arnej"), "2023-07-26", "2025-12-31",
+            "If true, force legacy mode for weakAnd query parsing",
+            "Takes effect at redeployment",
+            INSTANCE_ID);
+
+    public static final UnboundBooleanFlag MONITORING_JWT = defineFeatureFlag(
+            "monitoring-jwt", false,
+            List.of("olaa"), "2024-07-05", "2025-01-01",
+            "Whether a monitoring JWT should be issued by the controller",
+            "Takes effect immediately",
+            TENANT_ID, CONSOLE_USER_EMAIL);
+
+    public static final UnboundBooleanFlag HUBSPOT_SYNC_COMPANIES = defineFeatureFlag(
+            "hubspot-sync-companies", false,
+            List.of("bjorncs"), "2024-07-19", "2025-01-01",
+            "Whether to sync companies to HubSpot",
+            "Takes effect immediately");
+
+    public static final UnboundStringFlag HOSTNAME_SCHEME = defineStringFlag(
+            "hostname-scheme", "legacy",
+            List.of("mpolden"), "2024-08-07", "2024-12-01",
+            "The hostname scheme to use when provisioning hosts. Must be 'legacy' or 'standard",
+            "Takes effect immediately",
+            (value) -> "legacy".equals(value) || "standard".equals(value),
+            TENANT_ID, APPLICATION, INSTANCE_ID);
+
+    public static final UnboundBooleanFlag OVERRIDE_S1_TOKEN = defineFeatureFlag(
+            "override-s1-token", false,
+            List.of("mortent"), "2024-09-23", "2024-12-01",
+            "Override the S1 token",
+            "Takes effect on next host-admin run",
+            HOSTNAME);
+
+    public static final UnboundBooleanFlag SNAPSHOTS_ENABLED = defineFeatureFlag(
+            "snapshots-enabled", false,
+            List.of("mpolden"), "2024-10-22", "2025-01-10",
+            "Whether node snapshots should be created when host storage is discarded",
+            "Takes effect immediately");
 
     /** WARNING: public for testing: All flags should be defined in {@link Flags}. */
     public static UnboundBooleanFlag defineFeatureFlag(String flagId, boolean defaultValue, List<String> owners,
@@ -474,6 +547,15 @@ public class Flags {
                 flagId, defaultValue, owners, createdAt, expiresAt, description, modificationEffect, dimensions);
     }
 
+    /** WARNING: public for testing: All flags should be defined in {@link Flags}. */
+    public static <T> UnboundListFlag<T> defineListFlag(String flagId, List<T> defaultValue, Class<T> elementClass,
+                                                        List<String> owners, String createdAt, String expiresAt,
+                                                        String description, String modificationEffect,
+                                                        Predicate<List<T>> validator, Dimension... dimensions) {
+        return define((fid, dval, fvec) -> new UnboundListFlag<>(fid, dval, elementClass, fvec, validator),
+                flagId, defaultValue, owners, createdAt, expiresAt, description, modificationEffect, dimensions);
+    }
+
     @FunctionalInterface
     private interface TypedUnboundFlagFactory<T, U extends UnboundFlag<?, ?, ?>> {
         U create(FlagId id, T defaultValue, FetchVector defaultFetchVector);
@@ -526,7 +608,8 @@ public class Flags {
         U unboundFlag = factory.create(id, defaultValue, vector);
         FlagDefinition definition = new FlagDefinition(
                 unboundFlag, owners, parseDate(createdAt), parseDate(expiresAt), description, modificationEffect, dimensions);
-        flags.put(id, definition);
+        if (flags.put(id, definition) != null)
+            throw new IllegalStateException("There are multiple definitions of the " + id + " flag");
         return unboundFlag;
     }
 

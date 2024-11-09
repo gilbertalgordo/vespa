@@ -3,7 +3,7 @@
 #pragma once
 
 #include "iattributefilewriter.h"
-#include <vespa/vespalib/stllike/string.h>
+#include <string>
 
 class FastOS_FileInterface;
 
@@ -26,8 +26,9 @@ class AttributeFileWriter : public IAttributeFileWriter
     const TuneFileAttributes &_tuneFileAttributes;
     const search::common::FileHeaderContext &_fileHeaderContext;
     const attribute::AttributeHeader &_header;
-    vespalib::string _desc;
+    std::string _desc;
     uint64_t _fileBitSize;
+    uint64_t _size_on_disk;
 
     void addTags(vespalib::GenericHeader &header);
 
@@ -36,13 +37,14 @@ public:
     AttributeFileWriter(const TuneFileAttributes &tuneFileAttributes,
                         const search::common::FileHeaderContext & fileHeaderContext,
                         const attribute::AttributeHeader &header,
-                        const vespalib::string &desc);
+                        const std::string &desc);
     ~AttributeFileWriter();
     Buffer allocBuf(size_t size) override;
     void writeBuf(Buffer buf) override;
     std::unique_ptr<BufferWriter> allocBufferWriter() override;
-    bool open(const vespalib::string &fileName);
+    bool open(const std::string &fileName);
     void close();
+    uint64_t size_on_disk() const noexcept { return _size_on_disk; }
 };
 
 

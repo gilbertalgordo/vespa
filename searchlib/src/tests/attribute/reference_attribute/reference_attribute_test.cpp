@@ -13,7 +13,6 @@
 #include <vespa/searchlib/test/mock_gid_to_lid_mapping.h>
 #include <vespa/searchcommon/attribute/config.h>
 #include <vespa/vespalib/gtest/gtest.h>
-#include <vespa/vespalib/test/insertion_operators.h>
 #include <vespa/vespalib/btree/btreenode.hpp>
 #include <cinttypes>
 #include <filesystem>
@@ -35,18 +34,17 @@ using search::attribute::SearchContextParams;
 using search::fef::TermFieldMatchData;
 using search::queryeval::FakeResult;
 using search::queryeval::SearchIterator;
-using vespalib::ArrayRef;
 using vespalib::MemoryUsage;
 
 namespace {
 
-GlobalId toGid(vespalib::stringref docId) {
+GlobalId toGid(std::string_view docId) {
     return DocumentId(docId).getGlobalId();
 }
 
-vespalib::string doc1("id:test:music::1");
-vespalib::string doc2("id:test:music::2");
-vespalib::string doc3("id:test:music::3");
+std::string doc1("id:test:music::1");
+std::string doc2("id:test:music::2");
+std::string doc3("id:test:music::3");
 
 }
 
@@ -56,14 +54,14 @@ struct MyGidToLidMapperFactory : public search::attribute::test::MockGidToLidMap
         _map.insert({toGid(doc2), 17});
     }
 
-    void add(vespalib::stringref docId, uint32_t lid) {
+    void add(std::string_view docId, uint32_t lid) {
         auto insres = _map.insert({ toGid(docId), lid });
         if (!insres.second) {
             insres.first->second = lid;
         }
     }
 
-    void remove(vespalib::stringref docId) {
+    void remove(std::string_view docId) {
         _map.erase(toGid(docId));
     }
 };
@@ -139,7 +137,7 @@ struct ReferenceAttributeTest : public ::testing::Test {
         EXPECT_TRUE(get(doc) == nullptr);
     }
 
-    void assertRef(vespalib::stringref str, uint32_t doc) {
+    void assertRef(std::string_view str, uint32_t doc) {
         const GlobalId *gid = get(doc);
         ASSERT_TRUE(gid != nullptr);
         EXPECT_EQ(toGid(str), *gid);
@@ -167,11 +165,13 @@ struct ReferenceAttributeTest : public ::testing::Test {
 
     void save() {
         attr().save();
+        EXPECT_NE(0, attr().size_on_disk());
     }
 
     void load() {
         resetAttr();
         attr().load();
+        EXPECT_NE(0, attr().size_on_disk());
     }
 
     void triggerCompaction(uint64_t iterLimit) {

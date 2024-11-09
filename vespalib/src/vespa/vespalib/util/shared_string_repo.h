@@ -5,7 +5,7 @@
 #include "memoryusage.h"
 #include "string_id.h"
 #include "spin_lock.h"
-#include <vespa/vespalib/stllike/string.h>
+#include <vespa/vespalib/stllike/small_string.h>
 #include <vespa/vespalib/stllike/identity.h>
 #include <vespa/vespalib/stllike/allocator.h>
 #include <vespa/vespalib/stllike/hashtable.hpp>
@@ -50,7 +50,7 @@ private:
     static const bool should_reclaim;
 
     struct AltKey {
-        vespalib::stringref str;
+        std::string_view str;
         uint32_t hash;
     };
 
@@ -62,7 +62,7 @@ private:
         private:
             uint32_t _hash;
             uint32_t _ref_cnt;
-            vespalib::string _str;
+            vespalib::vespa_string _str;
         public:
             explicit Entry(uint32_t next) noexcept
                 : _hash(next), _ref_cnt(npos), _str() {}
@@ -72,7 +72,7 @@ private:
             Entry & operator =(Entry &&) noexcept = delete;
             ~Entry();
             [[nodiscard]] constexpr uint32_t hash() const noexcept { return _hash; }
-            [[nodiscard]] constexpr const vespalib::string &str() const noexcept { return _str; }
+            [[nodiscard]] constexpr const std::string_view view() const noexcept { return _str; }
             [[nodiscard]] constexpr bool is_free() const noexcept { return (_ref_cnt == npos); }
             uint32_t init(const AltKey &key) {
                 uint32_t next = _hash;
@@ -84,9 +84,10 @@ private:
             void fini(uint32_t next) {
                 _hash = next;
                 _ref_cnt = npos;
-                _str.reset();
+                _str.clear();
+                _str.shrink_to_fit();
             }
-            [[nodiscard]] VESPA_DLL_LOCAL vespalib::string as_string() const;
+            [[nodiscard]] VESPA_DLL_LOCAL std::string as_string() const;
             VESPA_DLL_LOCAL void add_ref();
             VESPA_DLL_LOCAL bool sub_ref();
         };
@@ -104,7 +105,7 @@ private:
             explicit Equal(const EntryVector &entries_in) : entries(entries_in) {}
             Equal(const Equal &rhs) = default;
             bool operator()(const Key &a, const Key &b) const { return (a.idx == b.idx); }
-            bool operator()(const Key &a, const AltKey &b) const { return ((a.hash == b.hash) && (entries[a.idx].str() == b.str)); }
+            bool operator()(const Key &a, const AltKey &b) const { return ((a.hash == b.hash) && (entries[a.idx].view() == b.str)); }
         };
         using HashType = hashtable<Key,Key,Hash,Equal,Identity,hashtable_base::and_modulator>;
 
@@ -122,7 +123,7 @@ private:
         VESPA_DLL_LOCAL void find_leaked_entries(size_t my_idx) const;
         VESPA_DLL_LOCAL Stats stats() const;
         VESPA_DLL_LOCAL uint32_t resolve(const AltKey &alt_key);
-        VESPA_DLL_LOCAL vespalib::string as_string(uint32_t idx) const;
+        VESPA_DLL_LOCAL std::string as_string(uint32_t idx) const;
         VESPA_DLL_LOCAL void copy(uint32_t idx);
         VESPA_DLL_LOCAL void reclaim(uint32_t idx);
     };
@@ -132,8 +133,8 @@ private:
     SharedStringRepo();
     ~SharedStringRepo();
 
-    string_id resolve(vespalib::stringref str);
-    vespalib::string as_string(string_id id);
+    string_id resolve(std::string_view str);
+    std::string as_string(string_id id);
     string_id copy(string_id id);
     void reclaim(string_id id);
 
@@ -150,7 +151,7 @@ public:
         static Handle handle_from_number_slow(int64_t value);
     public:
         Handle() noexcept : _id() {}
-        explicit Handle(vespalib::stringref str) : _id(_repo.resolve(str)) {}
+        explicit Handle(std::string_view str) : _id(_repo.resolve(str)) {}
         Handle(const Handle &rhs) : _id(_repo.copy(rhs._id)) {}
         Handle &operator=(const Handle &rhs) {
             string_id copy = _repo.copy(rhs._id);
@@ -173,7 +174,7 @@ public:
         bool operator!=(const Handle &rhs) const noexcept { return (_id != rhs._id); }
         [[nodiscard]] string_id id() const noexcept { return _id; }
         [[nodiscard]] uint32_t hash() const noexcept { return _id.hash(); }
-        [[nodiscard]] vespalib::string as_string() const { return _repo.as_string(_id); }
+        [[nodiscard]] std::string as_string() const { return _repo.as_string(_id); }
         static Handle handle_from_id(string_id weak_id) { return Handle(weak_id); }
         static Handle handle_from_number(int64_t value) {
             if ((value < 0) || (value > FAST_ID_MAX)) {
@@ -181,7 +182,7 @@ public:
             }
             return Handle(string_id(value + 1));
         }
-        static vespalib::string string_from_id(string_id weak_id) { return _repo.as_string(weak_id); }
+        static std::string string_from_id(string_id weak_id) { return _repo.as_string(weak_id); }
         ~Handle() { _repo.reclaim(_id); }
     };
 
@@ -196,7 +197,7 @@ public:
         Handles &operator=(const Handles &) = delete;
         Handles &operator=(Handles &&) = delete;
         ~Handles();
-        string_id add(vespalib::stringref str) {
+        string_id add(std::string_view str) {
             string_id id = _repo.resolve(str);
             _handles.push_back(id);
             return id;

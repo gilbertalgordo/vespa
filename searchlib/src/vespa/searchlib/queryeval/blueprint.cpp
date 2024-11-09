@@ -1,14 +1,15 @@
 // Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include "blueprint.h"
-#include "leaf_blueprints.h"
-#include "emptysearch.h"
-#include "full_search.h"
-#include "field_spec.hpp"
-#include "andsearch.h"
-#include "orsearch.h"
 #include "andnotsearch.h"
+#include "andsearch.h"
+#include "emptysearch.h"
+#include "field_spec.hpp"
+#include "flow_tuning.h"
+#include "full_search.h"
+#include "leaf_blueprints.h"
 #include "matching_elements_search.h"
+#include "orsearch.h"
 #include <vespa/searchlib/fef/termfieldmatchdataarray.h>
 #include <vespa/vespalib/objects/visit.hpp>
 #include <vespa/vespalib/objects/objectdumper.h>
@@ -48,6 +49,8 @@ void maybe_eliminate_self(Blueprint* &self, Blueprint::UP replacement) {
 }
 
 //-----------------------------------------------------------------------------
+
+thread_local Blueprint::Options Blueprint::_opts;
 
 Blueprint::HitEstimate
 Blueprint::max(const std::vector<HitEstimate> &data)
@@ -121,11 +124,60 @@ Blueprint::Blueprint() noexcept
       _flow_stats(0.0, 0.0, 0.0),
       _sourceId(0xffffffff),
       _docid_limit(0),
+      _id(0),
+      _strict(false),
       _frozen(false)
 {
 }
 
 Blueprint::~Blueprint() = default;
+
+void
+Blueprint::resolve_strict(InFlow &in_flow) noexcept
+{
+    if (!in_flow.strict() && opt_allow_force_strict()) {
+        auto stats = FlowStats::from(flow::DefaultAdapter(), this);
+        if (flow::should_force_strict(stats, in_flow.rate())) {
+            in_flow.force_strict();
+        }
+    }
+    _strict = in_flow.strict();
+}
+
+uint32_t
+Blueprint::enumerate(uint32_t next_id) noexcept
+{
+    set_id(next_id++);
+    return next_id;
+}
+
+void
+Blueprint::each_node_post_order(const std::function<void(Blueprint&)> &f)
+{
+    f(*this);
+}
+
+void
+Blueprint::basic_plan(InFlow in_flow, uint32_t docid_limit)
+{
+    auto opts_guard = bind_opts(Options().sort_by_cost(true));
+    setDocIdLimit(docid_limit);
+    each_node_post_order([docid_limit](Blueprint &bp){
+                             bp.update_flow_stats(docid_limit);
+                         });
+    sort(in_flow);
+}
+
+void
+Blueprint::null_plan(InFlow in_flow, uint32_t docid_limit)
+{
+    auto opts_guard = bind_opts(Options().keep_order(true));
+    setDocIdLimit(docid_limit);
+    each_node_post_order([docid_limit](Blueprint &bp){
+                             bp.update_flow_stats(docid_limit);
+                         });
+    sort(in_flow);
+}
 
 Blueprint::UP
 Blueprint::optimize(Blueprint::UP bp) {
@@ -172,7 +224,7 @@ Blueprint::default_flow_stats(uint32_t docid_limit, uint32_t abs_est, size_t chi
 FlowStats
 Blueprint::default_flow_stats(size_t child_cnt)
 {
-    return {0.5, 1.0 + child_cnt, 1.0 + child_cnt};
+    return {flow::estimate_when_unknown(), 1.0 + child_cnt, 1.0 + child_cnt};
 }
 
 std::unique_ptr<MatchingElementsSearch>
@@ -194,10 +246,6 @@ Blueprint::FilterConstraint invert(Blueprint::FilterConstraint constraint) {
     abort();
 }
 
-template <typename Op> bool inherit_strict(size_t);
-template <> bool inherit_strict<AndSearch>(size_t i) { return (i == 0); }
-template <> bool inherit_strict<OrSearch>(size_t) { return true; }
-
 template <typename Op> bool should_short_circuit(Trinary);
 template <> bool should_short_circuit<AndSearch>(Trinary matches_any) { return (matches_any == Trinary::False); }
 template <> bool should_short_circuit<OrSearch>(Trinary matches_any) { return (matches_any == Trinary::True); }
@@ -216,9 +264,8 @@ create_op_filter(const Blueprint::Children &children, bool strict, Blueprint::Fi
     MultiSearch::Children list;
     std::unique_ptr<SearchIterator> spare;
     list.reserve(children.size());
-    for (size_t i = 0; i < children.size(); ++i) {
-        auto strict_child = strict && inherit_strict<Op>(i);
-        auto filter = children[i]->createFilterSearch(strict_child, constraint);
+    for (const auto & child : children) {
+        auto filter = child->createFilterSearch(constraint);
         auto matches_any = filter->matches_any();
         if (should_short_circuit<Op>(matches_any)) {
             return filter;
@@ -281,14 +328,14 @@ Blueprint::create_andnot_filter(const Children &children, bool strict, Blueprint
     MultiSearch::Children list;
     list.reserve(children.size());
     {
-        auto filter = children[0]->createFilterSearch(strict, constraint);
+        auto filter = children[0]->createFilterSearch(constraint);
         if (filter->matches_any() == Trinary::False) {
             return filter;
         }
         list.push_back(std::move(filter));
     }
     for (size_t i = 1; i < children.size(); ++i) {
-        auto filter = children[i]->createFilterSearch(false, invert(constraint));
+        auto filter = children[i]->createFilterSearch(invert(constraint));
         auto matches_any = filter->matches_any();
         if (matches_any == Trinary::True) {
             return std::make_unique<EmptySearch>();
@@ -305,14 +352,14 @@ Blueprint::create_andnot_filter(const Children &children, bool strict, Blueprint
 }
 
 std::unique_ptr<SearchIterator>
-Blueprint::create_first_child_filter(const Children &children, bool strict, Blueprint::FilterConstraint constraint)
+Blueprint::create_first_child_filter(const Children &children, Blueprint::FilterConstraint constraint)
 {
     REQUIRE(!children.empty());
-    return children[0]->createFilterSearch(strict, constraint);
+    return children[0]->createFilterSearch(constraint);
 }
 
 std::unique_ptr<SearchIterator>
-Blueprint::create_default_filter(bool, FilterConstraint constraint)
+Blueprint::create_default_filter(FilterConstraint constraint)
 {
     if (constraint == FilterConstraint::UPPER_BOUND) {
         return std::make_unique<FullSearch>();
@@ -322,7 +369,7 @@ Blueprint::create_default_filter(bool, FilterConstraint constraint)
     }
 }
 
-vespalib::string
+std::string
 Blueprint::asString() const
 {
     vespalib::ObjectDumper dumper;
@@ -339,7 +386,7 @@ Blueprint::asSlime(const vespalib::slime::Inserter & inserter) const
     return cursor;
 }
 
-vespalib::string
+std::string
 Blueprint::getClassName() const
 {
     return vespalib::getClassName(*this);
@@ -374,6 +421,8 @@ Blueprint::visitMembers(vespalib::ObjectVisitor &visitor) const
     visitor.visitFloat("strict_cost", strict_cost());
     visitor.visitInt("sourceId", _sourceId);
     visitor.visitInt("docid_limit", _docid_limit);
+    visitor.visitInt("id", _id);
+    visitor.visitBool("strict", _strict);
 }
 
 namespace blueprint {
@@ -410,6 +459,25 @@ IntermediateBlueprint::setDocIdLimit(uint32_t limit) noexcept
     for (Blueprint::UP &child : _children) {
         child->setDocIdLimit(limit);
     }
+}
+
+uint32_t
+IntermediateBlueprint::enumerate(uint32_t next_id) noexcept
+{
+    set_id(next_id++);
+    for (Blueprint::UP &child: _children) {
+        next_id = child->enumerate(next_id);
+    }
+    return next_id;
+}
+
+void
+IntermediateBlueprint::each_node_post_order(const std::function<void(Blueprint&)> &f)
+{
+    for (Blueprint::UP &child: _children) {
+        child->each_node_post_order(f);
+    }
+    f(*this);
 }
 
 Blueprint::HitEstimate
@@ -568,17 +636,18 @@ IntermediateBlueprint::optimize(Blueprint* &self, OptimizePass pass)
     maybe_eliminate_self(self, get_replacement());
 }
 
-double
-IntermediateBlueprint::sort(InFlow in_flow, const Options &opts)
+void
+IntermediateBlueprint::sort(InFlow in_flow)
 {
-    sort(_children, in_flow.strict(), opts.sort_by_cost());
-    auto flow = my_flow(in_flow);
-    for (size_t i = 0; i < _children.size(); ++i) {
-        _children[i]->sort(InFlow(flow.strict(), flow.flow()), opts);
-        flow.add(_children[i]->estimate());
+    resolve_strict(in_flow);
+    if (!opt_keep_order()) [[likely]] {
+        sort(_children, in_flow);
     }
-    // TODO: better cost estimate (due to known in-flow and eagerness)
-    return in_flow.strict() ? strict_cost() : in_flow.rate() * cost();
+    auto flow = my_flow(in_flow);
+    for (const auto & child : _children) {
+        child->sort(InFlow(flow.strict(), flow.flow()));
+        flow.add(child->estimate());
+    }
 }
 
 void
@@ -592,15 +661,14 @@ IntermediateBlueprint::set_global_filter(const GlobalFilter &global_filter, doub
 }
 
 SearchIterator::UP
-IntermediateBlueprint::createSearch(fef::MatchData &md, bool strict) const
+IntermediateBlueprint::createSearch(fef::MatchData &md) const
 {
     MultiSearch::Children subSearches;
     subSearches.reserve(_children.size());
-    for (size_t i = 0; i < _children.size(); ++i) {
-        bool strictChild = (strict && inheritStrict(i));
-        subSearches.push_back(_children[i]->createSearch(md, strictChild));
+    for (const auto & child : _children) {
+        subSearches.push_back(child->createSearch(md));
     }
-    return createIntermediateSearch(std::move(subSearches), strict, md);
+    return createIntermediateSearch(std::move(subSearches), md);
 }
 
 IntermediateBlueprint::IntermediateBlueprint() noexcept = default;
@@ -645,22 +713,29 @@ IntermediateBlueprint::visitMembers(vespalib::ObjectVisitor &visitor) const
 void
 IntermediateBlueprint::fetchPostings(const ExecuteInfo &execInfo)
 {
-    auto flow = my_flow(InFlow(execInfo.is_strict(), execInfo.hit_rate()));
-    for (size_t i = 0; i < _children.size(); ++i) {
+    auto flow = my_flow(InFlow(strict(), execInfo.hit_rate()));
+    for (const auto & child : _children) {
         double nextHitRate = flow.flow();
-        Blueprint & child = *_children[i];
-        child.fetchPostings(ExecuteInfo::create(execInfo.is_strict() && inheritStrict(i), nextHitRate, execInfo));
-        flow.add(child.estimate());
+        child->fetchPostings(ExecuteInfo::create(nextHitRate, execInfo));
+        flow.add(child->estimate());
     }
 }
 
 void
 IntermediateBlueprint::freeze()
 {
-    for (Blueprint::UP &child: _children) {
+    for (auto &child: _children) {
         child->freeze();
     }
     freeze_self();
+}
+
+void
+IntermediateBlueprint::set_matching_phase(MatchingPhase matching_phase) noexcept
+{
+    for (auto &child : _children) {
+        child->set_matching_phase(matching_phase);
+    }
 }
 
 namespace {
@@ -737,8 +812,13 @@ LeafBlueprint::freeze()
     freeze_self();
 }
 
+void
+LeafBlueprint::set_matching_phase(MatchingPhase) noexcept
+{
+}
+
 SearchIterator::UP
-LeafBlueprint::createSearch(fef::MatchData &md, bool strict) const
+LeafBlueprint::createSearch(fef::MatchData &md) const
 {
     const State &state = getState();
     fef::TermFieldMatchDataArray tfmda;
@@ -746,11 +826,11 @@ LeafBlueprint::createSearch(fef::MatchData &md, bool strict) const
     for (size_t i = 0; i < state.numFields(); ++i) {
         tfmda.add(state.field(i).resolve(md));
     }
-    return createLeafSearch(tfmda, strict);
+    return createLeafSearch(tfmda);
 }
 
 bool
-LeafBlueprint::getRange(vespalib::string &, vespalib::string &) const {
+LeafBlueprint::getRange(std::string &, std::string &) const {
     return false;
 }
 
@@ -763,13 +843,6 @@ LeafBlueprint::optimize(Blueprint* &self, OptimizePass pass)
         update_flow_stats(get_docid_limit());
     }
     maybe_eliminate_self(self, get_replacement());
-}
-
-double
-LeafBlueprint::sort(InFlow in_flow, const Options &)
-{
-    // TODO: better cost estimate (due to known in-flow and eagerness)
-    return in_flow.strict() ? strict_cost() : in_flow.rate() * cost();
 }
 
 void
@@ -796,9 +869,15 @@ LeafBlueprint::set_tree_size(uint32_t value)
 
 //-----------------------------------------------------------------------------
 
+void
+SimpleLeafBlueprint::sort(InFlow in_flow)
+{
+    resolve_strict(in_flow);
 }
 
-void visit(vespalib::ObjectVisitor &self, const vespalib::string &name,
+}
+
+void visit(vespalib::ObjectVisitor &self, std::string_view name,
            const search::queryeval::Blueprint *obj)
 {
     if (obj != nullptr) {
@@ -810,7 +889,7 @@ void visit(vespalib::ObjectVisitor &self, const vespalib::string &name,
     }
 }
 
-void visit(vespalib::ObjectVisitor &self, const vespalib::string &name,
+void visit(vespalib::ObjectVisitor &self, std::string_view name,
            const search::queryeval::Blueprint &obj)
 {
     visit(self, name, &obj);

@@ -125,12 +125,12 @@ PayloadConverter::encodeValue(const Inspector & value)
             encodeBool(value.asBool());
             break;
     }
-    _lines.push_back(_buf.str());
+    _lines.emplace_back(_buf.view());
     _buf.clear();
 }
 
 void
-PayloadConverter::encodeString(const vespalib::string & value)
+PayloadConverter::encodeString(const std::string & value)
 {
     _buf << value;
 }
@@ -140,7 +140,7 @@ void PayloadConverter::encodeDouble(double value) { _buf << value; }
 void PayloadConverter::encodeBool(bool value) { _buf << (value ? "true" : "false"); }
 
 void
-PayloadConverter::encodeQuotedString(const vespalib::string & value)
+PayloadConverter::encodeQuotedString(const std::string & value)
 {
     encodeString("\"");
     encodeString(value);

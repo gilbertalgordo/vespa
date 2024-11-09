@@ -5,8 +5,10 @@
 package cmd
 
 import (
+	"archive/zip"
 	"bytes"
 	"io"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -22,7 +24,7 @@ func TestDeployCloud(t *testing.T) {
 	pkgDir := filepath.Join(t.TempDir(), "app")
 	createApplication(t, pkgDir, false, false)
 
-	cli, stdout, stderr := newTestCLI(t, "CI=true", "NO_COLOR=true")
+	cli, stdout, stderr := newTestCLI(t, "NO_COLOR=true")
 	httpClient := &mock.HTTPClient{}
 	httpClient.NextResponseString(200, `ok`)
 	cli.httpClient = httpClient
@@ -35,11 +37,12 @@ func TestDeployCloud(t *testing.T) {
 
 	stderr.Reset()
 	require.NotNil(t, cli.Run("deploy", pkgDir))
+	apiKeyWarning := "Warning: Authenticating with API key, intended for use in CI environments.\nHint: Authenticate with 'vespa auth login' instead\n"
 	certError := `Error: deployment to Vespa Cloud requires certificate in application package
 Hint: See https://cloud.vespa.ai/en/security/guide
 Hint: Pass --add-cert to use the certificate of the current application
 `
-	assert.Equal(t, certError, stderr.String())
+	assert.Equal(t, apiKeyWarning+certError, stderr.String())
 
 	require.Nil(t, cli.Run("deploy", "--add-cert", "--wait=0", pkgDir))
 	assert.Contains(t, stdout.String(), "Success: Triggered deployment")
@@ -55,11 +58,89 @@ Hint: Pass --add-cert to use the certificate of the current application
 	buf.WriteString("wat\nthe\nfck\nn\n")
 	cli.Stdin = &buf
 	require.NotNil(t, cli.Run("deploy", "--add-cert=false", "--wait=0", pkgDir2))
-	warning := "Warning: Application package does not contain security/clients.pem, which is required for deployments to Vespa Cloud\n"
+	warning := apiKeyWarning + "Warning: Application package does not contain security/clients.pem, which is required for deployments to Vespa Cloud\n"
 	assert.Equal(t, warning+strings.Repeat("Error: please answer 'y' or 'n'\n", 3)+certError, stderr.String())
 	buf.WriteString("y\n")
 	require.Nil(t, cli.Run("deploy", "--add-cert=false", "--wait=0", pkgDir2))
 	assert.Contains(t, stdout.String(), "Success: Triggered deployment")
+
+	// Missing application certificate is detected
+	stderr.Reset()
+	require.NotNil(t, cli.Run("deploy", "--application=t1.a2.i2", pkgDir2))
+	assert.Equal(t, apiKeyWarning+"Error: no certificate exists for t1.a2.i2\nHint: Try (re)creating the certificate with 'vespa auth cert'\n", stderr.String())
+
+	// Mismatching certificate is detected
+	stdout.Reset()
+	stderr.Reset()
+	assert.Nil(t, cli.Run("auth", "cert", "--application=t1.a1.i1", "-f", "--no-add"))
+	require.NotNil(t, cli.Run("deploy", "--application=t1.a1.i1", pkgDir2))
+	assert.Equal(t, apiKeyWarning+`Error: certificate in security/clients.pem does not match the stored key pair for t1.a1.i1
+Hint: If this application was deployed using a different application ID in the past, the matching key pair may be stored under a different ID in `+
+		cli.config.homeDir+"\nHint: Specify the matching application with --application, or add the current certificate to the package using --add-cert\n",
+		stderr.String())
+}
+
+func TestDeployCloudFastWait(t *testing.T) {
+	pkgDir := filepath.Join(t.TempDir(), "app")
+	createApplication(t, pkgDir, false, false)
+
+	cli, stdout, stderr := newTestCLI(t, "CI=true")
+	httpClient := &mock.HTTPClient{}
+	cli.httpClient = httpClient
+
+	app := vespa.ApplicationID{Tenant: "t1", Application: "a1", Instance: "i1"}
+	assert.Nil(t, cli.Run("config", "set", "application", app.String()))
+	assert.Nil(t, cli.Run("config", "set", "target", "cloud"))
+	assert.Nil(t, cli.Run("auth", "api-key"))
+	assert.Nil(t, cli.Run("auth", "cert", pkgDir))
+
+	// Deployment completes quickly
+	httpClient.NextResponseString(200, `ok`)
+	httpClient.NextResponseString(200, `{"active": false, "status": "success"}`)
+	require.Nil(t, cli.Run("deploy", pkgDir))
+	assert.Contains(t, stdout.String(), "Success: Triggered deployment")
+	assert.True(t, httpClient.Consumed())
+
+	// Deployment fails quickly
+	stdout.Reset()
+	stderr.Reset()
+	httpClient.NextResponseString(200, `ok`)
+	httpClient.NextResponseString(200, `{"active": false, "status": "unsuccesful"}`)
+	require.NotNil(t, cli.Run("deploy", pkgDir))
+	assert.Equal(t, stderr.String(), "Error: deployment run 0 not yet complete after waiting up to 3s: aborting wait: deployment failed: run 0 ended with unsuccessful status: unsuccesful\n")
+	assert.True(t, httpClient.Consumed())
+
+	// Deployment which is running does not return error
+	stdout.Reset()
+	stderr.Reset()
+	httpClient.NextResponseString(200, `ok`)
+	httpClient.NextResponseString(200, `{"active": true, "status": "running"}`)
+	require.Nil(t, cli.Run("deploy", pkgDir))
+	assert.Contains(t, stdout.String(), "Success: Triggered deployment")
+	assert.True(t, httpClient.Consumed())
+}
+
+func TestDeployCloudUnauthorized(t *testing.T) {
+	pkgDir := filepath.Join(t.TempDir(), "app")
+	createApplication(t, pkgDir, false, false)
+
+	cli, _, stderr := newTestCLI(t, "CI=true")
+	httpClient := &mock.HTTPClient{}
+	cli.httpClient = httpClient
+
+	app := vespa.ApplicationID{Tenant: "t1", Application: "a1", Instance: "i1"}
+	assert.Nil(t, cli.Run("config", "set", "application", app.String()))
+	assert.Nil(t, cli.Run("config", "set", "target", "cloud"))
+	assert.Nil(t, cli.Run("auth", "api-key"))
+	assert.Nil(t, cli.Run("auth", "cert", pkgDir))
+	httpClient.NextResponseString(403, "bugger off")
+	require.NotNil(t, cli.Run("deploy", pkgDir))
+	assert.Equal(t, `Error: deployment failed: unauthorized (status 403)
+bugger off
+Hint: You do not have access to the tenant t1
+Hint: You may need to create the tenant at https://console.vespa-cloud.com/tenant
+Hint: If the tenant already exists you may need to run 'vespa auth login' to gain access to it
+`, stderr.String())
 }
 
 func TestDeployWait(t *testing.T) {
@@ -94,8 +175,7 @@ func TestPrepareZip(t *testing.T) {
 }
 
 func TestActivateZip(t *testing.T) {
-	assertActivate("testdata/applications/withTarget/target/application.zip",
-		[]string{"activate", "--wait=0", "testdata/applications/withTarget/target/application.zip"}, t)
+	assertActivate([]string{"activate", "--wait=0", "testdata/applications/withTarget/target/application.zip"}, t)
 }
 
 func TestDeployZip(t *testing.T) {
@@ -145,14 +225,40 @@ func TestDeployApplicationDirectoryWithPomAndEmptyTarget(t *testing.T) {
 		stderr.String())
 }
 
+func TestDeployIncludesExpectedFiles(t *testing.T) {
+	cli, stdout, _ := newTestCLI(t)
+	client := &mock.HTTPClient{}
+	cli.httpClient = client
+	assert.Nil(t, cli.Run("deploy", "--wait=0", "testdata/applications/withSource"))
+	applicationPackage := "testdata/applications/withSource/src/main/application"
+	assert.Equal(t,
+		"\nSuccess: Deployed '"+applicationPackage+"' with session ID 0\n",
+		stdout.String())
+
+	zipName := filepath.Join(t.TempDir(), "tmp.zip")
+	f, err := os.Create(zipName)
+	assert.Nil(t, err)
+	if _, err := io.Copy(f, client.LastRequest.Body); err != nil {
+		t.Fatal(err)
+	}
+	zr, err := zip.OpenReader(zipName)
+	assert.Nil(t, err)
+	defer zr.Close()
+	var zipFiles []string
+	for _, f := range zr.File {
+		zipFiles = append(zipFiles, f.Name)
+	}
+	assert.Equal(t, []string{".vespaignore", "hosts.xml", "schemas/msmarco.sd", "services.xml"}, zipFiles)
+}
+
 func TestDeployApplicationPackageErrorWithUnexpectedNonJson(t *testing.T) {
-	assertApplicationPackageError(t, "deploy", 401,
+	assertApplicationPackageError(t, "deploy", 400,
 		"Raw text error",
 		"Raw text error")
 }
 
 func TestDeployApplicationPackageErrorWithUnexpectedJson(t *testing.T) {
-	assertApplicationPackageError(t, "deploy", 401,
+	assertApplicationPackageError(t, "deploy", 400,
 		`{
     "some-unexpected-json": "Invalid XML, error in services.xml: element \"nosuch\" not allowed here"
 }`,
@@ -211,7 +317,7 @@ func assertPrepare(applicationPackage string, arguments []string, t *testing.T) 
 	assert.Equal(t, "PUT", client.Requests[1].Method)
 }
 
-func assertActivate(applicationPackage string, arguments []string, t *testing.T) {
+func assertActivate(arguments []string, t *testing.T) {
 	t.Helper()
 	client := &mock.HTTPClient{}
 	cli, stdout, _ := newTestCLI(t)
@@ -264,7 +370,7 @@ func assertApplicationPackageError(t *testing.T, cmd string, status int, expecte
 	args = append(args, "testdata/applications/withTarget/target/application.zip")
 	assert.NotNil(t, cli.Run(args...))
 	assert.Equal(t,
-		"Error: invalid application package (Status "+strconv.Itoa(status)+")\n"+expectedMessage+"\n",
+		"Error: invalid application package (status "+strconv.Itoa(status)+")\n"+expectedMessage+"\n",
 		stderr.String())
 }
 
@@ -276,6 +382,6 @@ func assertDeployServerError(t *testing.T, status int, errorMessage string) {
 	cli.httpClient = client
 	assert.NotNil(t, cli.Run("deploy", "--wait=0", "testdata/applications/withTarget/target/application.zip"))
 	assert.Equal(t,
-		"Error: error from deploy API at 127.0.0.1:19071 (Status "+strconv.Itoa(status)+"):\n"+errorMessage+"\n",
+		"Error: error from deploy API at 127.0.0.1:19071 (status "+strconv.Itoa(status)+"):\n"+errorMessage+"\n",
 		stderr.String())
 }

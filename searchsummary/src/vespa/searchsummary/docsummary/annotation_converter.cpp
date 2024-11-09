@@ -24,13 +24,13 @@ namespace search::docsummary {
 
 namespace {
 
-vespalib::stringref
-getSpanString(vespalib::stringref s, const Span &span)
+std::string_view
+getSpanString(std::string_view s, const Span &span)
 {
     return {s.data() + span.from(), static_cast<size_t>(span.length())};
 }
 
-vespalib::string dummy_field_name;
+std::string dummy_field_name;
 
 }
 
@@ -106,7 +106,7 @@ AnnotationConverter::convert(const StringFieldValue &input, vespalib::slime::Ins
     _out.clear();
     _text = input.getValueRef();
     handleIndexingTerms(input);
-    _juniper_converter.convert(_out.str(), inserter);
+    _juniper_converter.convert(_out.view(), inserter);
 }
 
 bool

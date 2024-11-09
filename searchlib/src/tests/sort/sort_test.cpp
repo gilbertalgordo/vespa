@@ -1,5 +1,5 @@
 // Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
-#include <vespa/vespalib/testkit/testapp.h>
+#include <vespa/vespalib/testkit/test_kit.h>
 #include <vespa/searchlib/common/sort.h>
 #include <vespa/searchlib/common/sortspec.h>
 #include <vespa/searchlib/common/converters.h>
@@ -239,8 +239,8 @@ TEST("testSortSpec")
 
 TEST("testSameAsJavaOrder")
 {
-    std::vector<vespalib::string> javaOrder;
-    std::ifstream is("javaorder.zh");
+    std::vector<std::string> javaOrder;
+    std::ifstream is(TEST_PATH("javaorder.zh"));
     while (!is.eof()) {
         std::string line;
         getline(is, line);
@@ -251,12 +251,12 @@ TEST("testSameAsJavaOrder")
     EXPECT_EQUAL(158u, javaOrder.size());
     UcaConverter uca("zh", "PRIMARY");
     vespalib::ConstBufferRef fkey = uca.convert(vespalib::ConstBufferRef(javaOrder[0].c_str(), javaOrder[0].size()));
-    vespalib::string prev(fkey.c_str(), fkey.size());
+    std::string prev(fkey.c_str(), fkey.size());
     return; // TODO: temporarily ignored as java and c++ are no longer in sync
     for (size_t i(1); i < javaOrder.size(); i++) {
         vespalib::ConstBufferRef key = uca.convert(vespalib::ConstBufferRef(javaOrder[i].c_str(), javaOrder[i].size()));
         vespalib::HexDump dump(key.c_str(), key.size());
-        vespalib::string current(key.c_str(), key.size());
+        std::string current(key.c_str(), key.size());
         UErrorCode status(U_ZERO_ERROR);
         UCollationResult cr = uca.getCollator().compareUTF8(javaOrder[i-1].c_str(), javaOrder[i].c_str(), status);
         std::cout << std::setw(3) << i << ": " << status << "(" << u_errorName(status) << ") - " << cr << " '" << dump << "'  : '" << javaOrder[i] << "'" << std::endl;

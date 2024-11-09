@@ -2,10 +2,10 @@
 #pragma once
 
 #include <vespa/vespalib/stllike/hash_map.h>
-#include <vespa/vespalib/stllike/string.h>
+#include <string>
 #include <vector>
 
-namespace search { namespace attribute { class ImportedAttributeVector; } }
+namespace search::attribute { class ImportedAttributeVector; }
 
 namespace proton {
 
@@ -15,7 +15,7 @@ namespace proton {
 class ImportedAttributesRepo {
 private:
     using ImportedAttributeVector = search::attribute::ImportedAttributeVector;
-    using Repo = vespalib::hash_map<vespalib::string, std::shared_ptr<ImportedAttributeVector>>;
+    using Repo = vespalib::hash_map<std::string, std::shared_ptr<ImportedAttributeVector>>;
 
     Repo _repo;
 
@@ -23,10 +23,10 @@ public:
     using UP = std::unique_ptr<ImportedAttributesRepo>;
     ImportedAttributesRepo();
     ~ImportedAttributesRepo();
-    void add(const vespalib::string &name, std::shared_ptr<ImportedAttributeVector> attr);
-    const std::shared_ptr<ImportedAttributeVector> & get(const vespalib::string &name) const;
+    void add(const std::string &name, std::shared_ptr<ImportedAttributeVector> attr);
+    const std::shared_ptr<ImportedAttributeVector> & get(std::string_view name) const;
     void getAll(std::vector<std::shared_ptr<ImportedAttributeVector>> &result) const;
-    size_t size() const { return _repo.size(); }
+    size_t size() const noexcept { return _repo.size(); }
 };
 
 }

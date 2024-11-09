@@ -11,8 +11,6 @@
 
 namespace search::queryeval {
 
-const uint32_t DEFAULT_PARALLEL_WAND_SCORES_ADJUST_FREQUENCY = 4;
-
 /**
  * Blueprint for the parallel weak and search operator.
  */
@@ -21,32 +19,25 @@ class ParallelWeakAndBlueprint : public ComplexLeafBlueprint
 private:
     using score_t = wand::score_t;
 
-    mutable SharedWeakAndPriorityQueue _scores;
-    const wand::score_t                _scoreThreshold;
-    double                             _thresholdBoostFactor;
-    const uint32_t                     _scoresAdjustFrequency;
-    fef::MatchDataLayout               _layout;
-    std::vector<int32_t>               _weights;
-    std::vector<Blueprint::UP>         _terms;
+    std::unique_ptr<WeakAndPriorityQueue> _scores;
+    const wand::score_t                   _scoreThreshold;
+    double                                _thresholdBoostFactor;
+    const uint32_t                        _scoresAdjustFrequency;
+    fef::MatchDataLayout                  _layout;
+    std::vector<int32_t>                  _weights;
+    std::vector<Blueprint::UP>            _terms;
+    MatchingPhase                         _matching_phase;
 
 public:
     ParallelWeakAndBlueprint(const ParallelWeakAndBlueprint &) = delete;
     ParallelWeakAndBlueprint &operator=(const ParallelWeakAndBlueprint &) = delete;
-    ParallelWeakAndBlueprint(FieldSpecBase field,
-                             uint32_t scoresToTrack,
-                             score_t scoreThreshold,
-                             double thresholdBoostFactor);
-    ParallelWeakAndBlueprint(FieldSpecBase field,
-                             uint32_t scoresToTrack,
-                             score_t scoreThreshold,
-                             double thresholdBoostFactor,
-                             uint32_t scoresAdjustFrequency);
+    ParallelWeakAndBlueprint(FieldSpecBase field, uint32_t scoresToTrack,
+                             score_t scoreThreshold, double thresholdBoostFactor,
+                             bool thread_safe);
     ~ParallelWeakAndBlueprint() override;
 
-    const WeakAndHeap &getScores() const { return _scores; }
-
+    const WeakAndHeap &getScores() const { return *_scores; }
     score_t getScoreThreshold() const { return _scoreThreshold; }
-
     double getThresholdBoostFactor() const { return _thresholdBoostFactor; }
 
     // Used by create visitor
@@ -62,13 +53,15 @@ public:
         set_tree_size(_terms.size() + 1);
     }
 
+    void sort(InFlow in_flow) override;
     FlowStats calculate_flow_stats(uint32_t docid_limit) const override;
     
-    SearchIterator::UP createLeafSearch(const fef::TermFieldMatchDataArray &tfmda, bool strict) const override;
-    std::unique_ptr<SearchIterator> createFilterSearch(bool strict, FilterConstraint constraint) const override;
+    SearchIterator::UP createLeafSearch(const fef::TermFieldMatchDataArray &tfmda) const override;
+    std::unique_ptr<SearchIterator> createFilterSearch(FilterConstraint constraint) const override;
     void visitMembers(vespalib::ObjectVisitor &visitor) const override;
     void fetchPostings(const ExecuteInfo &execInfo) override;
     bool always_needs_unpack() const override;
+    void set_matching_phase(MatchingPhase matching_phase) noexcept override;
 };
 
 }

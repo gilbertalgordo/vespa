@@ -7,7 +7,6 @@
 #include <vespa/vespalib/datastore/compaction_strategy.h>
 #include <vespa/vespalib/gtest/gtest.h>
 #include <vespa/vespalib/stllike/hash_set.h>
-#include <vespa/vespalib/test/insertion_operators.h>
 #include <vespa/vespalib/test/memory_allocator_observer.h>
 #include <vespa/vespalib/util/generationhandler.h>
 #include <vespa/vespalib/util/rand48.h>
@@ -24,16 +23,16 @@ using AllocStats = MemoryAllocatorObserver::Stats;
 
 template <typename ElemT>
 void
-assertArray(const std::vector<ElemT> &exp, vespalib::ConstArrayRef<ElemT> values)
+assertArray(const std::vector<ElemT> &exp, std::span<const ElemT> values)
 {
-    EXPECT_EQ(exp, std::vector<ElemT>(values.cbegin(), values.cend()));
+    EXPECT_EQ(exp, std::vector<ElemT>(values.begin(), values.end()));
 }
 
 template <class MvMapping>
 class MyAttribute : public search::NotImplementedAttribute
 {
     using MultiValueType = typename MvMapping::MultiValueType;
-    using ConstArrayRef = vespalib::ConstArrayRef<MultiValueType>;
+    using ConstArrayRef = std::span<const MultiValueType>;
     MvMapping &_mvMapping;
     virtual void onCommit() override { }
     virtual void onUpdateStat() override { }
@@ -82,8 +81,8 @@ protected:
     using generation_t = vespalib::GenerationHandler::generation_t;
 
 public:
-    using ArrayRef = vespalib::ArrayRef<ElemT>;
-    using ConstArrayRef = vespalib::ConstArrayRef<ElemT>;
+    using ArrayRef = std::span<ElemT>;
+    using ConstArrayRef = std::span<const ElemT>;
     MappingTestBase()
         : _stats(),
           _mvMapping(),
@@ -114,7 +113,7 @@ public:
     ArrayRef get_writable(uint32_t docId) { return _mvMapping->get_writable(docId); }
     void assertGet(uint32_t docId, const std::vector<ElemT> &exp) {
         ConstArrayRef act = get(docId);
-        EXPECT_EQ(exp, std::vector<ElemT>(act.cbegin(), act.cend()));
+        EXPECT_EQ(exp, std::vector<ElemT>(act.begin(), act.end()));
     }
     void assign_generation(generation_t current_gen) { _mvMapping->assign_generation(current_gen); }
     void reclaim_memory(generation_t oldest_used_gen) { _mvMapping->reclaim_memory(oldest_used_gen); }

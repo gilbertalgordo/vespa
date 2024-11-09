@@ -18,6 +18,8 @@ import com.yahoo.documentapi.messagebus.protocol.DocumentMessage;
 import com.yahoo.documentapi.messagebus.protocol.DocumentProtocol;
 import com.yahoo.documentapi.messagebus.protocol.VisitorInfoMessage;
 import com.yahoo.documentapi.messagebus.protocol.WrongDistributionReply;
+
+import java.util.List;
 import java.util.logging.Level;
 import com.yahoo.messagebus.DestinationSession;
 import com.yahoo.messagebus.DestinationSessionParams;
@@ -37,7 +39,6 @@ import com.yahoo.messagebus.routing.RoutingTable;
 import com.yahoo.vdslib.VisitorStatistics;
 import com.yahoo.vdslib.state.ClusterState;
 
-import java.util.Arrays;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -58,7 +59,7 @@ import java.util.logging.Logger;
  * <code>DocumentAccess.createVisitorSession</code> method.
  * </p>
  */
-public class MessageBusVisitorSession implements VisitorSession {
+public final class MessageBusVisitorSession implements VisitorSession {
     /**
      * Abstract away notion of source session into a generic Sender
      * interface to allow easy mocking.
@@ -139,7 +140,7 @@ public class MessageBusVisitorSession implements VisitorSession {
         }
     }
 
-    public class StateDescription {
+    public static class StateDescription {
         private final State state;
         private final String description;
 
@@ -162,14 +163,13 @@ public class MessageBusVisitorSession implements VisitorSession {
         }
 
         VisitorControlHandler.CompletionCode toCompletionCode() {
-            switch (state) {
-                case COMPLETED: return VisitorControlHandler.CompletionCode.SUCCESS;
-                case ABORTED:   return VisitorControlHandler.CompletionCode.ABORTED;
-                case FAILED:    return VisitorControlHandler.CompletionCode.FAILURE;
-                case TIMED_OUT: return VisitorControlHandler.CompletionCode.TIMEOUT;
-                default:
-                    throw new IllegalStateException("Current state did not have a valid value: " + state);
-            }
+            return switch (state) {
+                case COMPLETED -> VisitorControlHandler.CompletionCode.SUCCESS;
+                case ABORTED -> VisitorControlHandler.CompletionCode.ABORTED;
+                case FAILED -> VisitorControlHandler.CompletionCode.FAILURE;
+                case TIMED_OUT -> VisitorControlHandler.CompletionCode.TIMEOUT;
+                default -> throw new IllegalStateException("Current state did not have a valid value: " + state);
+            };
         }
 
         public boolean failed() {
@@ -312,9 +312,7 @@ public class MessageBusVisitorSession implements VisitorSession {
         return sessionCounter.incrementAndGet();
     }
     private static String createSessionName() {
-        StringBuilder sb = new StringBuilder();
-        sb.append("visitor-").append(getNextSessionId()).append('-').append(System.currentTimeMillis());
-        return sb.toString();
+        return "visitor-" + getNextSessionId() + '-' + System.currentTimeMillis();
     }
 
     private final VisitorParameters params;
@@ -364,14 +362,14 @@ public class MessageBusVisitorSession implements VisitorSession {
     {
         this.params = visitorParameters; // TODO(vekterli): make copy? legacy impl does not copy
         initializeRoute(routingTable);
-        this.sender = senderFactory.createSender(createReplyHandler(), this.params);
+        this.sender = senderFactory.createSender(createReplyHandler(), params);
         this.receiver = receiverFactory.createReceiver(createMessageHandler(), sessionName);
         this.taskExecutor = taskExecutor;
         this.progress = createVisitingProgress(params);
         this.statistics = new VisitorStatistics();
         this.state = new StateDescription(State.NOT_STARTED);
         this.clock = clock;
-        initializeHandlers();
+        initializeHandlers(params);
         trace = new Trace(visitorParameters.getTraceLevel());
         dataDestination = (params.getLocalDataHandler() == null
                 ? params.getRemoteDataHandler()
@@ -557,13 +555,13 @@ public class MessageBusVisitorSession implements VisitorSession {
      * Called from the constructor to ensure control and data handlers
      * are set and initialized.
      */
-    private void initializeHandlers() {
-        if (this.params.getLocalDataHandler() != null) {
-            this.params.getLocalDataHandler().reset();
-            this.params.getLocalDataHandler().setSession(this);
-        } else if (this.params.getRemoteDataHandler() == null) {
-            this.params.setLocalDataHandler(new VisitorDataQueue());
-            this.params.getLocalDataHandler().setSession(this);
+    private void initializeHandlers(VisitorParameters params) {
+        if (params.getLocalDataHandler() != null) {
+            params.getLocalDataHandler().reset();
+            params.getLocalDataHandler().setSession(this);
+        } else if (params.getRemoteDataHandler() == null) {
+            params.setLocalDataHandler(new VisitorDataQueue());
+            params.getLocalDataHandler().setSession(this);
         }
 
         if (params.getControlHandler() != null) {
@@ -647,7 +645,7 @@ public class MessageBusVisitorSession implements VisitorSession {
 
             msg.getTrace().setLevel(params.getTraceLevel());
             msg.setTimeRemaining(messageTimeoutMs);
-            msg.setBuckets(Arrays.asList(bucket.getSuperbucket(), bucket.getProgress()));
+            msg.setBuckets(List.of(bucket.getSuperbucket(), bucket.getProgress()));
             msg.setDocumentSelection(params.getDocumentSelection());
             msg.setBucketSpace(params.getBucketSpace());
             msg.setFromTimestamp(params.getFromTimestamp());
@@ -881,7 +879,7 @@ public class MessageBusVisitorSession implements VisitorSession {
         }
 
         try {
-            if (msg.getErrorMessage().length() > 0) {
+            if (!msg.getErrorMessage().isEmpty()) {
                 params.getControlHandler().onVisitorError(msg.getErrorMessage());
             }
             synchronized (progress.getToken()) {
@@ -922,13 +920,11 @@ public class MessageBusVisitorSession implements VisitorSession {
 
     private boolean isFatalError(Reply reply) {
         Error error = reply.getError(0);
-        switch (error.getCode()) {
-            case ErrorCode.TIMEOUT:
-            case DocumentProtocol.ERROR_BUCKET_NOT_FOUND:
-            case DocumentProtocol.ERROR_WRONG_DISTRIBUTION:
-                return false;
-        }
-        return error.isFatal();
+        return switch (error.getCode()) {
+            case ErrorCode.TIMEOUT, DocumentProtocol.ERROR_BUCKET_NOT_FOUND,
+                 DocumentProtocol.ERROR_WRONG_DISTRIBUTION -> false;
+            default -> error.isFatal();
+        };
     }
 
     /**
@@ -939,12 +935,10 @@ public class MessageBusVisitorSession implements VisitorSession {
      */
     private boolean shouldReportError(Reply reply) {
         Error error = reply.getError(0);
-        switch (error.getCode()) {
-            case DocumentProtocol.ERROR_BUCKET_NOT_FOUND:
-            case DocumentProtocol.ERROR_BUCKET_DELETED:
-                return false;
-        }
-        return true;
+        return switch (error.getCode()) {
+            case DocumentProtocol.ERROR_BUCKET_NOT_FOUND, DocumentProtocol.ERROR_BUCKET_DELETED -> false;
+            default -> true;
+        };
     }
 
     private static String getErrorMessage(Error r) {

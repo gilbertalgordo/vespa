@@ -24,7 +24,7 @@ public:
      * Read word and counts.  Only nonzero counts are returned. If at
      * end of dictionary then noWordNumHigh() is returned as word number.
      */
-    virtual void readWord(vespalib::string &word, uint64_t &wordNum, PostingListCounts &counts) = 0;
+    virtual void readWord(std::string &word, uint64_t &wordNum, PostingListCounts &counts) = 0;
 
     static uint64_t noWordNum() { return 0u; }
 
@@ -44,7 +44,7 @@ public:
     /**
      * Write word and counts.  Only nonzero counts should be supplied.
      */
-    virtual void writeWord(vespalib::stringref word, const PostingListCounts &counts) = 0;
+    virtual void writeWord(std::string_view word, const PostingListCounts &counts) = 0;
 };
 
 
@@ -59,13 +59,13 @@ public:
     DictionaryFileRandRead();
     virtual ~DictionaryFileRandRead();
 
-    virtual bool lookup(vespalib::stringref word, uint64_t &wordNum,
+    virtual bool lookup(std::string_view word, uint64_t &wordNum,
                         PostingListOffsetAndCounts &offsetAndCounts) = 0;
 
     /**
      * Open dictionary file for random read.
      */
-    virtual bool open(const vespalib::string &name, const TuneFileRandRead &tuneFileRead) = 0;
+    virtual bool open(const std::string &name, const TuneFileRandRead &tuneFileRead) = 0;
 
     /**
      * Close dictionary file.

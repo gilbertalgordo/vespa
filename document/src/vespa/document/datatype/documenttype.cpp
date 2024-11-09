@@ -6,18 +6,19 @@
 #include <vespa/vespalib/util/stringfmt.h>
 #include <vespa/log/log.h>
 #include <ostream>
+#include <string>
 
 LOG_SETUP(".document.datatype.document");
 
 using vespalib::IllegalArgumentException;
 using vespalib::make_string;
-using vespalib::stringref;
+using std::string_view;
 
 
 namespace document {
 
 namespace {
-FieldCollection build_field_collection(const std::set<vespalib::string> &fields,
+FieldCollection build_field_collection(const std::set<std::string> &fields,
                                        const DocumentType &doc_type)
 {
     Field::Set::Builder builder;
@@ -26,21 +27,22 @@ FieldCollection build_field_collection(const std::set<vespalib::string> &fields,
             builder.add(&doc_type.getField(field_name));
         }
     }
-    return FieldCollection(doc_type, builder.build());
+    return {doc_type, builder.build()};
 }
 } // namespace <unnamed>
 
-DocumentType::FieldSet::FieldSet(const vespalib::string & name, Fields fields,
-                                 const DocumentType & doc_type)
+DocumentType::FieldSet::FieldSet(const std::string & name, Fields fields, const DocumentType & doc_type)
     : _name(name),
       _fields(fields),
       _field_collection(build_field_collection(fields, doc_type))
 {}
 
-DocumentType::DocumentType(stringref name, int32_t id)
+DocumentType::FieldSet::~FieldSet() = default;
+
+DocumentType::DocumentType(string_view name, int32_t id)
     : StructuredDataType(name, id),
       _inheritedTypes(),
-      _ownedFields(std::make_shared<StructDataType>(name + ".header")),
+      _ownedFields(std::make_shared<StructDataType>(std::string(name) + ".header")),
       _fields(_ownedFields.get()),
       _fieldSets(),
       _imported_field_names()
@@ -50,7 +52,7 @@ DocumentType::DocumentType(stringref name, int32_t id)
     }
 }
 
-DocumentType::DocumentType(stringref name, int32_t id, const StructDataType& fields)
+DocumentType::DocumentType(string_view name, int32_t id, const StructDataType& fields)
     : StructuredDataType(name, id),
       _inheritedTypes(),
       _fields(&fields),
@@ -62,10 +64,10 @@ DocumentType::DocumentType(stringref name, int32_t id, const StructDataType& fie
     }
 }
 
-DocumentType::DocumentType(stringref name)
+DocumentType::DocumentType(string_view name)
     : StructuredDataType(name),
       _inheritedTypes(),
-      _ownedFields(std::make_shared<StructDataType>(name + ".header")),
+      _ownedFields(std::make_shared<StructDataType>(std::string(name) + ".header")),
       _fields(_ownedFields.get()),
       _fieldSets(),
       _imported_field_names()
@@ -75,7 +77,7 @@ DocumentType::DocumentType(stringref name)
     }
 }
 
-DocumentType::DocumentType(stringref name, const StructDataType& fields)
+DocumentType::DocumentType(string_view name, const StructDataType& fields)
     : StructuredDataType(name),
       _inheritedTypes(),
       _fields(&fields),
@@ -92,14 +94,14 @@ DocumentType::DocumentType(const DocumentType &) = default;
 DocumentType::~DocumentType() = default;
 
 DocumentType &
-DocumentType::addFieldSet(const vespalib::string & name, FieldSet::Fields fields)
+DocumentType::addFieldSet(const std::string & name, FieldSet::Fields fields)
 {
     _fieldSets.emplace(name, FieldSet(name, std::move(fields), *this));
     return *this;
 }
 
 const DocumentType::FieldSet *
-DocumentType::getFieldSet(const vespalib::string & name) const
+DocumentType::getFieldSet(const std::string & name) const
 {
     auto it = _fieldSets.find(name);
     return (it != _fieldSets.end()) ? & it->second : nullptr;
@@ -223,7 +225,7 @@ DocumentType::equals(const DataType& other) const noexcept
 }
 
 const Field&
-DocumentType::getField(stringref name) const
+DocumentType::getField(string_view name) const
 {
     return _fields->getField(name);
 }
@@ -241,12 +243,12 @@ DocumentType::getFieldSet() const
 }
 
 bool
-DocumentType::has_imported_field_name(const vespalib::string& name) const noexcept {
+DocumentType::has_imported_field_name(const std::string& name) const noexcept {
     return (_imported_field_names.find(name) != _imported_field_names.end());
 }
 
 void
-DocumentType::add_imported_field_name(const vespalib::string& name) {
+DocumentType::add_imported_field_name(const std::string& name) {
     _imported_field_names.insert(name);
 }
 

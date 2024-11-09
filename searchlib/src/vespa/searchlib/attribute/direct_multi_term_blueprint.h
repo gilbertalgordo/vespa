@@ -72,37 +72,16 @@ public:
         setEstimate(estimate);
     }
 
-    queryeval::FlowStats calculate_flow_stats(uint32_t docid_limit) const override {
-        using OrFlow = search::queryeval::OrFlow;
-        struct MyAdapter {
-            uint32_t docid_limit;
-            MyAdapter(uint32_t docid_limit_in) noexcept : docid_limit(docid_limit_in) {}
-            double estimate(const IDirectPostingStore::LookupResult &term) const noexcept {
-                return abs_to_rel_est(term.posting_size, docid_limit);
-            }
-            double cost(const IDirectPostingStore::LookupResult &) const noexcept {
-                return search::queryeval::flow::btree_cost();
-            }
-            double strict_cost(const IDirectPostingStore::LookupResult &term) const noexcept {
-                double rel_est = abs_to_rel_est(term.posting_size, docid_limit);
-                return search::queryeval::flow::btree_strict_cost(rel_est);
-            }
-        };
-        double est = OrFlow::estimate_of(MyAdapter(docid_limit), _terms);
-        return {est, OrFlow::cost_of(MyAdapter(docid_limit), _terms, false),
-                OrFlow::cost_of(MyAdapter(docid_limit), _terms, true) + queryeval::flow::heap_cost(est, _terms.size())};
+    void sort(queryeval::InFlow in_flow) override {
+        resolve_strict(in_flow);
     }
 
-    std::unique_ptr<queryeval::SearchIterator> createLeafSearch(const fef::TermFieldMatchDataArray &tfmda, bool) const override;
+    queryeval::FlowStats calculate_flow_stats(uint32_t docid_limit) const override;
 
-    std::unique_ptr<queryeval::SearchIterator> createFilterSearch(bool strict, FilterConstraint constraint) const override;
-    std::unique_ptr<queryeval::MatchingElementsSearch> create_matching_elements_search(const MatchingElementsFields &fields) const override {
-        if (fields.has_field(_iattr.getName())) {
-            return queryeval::MatchingElementsSearch::create(_iattr, _dictionary_snapshot, vespalib::ConstArrayRef<IDirectPostingStore::LookupResult>(_terms));
-        } else {
-            return {};
-        }
-    }
+    std::unique_ptr<queryeval::SearchIterator> createLeafSearch(const fef::TermFieldMatchDataArray &tfmda) const override;
+
+    std::unique_ptr<queryeval::SearchIterator> createFilterSearch(FilterConstraint constraint) const override;
+    std::unique_ptr<queryeval::MatchingElementsSearch> create_matching_elements_search(const MatchingElementsFields &fields) const override;
     void visitMembers(vespalib::ObjectVisitor& visitor) const override {
         LeafBlueprint::visitMembers(visitor);
         visit_attribute(visitor, _iattr);

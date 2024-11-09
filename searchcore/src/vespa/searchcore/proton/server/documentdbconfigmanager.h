@@ -25,19 +25,19 @@ public:
     using BootstrapConfigSP = std::shared_ptr<BootstrapConfig>;
 
 private:
-    vespalib::string     _configId;
-    vespalib::string     _docTypeName;
+    std::string     _configId;
+    std::string     _docTypeName;
     BootstrapConfigSP    _bootstrapConfig;
     DocumentDBConfig::SP _pendingConfigSnapshot;
     bool                 _ignoreForwardedConfig;
     mutable std::mutex   _pendingConfigMutex;
 
-    search::index::Schema::SP
+    std::shared_ptr<const search::index::Schema>
     buildSchema(const DocumentDBConfig::AttributesConfig & newAttributesConfig,
                 const DocumentDBConfig::IndexschemaConfig & newIndexschemaConfig);
 
 public:
-    DocumentDBConfigManager(const vespalib::string &configId, const vespalib::string &docTypeName);
+    DocumentDBConfigManager(const std::string &configId, const std::string &docTypeName);
     ~DocumentDBConfigManager();
     void update(FNET_Transport & transport, const config::ConfigSnapshot & snapshot);
 
@@ -45,7 +45,7 @@ public:
 
     void forwardConfig(const BootstrapConfigSP & config);
     config::ConfigKeySet createConfigKeySet() const;
-    const vespalib::string & getConfigId() const { return _configId; }
+    const std::string & getConfigId() const { return _configId; }
 };
 
 /**
@@ -54,7 +54,7 @@ public:
 class DocumentDBConfigHelper
 {
 public:
-    DocumentDBConfigHelper(const config::DirSpec &spec, const vespalib::string &docTypeName);
+    DocumentDBConfigHelper(const config::DirSpec &spec, const std::string &docTypeName);
     ~DocumentDBConfigHelper();
 
     bool nextGeneration(FNET_Transport & transport, vespalib::duration timeout);

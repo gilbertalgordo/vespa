@@ -18,6 +18,7 @@ import java.util.List;
 import java.util.logging.Level;
 
 import static com.yahoo.config.model.test.TestUtil.joinLines;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -67,7 +68,9 @@ public class ComplexFieldsValidatorTestCase {
                     "}",
                     "}"));
         });
-        assertTrue(exception.getMessage().contains(getExpectedMessage("docTopics (docTopics.topics, docTopics.topics.id, docTopics.topics.label)")));
+        assertEquals("For schema 'test': Field 'docTopics.topics' of type 'array<topic>' cannot be an attribute." +
+                        " Instead specify the struct fields to be searchable as attribute",
+                exception.getMessage());
     }
 
     @Test
@@ -137,6 +140,32 @@ public class ComplexFieldsValidatorTestCase {
                         "The following complex fields have struct fields with 'indexing: index' which is not supported and has no effect: " +
                         "topics (topics.id, topics.label). " +
                         "Remove setting or change to 'indexing: attribute' if needed for matching."));
+    }
+
+    @Test
+    void logs_warning_when_complex_fields_have_struct_fields_with_index_and_exact_match() throws IOException, SAXException {
+        var logger = new MyLogger();
+        createModelAndValidate(joinLines(
+                "schema test {",
+                "  document test {",
+                "    field nesteds type array<nested> {",
+                "      struct-field foo {",
+                "        indexing: attribute | index",
+                "        match {",
+                "          exact",
+                "          exact-terminator: '@@'",
+                "        }",
+                "      }",
+                "    }",
+                "    struct nested {",
+                "      field foo type string {}",
+                "    }",
+                "  }",
+                "}"), logger);
+        assertTrue(logger.message.toString().contains("For cluster 'mycluster', schema 'test': " +
+                "The following complex fields have struct fields with 'indexing: index' which is " +
+                "not supported and has no effect: nesteds (nesteds.foo). " +
+                "Remove setting or change to 'indexing: attribute' if needed for matching."));
     }
 
     @Test

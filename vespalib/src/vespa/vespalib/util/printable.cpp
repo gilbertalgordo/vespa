@@ -13,7 +13,7 @@ std::string Printable::toString(bool verbose, const std::string& indent) const
     return o.str();
 }
 
-vespalib::string
+std::string
 AsciiPrintable::PrintProperties::indent(uint32_t extraLevels) const
 {
     vespalib::asciistream as;
@@ -30,10 +30,10 @@ AsciiPrintable::print(std::ostream& out, bool verbose,
 {
     vespalib::asciistream as;
     print(as, PrintProperties(verbose ? VERBOSE : NORMAL, indent));
-    out << as.str();
+    out << as.view();
 }
 
-vespalib::string
+std::string
 AsciiPrintable::toString(const PrintProperties& p) const
 {
     vespalib::asciistream as;

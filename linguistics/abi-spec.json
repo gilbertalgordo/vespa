@@ -338,13 +338,17 @@
     ],
     "methods" : [
       "public void <init>(java.lang.String)",
+      "public void <init>(java.lang.String, java.util.Map)",
       "public com.yahoo.language.process.Embedder$Context copy()",
       "public com.yahoo.language.Language getLanguage()",
       "public com.yahoo.language.process.Embedder$Context setLanguage(com.yahoo.language.Language)",
       "public java.lang.String getDestination()",
       "public com.yahoo.language.process.Embedder$Context setDestination(java.lang.String)",
       "public java.lang.String getEmbedderId()",
-      "public com.yahoo.language.process.Embedder$Context setEmbedderId(java.lang.String)"
+      "public com.yahoo.language.process.Embedder$Context setEmbedderId(java.lang.String)",
+      "public void putCachedValue(java.lang.Object, java.lang.Object)",
+      "public java.lang.Object getCachedValue(java.lang.Object)",
+      "public java.lang.Object computeCachedValueIfAbsent(java.lang.Object, java.util.function.Supplier)"
     ],
     "fields" : [ ]
   },
@@ -554,7 +558,8 @@
     "superClass" : "java.util.AbstractList",
     "interfaces" : [ ],
     "attributes" : [
-      "public"
+      "public",
+      "final"
     ],
     "methods" : [
       "public void <init>()",
@@ -600,6 +605,7 @@
       "abstract"
     ],
     "methods" : [
+      "public java.util.List stem(java.lang.String, com.yahoo.language.Language, com.yahoo.language.process.StemMode, boolean)",
       "public abstract java.util.List stem(java.lang.String, com.yahoo.language.process.StemMode, com.yahoo.language.Language)"
     ],
     "fields" : [ ]
@@ -614,6 +620,7 @@
     ],
     "methods" : [
       "public void <init>(com.yahoo.language.process.Tokenizer)",
+      "public java.util.List stem(java.lang.String, com.yahoo.language.Language, com.yahoo.language.process.StemMode, boolean)",
       "public java.util.List stem(java.lang.String, com.yahoo.language.process.StemMode, com.yahoo.language.Language)"
     ],
     "fields" : [ ]
@@ -769,6 +776,51 @@
     ],
     "methods" : [
       "public abstract java.lang.String accentDrop(java.lang.String, com.yahoo.language.Language)"
+    ],
+    "fields" : [ ]
+  },
+  "com.yahoo.language.significance.DocumentFrequency" : {
+    "superClass" : "java.lang.Record",
+    "interfaces" : [ ],
+    "attributes" : [
+      "public",
+      "final",
+      "record"
+    ],
+    "methods" : [
+      "public void <init>(long, long)",
+      "public final java.lang.String toString()",
+      "public final int hashCode()",
+      "public final boolean equals(java.lang.Object)",
+      "public long frequency()",
+      "public long corpusSize()"
+    ],
+    "fields" : [ ]
+  },
+  "com.yahoo.language.significance.SignificanceModel" : {
+    "superClass" : "java.lang.Object",
+    "interfaces" : [ ],
+    "attributes" : [
+      "public",
+      "interface",
+      "abstract"
+    ],
+    "methods" : [
+      "public abstract com.yahoo.language.significance.DocumentFrequency documentFrequency(java.lang.String)",
+      "public abstract java.lang.String getId()"
+    ],
+    "fields" : [ ]
+  },
+  "com.yahoo.language.significance.SignificanceModelRegistry" : {
+    "superClass" : "java.lang.Object",
+    "interfaces" : [ ],
+    "attributes" : [
+      "public",
+      "interface",
+      "abstract"
+    ],
+    "methods" : [
+      "public abstract java.util.Optional getModel(com.yahoo.language.Language)"
     ],
     "fields" : [ ]
   }

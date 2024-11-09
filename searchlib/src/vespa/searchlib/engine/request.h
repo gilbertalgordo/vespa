@@ -23,8 +23,8 @@ public:
     vespalib::duration getTimeLeft() const;
     bool expired() const { return getTimeLeft() <= vespalib::duration::zero(); }
 
-    vespalib::stringref getStackRef() const {
-        return vespalib::stringref(stackDump.data(), stackDump.size());
+    std::string_view getStackRef() const {
+        return std::string_view(stackDump.data(), stackDump.size());
     }
 
     void setTraceLevel(uint32_t level, uint32_t minLevel) const {
@@ -39,8 +39,8 @@ private:
 public:
     /// Everything here should move up to private section and have accessors
     bool               dumpFeatures;
-    vespalib::string   ranking;
-    vespalib::string   location;
+    std::string   ranking;
+    std::string   location;
     PropertiesMap      propertiesMap;
     std::vector<char>  stackDump;
     std::vector<char>  sessionId;

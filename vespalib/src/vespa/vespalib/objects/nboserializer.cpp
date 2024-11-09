@@ -43,7 +43,7 @@ NBOSerializer &NBOSerializer::put(double value) {
     return *this;
 }
 
-NBOSerializer &NBOSerializer::put(stringref value) {
+NBOSerializer &NBOSerializer::put(std::string_view value) {
     _stream << value;
     return *this;
 }
@@ -84,7 +84,7 @@ NBOSerializer &NBOSerializer::get(float & value) {
     return *this;
 }
 
-NBOSerializer &NBOSerializer::get(string & value) {
+NBOSerializer &NBOSerializer::get(std::string & value) {
     _stream >> value;
     return *this;
 }

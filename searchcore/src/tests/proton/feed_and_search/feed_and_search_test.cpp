@@ -61,7 +61,7 @@ using search::test::DocBuilder;
 using search::test::SchemaBuilder;
 using search::test::StringFieldBuilder;
 using std::ostringstream;
-using vespalib::string;
+using std::string;
 
 namespace {
 
@@ -100,8 +100,9 @@ testSearch(Searchable &source, const string &term, uint32_t doc_id)
     SimpleStringTerm node(term, field_name, 0, search::query::Weight(0));
     Blueprint::UP result = source.createBlueprint(requestContext,
             FieldSpecList().add(FieldSpec(field_name, 0, handle)), node);
-    result->fetchPostings(search::queryeval::ExecuteInfo::TRUE);
-    SearchIterator::UP search_iterator = result->createSearch(*match_data, true);
+    result->basic_plan(true, 1000);
+    result->fetchPostings(search::queryeval::ExecuteInfo::FULL);
+    SearchIterator::UP search_iterator = result->createSearch(*match_data);
     search_iterator->initFullRange();
     ASSERT_TRUE(search_iterator.get());
     ASSERT_TRUE(search_iterator->seek(doc_id));
@@ -195,11 +196,11 @@ TEST(FeedAndSearchTest, require_that_memory_index_can_be_dumped_and_searched)
         ASSERT_TRUE(fret6);
     }
 
-    DiskIndex disk_index(index_dir);
+    DiskIndex disk_index(index_dir, {});
     ASSERT_TRUE(disk_index.setup(TuneFileSearch()));
     testSearch(disk_index, word1, doc_id1);
     testSearch(disk_index, word2, doc_id2);
-    DiskIndex disk_index2(index_dir2);
+    DiskIndex disk_index2(index_dir2, {});
     ASSERT_TRUE(disk_index2.setup(TuneFileSearch()));
     testSearch(disk_index2, word1, doc_id1);
     testSearch(disk_index2, word2, doc_id2);

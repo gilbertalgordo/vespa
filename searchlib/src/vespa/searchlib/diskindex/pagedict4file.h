@@ -26,6 +26,7 @@ class PageDict4FileSeqRead : public index::DictionaryFileSeqRead
     std::unique_ptr<DictFileReadContext> _sp;
     std::unique_ptr<DictFileReadContext> _p;
     uint64_t _wordNum;
+    uint32_t _mmap_file_size_threshold;
 public:
     PageDict4FileSeqRead();
     ~PageDict4FileSeqRead() override;
@@ -34,10 +35,11 @@ public:
      * Read word and counts.  Only nonzero counts are returned. If at
      * end of dictionary then noWordNumHigh() is returned as word number.
      */
-    void readWord(vespalib::string &word, uint64_t &wordNum, PostingListCounts &counts) override;
-    bool open(const vespalib::string &name, const TuneFileSeqRead &tuneFileRead) override;
+    void readWord(std::string &word, uint64_t &wordNum, PostingListCounts &counts) override;
+    bool open(const std::string &name, const TuneFileSeqRead &tuneFileRead) override;
     bool close() override;
     void getParams(index::PostingListParams &params) override;
+    void set_mmap_file_size_threshold(uint32_t v) { _mmap_file_size_threshold = v; }
 };
 
 /**
@@ -66,13 +68,13 @@ public:
     PageDict4FileSeqWrite();
     ~PageDict4FileSeqWrite();
 
-    void writeWord(vespalib::stringref word, const PostingListCounts &counts) override;
+    void writeWord(std::string_view word, const PostingListCounts &counts) override;
 
     /**
      * Open dictionary file for sequential write.  The index with most
      * words should be first for optimal compression.
      */
-    bool open(const vespalib::string &name, const TuneFileSeqWrite &tune,
+    bool open(const std::string &name, const TuneFileSeqWrite &tune,
               const FileHeaderContext &fileHeaderContext) override;
 
     bool close() override;

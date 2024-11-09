@@ -6,6 +6,8 @@
 #include <vespa/vespalib/util/stringfmt.h>
 #include <vespa/vespalib/stllike/hash_set.hpp>
 #include <cassert>
+#include <ostream>
+#include <string>
 
 #include <vespa/log/log.h>
 LOG_SETUP(".document.base.globalid");
@@ -39,7 +41,7 @@ getHexVal(char c)
 
 namespace document {
 
-vespalib::string GlobalId::toString() const {
+std::string GlobalId::toString() const {
     vespalib::asciistream out;
     out << "gid(0x" << vespalib::hex;
     for (int i = 0; i < (int)LENGTH; ++i) {
@@ -52,11 +54,11 @@ vespalib::string GlobalId::toString() const {
 }
 
 GlobalId
-GlobalId::parse(vespalib::stringref source)
+GlobalId::parse(std::string_view source)
 {
     if (source.substr(0, 6) != "gid(0x") {
         throw vespalib::IllegalArgumentException(
-                "A gid must start with \"gid(0x\". Invalid source: '" + source
+                "A gid must start with \"gid(0x\". Invalid source: '" + std::string(source)
                 + "'.", VESPA_STRLOC);
     }
     if (source.size() != 2 * LENGTH + 7) {
@@ -64,11 +66,11 @@ GlobalId::parse(vespalib::stringref source)
         ost << "A gid string representation must be exactly "
             << (2 * LENGTH + 7) << " bytes long. Invalid source: '"
             << source << "'.";
-        throw vespalib::IllegalArgumentException(ost.str(), VESPA_STRLOC);
+        throw vespalib::IllegalArgumentException(ost.view(), VESPA_STRLOC);
     }
     if (source.substr(2 * LENGTH + 6, 1) != ")") {
         throw vespalib::IllegalArgumentException(
-                "A gid must end in \")\". Invalid source: '" + source
+                "A gid must end in \")\". Invalid source: '" + std::string(source)
                 + "'.", VESPA_STRLOC);
     }
     GlobalId id;
@@ -78,7 +80,7 @@ GlobalId::parse(vespalib::stringref source)
         if (!validateHex(c1) || !validateHex(c2)) {
             throw vespalib::IllegalArgumentException(
                     "A gid can only contain hexidecimal characters [0-9a-fA-F]."
-                    " Invalid source: '" + source + "'.", VESPA_STRLOC);
+                    " Invalid source: '" + std::string(source) + "'.", VESPA_STRLOC);
         }
         id._gid._buffer[i] = (getHexVal(c1) << 4) | getHexVal(c2);
         /*

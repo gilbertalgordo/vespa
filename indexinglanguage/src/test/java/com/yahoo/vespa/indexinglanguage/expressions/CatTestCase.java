@@ -7,7 +7,8 @@ import com.yahoo.document.datatypes.*;
 import com.yahoo.vespa.indexinglanguage.SimpleTestAdapter;
 import org.junit.Test;
 
-import java.util.Arrays;
+
+import java.util.List;
 
 import static org.junit.Assert.*;
 
@@ -25,7 +26,7 @@ public class CatTestCase {
         assertEquals(2, exp.size());
         assertSame(foo, exp.get(0));
         assertSame(bar, exp.get(1));
-        assertEquals(Arrays.asList(foo, bar), exp.asList());
+        assertEquals(List.of(foo, bar), exp.asList());
     }
 
     @Test
@@ -33,11 +34,11 @@ public class CatTestCase {
         Expression foo = new AttributeExpression("foo");
         Expression bar = new AttributeExpression("bar");
         Expression exp = new CatExpression(foo, bar);
-        assertFalse(exp.equals(new Object()));
-        assertFalse(exp.equals(new StatementExpression(foo, bar)));
-        assertFalse(exp.equals(new CatExpression()));
-        assertFalse(exp.equals(new CatExpression(foo)));
-        assertFalse(exp.equals(new CatExpression(bar, foo)));
+        assertNotEquals(exp, new Object());
+        assertNotEquals(exp, new StatementExpression(foo, bar));
+        assertNotEquals(exp, new CatExpression());
+        assertNotEquals(exp, new CatExpression(foo));
+        assertNotEquals(exp, new CatExpression(bar, foo));
         assertEquals(exp, new CatExpression(foo, bar));
         assertEquals(exp.hashCode(), new CatExpression(foo, bar).hashCode());
     }
@@ -50,16 +51,16 @@ public class CatTestCase {
                      new SimpleExpression(DataType.STRING), DataType.STRING);
         assertVerifyThrows(new SimpleExpression().setCreatedOutput(null),
                            new SimpleExpression().setCreatedOutput(DataType.STRING), null,
-                           "Attempting to concatenate a null value");
+                           "Invalid expression 'SimpleExpression . SimpleExpression': In SimpleExpression: Attempting to concatenate a null value");
         assertVerifyThrows(new SimpleExpression(DataType.STRING),
                            new SimpleExpression(DataType.INT), null,
-                           "Operands require conflicting input types, string vs int");
+                           "Invalid expression of type 'CatExpression': Operands require conflicting input types, string vs int");
         assertVerifyThrows(new SimpleExpression(DataType.STRING),
                            new SimpleExpression(DataType.STRING), null,
-                           "Expected string input, but no input is specified");
+                           "Invalid expression 'SimpleExpression . SimpleExpression': Expected string input, but no input is specified");
         assertVerifyThrows(new SimpleExpression(DataType.STRING),
                            new SimpleExpression(DataType.STRING), DataType.INT,
-                           "Expected string input, got int");
+                           "Invalid expression 'SimpleExpression . SimpleExpression': Expected string input, got int");
     }
 
     @Test
@@ -233,16 +234,16 @@ public class CatTestCase {
     private static FieldValue evaluate(DataType typeA, FieldValue valA, DataType typeB, FieldValue valB) {
         ExecutionContext ctx = new ExecutionContext(new SimpleTestAdapter(new Field("a", typeA),
                                                                           new Field("b", typeB)));
-        ctx.setOutputValue(null, "a", valA);
-        ctx.setOutputValue(null, "b", valB);
+        ctx.setFieldValue("a", valA, null);
+        ctx.setFieldValue("b", valB, null);
         new CatExpression(new InputExpression("a"), new InputExpression("b")).execute(ctx);
-        return ctx.getValue();
+        return ctx.getCurrentValue();
     }
 
     private static DataType evaluate(DataType typeA, DataType typeB) {
         SimpleTestAdapter adapter = new SimpleTestAdapter(new Field("a", typeA), new Field("b", typeB));
         VerificationContext ctx = new VerificationContext(adapter);
         new CatExpression(new InputExpression("a"), new InputExpression("b")).verify(ctx);
-        return ctx.getValueType();
+        return ctx.getCurrentType();
     }
 }

@@ -5,7 +5,7 @@
 #include <vespa/document/fieldvalue/longfieldvalue.h>
 #include <vespa/document/fieldvalue/intfieldvalue.h>
 
-#include <vespa/vespalib/testkit/testapp.h>
+#include <vespa/vespalib/testkit/test_kit.h>
 
 #include <vespa/log/log.h>
 LOG_SETUP("fieldvalue_test");
@@ -24,7 +24,7 @@ TEST("require that FieldValues does not change their storage size.") {
     EXPECT_EQUAL(16u, sizeof(FieldValue));
     EXPECT_EQUAL(16u, sizeof(IntFieldValue));
     EXPECT_EQUAL(24u, sizeof(LongFieldValue));
-    EXPECT_EQUAL(104u, sizeof(StringFieldValue));
+    EXPECT_EQUAL(40u + sizeof(std::string), sizeof(StringFieldValue));
 }
 
 }  // namespace

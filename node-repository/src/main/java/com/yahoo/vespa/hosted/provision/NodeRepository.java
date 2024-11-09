@@ -4,25 +4,26 @@ package com.yahoo.vespa.hosted.provision;
 import com.yahoo.component.AbstractComponent;
 import com.yahoo.component.annotation.Inject;
 import com.yahoo.concurrent.maintenance.JobControl;
+import com.yahoo.config.provision.ApplicationId;
 import com.yahoo.config.provision.ApplicationTransaction;
-import com.yahoo.config.provision.ClusterSpec;
+import com.yahoo.config.provision.CapacityPolicies;
 import com.yahoo.config.provision.DockerImage;
 import com.yahoo.config.provision.EndpointsChecker.HealthChecker;
 import com.yahoo.config.provision.EndpointsChecker.HealthCheckerProvider;
+import com.yahoo.config.provision.Exclusivity;
 import com.yahoo.config.provision.NodeFlavors;
+import com.yahoo.config.provision.NodeResources.Architecture;
 import com.yahoo.config.provision.Zone;
 import com.yahoo.config.provisioning.NodeRepositoryConfig;
 import com.yahoo.vespa.curator.Curator;
 import com.yahoo.vespa.flags.FlagSource;
-import com.yahoo.vespa.flags.JacksonFlag;
 import com.yahoo.vespa.flags.PermanentFlags;
-import com.yahoo.vespa.flags.custom.SharedHost;
 import com.yahoo.vespa.hosted.provision.Node.State;
 import com.yahoo.vespa.hosted.provision.applications.Applications;
 import com.yahoo.vespa.hosted.provision.archive.ArchiveUriManager;
 import com.yahoo.vespa.hosted.provision.autoscale.MetricsDb;
+import com.yahoo.vespa.hosted.provision.backup.Snapshots;
 import com.yahoo.vespa.hosted.provision.lb.LoadBalancer;
-import com.yahoo.vespa.hosted.provision.lb.LoadBalancerInstance;
 import com.yahoo.vespa.hosted.provision.lb.LoadBalancers;
 import com.yahoo.vespa.hosted.provision.maintenance.InfrastructureVersions;
 import com.yahoo.vespa.hosted.provision.node.Agent;
@@ -44,6 +45,8 @@ import com.yahoo.vespa.orchestrator.Orchestrator;
 import java.time.Clock;
 import java.util.List;
 import java.util.Optional;
+
+import static com.yahoo.vespa.flags.Dimension.INSTANCE_ID;
 
 /**
  * The top level singleton in the node repo, providing access to all its state as child objects.
@@ -73,7 +76,7 @@ public class NodeRepository extends AbstractComponent implements HealthCheckerPr
     private final Orchestrator orchestrator;
     private final int spareCount;
     private final ProtoHealthChecker healthChecker;
-    private final JacksonFlag<SharedHost> sharedHosts;
+    private final Snapshots snapshots;
 
     /**
      * Creates a node repository from a zookeeper provider.
@@ -128,11 +131,12 @@ public class NodeRepository extends AbstractComponent implements HealthCheckerPr
                     zone.cloud().dynamicProvisioning(), provisionServiceProvider.getHostProvisioner().map(__ -> "present").orElse("empty")));
 
         this.flagSource = flagSource;
-        this.db = new CuratorDb(flavors, curator, clock, useCuratorClientCache);
-        this.zone = zone;
+        this.db = new CuratorDb(flavors, curator, clock, useCuratorClientCache, zone.cloud().account());
         this.clock = clock;
+        this.zone = zone;
         this.applications = new Applications(db);
-        this.nodes = new Nodes(db, zone, clock, orchestrator, applications);
+        this.snapshots = new Snapshots(this, provisionServiceProvider.getSnapshotStore());
+        this.nodes = new Nodes(db, zone, clock, orchestrator, applications, snapshots, flagSource);
         this.flavors = flavors;
         this.resourcesCalculator = provisionServiceProvider.getHostResourcesCalculator();
         this.nodeResourceLimits = new NodeResourceLimits(this);
@@ -147,7 +151,6 @@ public class NodeRepository extends AbstractComponent implements HealthCheckerPr
         this.metricsDb = metricsDb;
         this.orchestrator = orchestrator;
         this.spareCount = spareCount;
-        this.sharedHosts = PermanentFlags.SHARED_HOST.bindTo(flagSource());
         this.healthChecker = provisionServiceProvider.getHealthChecker();
         nodes.rewrite();
     }
@@ -208,25 +211,20 @@ public class NodeRepository extends AbstractComponent implements HealthCheckerPr
     /** The number of nodes we should ensure has free capacity for node failures whenever possible */
     public int spareCount() { return spareCount; }
 
-    /** Returns whether nodes must be allocated to hosts that are exclusive to the cluster type. */
-    public boolean exclusiveClusterType(ClusterSpec cluster) {
-        return sharedHosts.value().hasClusterType(cluster.type().name());
-    }
+    public Exclusivity exclusivity() { return new Exclusivity(zone, PermanentFlags.SHARED_HOST.bindTo(flagSource).value()); }
 
-    /**
-     * Returns whether nodes are allocated exclusively in this instance given this cluster spec.
-     * Exclusive allocation requires that the wanted node resources matches the advertised resources of the node
-     * perfectly.
-     */
-    public boolean exclusiveAllocation(ClusterSpec clusterSpec) {
-        return clusterSpec.isExclusive() ||
-               ( clusterSpec.type().isContainer() && zone.system().isPublic() && !zone.environment().isTest() ) ||
-               ( !zone().cloud().allowHostSharing() && !sharedHosts.value().supportsClusterType(clusterSpec.type().name()));
-    }
-
-    /** Whether the nodes of this cluster must be running on hosts that are specifically provisioned for the application. */
-    public boolean exclusiveProvisioning(ClusterSpec clusterSpec) {
-        return !zone.cloud().allowHostSharing() && clusterSpec.isExclusive();
+    public CapacityPolicies capacityPoliciesFor(ApplicationId applicationId) {
+        String adminClusterNodeArchitecture = PermanentFlags.ADMIN_CLUSTER_NODE_ARCHITECTURE
+                .bindTo(flagSource)
+                .with(INSTANCE_ID, applicationId.serializedForm())
+                .value();
+        double logserverMemory = PermanentFlags.LOGSERVER_NODE_MEMORY
+                .bindTo(flagSource)
+                .with(INSTANCE_ID, applicationId.serializedForm())
+                .value();
+        var tuning = new CapacityPolicies.Tuning(Architecture.valueOf(adminClusterNodeArchitecture),
+                                                 logserverMemory);
+        return new CapacityPolicies(zone, exclusivity(), applicationId, tuning);
     }
 
     /**
@@ -265,6 +263,11 @@ public class NodeRepository extends AbstractComponent implements HealthCheckerPr
                                                               .first()
                                                               .map(LoadBalancer::idSeed)
                                                               .orElseThrow(() -> new IllegalArgumentException("no load balancer for '" + endpoint + "'")));
+    }
+
+    /** Manage backup snapshots for nodes in this */
+    public Snapshots snapshots() {
+        return snapshots;
     }
 
 }

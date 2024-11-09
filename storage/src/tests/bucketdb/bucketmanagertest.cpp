@@ -1,8 +1,10 @@
 // Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include <tests/common/dummystoragelink.h>
+#include <tests/common/storage_config_set.h>
 #include <tests/common/testhelper.h>
 #include <tests/common/teststorageapp.h>
+#include <vespa/config-stor-distribution.h>
 #include <vespa/config/helper/configgetter.hpp>
 #include <vespa/document/config/config-documenttypes.h>
 #include <vespa/document/datatype/documenttype.h>
@@ -13,17 +15,17 @@
 #include <vespa/document/update/documentupdate.h>
 #include <vespa/metrics/updatehook.h>
 #include <vespa/storage/bucketdb/bucketmanager.h>
-#include <vespa/storage/common/global_bucket_space_distribution_converter.h>
 #include <vespa/storage/persistence/filestorage/filestormanager.h>
 #include <vespa/storageapi/message/bucketsplitting.h>
 #include <vespa/storageapi/message/persistence.h>
 #include <vespa/storageapi/message/state.h>
 #include <vespa/vdslib/distribution/distribution.h>
+#include <vespa/vdslib/distribution/global_bucket_space_distribution_converter.h>
 #include <vespa/vdslib/state/clusterstate.h>
 #include <vespa/vdslib/state/random.h>
 #include <vespa/vespalib/gtest/gtest.h>
 #include <vespa/vespalib/stllike/asciistream.h>
-#include <vespa/config-stor-filestor.h>
+#include <vespa/vespalib/testkit/test_path.h>
 #include <future>
 
 #include <vespa/log/log.h>
@@ -59,6 +61,7 @@ struct TestParams;
 
 struct BucketManagerTest : public Test {
 public:
+    std::unique_ptr<StorageConfigSet> _config;
     std::unique_ptr<TestServiceLayerApp> _node;
     std::unique_ptr<DummyStorageLink> _top;
     BucketManager *_manager;
@@ -69,8 +72,7 @@ public:
 
     ~BucketManagerTest() override;
 
-    void setupTestEnvironment(bool fakePersistenceLayer = true,
-                              bool noDelete = false);
+    void setupTestEnvironment();
     void addBucketsToDB(uint32_t count);
     bool wasBlockedDueToLastModified(api::StorageMessage* msg, uint64_t lastModified);
     void insertSingleBucket(const document::BucketId& bucket, const api::BucketInfo& info);
@@ -114,57 +116,36 @@ public:
 
 BucketManagerTest::~BucketManagerTest() = default;
 
-#define ASSERT_DUMMYLINK_REPLY_COUNT(link, count) \
-    if (link->getNumReplies() != count) { \
-        std::ostringstream ost; \
-        ost << "Expected there to be " << count << " replies in link, but " \
-            << "found " << link->getNumReplies() << ":\n"; \
-        for (uint32_t i=0; i<link->getNumReplies(); ++i) { \
-            ost << link->getReply(i)->getType() << "\n"; \
-        } \
-        FAIL() << ost.str(); \
+void check_dummy_link_reply_count(const DummyStorageLink& link, size_t expected_count) {
+    if (link.getNumReplies() != expected_count) {
+        std::ostringstream ost;
+        ost << "Expected there to be " << expected_count << " replies in link, but "
+            << "found " << link.getNumReplies() << ":\n";
+        for (uint32_t i = 0; i < link.getNumReplies(); ++i) {
+            ost << link.getReply(i)->getType() << "\n";
+        }
+        FAIL() << ost.str();
     }
-
-std::string getMkDirDisk(const std::string & rootFolder, int disk) {
-    std::ostringstream os;
-    os << "mkdir -p " << rootFolder << "/disks/d" << disk;
-    return os.str();
 }
 
-void BucketManagerTest::setupTestEnvironment(bool fakePersistenceLayer, bool noDelete)
+void BucketManagerTest::setupTestEnvironment()
 {
-    vdstestlib::DirConfig config(getStandardConfig(true, "bucketmanagertest"));
-    std::string rootFolder = getRootFolder(config);
-    if (!noDelete) {
-        assert(system(("rm -rf " + rootFolder).c_str()) == 0);
-    }
-    assert(system(getMkDirDisk(rootFolder, 0).c_str()) == 0);
-    assert(system(getMkDirDisk(rootFolder, 1).c_str()) == 0);
-
+    _config = StorageConfigSet::make_storage_node_config();
     auto repo = std::make_shared<const DocumentTypeRepo>(
-                *ConfigGetter<DocumenttypesConfig>::getConfig("config-doctypes", FileSpec("../config-doctypes.cfg")));
+                *ConfigGetter<DocumenttypesConfig>::getConfig("config-doctypes", FileSpec(TEST_PATH("../config-doctypes.cfg"))));
     _top = std::make_unique<DummyStorageLink>();
-    _node = std::make_unique<TestServiceLayerApp>(NodeIndex(0), config.getConfigId());
+    _node = std::make_unique<TestServiceLayerApp>(NodeIndex(0), _config->config_uri());
     _node->setTypeRepo(repo);
     _node->setupDummyPersistence();
     // Set up the 3 links
-    auto config_uri = config::ConfigUri(config.getConfigId());
     using vespa::config::content::core::StorServerConfig;
-    auto manager = std::make_unique<BucketManager>(*config_from<StorServerConfig>(config_uri), _node->getComponentRegister());
+    auto manager = std::make_unique<BucketManager>(*config_from<StorServerConfig>(_config->config_uri()), _node->getComponentRegister());
     _manager = manager.get();
     _top->push_back(std::move(manager));
-    if (fakePersistenceLayer) {
-        auto bottom = std::make_unique<DummyStorageLink>();
-        _bottom = bottom.get();
-        _top->push_back(std::move(bottom));
-    } else {
-        using StorFilestorConfig = vespa::config::content::internal::InternalStorFilestorType;
-        auto bottom = std::make_unique<FileStorManager>(*config_from<StorFilestorConfig>(config_uri),
-                                                        _node->getPersistenceProvider(), _node->getComponentRegister(),
-                                                        *_node, _node->get_host_info());
-        _top->push_back(std::move(bottom));
-    }
-    // Generate a doc to use for testing..
+    auto bottom = std::make_unique<DummyStorageLink>();
+    _bottom = bottom.get();
+    _top->push_back(std::move(bottom));
+
     const DocumentType &type(*_node->getTypeRepo()->getDocumentType("text/html"));
     _document = std::make_shared<document::Document>(*_node->getTypeRepo(), type, document::DocumentId("id:ns:text/html::ntnu"));
 }
@@ -333,7 +314,7 @@ TEST_F(BucketManagerTest, DISABLED_request_bucket_info_with_state) {
     {
         LOG(info, "Waiting for response from 3 request bucket info messages");
         _top->waitForMessages(3, 5);
-        ASSERT_DUMMYLINK_REPLY_COUNT(_top, 3);
+        ASSERT_NO_FATAL_FAILURE(check_dummy_link_reply_count(*_top, 3));
         std::map<uint64_t, api::RequestBucketInfoReply::SP> replies;
         for (uint32_t i=0; i<3; ++i) {
             replies[_top->getReply(i)->getMsgId()]
@@ -377,7 +358,7 @@ TEST_F(BucketManagerTest, request_bucket_info_with_list) {
 
         _top->sendDown(cmd);
         _top->waitForMessages(1, 5);
-        ASSERT_DUMMYLINK_REPLY_COUNT(_top, 1);
+        ASSERT_NO_FATAL_FAILURE(check_dummy_link_reply_count(*_top, 1));
         auto reply = std::dynamic_pointer_cast<api::RequestBucketInfoReply>(_top->getReply(0));
         _top->reset();
         ASSERT_TRUE(reply.get());
@@ -547,7 +528,7 @@ class ConcurrentOperationFixture {
 public:
     explicit ConcurrentOperationFixture(BucketManagerTest& self)
         : _self(self),
-          _state(std::make_shared<lib::ClusterState>("distributor:1 storage:1"))
+          _state(std::make_shared<lib::ClusterState>("version:2 distributor:1 storage:1"))
     {
         _self.setupTestEnvironment();
         _self._top->open();
@@ -621,7 +602,7 @@ public:
         return std::make_shared<api::RequestBucketInfoCommand>(makeBucketSpace(), 0, explicit_state);
     }
 
-    auto createFullFetchCommandWithHash(vespalib::stringref hash) const {
+    auto createFullFetchCommandWithHash(std::string_view hash) const {
         return std::make_shared<api::RequestBucketInfoCommand>(makeBucketSpace(), 0, *_state, hash);
     }
 
@@ -689,7 +670,7 @@ public:
 
     static std::unique_ptr<lib::Distribution> default_grouped_distribution() {
         return std::make_unique<lib::Distribution>(
-                lib::Distribution::ConfigWrapper(GlobalBucketSpaceDistributionConverter::string_to_config(vespalib::string(
+                lib::Distribution::ConfigWrapper(lib::GlobalBucketSpaceDistributionConverter::string_to_config(std::string(
 R"(redundancy 2
 group[3]
 group[0].name "invalid"
@@ -713,7 +694,7 @@ group[2].nodes[2].index 5
 
     static std::shared_ptr<lib::Distribution> derived_global_grouped_distribution() {
         auto default_distr = default_grouped_distribution();
-        return  GlobalBucketSpaceDistributionConverter::convert_to_global(*default_distr);
+        return lib::GlobalBucketSpaceDistributionConverter::convert_to_global(*default_distr);
     }
 
 private:

@@ -99,6 +99,21 @@ hashtable<Key, Value, Hash, Equal, KeyExtract, Modulator>::find(const AltKey & k
 }
 
 template< typename Key, typename Value, typename Hash, typename Equal, typename KeyExtract, typename Modulator >
+typename hashtable<Key, Value, Hash, Equal, KeyExtract, Modulator>::const_iterator
+hashtable<Key, Value, Hash, Equal, KeyExtract, Modulator>::find(const Key & key) const noexcept {
+    next_t h = hash(key);
+    if (__builtin_expect(_nodes[h].valid(), true)) {
+        do {
+            if (__builtin_expect(_equal(_keyExtractor(_nodes[h].getValue()), key), true)) {
+                return const_iterator(this, h);
+            }
+            h = _nodes[h].getNext();
+        } while (h != Node::npos);
+    }
+    return end();
+}
+
+template< typename Key, typename Value, typename Hash, typename Equal, typename KeyExtract, typename Modulator >
 void
 hashtable<Key, Value, Hash, Equal, KeyExtract, Modulator>::erase(const Key & key) {
     const_iterator found(find(key));
@@ -146,7 +161,7 @@ hashtable<Key, Value, Hash, Equal, KeyExtract, Modulator>::insert_internal_cold(
         const next_t p(_nodes[h].getNext());
         const next_t newIdx(_nodes.size());
         _nodes[h].setNext(newIdx);
-        _nodes.template emplace_back(std::forward<V>(node), p);
+        _nodes.emplace_back(std::forward<V>(node), p);
         _count++;
         return insert_result(iterator(this, newIdx), true);
     } else {
@@ -167,7 +182,7 @@ hashtable<Key, Value, Hash, Equal, KeyExtract, Modulator>::force_insert(Value &&
         const next_t p(_nodes[h].getNext());
         const next_t newIdx(_nodes.size());
         _nodes[h].setNext(newIdx);
-        _nodes.template emplace_back(std::move(value), p);
+        _nodes.emplace_back(std::move(value), p);
         _count++;
     } else {
         resize(_nodes.capacity()*2);

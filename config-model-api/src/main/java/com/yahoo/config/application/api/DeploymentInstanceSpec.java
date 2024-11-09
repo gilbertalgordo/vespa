@@ -40,7 +40,7 @@ import static com.yahoo.config.provision.Environment.prod;
  *
  * @author bratseth
  */
-public class DeploymentInstanceSpec extends DeploymentSpec.Steps {
+public final class DeploymentInstanceSpec extends DeploymentSpec.Steps {
 
     /** The maximum number of consecutive days Vespa upgrades are allowed to be blocked */
     private static final int maxUpgradeBlockingDays = 21;
@@ -115,7 +115,7 @@ public class DeploymentInstanceSpec extends DeploymentSpec.Steps {
 
     public InstanceName name() { return name; }
 
-    public Tags tags() { return tags; }
+    Tags tags() { return tags; }
 
     /**
      * Throws an IllegalArgumentException if any production deployment or test is declared multiple times,
@@ -184,8 +184,8 @@ public class DeploymentInstanceSpec extends DeploymentSpec.Steps {
     private void validateChangeBlockers(List<DeploymentSpec.ChangeBlocker> changeBlockers, Instant now) {
         // Find all possible dates an upgrade block window can start
         Stream<Instant> blockingFrom = changeBlockers.stream()
-                                                     .filter(blocker -> blocker.blocksVersions())
-                                                     .map(blocker -> blocker.window())
+                                                     .filter(DeploymentSpec.ChangeBlocker::blocksVersions)
+                                                     .map(DeploymentSpec.ChangeBlocker::window)
                                                      .map(window -> window.dateRange().start()
                                                                           .map(date -> date.atStartOfDay(window.zone())
                                                                                            .toInstant())
@@ -235,18 +235,15 @@ public class DeploymentInstanceSpec extends DeploymentSpec.Steps {
     /** Returns time windows where upgrades are disallowed for these instances */
     public List<DeploymentSpec.ChangeBlocker> changeBlocker() { return changeBlockers; }
 
-    // TODO(mpolden): Remove after Vespa < 8.203 is no longer in use
-    public Optional<String> globalServiceId() { return Optional.empty(); }
-
     /** Returns whether the instances in this step can upgrade at the given instant */
     public boolean canUpgradeAt(Instant instant) {
-        return changeBlockers.stream().filter(block -> block.blocksVersions())
+        return changeBlockers.stream().filter(DeploymentSpec.ChangeBlocker::blocksVersions)
                                       .noneMatch(block -> block.window().includes(instant));
     }
 
     /** Returns whether an application revision change for these instances can occur at the given instant */
     public boolean canChangeRevisionAt(Instant instant) {
-        return changeBlockers.stream().filter(block -> block.blocksRevisions())
+        return changeBlockers.stream().filter(DeploymentSpec.ChangeBlocker::blocksRevisions)
                              .noneMatch(block -> block.window().includes(instant));
     }
 
@@ -288,7 +285,7 @@ public class DeploymentInstanceSpec extends DeploymentSpec.Steps {
 
     /** Returns whether this instance deploys to the given zone, either implicitly or explicitly */
     public boolean deploysTo(Environment environment, RegionName region) {
-        return zones().stream().anyMatch(zone -> zone.concerns(environment, Optional.of(region)));
+        return zones().stream().anyMatch(zone -> zone.concerns(environment, Optional.ofNullable(region)));
     }
 
     /** Returns the zone endpoint specified for the given region, or empty. */
@@ -335,7 +332,7 @@ public class DeploymentInstanceSpec extends DeploymentSpec.Steps {
 
     int deployableHashCode() {
         List<DeploymentSpec.DeclaredZone> zones = zones().stream().filter(zone -> zone.concerns(prod)).toList();
-        Object[] toHash = new Object[zones.size() + 7];
+        Object[] toHash = new Object[zones.size() + 8];
         int i = 0;
         toHash[i++] = name;
         toHash[i++] = endpoints;
@@ -343,8 +340,9 @@ public class DeploymentInstanceSpec extends DeploymentSpec.Steps {
         toHash[i++] = tags;
         toHash[i++] = bcp;
         toHash[i++] = cloudAccounts;
+        toHash[i++] = athenzService;
         for (DeploymentSpec.DeclaredZone zone : zones)
-            toHash[i++] = Objects.hash(zone, zone.athenzService(), zone.cloudAccounts());
+            toHash[i++] = Objects.hash(zone, zone.athenzService(), zone.cloudAccounts(), zone.testerNodes());
 
         return Arrays.hashCode(toHash);
     }

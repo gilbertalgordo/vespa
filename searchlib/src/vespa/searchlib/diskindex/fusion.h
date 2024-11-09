@@ -4,6 +4,7 @@
 
 #include "fusion_output_index.h"
 #include <vespa/vespalib/util/executor.h>
+#include <vespa/vespalib/util/array.h>
 
 namespace search {
 class IFlushToken;
@@ -36,8 +37,8 @@ private:
 public:
     Fusion(const Fusion &) = delete;
     Fusion& operator=(const Fusion &) = delete;
-    Fusion(const Schema& schema, const vespalib::string& dir,
-           const std::vector<vespalib::string>& sources, const SelectorArray& selector,
+    Fusion(const Schema& schema, const std::string& dir,
+           const std::vector<std::string>& sources, const SelectorArray& selector,
            const TuneFileIndexing& tuneFileIndexing, const common::FileHeaderContext& fileHeaderContext);
 
     ~Fusion();

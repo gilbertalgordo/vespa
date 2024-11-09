@@ -13,10 +13,10 @@ int main(int argc, char **argv)
     double lstddev = std::log(2.0);
 
     if (argc > 2) {
-        lstddev = std::log(vespalib::locale::c::strtod(argv[--argc], NULL));
-        logmean = std::log(vespalib::locale::c::strtod(argv[--argc], NULL));
+        lstddev = std::log(vespalib::locale::c::strtod(argv[--argc], nullptr));
+        logmean = std::log(vespalib::locale::c::strtod(argv[--argc], nullptr));
     } else if (argc > 1) {
-        logmean = std::log(vespalib::locale::c::strtod(argv[--argc], NULL));
+        logmean = std::log(vespalib::locale::c::strtod(argv[--argc], nullptr));
     }
 
     fprintf(stderr, "100 typical friendlist sizes: ");
@@ -29,7 +29,7 @@ int main(int argc, char **argv)
     uint32_t person = 0;
     while (!feof(stdin)) {
         ++person;
-        std::vector<vespalib::string> friends;
+        std::vector<std::string> friends;
         int32_t want = (uint32_t)std::exp(rnd.nextNormal(logmean, lstddev));
         if (want < 17) want = (uint32_t)(std::exp(logmean)+0.99);
         if (want < 1) want = 1;
@@ -37,12 +37,12 @@ int main(int argc, char **argv)
         printf("me: %u friends:", person);
         while (want > 0) {
             char line[100];
-            if (fgets(line, 100, stdin) == NULL) {
+            if (fgets(line, 100, stdin) == nullptr) {
                 break;
             }
             if (rnd.nextUint32() % 42 == 17) {
-                vespalib::string s(line);
-                s.chomp();
+                std::string s(line);
+                vespalib::chomp(s);
                 friends.push_back(s);
                 --want;
             }

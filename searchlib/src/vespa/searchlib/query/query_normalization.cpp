@@ -2,6 +2,7 @@
 
 #include "query_normalization.h"
 #include <vespa/fastlib/text/normwordfolder.h>
+#include <cstring>
 #include <ostream>
 
 namespace search {
@@ -32,15 +33,15 @@ requireFold(TermType type, Normalizing normalizing) {
            : Normalizing::NONE;
 }
 
-vespalib::string
-fold(vespalib::stringref s) {
+std::string
+fold(std::string_view s) {
     const auto * curr = reinterpret_cast<const unsigned char *>(s.data());
     const unsigned char * end = curr + s.size();
-    vespalib::string folded;
+    std::string folded;
     for (; curr < end;) {
         uint32_t c_ucs4 = *curr;
         if (c_ucs4 < 0x80) {
-            folded.append(Fast_NormalizeWordFolder::lowercase_and_fold_ascii(*curr++));
+            folded += Fast_NormalizeWordFolder::lowercase_and_fold_ascii(*curr++);
         } else {
             c_ucs4 = Fast_UnicodeUtil::GetUTF8CharNonAscii(curr);
             const char *repl = Fast_NormalizeWordFolder::ReplacementString(c_ucs4);
@@ -58,15 +59,15 @@ fold(vespalib::stringref s) {
     return folded;
 }
 
-vespalib::string
-lowercase(vespalib::stringref s) {
+std::string
+lowercase(std::string_view s) {
     const auto * curr = reinterpret_cast<const unsigned char *>(s.data());
     const unsigned char * end = curr + s.size();
-    vespalib::string folded;
+    std::string folded;
     for (; curr < end;) {
         uint32_t c_ucs4 = *curr;
         if (c_ucs4 < 0x80) {
-            folded.append(static_cast<char>(Fast_NormalizeWordFolder::lowercase_ascii(*curr++)));
+            folded += static_cast<char>(Fast_NormalizeWordFolder::lowercase_ascii(*curr++));
         } else {
             c_ucs4 = Fast_NormalizeWordFolder::lowercase(Fast_UnicodeUtil::GetUTF8CharNonAscii(curr));
             char tmp[6];
@@ -85,14 +86,14 @@ operator<<(std::ostream &os, Normalizing n) {
     return os;
 }
 
-vespalib::string
-QueryNormalization::optional_fold(vespalib::stringref s, TermType type, Normalizing normalizing) {
+std::string
+QueryNormalization::optional_fold(std::string_view s, TermType type, Normalizing normalizing) {
     switch ( requireFold(type, normalizing)) {
-        case Normalizing::NONE: return s;
+        case Normalizing::NONE: return std::string(s);
         case Normalizing::LOWERCASE: return lowercase(s);
         case Normalizing::LOWERCASE_AND_FOLD: return fold(s);
     }
-    return s;
+    return std::string(s);
 }
 
 }

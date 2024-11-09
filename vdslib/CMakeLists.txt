@@ -3,18 +3,15 @@ vespa_define_module(
     DEPENDS
     vespalog
     vespalib
-    config_cloudconfig
-    configdefinitions
-    document
+    vespa_config
+    vespa_configdefinitions
+    vespa_document
 
     LIBS
     src/vespa/vdslib
     src/vespa/vdslib/container
     src/vespa/vdslib/distribution
     src/vespa/vdslib/state
-
-    TEST_DEPENDS
-    vdstestlib
 
     TESTS
     src/tests

@@ -164,6 +164,10 @@ index.maxflushedretired int default=20
 ## Control io options during flushing of attributes.
 attribute.write.io enum {NORMAL, OSYNC, DIRECTIO} default=DIRECTIO restart
 
+## Control options for io during search.
+## Dictionary is always MMAP.
+search.io enum {NORMAL, DIRECTIO, MMAP } default=MMAP restart
+
 ## Multiple optional options for use with mmap
 search.mmap.options[] enum {POPULATE, HUGETLB} restart
 
@@ -418,8 +422,8 @@ writefilter.memorylimit double default = 0.8
 ## put and update portion of feed is blocked.
 writefilter.disklimit double default = 0.8
 
-## Interval between sampling of disk and memory usage. Default is 10 seconds.
-writefilter.sampleinterval double default = 10.0
+## Interval between sampling of disk and memory usage. Default is 60 seconds.
+writefilter.sampleinterval double default = 60.0
 
 ## The size of the disk partition (in bytes) on which proton basedir is located.
 ## If set to 0, the disk size is sampled by looking at the filesystem space info.
@@ -534,6 +538,14 @@ indexing.threads int default=1 restart
 ## Now only used for caching of dictionary lookups.
 ## TODO Still relevant, check config model, seems unused.
 index.cache.size long default=0 restart
+
+## Configure a shared disk index posting list cache across all document dbs.
+##
+## Is default turned off (maxbytes == 0).
+## The cache will not be used if search.io == MMAP.
+## A postive number specifies the max size of the cache in bytes.
+## A negative number specifies the max size of the cache as a percentage of total memory.
+index.postinglist.cache.maxbytes long default=0 restart
 
 ## Specifies which tensor implementation to use for all backend code.
 ##

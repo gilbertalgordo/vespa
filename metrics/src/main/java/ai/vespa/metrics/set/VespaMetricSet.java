@@ -116,10 +116,6 @@ public class VespaMetricSet {
         // Routing layer metrics
         addMetric(metrics, RoutingLayerMetrics.WORKER_CONNECTIONS.max()); // Hosted Vespa only (routing layer)
 
-        // Embedders
-        addMetric(metrics, ContainerMetrics.EMBEDDER_LATENCY, EnumSet.of(max, sum, count));
-        addMetric(metrics, ContainerMetrics.EMBEDDER_SEQUENCE_LENGTH, EnumSet.of(max, sum, count));
-
         return metrics;
     }
 
@@ -237,6 +233,10 @@ public class VespaMetricSet {
         addMetric(metrics, ContainerMetrics.FEED_LATENCY, EnumSet.of(sum, count, max));
         addMetric(metrics, ContainerMetrics.FEED_HTTP_REQUESTS, EnumSet.of(count, rate));
 
+        // Embedders
+        addMetric(metrics, ContainerMetrics.EMBEDDER_LATENCY, EnumSet.of(max, sum, count));
+        addMetric(metrics, ContainerMetrics.EMBEDDER_SEQUENCE_LENGTH, EnumSet.of(max, sum, count));
+
         // Deprecated metrics. TODO: Remove on Vespa 9.
         addMetric(metrics, ContainerMetrics.SERVER_REJECTED_REQUESTS, EnumSet.of(rate, count));
         addMetric(metrics, ContainerMetrics.SERVER_THREAD_POOL_SIZE, EnumSet.of(max, last));
@@ -257,7 +257,9 @@ public class VespaMetricSet {
         addMetric(metrics, ClusterControllerMetrics.RETIRED_COUNT, EnumSet.of(max, last)); // TODO: Vespa 9: Remove last
         addMetric(metrics, ClusterControllerMetrics.STOPPING_COUNT.last());
         addMetric(metrics, ClusterControllerMetrics.UP_COUNT, EnumSet.of(max, last)); // TODO: Vespa 9: Remove last
+        addMetric(metrics, ClusterControllerMetrics.NODES_NOT_CONVERGED.max());
         addMetric(metrics, ClusterControllerMetrics.CLUSTER_STATE_CHANGE_COUNT.baseName());
+        addMetric(metrics, ClusterControllerMetrics.CLUSTER_BUCKETS_OUT_OF_SYNC_RATIO.max());
         addMetric(metrics, ClusterControllerMetrics.BUSY_TICK_TIME_MS, EnumSet.of(last, max, sum, count)); // TODO: Vespa 9: Remove last
         addMetric(metrics, ClusterControllerMetrics.IDLE_TICK_TIME_MS, EnumSet.of(last, max, sum, count)); // TODO: Vespa 9: Remove last
 

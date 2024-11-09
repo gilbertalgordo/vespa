@@ -3,12 +3,12 @@
 #pragma once
 
 #include <vespa/searchlib/util/comprfile.h>
-#include <vespa/vespalib/stllike/string.h>
+#include <span>
+#include <string>
 
 namespace vespalib {
 
 class GenericHeader;
-template <typename T> class ConstArrayRef;
 
 }
 
@@ -300,45 +300,6 @@ public:
   do {                                                  \
     UC64BE_WRITEBITS(ctx ## cacheInt, ctx ## cacheFree, \
                    ctx ## valI, EC);                    \
-  } while (0)
-
-#define UC64BE_DECODEDEXPGOLOMB_NS(prefix, k, EC)           \
-  do {                                                      \
-    if ((prefix ## Val & TOP_BIT64) == 0) {                 \
-      length = 1;                                           \
-      prefix ## Val <<= 1;                                  \
-      val64 = 0;                                            \
-      UC64BE_READBITS_NS(prefix, EC);                       \
-    } else {                                                \
-      if ((prefix ## Val & TOP_2_BITS64) != TOP_2_BITS64) { \
-    length = 2;                                             \
-    prefix ## Val <<= 2;                                    \
-    val64 = 1;                                              \
-    UC64BE_READBITS_NS(prefix, EC);                         \
-      } else {                                              \
-    length = 2;                                             \
-    prefix ## Val <<= 2;                                    \
-    UC64BE_READBITS_NS(prefix, EC);                         \
-    UC64BE_DECODEEXPGOLOMB_NS(prefix, k, EC);               \
-    val64 += 2;                                             \
-      }                                                     \
-    }                                                       \
-  } while (0)
-
-#define UC64BE_DECODED0EXPGOLOMB_NS(prefix, k, EC) \
-  do {                                             \
-    if ((prefix ## Val & TOP_BIT64) == 0) {        \
-      length = 1;                                  \
-      prefix ## Val <<= 1;                         \
-      val64 = 0;                                   \
-      UC64BE_READBITS_NS(prefix, EC);              \
-    } else {                                       \
-      length = 1;                                  \
-      prefix ## Val <<= 1;                         \
-      UC64BE_READBITS_NS(prefix, EC);              \
-      UC64BE_DECODEEXPGOLOMB_NS(prefix, k, EC);    \
-      val64 += 1;                                  \
-    }                                              \
   } while (0)
 
 #define UC64LE_READBITS(val, valI, preRead, cacheInt, EC)          \
@@ -1008,53 +969,6 @@ public:
         return k + asmlog2((x >> k) + 1) * 2 + 1;
     }
 
-    void
-    encodeDExpGolomb(uint64_t x, uint32_t k)
-    {
-        if (x == 0) {
-            writeBits(0, 1);
-            return;
-        }
-        if (x == 1) {
-            writeBits(bigEndian ? 2 : 1, 2);
-            return;
-        }
-        writeBits(3, 2);
-        encodeExpGolomb(x - 2, k);
-    }
-
-    static uint32_t
-    encodeDExpGolombSpace(uint64_t x, uint32_t k)
-    {
-        if (x == 0) {
-            return 1;
-        }
-        if (x == 1) {
-            return 2;
-        }
-        return 2 + encodeExpGolombSpace(x, k);
-    }
-
-    void
-    encodeD0ExpGolomb(uint64_t x, uint32_t k)
-    {
-        if (x == 0) {
-            writeBits(0, 1);
-            return;
-        }
-        writeBits(1, 1);
-        encodeExpGolomb(x - 1, k);
-    }
-
-    static uint32_t
-    encodeD0ExpGolombSpace(uint64_t x, uint32_t k)
-    {
-        if (x == 0) {
-            return 1;
-        }
-        return 1 + encodeExpGolombSpace(x, k);
-    }
-
     static uint64_t
     convertToUnsigned(int64_t val)
     {
@@ -1167,7 +1081,7 @@ public:
      * Get remaining units in buffer (e.g. _realValE - _valI)
      */
 
-    int32_t remainingUnits() const override { return _realValE - _valI; }
+    int64_t remainingUnits() const override { return _realValE - _valI; }
 
     /**
      * Get unit ptr (e.g. _valI) from decode context.
@@ -1181,7 +1095,7 @@ public:
     }
 
     uint64_t getBitPos(int bitOffset, uint64_t bufferEndFilePos) const override {
-        int intOffset = _realValE - _valI;
+        int64_t intOffset = _realValE - _valI;
         if (bitOffset == -1) {
             bitOffset = -64 - _preRead;
         }
@@ -1200,7 +1114,7 @@ public:
 
     uint64_t getBitPosV() const override { return getReadOffset(); }
 
-    void adjUnitPtr(int newRemainingUnits) override {
+    void adjUnitPtr(int64_t newRemainingUnits) override {
         _valI = _realValE - newRemainingUnits;
     }
 
@@ -1219,7 +1133,7 @@ public:
      * @param  unitCount   Number of bytes in buffer
      * @param  moreData    Set if there is more data available
      */
-    void setEnd(unsigned int unitCount, bool moreData) {
+    void setEnd(uint64_t unitCount, bool moreData) {
         _valE = _realValE = _valI + unitCount;
         if (moreData) {
             _valE -= END_BUFFER_SAFETY;
@@ -1261,6 +1175,13 @@ public:
     virtual uint64_t decode_exp_golomb(int k) = 0;
     void readBytes(uint8_t *buf, size_t len);
     uint32_t readHeader(vespalib::GenericHeader &header, int64_t fileSize);
+
+    /*
+     * Check if file is padding at end for decompression readahead.
+     */
+    static bool is_padded_for_memory_map(uint64_t file_bit_size, uint64_t file_size) noexcept;
+
+    static uint64_t file_units(uint64_t file_size) noexcept { return (file_size + sizeof(uint64_t) - 1) / sizeof(uint64_t); }
 };
 
 
@@ -1511,9 +1432,9 @@ public:
     {
     }
 
-    virtual void readHeader(const vespalib::GenericHeader &header, const vespalib::string &prefix);
+    virtual void readHeader(const vespalib::GenericHeader &header, const std::string &prefix);
 
-    virtual const vespalib::string & getIdentifier() const;
+    virtual const std::string & getIdentifier() const;
     virtual void readFeatures(DocIdAndFeatures &features);
     virtual void skipFeatures(unsigned int count);
     virtual void unpackFeatures(const search::fef::TermFieldMatchDataArray &matchData, uint32_t docId);
@@ -1571,12 +1492,13 @@ public:
     using ParentClass::writeBits;
 
     void writeBits(const uint64_t *bits, uint32_t bitOffset, uint32_t bitLength);
-    void writeBytes(vespalib::ConstArrayRef<char> buf);
-    void writeString(vespalib::stringref buf);
+    void writeBytes(std::span<const char> buf);
+    void writeBytes(std::span<const unsigned char> buf);
+    void writeString(std::string_view buf);
     virtual void writeHeader(const vespalib::GenericHeader &header);
 
     void writeComprBufferIfNeeded() {
-        if (_valI >= _valE) {
+        if (_valI >= _valE) [[unlikely]] {
             _writeContext->writeComprBuffer(false);
         }
     }
@@ -1595,9 +1517,11 @@ public:
         writeComprBufferIfNeeded();
     }
 
-    virtual void readHeader(const vespalib::GenericHeader &header, const vespalib::string &prefix);
-    virtual void writeHeader(vespalib::GenericHeader &header, const vespalib::string &prefix) const;
-    virtual const vespalib::string &getIdentifier() const;
+    void pad_for_memory_map_and_flush();
+
+    virtual void readHeader(const vespalib::GenericHeader &header, const std::string &prefix);
+    virtual void writeHeader(vespalib::GenericHeader &header, const std::string &prefix) const;
+    virtual const std::string &getIdentifier() const;
     virtual void writeFeatures(const DocIdAndFeatures &features);
     virtual void setParams(const PostingListParams &params);
     virtual void getParams(PostingListParams &params) const;

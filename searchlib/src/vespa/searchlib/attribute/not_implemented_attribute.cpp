@@ -14,11 +14,11 @@ namespace search {
 using largeint_t = attribute::IAttributeVector::largeint_t;
 using attribute::SearchContext;
 
-NotImplementedAttribute::NotImplementedAttribute(const vespalib::string &name)
+NotImplementedAttribute::NotImplementedAttribute(std::string_view name)
     : NotImplementedAttribute(name, Config())
 {}
 
-NotImplementedAttribute::NotImplementedAttribute(const vespalib::string &name, const Config & cfg)
+NotImplementedAttribute::NotImplementedAttribute(std::string_view name, const Config & cfg)
     : AttributeVector(name, cfg)
 {}
 
@@ -43,7 +43,7 @@ NotImplementedAttribute::getFloat(DocId) const {
     notImplemented();
 }
 
-vespalib::ConstArrayRef<char>
+std::span<const char>
 NotImplementedAttribute::get_raw(DocId) const
 {
     notImplemented();
@@ -60,7 +60,7 @@ NotImplementedAttribute::get(DocId, double *, uint32_t) const {
 }
 
 uint32_t
-NotImplementedAttribute::get(DocId, vespalib::string *, uint32_t) const {
+NotImplementedAttribute::get(DocId, std::string *, uint32_t) const {
     notImplemented();
 }
 

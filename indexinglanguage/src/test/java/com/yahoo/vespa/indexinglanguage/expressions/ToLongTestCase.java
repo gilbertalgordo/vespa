@@ -30,15 +30,15 @@ public class ToLongTestCase {
         Expression exp = new ToLongExpression();
         assertVerify(DataType.INT, exp, DataType.LONG);
         assertVerify(DataType.STRING, exp, DataType.LONG);
-        assertVerifyThrows(null, exp, "Expected any input, but no input is specified");
+        assertVerifyThrows("Invalid expression 'to_long': Expected any input, but no input is specified", null, exp);
     }
 
     @Test
     public void requireThatValueIsConverted() {
         ExecutionContext ctx = new ExecutionContext(new SimpleTestAdapter());
-        ctx.setValue(new StringFieldValue("69")).execute(new ToLongExpression());
+        ctx.setCurrentValue(new StringFieldValue("69")).execute(new ToLongExpression());
 
-        FieldValue val = ctx.getValue();
+        FieldValue val = ctx.getCurrentValue();
         assertTrue(val instanceof LongFieldValue);
         assertEquals(69L, ((LongFieldValue)val).getLong());
     }

@@ -41,13 +41,13 @@ public:
      * @brief Register a service with the slobrok cluster.
      * @param name service name to register
      **/
-    void registerName(vespalib::stringref name);
+    void registerName(std::string_view name);
 
     /**
      * @brief Unregister a service with the slobrok cluster
      * @param name service name to unregister
      **/
-    void unregisterName(vespalib::stringref name);
+    void unregisterName(std::string_view name);
 
     /**
      * @brief Check progress
@@ -91,12 +91,12 @@ private:
     std::atomic<bool>        _busy;
     SlobrokList              _slobrokSpecs;
     Configurator::UP         _configurator;
-    vespalib::string         _currSlobrok;
+    std::string         _currSlobrok;
     uint32_t                 _idx;
     BackOff                  _backOff;
-    std::vector<vespalib::string> _names;   // registered service names
-    std::vector<vespalib::string> _pending; // pending service name registrations
-    std::vector<vespalib::string> _unreg;   // pending service name unregistrations
+    std::vector<std::string> _names;   // registered service names
+    std::vector<std::string> _pending; // pending service name registrations
+    std::vector<std::string> _unreg;   // pending service name unregistrations
     FRT_Target              *_target;
     FRT_RPCRequest          *_req;
 };

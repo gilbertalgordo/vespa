@@ -11,8 +11,11 @@ vespa_add_library(vespaeval
     $<TARGET_OBJECTS:eval_streamed>
     INSTALL lib64
     DEPENDS
+    vespa_hwaccelerated
     onnxruntime
     ${VESPA_LLVM_LIB}
+    EXTERNAL_DEPENDS
+    ${CMAKE_DL_LIBS}
 )
 
 set(BLA_VENDOR OpenBLAS)

@@ -1,6 +1,6 @@
 // Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
-#include <vespa/vespalib/testkit/testapp.h>
+#include <vespa/vespalib/testkit/test_kit.h>
 #include <vespa/vespalib/util/size_literals.h>
 #include <vespa/searchlib/bitcompression/compression.h>
 #include <vespa/searchlib/bitcompression/countcompression.h>
@@ -161,7 +161,7 @@ void testPageSizedCounts()
     uint64_t checkWordNum = 0;
     PostingListCounts counts;
     for (uint64_t wordNum = 1; wordNum < 7; ++wordNum) {
-        vespalib::string word;
+        std::string word;
         counts.clear();
         r.readCounts(word, checkWordNum, counts);
         if (wordNum < 6) {

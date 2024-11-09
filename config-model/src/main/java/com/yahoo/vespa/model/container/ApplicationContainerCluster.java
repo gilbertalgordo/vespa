@@ -127,6 +127,7 @@ public final class ApplicationContainerCluster extends ContainerCluster<Applicat
         addSimpleComponent("com.yahoo.container.jdisc.CertificateStoreProvider");
         addSimpleComponent("com.yahoo.container.jdisc.AthenzIdentityProviderProvider");
         addSimpleComponent("com.yahoo.container.core.documentapi.DocumentAccessProvider");
+        addSimpleComponent("com.yahoo.container.jdisc.SecretsProvider");
         addSimpleComponent(DOCUMENT_TYPE_MANAGER_CLASS);
 
         addMetricsHandlers();
@@ -209,22 +210,27 @@ public final class ApplicationContainerCluster extends ContainerCluster<Applicat
         if (memoryPercentage != null) return Optional.of(JvmMemoryPercentage.of(memoryPercentage));
 
         if (isHostedVespa()) {
-            int availableMemoryPercentage = availableMemoryPercentage();
-            if (getContainers().isEmpty()) return Optional.of(JvmMemoryPercentage.of(availableMemoryPercentage)); // Node memory is not known
+            int heapSizePercentageOfAvailable = heapSizePercentageOfAvailable();
+            if (getContainers().isEmpty()) return Optional.of(JvmMemoryPercentage.of(heapSizePercentageOfAvailable)); // Node memory is not known
 
-            // Node memory is known so convert available memory percentage to node memory percentage
-            double totalMemory = getContainers().stream().mapToDouble(c -> c.getHostResource().realResources().memoryGb()).min().orElseThrow();
-            double jvmHeapDeductionGb = onnxModelCostCalculator.aggregatedModelCostInBytes() / (1024D * 1024 * 1024);
-            double availableMemory = Math.max(0, totalMemory - Host.memoryOverheadGb - jvmHeapDeductionGb);
-            int memoryPercentage = (int) (availableMemory / totalMemory * availableMemoryPercentage);
-            logger.log(FINE, () -> "cluster id '%s': memoryPercentage=%d, availableMemory=%f, totalMemory=%f, availableMemoryPercentage=%d, jvmHeapDeductionGb=%f"
-                    .formatted(id(), memoryPercentage, availableMemory, totalMemory, availableMemoryPercentage, jvmHeapDeductionGb));
-            return Optional.of(JvmMemoryPercentage.of(memoryPercentage, availableMemory));
+            // Node memory is known, so compute heap size as a percentage of available memory (excluding overhead, which the startup scripts also account for)
+            double totalMemoryGb = getContainers().stream().mapToDouble(c -> c.getHostResource().realResources().memoryGiB()).min().orElseThrow();
+            double totalMemoryMinusOverhead = Math.max(0, totalMemoryGb - Host.memoryOverheadGb);
+            double onnxModelCostGb = onnxModelCostCalculator.aggregatedModelCostInBytes() / (1024D * 1024 * 1024);
+            double availableMemoryGb = Math.max(0, totalMemoryMinusOverhead - onnxModelCostGb);
+            int memoryPercentageOfAvailable = (int) (heapSizePercentageOfAvailable * availableMemoryGb / totalMemoryMinusOverhead);
+            int memoryPercentageOfTotal = (int) (heapSizePercentageOfAvailable * availableMemoryGb / totalMemoryGb);
+            logger.log(FINE, () -> ("cluster id '%s': memoryPercentageOfAvailable=%d, memoryPercentageOfTotal=%d, " +
+                                    "availableMemoryGb=%f, totalMemoryGb=%f, heapSizePercentageOfAvailable=%d, onnxModelCostGb=%f")
+                    .formatted(id(), memoryPercentageOfAvailable, memoryPercentageOfTotal,
+                               availableMemoryGb, totalMemoryGb, heapSizePercentageOfAvailable, onnxModelCostGb));
+            return Optional.of(JvmMemoryPercentage.of(memoryPercentageOfAvailable, memoryPercentageOfTotal,
+                                                      availableMemoryGb * heapSizePercentageOfAvailable * 1e-2));
         }
         return Optional.empty();
     }
 
-    public int availableMemoryPercentage() {
+    public int heapSizePercentageOfAvailable() {
         return getHostClusterId().isPresent() ?
                 heapSizePercentageOfTotalAvailableMemoryWhenCombinedCluster :
                 heapSizePercentageOfAvailableMemory;
@@ -310,14 +316,23 @@ public final class ApplicationContainerCluster extends ContainerCluster<Applicat
     public void getConfig(QrStartConfig.Builder builder) {
         super.getConfig(builder);
         var memoryPct = getMemoryPercentage().orElse(null);
-        int heapsize = memoryPct != null && memoryPct.availableMemoryGb().isPresent()
-                ? (int) (memoryPct.availableMemoryGb().getAsDouble() * 1024) : 1536;
+        int heapsize = truncateTo4SignificantBits(memoryPct != null && memoryPct.asAbsoluteGb().isPresent()
+                                                  ? (int) (memoryPct.asAbsoluteGb().getAsDouble() * 1024) : 1536);
         builder.jvm.verbosegc(true)
                 .availableProcessors(0)
                 .compressedClassSpaceSize(0)
-                .minHeapsize(heapsize)
+                .minHeapsize(heapsize) // These cause restarts when changed, so we try to keep them stable.
                 .heapsize(heapsize);
-        if (memoryPct != null) builder.jvm.heapSizeAsPercentageOfPhysicalMemory(memoryPct.percentage());
+        if (memoryPct != null) builder.jvm.heapSizeAsPercentageOfPhysicalMemory(memoryPct.ofContainerAvailable());
+    }
+
+    static int truncateTo4SignificantBits(int i) {
+        if (i == Integer.MIN_VALUE) return i;
+        if (i < 0) return -truncateTo4SignificantBits(-i);
+        if (i <= 16) return i;
+        int mask = Integer.highestOneBit(i);
+        mask += mask - (mask >> 3);
+        return i & mask;
     }
 
     @Override

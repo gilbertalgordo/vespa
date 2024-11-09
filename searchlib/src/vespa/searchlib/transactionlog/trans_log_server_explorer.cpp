@@ -51,14 +51,14 @@ TransLogServerExplorer::get_state(const Inserter &inserter, bool full) const
     inserter.insertObject();
 }
 
-std::vector<vespalib::string>
+std::vector<std::string>
 TransLogServerExplorer::get_children_names() const
 {
     return _server->getDomainNames();
 }
 
 std::unique_ptr<vespalib::StateExplorer>
-TransLogServerExplorer::get_child(vespalib::stringref name) const
+TransLogServerExplorer::get_child(std::string_view name) const
 {
     Domain::SP domain = _server->findDomain(name);
     if (!domain) {

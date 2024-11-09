@@ -87,7 +87,7 @@ SearchIterator::and_hits_into(BitVector &result, uint32_t begin_id)
     }
 }
 
-vespalib::string
+std::string
 SearchIterator::asString() const
 {
     vespalib::ObjectDumper dumper;
@@ -104,7 +104,7 @@ SearchIterator::asSlime(const vespalib::slime::Inserter & inserter) const
     return cursor;
 }
 
-vespalib::string
+std::string
 SearchIterator::getClassName() const
 {
     return vespalib::getClassName(*this);
@@ -118,7 +118,7 @@ SearchIterator::visitMembers(vespalib::ObjectVisitor &visitor) const
 }
 
 void
-SearchIterator::disclose_children(std::vector<UP*> &)
+SearchIterator::transform_children(std::function<SearchIterator::UP(SearchIterator::UP, size_t)>)
 {
 }
 
@@ -126,10 +126,10 @@ SearchIterator::disclose_children(std::vector<UP*> &)
 
 //-----------------------------------------------------------------------------
 
-void visit(vespalib::ObjectVisitor &self, const vespalib::string &name,
+void visit(vespalib::ObjectVisitor &self, std::string_view name,
            const search::queryeval::SearchIterator *obj)
 {
-    if (obj != 0) {
+    if (obj != nullptr) {
         self.openStruct(name, obj->getClassName());
         obj->visitMembers(self);
         self.closeStruct();
@@ -138,8 +138,7 @@ void visit(vespalib::ObjectVisitor &self, const vespalib::string &name,
     }
 }
 
-void visit(vespalib::ObjectVisitor &self, const vespalib::string &name,
-           const search::queryeval::SearchIterator &obj)
+void visit(vespalib::ObjectVisitor &self, std::string_view name, const search::queryeval::SearchIterator &obj)
 {
     visit(self, name, &obj);
 }

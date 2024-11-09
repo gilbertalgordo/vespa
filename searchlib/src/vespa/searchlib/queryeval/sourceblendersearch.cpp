@@ -148,7 +148,7 @@ SourceBlenderSearch::visitMembers(vespalib::ObjectVisitor &visitor) const
     visit(visitor, "children", _children);
     for (const auto & child : _children) {
         vespalib::asciistream os;
-        os << "Source " << child;
+        os << "Source " << uint32_t(child);
         visit(visitor, os.str(), *getSearch(child));
     }
 }
@@ -161,9 +161,14 @@ SourceBlenderSearch::~SourceBlenderSearch()
 }
 
 void
-SourceBlenderSearch::setChild(size_t index, SearchIterator::UP child) {
-    assert(_sources[_children[index]] == nullptr);
-    _sources[_children[index]] = child.release();
+SourceBlenderSearch::transform_children(std::function<SearchIterator::UP(SearchIterator::UP, size_t)> f)
+{
+    for (size_t i = 0; i < _children.size(); ++i) {
+        SearchIterator::UP ptr(_sources[_children[i]]);
+        _sources[_children[i]] = nullptr;
+        ptr = f(std::move(ptr), i);
+        _sources[_children[i]] = ptr.release();
+    }
 }
 
 SearchIterator::UP
@@ -179,7 +184,7 @@ SourceBlenderSearch::create(std::unique_ptr<sourceselector::Iterator> sourceSele
 
 }
 
-void visit(vespalib::ObjectVisitor &self, const vespalib::string &name,
+void visit(vespalib::ObjectVisitor &self, const std::string &name,
            const search::queryeval::SourceBlenderSearch::Child &obj)
 {
     self.openStruct(name, "search::queryeval::SourceBlenderSearch::Child");

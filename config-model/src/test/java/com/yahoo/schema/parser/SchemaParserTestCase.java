@@ -121,6 +121,39 @@ public class SchemaParserTestCase {
     }
 
     @Test
+    void significance_can_be_parsed() throws Exception {
+        String input = """
+            schema foo {
+                rank-profile significance-ranking-0 inherits default {
+                    significance {
+                        use-model: true
+                    }
+                }
+                rank-profile significance-ranking-1 {
+                    significance {
+                        use-model: false
+                    }
+                }
+            }
+            """;
+
+        ParsedSchema schema = parseString(input);
+        assertEquals("foo", schema.name());
+        var rplist = schema.getRankProfiles();
+        assertEquals(2, rplist.size());
+
+        var rp0 = rplist.get(0);
+        assertEquals("significance-ranking-0", rp0.name());
+        assertTrue(rp0.isUseSignificanceModel().isPresent());
+        assertTrue(rp0.isUseSignificanceModel().get());
+
+        var rp1 = rplist.get(1);
+        assertEquals("significance-ranking-1", rp1.name());
+        assertTrue(rp1.isUseSignificanceModel().isPresent());
+        assertFalse(rp1.isUseSignificanceModel().get());
+    }
+
+    @Test
     void maxOccurrencesCanBeParsed() throws Exception {
         String input = joinLines
                 ("schema foo {",
@@ -135,6 +168,23 @@ public class SchemaParserTestCase {
         var field = schema.getDocument().getFields().get(0);
         assertEquals("bar", field.name());
         assertEquals(11, field.matchSettings().getMaxTermOccurrences().get());
+    }
+
+    @Test
+    void maxTokenLengthCanBeParsed() throws Exception {
+        String input = joinLines
+                ("schema foo {",
+                        "  document foo {",
+                        "    field bar type string {",
+                        "      indexing: summary | index",
+                        "      match { max-token-length: 11 }",
+                        "    }",
+                        "  }",
+                        "}");
+        ParsedSchema schema = parseString(input);
+        var field = schema.getDocument().getFields().get(0);
+        assertEquals("bar", field.name());
+        assertEquals(11, field.matchSettings().getMaxTokenLength().get());
     }
 
     void checkFileParses(String fileName) throws Exception {

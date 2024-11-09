@@ -5,10 +5,10 @@
 #include <vespa/fnet/frt/invokable.h>
 #include <vespa/fnet/frt/invoker.h>
 #include <vespa/storageapi/messageapi/returncode.h>
-#include <vespa/vespalib/stllike/string.h>
 #include <vespa/vespalib/util/compressionconfig.h>
 #include <atomic>
 #include <memory>
+#include <string>
 
 class FRT_RPCRequest;
 class FRT_Target;
@@ -84,7 +84,7 @@ private:
 
     void handle_request_done_rpc_error(FRT_RPCRequest& req, const RpcRequestContext& req_ctx);
     void handle_request_done_decode_error(const RpcRequestContext& req_ctx,
-                                          vespalib::stringref description);
+                                          std::string_view description);
     void create_and_dispatch_error_reply(api::StorageCommand& cmd, api::ReturnCode error);
 
     api::ReturnCode map_frt_error_to_storage_api_error(FRT_RPCRequest& req, const RpcRequestContext& req_ctx);

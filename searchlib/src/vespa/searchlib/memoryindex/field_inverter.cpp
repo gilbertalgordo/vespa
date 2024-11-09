@@ -48,7 +48,7 @@ FieldInverter::processAnnotations(const StringFieldValue &value, const Document&
 {
     _terms.clear();
     auto span_trees = value.getSpanTrees();
-    vespalib::stringref text = value.getValueRef();
+    std::string_view text = value.getValueRef();
     _token_extractor.extract(_terms, span_trees, text, &doc);
     auto it  = _terms.begin();
     auto ite = _terms.end();
@@ -139,7 +139,7 @@ FieldInverter::endElement()
 }
 
 uint32_t
-FieldInverter::saveWord(vespalib::stringref word)
+FieldInverter::saveWord(std::string_view word)
 {
     const size_t wordsSize = _words.size();
     // assert((wordsSize & 3) == 0); // Check alignment
@@ -160,7 +160,7 @@ FieldInverter::saveWord(vespalib::stringref word)
 }
 
 void
-FieldInverter::remove(const vespalib::stringref word, uint32_t docId)
+FieldInverter::remove(const std::string_view word, uint32_t docId)
 {
     uint32_t wordRef = saveWord(word);
     _positions.emplace_back(wordRef, docId);
@@ -190,7 +190,7 @@ FieldInverter::endDoc()
 }
 
 void
-FieldInverter::addWord(vespalib::stringref word, const document::Document& doc)
+FieldInverter::addWord(std::string_view word, const document::Document& doc)
 {
     word = _token_extractor.sanitize_word(word, &doc);
     if (!word.empty()) {
@@ -357,8 +357,6 @@ FieldInverter::invertNormalDocTextField(const FieldValue &val, const Document& d
     case CollectionType::SINGLE:
         if (val.isA(FieldValue::Type::STRING)) {
             processNormalDocTextField(static_cast<const StringFieldValue &>(val), doc);
-        } else {
-            throw std::runtime_error(make_string("Expected DataType::STRING, got '%s'", val.getDataType()->getName().c_str()));
         }
         break;
     case CollectionType::WEIGHTEDSET:
@@ -366,11 +364,7 @@ FieldInverter::invertNormalDocTextField(const FieldValue &val, const Document& d
             const auto &wset = static_cast<const WeightedSetFieldValue &>(val);
             if (wset.getNestedType() == *DataType::STRING) {
                 processNormalDocWeightedSetTextField(wset, doc);
-            } else {
-                throw std::runtime_error(make_string("Expected DataType::STRING, got '%s'", wset.getNestedType().getName().c_str()));
             }
-        } else {
-            throw std::runtime_error(make_string("Expected weighted set, got '%s'", val.className()));
         }
         break;
     case CollectionType::ARRAY:
@@ -378,11 +372,7 @@ FieldInverter::invertNormalDocTextField(const FieldValue &val, const Document& d
             const auto &arr = static_cast<const ArrayFieldValue&>(val);
             if (arr.getNestedType() == *DataType::STRING) {
                 processNormalDocArrayTextField(arr, doc);
-            } else {
-                throw std::runtime_error(make_string("Expected DataType::STRING, got '%s'", arr.getNestedType().getName().c_str()));
             }
-        } else {
-            throw std::runtime_error(make_string("Expected Array, got '%s'", val.className()));
         }
         break;
     default:
@@ -433,7 +423,7 @@ FieldInverter::push_documents_internal()
     uint32_t lastWordPos = 0;
     uint32_t numWordIds = _wordRefs.size() - 1;
     uint32_t lastDocId = 0;
-    vespalib::stringref word;
+    std::string_view word;
     bool emptyFeatures = true;
     uint32_t last_field_length = 0;
 

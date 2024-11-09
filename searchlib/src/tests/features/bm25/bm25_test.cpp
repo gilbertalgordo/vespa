@@ -15,7 +15,7 @@ using namespace search::features;
 using namespace search::fef;
 using namespace search::fef::objectstore;
 using CollectionType = FieldInfo::CollectionType;
-using StringVector = std::vector<vespalib::string>;
+using StringVector = std::vector<std::string>;
 
 struct Bm25BlueprintTest : public ::testing::Test {
     BlueprintFactory factory;
@@ -146,7 +146,7 @@ struct Bm25ExecutorTest : public ::testing::Test {
         add_query_term("bar", 45);
         test.getQueryEnv().getBuilder().set_avg_field_length("foo", 10);
     }
-    void add_query_term(const vespalib::string& field_name, uint32_t matching_doc_count) {
+    void add_query_term(const std::string& field_name, uint32_t matching_doc_count) {
         auto* term = test.getQueryEnv().getBuilder().addIndexNode({field_name});
         term->field(0).setDocFreq(matching_doc_count, total_doc_count);
         term->setUniqueId(test.getQueryEnv().getNumTerms() - 1);
@@ -175,7 +175,7 @@ struct Bm25ExecutorTest : public ::testing::Test {
     }
 
     double idf(uint32_t matching_doc_count) const {
-        return Bm25Executor::calculate_inverse_document_frequency(matching_doc_count, total_doc_count);
+        return Bm25Executor::calculate_inverse_document_frequency({matching_doc_count, total_doc_count});
     }
 
     feature_t score(feature_t num_occs, feature_t field_length, double inverse_doc_freq) const {
@@ -226,11 +226,17 @@ TEST_F(Bm25ExecutorTest, uses_average_field_length_from_shared_state_if_found)
 TEST_F(Bm25ExecutorTest, calculates_inverse_document_frequency)
 {
     EXPECT_DOUBLE_EQ(std::log(1 + (99 + 0.5) / (1 + 0.5)),
-                     Bm25Executor::calculate_inverse_document_frequency(1, 100));
+                     Bm25Executor::calculate_inverse_document_frequency({1, 100}));
     EXPECT_DOUBLE_EQ(std::log(1 + (60 + 0.5) / (40 + 0.5)),
-                     Bm25Executor::calculate_inverse_document_frequency(40, 100));
+                     Bm25Executor::calculate_inverse_document_frequency({40, 100}));
     EXPECT_DOUBLE_EQ(std::log(1 + (0.5) / (100 + 0.5)),
-                     Bm25Executor::calculate_inverse_document_frequency(100, 100));
+                     Bm25Executor::calculate_inverse_document_frequency({100, 100}));
+    EXPECT_DOUBLE_EQ(std::log(1 + (0.5) / (100 + 0.5)),
+                    Bm25Executor::calculate_inverse_document_frequency({200, 100}));
+    EXPECT_DOUBLE_EQ(std::log(1 + (99 + 0.5) / (1 + 0.5)),
+                     Bm25Executor::calculate_inverse_document_frequency({0, 100}));
+    EXPECT_DOUBLE_EQ(std::log(1 + (0.5) / (1 + 0.5)),
+                     Bm25Executor::calculate_inverse_document_frequency({0, 0}));
 }
 
 TEST_F(Bm25ExecutorTest, k1_param_can_be_overriden)

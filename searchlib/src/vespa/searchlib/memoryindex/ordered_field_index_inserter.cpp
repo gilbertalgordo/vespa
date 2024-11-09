@@ -4,7 +4,6 @@
 #include "i_field_index_insert_listener.h"
 
 #include <vespa/searchlib/index/docidandfeatures.h>
-#include <vespa/vespalib/stllike/string.h>
 #include <vespa/vespalib/util/exceptions.h>
 #include <vespa/vespalib/util/stringfmt.h>
 
@@ -16,6 +15,7 @@
 #include <vespa/vespalib/btree/btreeroot.hpp>
 #include <vespa/vespalib/btree/btree.hpp>
 #include <cstdio>
+#include <string>
 
 #include <vespa/log/log.h>
 LOG_SETUP(".searchlib.memoryindex.ordered_document_inserter");
@@ -23,8 +23,6 @@ LOG_SETUP(".searchlib.memoryindex.ordered_document_inserter");
 namespace search::memoryindex {
 
 namespace {
-
-const vespalib::string emptyWord = "";
 
 uint16_t cap_u16(uint32_t val) { return std::min(val, static_cast<uint32_t>(std::numeric_limits<uint16_t>::max())); }
 
@@ -77,8 +75,8 @@ OrderedFieldIndexInserter<interleaved_features>::flush()
     size_t removes_offset = 0;
     for (const auto& word_entry : _word_entries) {
         auto word = std::get<0>(word_entry);
-        vespalib::ConstArrayRef<PostingListKeyDataType> adds(_adds.data() + adds_offset, std::get<1>(word_entry));
-        vespalib::ConstArrayRef<uint32_t> removes(_removes.data() + removes_offset, std::get<2>(word_entry));
+        std::span<const PostingListKeyDataType> adds(_adds.data() + adds_offset, std::get<1>(word_entry));
+        std::span<const uint32_t> removes(_removes.data() + removes_offset, std::get<2>(word_entry));
         KeyComp cmp(wordStore, word);
         WordKey key;
         if (_dItr.valid() && cmp(_dItr.getKey(), key)) {
@@ -98,10 +96,10 @@ OrderedFieldIndexInserter<interleaved_features>::flush()
         //XXX: Feature store leak, removed features not marked dead
         vespalib::datastore::EntryRef pidx(_dItr.getData().load_relaxed());
         postingListStore.apply(pidx,
-                               adds.begin(),
-                               adds.end(),
-                               removes.begin(),
-                               removes.end());
+                               adds.data(),
+                               adds.data() + adds.size(),
+                               removes.data(),
+                               removes.data() + removes.size());
         if (pidx != _dItr.getData().load_relaxed()) {
             _dItr.getWData().store_release(pidx);
         }
@@ -127,7 +125,7 @@ OrderedFieldIndexInserter<interleaved_features>::commit()
 
 template <bool interleaved_features>
 void
-OrderedFieldIndexInserter<interleaved_features>::setNextWord(const vespalib::stringref word)
+OrderedFieldIndexInserter<interleaved_features>::setNextWord(const std::string_view word)
 {
     flushWord();
     // TODO: Adjust here if zero length words should be legal.

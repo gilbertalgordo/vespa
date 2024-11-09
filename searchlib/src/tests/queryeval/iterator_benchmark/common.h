@@ -5,6 +5,7 @@
 #include <vespa/searchcommon/attribute/config.h>
 #include <vespa/searchcommon/common/schema.h>
 #include <vespa/searchlib/common/bitvector.h>
+#include <random>
 #include <variant>
 
 namespace search::queryeval::test {
@@ -12,7 +13,7 @@ namespace search::queryeval::test {
 using search::attribute::Config;
 using search::index::Schema;
 
-vespalib::string to_string(const Config& attr_config);
+std::string to_string(const Config& attr_config);
 
 class FieldConfig {
 private:
@@ -28,7 +29,7 @@ public:
         res.addIndexField(std::get<1>(_cfg));
         return res;
     }
-    vespalib::string to_string() const {
+    std::string to_string() const {
         return is_attr() ? search::queryeval::test::to_string(attr_cfg()) : "diskindex";
     }
 };
@@ -39,10 +40,12 @@ enum class QueryOperator {
     WeightedSet,
     DotProduct,
     And,
-    Or
+    Or,
+    WeakAnd,
+    ParallelWeakAnd
 };
 
-vespalib::string to_string(QueryOperator query_op);
+std::string to_string(QueryOperator query_op);
 
 struct HitSpec {
     uint32_t term_value;
@@ -76,6 +79,12 @@ public:
     auto end() const { return _specs.end(); }
 };
 
+std::string get_class_name(const auto& obj);
+
+std::mt19937& get_gen();
+
 BitVector::UP random_docids(uint32_t docid_limit, uint32_t count);
+
+int32_t random_int(int32_t a, int32_t b);
 
 }

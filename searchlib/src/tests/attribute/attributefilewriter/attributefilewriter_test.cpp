@@ -1,6 +1,6 @@
 // Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
-#include <vespa/vespalib/testkit/testapp.h>
+#include <vespa/vespalib/testkit/test_kit.h>
 #include <vespa/searchlib/attribute/attributefilewriter.h>
 #include <vespa/searchlib/attribute/attributefilebufferwriter.h>
 #include <vespa/searchlib/attribute/attribute_header.h>
@@ -21,8 +21,8 @@ namespace search {
 
 namespace {
 
-vespalib::string testFileName("test.dat");
-vespalib::string hello("Hello world");
+std::string testFileName("test.dat");
+std::string hello("Hello world");
 
 void removeTestFile() { std::filesystem::remove(std::filesystem::path(testFileName)); }
 
@@ -30,7 +30,7 @@ struct Fixture {
     TuneFileAttributes _tuneFileAttributes;
     DummyFileHeaderContext _fileHeaderContext;
     attribute::AttributeHeader _header;
-    const vespalib::string _desc;
+    const std::string _desc;
     AttributeFileWriter _writer;
 
     Fixture()

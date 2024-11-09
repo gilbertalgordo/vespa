@@ -9,7 +9,6 @@
 #include <vespa/vespalib/util/exceptions.h>
 #include <vespa/vespalib/stllike/asciistream.h>
 #include <vespa/vespalib/util/stringfmt.h>
-#include <iterator>
 #include <cassert>
 #include <algorithm>
 #include <ostream>
@@ -43,11 +42,11 @@ namespace {
     std::regex name_pattern_regex(namePattern);
 }
 
-Tag::Tag(vespalib::stringref k)
+Tag::Tag(std::string_view k)
     : _key(NameRepo::tagKeyId(k)),
       _value(TagValueId::empty_handle)
 { }
-Tag::Tag(vespalib::stringref k, vespalib::stringref v)
+Tag::Tag(std::string_view k, std::string_view v)
     : _key(NameRepo::tagKeyId(k)),
       _value(NameRepo::tagValueId(v))
 { }
@@ -104,7 +103,7 @@ Metric::assignMangledNameWithDimensions()
         return;
     }
     sortTagsInDeterministicOrder();
-    vespalib::string mangled = createMangledNameWithDimensions();
+    std::string mangled = createMangledNameWithDimensions();
     _mangledName = NameRepo::metricId(mangled);
 }
 
@@ -116,7 +115,7 @@ Metric::sortTagsInDeterministicOrder()
     });
 }
 
-vespalib::string
+std::string
 Metric::createMangledNameWithDimensions() const
 {
     vespalib::asciistream s;
@@ -167,14 +166,14 @@ Metric::getRoot() const
                         : _owner->getRoot());
 }
 
-vespalib::string
+std::string
 Metric::getPath() const
 {
     if (_owner == 0 || _owner->_owner == 0) {
         return getName();
     } else {
-        vespalib::string path(_owner->getPath());
-        path.append('.');
+        std::string path(_owner->getPath());
+        path += '.';
         path.append(getName());
         return path;
     }

@@ -8,7 +8,6 @@ import com.yahoo.tensor.evaluation.EvaluationContext;
 import com.yahoo.tensor.evaluation.Name;
 import com.yahoo.tensor.evaluation.TypeContext;
 
-import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Objects;
@@ -32,7 +31,7 @@ public class CellCast<NAMETYPE extends Name> extends PrimitiveTensorFunction<NAM
     }
 
     @Override
-    public List<TensorFunction<NAMETYPE>> arguments() { return Collections.singletonList(argument); }
+    public List<TensorFunction<NAMETYPE>> arguments() { return List.of(argument); }
 
     @Override
     public TensorFunction<NAMETYPE> withArguments(List<TensorFunction<NAMETYPE>> arguments) {
@@ -96,14 +95,11 @@ public class CellCast<NAMETYPE extends Name> extends PrimitiveTensorFunction<NAM
     }
 
     static private Function<Float,Float> selectRestrict(TensorType.Value toValueType) {
-        switch (toValueType) {
-            case BFLOAT16:
-                return val -> Float.intBitsToFloat(Float.floatToRawIntBits(val) & ~0xffff);
-            case INT8:
-                return val -> (float)val.byteValue();
-            default:
-                return val -> val;
-        }
+        return switch (toValueType) {
+            case BFLOAT16 -> val -> Float.intBitsToFloat(Float.floatToRawIntBits(val) & ~0xffff);
+            case INT8 -> val -> (float) val.byteValue();
+            default -> val -> val;
+        };
     }
 
     @Override

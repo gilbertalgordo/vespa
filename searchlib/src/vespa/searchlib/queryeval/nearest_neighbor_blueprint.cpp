@@ -2,7 +2,7 @@
 
 #include "nearest_neighbor_blueprint.h"
 #include "emptysearch.h"
-#include "nearest_neighbor_iterator.h"
+#include "exact_nearest_neighbor_iterator.h"
 #include "nns_index_iterator.h"
 #include <vespa/searchlib/fef/termfieldmatchdataarray.h>
 #include <vespa/searchlib/tensor/dense_tensor_attribute.h>
@@ -20,7 +20,7 @@ namespace search::queryeval {
 
 namespace {
 
-vespalib::string
+std::string
 to_string(NearestNeighborBlueprint::Algorithm algorithm)
 {
     using NNBA = NearestNeighborBlueprint::Algorithm;
@@ -64,7 +64,8 @@ NearestNeighborBlueprint::NearestNeighborBlueprint(const queryeval::FieldSpec& f
       _global_filter_set(false),
       _global_filter_hits(),
       _global_filter_hit_ratio(),
-      _doom(doom)
+      _doom(doom),
+      _matching_phase(MatchingPhase::FIRST_PHASE)
 {
     if (distance_threshold < std::numeric_limits<double>::max()) {
         _distance_threshold = _distance_calc->function().convert_threshold(distance_threshold);
@@ -125,8 +126,14 @@ NearestNeighborBlueprint::perform_top_k(const search::tensor::NearestNeighborInd
     }
 }
 
+void
+NearestNeighborBlueprint::sort(InFlow in_flow)
+{
+    resolve_strict(in_flow);
+}
+
 std::unique_ptr<SearchIterator>
-NearestNeighborBlueprint::createLeafSearch(const search::fef::TermFieldMatchDataArray& tfmda, bool strict) const
+NearestNeighborBlueprint::createLeafSearch(const search::fef::TermFieldMatchDataArray& tfmda) const
 {
     assert(tfmda.size() == 1);
     fef::TermFieldMatchData &tfmd = *tfmda[0]; // always search in only one field
@@ -137,9 +144,10 @@ NearestNeighborBlueprint::createLeafSearch(const search::fef::TermFieldMatchData
     default:
         ;
     }
-    return NearestNeighborIterator::create(strict, tfmd,
-                                           std::make_unique<search::tensor::DistanceCalculator>(_attr_tensor, _query_tensor),
-                                           _distance_heap, *_global_filter);
+    return ExactNearestNeighborIterator::create(strict(), tfmd,
+                                                std::make_unique<search::tensor::DistanceCalculator>(_attr_tensor, _query_tensor),
+                                                _distance_heap, *_global_filter,
+                                                _matching_phase != MatchingPhase::FIRST_PHASE);
 }
 
 void
@@ -175,6 +183,27 @@ bool
 NearestNeighborBlueprint::always_needs_unpack() const
 {
     return true;
+}
+
+void
+NearestNeighborBlueprint::set_matching_phase(MatchingPhase matching_phase) noexcept
+{
+    _matching_phase = matching_phase;
+    if (matching_phase != MatchingPhase::FIRST_PHASE) {
+        /*
+         * During first phase matching, the distance heap is adjusted
+         * by the iterators. The distance threshold is lowered when
+         * the distance heap is full while handling a matching
+         * document with a lower distance than the worst existing one.
+         * 
+         * During later matching phases, only the original distance
+         * threshold is used, and the heap is not updated by the
+         * iterators. This ensures that all documents considered a hit
+         * by the first phase matching will also be considered as hits
+         * by the later matching phases.
+         */
+        _distance_heap.set_distance_threshold(_distance_threshold);
+    }
 }
 
 std::ostream&

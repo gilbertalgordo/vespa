@@ -9,7 +9,6 @@ import com.yahoo.config.model.api.ModelContext;
 import com.yahoo.config.model.api.ModelCreateResult;
 import com.yahoo.config.model.api.ModelFactory;
 import com.yahoo.config.model.api.ServiceInfo;
-import com.yahoo.config.model.api.TenantSecretStore;
 import com.yahoo.config.model.api.ValidationParameters;
 import com.yahoo.config.model.provision.Host;
 import com.yahoo.config.model.provision.Hosts;
@@ -22,7 +21,6 @@ import com.yahoo.config.provision.DockerImage;
 import com.yahoo.config.provision.Environment;
 import com.yahoo.config.provision.RegionName;
 import com.yahoo.config.provision.Zone;
-import com.yahoo.container.ComponentsConfig;
 import com.yahoo.slime.SlimeUtils;
 import com.yahoo.test.ManualClock;
 import com.yahoo.vespa.config.server.MockConfigConvergenceChecker;
@@ -35,7 +33,6 @@ import com.yahoo.vespa.config.server.http.v2.PrepareResult;
 import com.yahoo.vespa.config.server.maintenance.PendingRestartsMaintainer;
 import com.yahoo.vespa.config.server.model.TestModelFactory;
 import com.yahoo.vespa.config.server.session.PrepareParams;
-import com.yahoo.vespa.model.VespaModel;
 import com.yahoo.vespa.model.application.validation.change.VespaReindexAction;
 import com.yahoo.vespa.model.application.validation.change.VespaRestartAction;
 import org.junit.Rule;
@@ -47,7 +44,6 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -78,6 +74,7 @@ public class HostedDeployTest {
     @Test
     public void testRedeployWithVersion() {
         DeployTester tester = new DeployTester.Builder(temporaryFolder)
+                .hostedConfigserverConfig(Zone.defaultZone())
                 .modelFactory(createHostedModelFactory(Version.fromString("4.5.6"), Clock.systemUTC()))
                 .build();
         tester.deployApp("src/test/apps/hosted/", "4.5.6");
@@ -91,6 +88,7 @@ public class HostedDeployTest {
     @Test
     public void testRedeploy() {
         DeployTester tester = new DeployTester.Builder(temporaryFolder)
+                .hostedConfigserverConfig(Zone.defaultZone())
                 .modelFactory(createHostedModelFactory())
                 .build();
         ApplicationId appId = tester.applicationId();
@@ -106,6 +104,7 @@ public class HostedDeployTest {
     @Test
     public void testReDeployWithWantedDockerImageRepositoryAndAthenzDomain() {
         DeployTester tester = new DeployTester.Builder(temporaryFolder)
+                .hostedConfigserverConfig(Zone.defaultZone())
                 .modelFactory(createHostedModelFactory(Version.fromString("4.5.6"), Clock.systemUTC()))
                 .build();
         String dockerImageRepository = "docker.foo.com:4443/bar/baz";
@@ -123,25 +122,10 @@ public class HostedDeployTest {
     }
 
     @Test
-    public void testRedeployWithTenantSecretStores() {
-        List<TenantSecretStore> tenantSecretStores = List.of(new TenantSecretStore("foo", "123", "role"));
-        DeployTester tester = new DeployTester.Builder(temporaryFolder)
-                .modelFactory(createHostedModelFactory(Version.fromString("4.5.6"), Clock.systemUTC()))
-                .build();
-        tester.deployApp("src/test/apps/hosted/", new PrepareParams.Builder()
-                .vespaVersion("4.5.6")
-                .tenantSecretStores(tenantSecretStores));
-
-        Optional<com.yahoo.config.provision.Deployment> deployment = tester.redeployFromLocalActive(tester.applicationId());
-        assertTrue(deployment.isPresent());
-        deployment.get().activate();
-        assertEquals(tenantSecretStores, ((Deployment) deployment.get()).session().getTenantSecretStores());
-    }
-
-    @Test
     public void testDeployOnUnknownVersion() {
         List<ModelFactory> modelFactories = List.of(createHostedModelFactory(Version.fromString("1.0.0")));
         DeployTester tester = new DeployTester.Builder(temporaryFolder)
+                                              .hostedConfigserverConfig(Zone.defaultZone())
                                               .modelFactories(modelFactories)
                                               .build();
 
@@ -562,6 +546,7 @@ public class HostedDeployTest {
     public void testRedeployWithCloudAccount() {
         CloudAccount cloudAccount = CloudAccount.from("012345678912");
         DeployTester tester = new DeployTester.Builder(temporaryFolder)
+                .hostedConfigserverConfig(Zone.defaultZone())
                 .modelFactory(createHostedModelFactory(Version.fromString("4.5.6"), Clock.systemUTC()))
                 .build();
         tester.deployApp("src/test/apps/hosted/", new PrepareParams.Builder()
@@ -581,7 +566,7 @@ public class HostedDeployTest {
     }
 
     private Host createHost(String hostname, String version) {
-        return new Host(hostname, Collections.emptyList(), Optional.empty(), Optional.ofNullable(version).map(Version::fromString));
+        return new Host(hostname, List.of(), Optional.empty(), Optional.ofNullable(version).map(Version::fromString));
     }
 
     private DeployTester createTester(List<Host> hosts, List<ModelFactory> modelFactories, Zone zone) {

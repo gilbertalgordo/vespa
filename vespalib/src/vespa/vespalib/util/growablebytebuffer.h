@@ -2,7 +2,7 @@
 #pragma once
 
 #include <vespa/vespalib/util/alloc.h>
-#include <vespa/vespalib/stllike/string.h>
+#include <string>
 
 namespace vespalib {
 
@@ -70,13 +70,13 @@ public:
     /**
        Adds a string to the buffer (without nul-termination).
     */
-    void putString(vespalib::stringref v);
+    void putString(std::string_view v);
 
     /**
      * Adds a string to the buffer (including nul-termination).
      * This matches com.yahoo.vespa.objects.Deserializer.getString.
      */
-    void put_c_string(vespalib::stringref v);
+    void put_c_string(std::string_view v);
 
     /**
        Adds a single byte to the buffer.

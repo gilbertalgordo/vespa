@@ -3,9 +3,9 @@ vespa_define_module(
     DEPENDS
     vespalog
     vespalib
-    configdefinitions
-    document
-    searchlib
+    vespa_configdefinitions
+    vespa_document
+    vespa_searchlib
 
     LIBS
     src/vespa/juniper

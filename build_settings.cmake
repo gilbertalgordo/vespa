@@ -21,6 +21,9 @@ set(EXCLUDE_TESTS_FROM_ALL FALSE CACHE BOOL "If TRUE, do not build tests as part
 # Whether to run unit tests via valgrind
 set(VALGRIND_UNIT_TESTS FALSE CACHE BOOL "If TRUE, run unit tests via valgrind")
 
+# Whether to use ccache when building
+set(VESPA_USE_CCACHE TRUE CACHE BOOL "If TRUE, use ccache (if available) when building")
+
 # Whether to run tests marked as benchmark as part of the test runs
 set(RUN_BENCHMARKS FALSE CACHE BOOL "If TRUE, benchmarks are run together with the other tests")
 
@@ -47,10 +50,17 @@ if (VESPA_USE_SANITIZER)
     set(C_WARN_OPTS "${C_WARN_OPTS} -Wno-tsan")
   endif()
 endif()
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 12.0 AND NOT CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 13.0)
+  if(VESPA_OS_DISTRO_COMBINED STREQUAL "debian 12" OR VESPA_OS_DISTRO_COMBINED STREQUAL "ubuntu 22.04")
+    # Turn off restrict warnings when compiling with gcc 12 on Debian 12 or
+    # Ubuntu 22.04
+    set(C_WARN_OPTS "${C_WARN_OPTS} -Wno-restrict")
+  endif()
+endif()
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 14.0)
-    # Turn off maybe uninitialized warning when compiling with
-    # gcc 14 or newer.
-    set(C_WARN_OPTS "${C_WARN_OPTS} -Wno-maybe-uninitialized")
+    # Turn off maybe uninitialized warning and don't promote inline warning
+    # to error when compiling with gcc 14 or newer.
+    set(C_WARN_OPTS "${C_WARN_OPTS} -Wno-maybe-uninitialized -Wno-error=inline")
 endif()
 
 # Warnings that are specific to C++ compilation
@@ -58,6 +68,9 @@ endif()
 set(VESPA_ATOMIC_LIB "atomic")
 if ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang" OR "${CMAKE_CXX_COMPILER_ID}" STREQUAL "AppleClang")
   set(CXX_SPECIFIC_WARN_OPTS "-Wnon-virtual-dtor -Wformat-security -Wno-overloaded-virtual")
+  if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 18.0)
+    set(CXX_SPECIFIC_WARN_OPTS "${CXX_SPECIFIC_WARN_OPTS} -Wno-error=vla-cxx-extension")
+  endif()
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-delete-null-pointer-checks -fsized-deallocation")
   if(CMAKE_HOST_SYSTEM_NAME STREQUAL "Darwin")
     set(VESPA_ATOMIC_LIB "")
@@ -83,12 +96,6 @@ else()
   message("-- liburing not found")
 endif()
 
-if(VESPA_OS_DISTRO_COMBINED STREQUAL "debian 10")
-  unset(VESPA_XXHASH_DEFINE)
-else()
-  set(VESPA_XXHASH_DEFINE "-DXXH_INLINE_ALL")
-endif()
-
 # Disable dangling reference and overloaded virtual warnings when using gcc 13
 # Disable stringop-oveflow, stringop-overread and array-bounds warning when using gcc 13.
 # The latter heuristics are sufficiently broken to be useless in practice.
@@ -104,7 +111,7 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND VESPA_USE_LTO)
 endif()
 
 # C and C++ compiler flags
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -g -O3 -fno-omit-frame-pointer ${C_WARN_OPTS} -fPIC ${VESPA_CXX_ABI_FLAGS} ${VESPA_XXHASH_DEFINE} -DBOOST_DISABLE_ASSERTS ${VESPA_CPU_ARCH_FLAGS} ${EXTRA_C_FLAGS}")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -g -O3 -fno-omit-frame-pointer ${C_WARN_OPTS} -fPIC ${VESPA_CXX_ABI_FLAGS} -DXXH_INLINE_ALL -DBOOST_DISABLE_ASSERTS ${VESPA_CPU_ARCH_FLAGS} ${EXTRA_C_FLAGS}")
 # AddressSanitizer/ThreadSanitizer work for both GCC and Clang
 if (VESPA_USE_SANITIZER)
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fsanitize=${VESPA_USE_SANITIZER}")
@@ -126,6 +133,10 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND CMAKE_CXX_COMPILER_VERSION VERSION
   # Turn off dynamic_cast optimization that came with clang 17.0.1
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-assume-unique-vtables")
 endif()
+if(CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang" AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 16.0)
+  # Turn off dynamic_cast optimization that came with Command Line Tools 16
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-assume-unique-vtables")
+endif()
 if(CMAKE_HOST_SYSTEM_NAME STREQUAL "Darwin")
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DGOOGLE_PROTOBUF_NO_RDTSC")
   if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 15.0)
@@ -139,6 +150,15 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND VESPA_USE_HARDENING)
 endif()
 
 # Linker flags
+if (APPLE)
+    if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
+        # We use the libc++ header files bundled with homebrew llvm, use the
+        # bundled libraries too.
+        set(HOMEBREW_CLANGXX_EXTRA_LINKER_FLAGS "-L${VESPA_HOMEBREW_PREFIX}/opt/llvm/lib/c++ -L${VESPA_HOMEBREW_PREFIX}/opt/llvm/lib/unwind -lunwind")
+        set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} ${HOMEBREW_CLANGXX_EXTRA_LINKER_FLAGS}")
+        set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${HOMEBREW_CLANGXX_EXTRA_LINKER_FLAGS}")
+    endif()
+endif()
 if(CMAKE_HOST_SYSTEM_NAME STREQUAL "Darwin")
   if ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang" OR "${CMAKE_CXX_COMPILER_ID}" STREQUAL "AppleClang")
     set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -ldl")
@@ -156,8 +176,8 @@ SET(CMAKE_EXE_LINKER_FLAGS  "${CMAKE_EXE_LINKER_FLAGS} -rdynamic" )
 
 message("-- CMAKE_SHARED_LINKER_FLAGS is ${CMAKE_SHARED_LINKER_FLAGS}")
 
-# Use C++ 20
-set(CMAKE_CXX_STANDARD 20)
+# Use C++ 23
+set(CMAKE_CXX_STANDARD 23)
 
 # Always build shared libs if not explicitly specified
 set(BUILD_SHARED_LIBS ON)
@@ -181,18 +201,21 @@ if(CMAKE_HOST_SYSTEM_NAME STREQUAL "Darwin")
     endif()
 endif()
 
-# Find ccache and use it if it is found
-find_program(CCACHE_EXECUTABLE ccache)
-if(CCACHE_EXECUTABLE)
-    set_property(GLOBAL PROPERTY RULE_LAUNCH_COMPILE ${CCACHE_EXECUTABLE})
-    set_property(GLOBAL PROPERTY RULE_LAUNCH_LINK ${CCACHE_EXECUTABLE})
+# Find ccache and use it if it is found unless disabled
+if (VESPA_USE_CCACHE)
+    find_program(CCACHE_EXECUTABLE ccache)
+    if(CCACHE_EXECUTABLE)
+        message("-- Using ccache ${CCACHE_EXECUTABLE}")
+        set_property(GLOBAL PROPERTY RULE_LAUNCH_COMPILE ${CCACHE_EXECUTABLE})
+        set_property(GLOBAL PROPERTY RULE_LAUNCH_LINK ${CCACHE_EXECUTABLE})
+    endif()
 endif()
 
 # Check for valgrind and set flags
 find_program(VALGRIND_EXECUTABLE valgrind)
 if(VALGRIND_EXECUTABLE)
     set(VALGRIND_SUPPRESSIONS_FILE "${PROJECT_SOURCE_DIR}/valgrind-suppressions.txt")
-    set(VALGRIND_OPTIONS "--leak-check=yes --error-exitcode=1 --run-libc-freeres=no --track-origins=yes --suppressions=${VALGRIND_SUPPRESSIONS_FILE}")
+    set(VALGRIND_OPTIONS "--leak-check=yes --fair-sched=yes --error-exitcode=1 --run-libc-freeres=no --track-origins=yes --suppressions=${VALGRIND_SUPPRESSIONS_FILE}")
     set(VALGRIND_COMMAND "${VALGRIND_EXECUTABLE} ${VALGRIND_OPTIONS}")
 endif()
 # Automatically set sanitizer suppressions file and arguments for unit tests

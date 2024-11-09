@@ -30,15 +30,15 @@ public class ToByteTestCase {
         Expression exp = new ToByteExpression();
         assertVerify(DataType.INT, exp, DataType.BYTE);
         assertVerify(DataType.STRING, exp, DataType.BYTE);
-        assertVerifyThrows(null, exp, "Expected any input, but no input is specified");
+        assertVerifyThrows("Invalid expression 'to_byte': Expected any input, but no input is specified", null, exp);
     }
 
     @Test
     public void requireThatValueIsConverted() {
         ExecutionContext ctx = new ExecutionContext(new SimpleTestAdapter());
-        ctx.setValue(new StringFieldValue("69")).execute(new ToByteExpression());
+        ctx.setCurrentValue(new StringFieldValue("69")).execute(new ToByteExpression());
 
-        FieldValue val = ctx.getValue();
+        FieldValue val = ctx.getCurrentValue();
         assertTrue(val instanceof ByteFieldValue);
         assertEquals(69, ((ByteFieldValue)val).getByte());
     }

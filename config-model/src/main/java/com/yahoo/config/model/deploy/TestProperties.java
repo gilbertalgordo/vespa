@@ -19,7 +19,6 @@ import com.yahoo.vespa.model.container.ApplicationContainerCluster;
 import java.net.URI;
 import java.security.cert.X509Certificate;
 import java.util.Collection;
-import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -35,10 +34,10 @@ public class TestProperties implements ModelContext.Properties, ModelContext.Fea
 
     private boolean multitenant = false;
     private ApplicationId applicationId = ApplicationId.defaultId();
-    private List<ConfigServerSpec> configServerSpecs = Collections.emptyList();
+    private List<ConfigServerSpec> configServerSpecs = List.of();
     private boolean hostedVespa = false;
     private Zone zone = Zone.defaultZone();
-    private final Set<ContainerEndpoint> endpoints = Collections.emptySet();
+    private Set<ContainerEndpoint> endpoints = Set.of();
     private boolean useDedicatedNodeForLogserver = false;
     private double defaultTermwiseLimit = 1.0;
     private String jvmGCOptions = null;
@@ -55,10 +54,9 @@ public class TestProperties implements ModelContext.Properties, ModelContext.Fea
     private double feedConcurrency = 0.5;
     private double feedNiceness = 0.0;
     private int maxActivationInhibitedOutOfSyncGroups = 0;
-    private List<TenantSecretStore> tenantSecretStores = Collections.emptyList();
-    private String jvmOmitStackTraceInFastThrowOption;
+    private List<TenantSecretStore> tenantSecretStores = List.of();
     private boolean allowDisableMtls = true;
-    private List<X509Certificate> operatorCertificates = Collections.emptyList();
+    private List<X509Certificate> operatorCertificates = List.of();
     private double resourceLimitDisk = 0.75;
     private double resourceLimitMemory = 0.8;
     private double minNodeRatioPerGroup = 0.0;
@@ -83,6 +81,12 @@ public class TestProperties implements ModelContext.Properties, ModelContext.Fea
     private boolean allowUserFilters = true;
     private List<DataplaneToken> dataplaneTokens;
     private int contentLayerMetadataFeatureLevel = 0;
+    private int persistenceThreadMaxFeedOpBatchSize = 1;
+    private boolean logserverOtelCol = false;
+    private boolean symmetricPutAndActivateReplicaSelection = false;
+    private boolean enforceStrictlyIncreasingClusterStateVersions = false;
+    private boolean launchApplicationAthenzService = false;
+    private boolean distributionConfigFromClusterController = false;
 
     @Override public ModelContext.FeatureFlags featureFlags() { return this; }
     @Override public boolean multitenant() { return multitenant; }
@@ -90,6 +94,7 @@ public class TestProperties implements ModelContext.Properties, ModelContext.Fea
     @Override public List<ConfigServerSpec> configServerSpecs() { return configServerSpecs; }
     @Override public HostName loadBalancerName() { return null; }
     @Override public URI ztsUrl() { return null; }
+    @Override public AthenzDomain tenantSecretDomain() { return null; }
     @Override public String athenzDnsSuffix() { return null; }
     @Override public boolean hostedVespa() { return hostedVespa; }
     @Override public Zone zone() { return zone; }
@@ -110,7 +115,6 @@ public class TestProperties implements ModelContext.Properties, ModelContext.Fea
     @Override public double feedNiceness() { return feedNiceness; }
     @Override public int maxActivationInhibitedOutOfSyncGroups() { return maxActivationInhibitedOutOfSyncGroups; }
     @Override public List<TenantSecretStore> tenantSecretStores() { return tenantSecretStores; }
-    @Override public String jvmOmitStackTraceInFastThrowOption(ClusterSpec.Type type) { return jvmOmitStackTraceInFastThrowOption; }
     @Override public boolean allowDisableMtls() { return allowDisableMtls; }
     @Override public List<X509Certificate> operatorCertificates() { return operatorCertificates; }
     @Override public double resourceLimitDisk() { return resourceLimitDisk; }
@@ -139,6 +143,12 @@ public class TestProperties implements ModelContext.Properties, ModelContext.Fea
     @Override public boolean allowUserFilters() { return allowUserFilters; }
     @Override public List<DataplaneToken> dataplaneTokens() { return dataplaneTokens; }
     @Override public int contentLayerMetadataFeatureLevel() { return contentLayerMetadataFeatureLevel; }
+    @Override public int persistenceThreadMaxFeedOpBatchSize() { return persistenceThreadMaxFeedOpBatchSize; }
+    @Override public boolean logserverOtelCol() { return logserverOtelCol; }
+    @Override public boolean symmetricPutAndActivateReplicaSelection() { return symmetricPutAndActivateReplicaSelection; }
+    @Override public boolean enforceStrictlyIncreasingClusterStateVersions() { return enforceStrictlyIncreasingClusterStateVersions; }
+    @Override public boolean launchApplicationAthenzService() { return launchApplicationAthenzService; }
+    @Override public boolean distributionConfigFromClusterController() { return distributionConfigFromClusterController; }
 
     public TestProperties sharedStringRepoNoReclaim(boolean sharedStringRepoNoReclaim) {
         this.sharedStringRepoNoReclaim = sharedStringRepoNoReclaim;
@@ -273,11 +283,6 @@ public class TestProperties implements ModelContext.Properties, ModelContext.Fea
         return this;
     }
 
-    public TestProperties setJvmOmitStackTraceInFastThrowOption(String value) {
-        this.jvmOmitStackTraceInFastThrowOption = value;
-        return this;
-    }
-
     public TestProperties allowDisableMtls(boolean value) {
         this.allowDisableMtls = value;
         return this;
@@ -366,6 +371,41 @@ public class TestProperties implements ModelContext.Properties, ModelContext.Fea
 
     public TestProperties setContentLayerMetadataFeatureLevel(int level) {
         this.contentLayerMetadataFeatureLevel = level;
+        return this;
+    }
+
+    public TestProperties setPersistenceThreadMaxFeedOpBatchSize(int maxBatchSize) {
+        this.persistenceThreadMaxFeedOpBatchSize = maxBatchSize;
+        return this;
+    }
+
+    public TestProperties setLogserverOtelCol(boolean logserverOtelCol) {
+        this.logserverOtelCol = logserverOtelCol;
+        return this;
+    }
+
+    public TestProperties setSymmetricPutAndActivateReplicaSelection(boolean symmetricReplicaSelection) {
+        this.symmetricPutAndActivateReplicaSelection = symmetricReplicaSelection;
+        return this;
+    }
+
+    public TestProperties setEnforceStrictlyIncreasingClusterStateVersions(boolean enforce) {
+        this.enforceStrictlyIncreasingClusterStateVersions = enforce;
+        return this;
+    }
+
+    public TestProperties setLaunchApplicationAthenzService(boolean launch) {
+        this.launchApplicationAthenzService = launch;
+        return this;
+    }
+
+    public TestProperties setDistributionConfigFromClusterController(boolean configFromCc) {
+        this.distributionConfigFromClusterController = configFromCc;
+        return this;
+    }
+
+    public TestProperties setContainerEndpoints(Set<ContainerEndpoint> containerEndpoints) {
+        this.endpoints = containerEndpoints;
         return this;
     }
 

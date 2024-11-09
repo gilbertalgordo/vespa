@@ -7,8 +7,9 @@
 #include <vespa/document/datatype/tensor_data_type.h>
 #include <vespa/document/fieldvalue/longfieldvalue.h>
 #include <vespa/eval/eval/value_type.h>
-#include <vespa/vespalib/testkit/testapp.h>
 #include <vespa/vespalib/util/exceptions.h>
+#include <vespa/vespalib/testkit/test_kit.h>
+#include <vespa/vespalib/testkit/test_master.hpp>
 
 using namespace document;
 
@@ -58,12 +59,12 @@ public:
 
     ~TensorDataTypeFixture();
 
-    void setup(const vespalib::string &spec)
+    void setup(const std::string &spec)
     {
         _tensorDataType = TensorDataType::fromSpec(spec);
     }
 
-    bool isAssignableType(const vespalib::string &spec) const
+    bool isAssignableType(const std::string &spec) const
     {
         auto assignType = ValueType::from_spec(spec);
         return _tensorDataType->isAssignableType(assignType);

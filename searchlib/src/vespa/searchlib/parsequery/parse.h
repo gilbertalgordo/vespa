@@ -5,7 +5,7 @@
 #include "item_creator.h"
 #include <vespa/searchlib/query/weight.h>
 #include <vespa/searchlib/query/query_normalization.h>
-#include <vespa/vespalib/stllike/string.h>
+#include <string>
 
 namespace search {
 
@@ -87,6 +87,8 @@ public:
         IFLAG_NORANK         = 0x00000001, // this term should not be ranked (not exposed to rank framework)
         IFLAG_SPECIALTOKEN   = 0x00000002,
         IFLAG_NOPOSITIONDATA = 0x00000004, // we should not use position data when ranking this term
+        IFLAG_FILTER         = 0x00000008, // see GetCreator(flags) below
+        IFLAG_PREFIX_MATCH   = 0x00000010
     };
 
     /** Extra information on each item (creator id) coded in bit 3 of flags */

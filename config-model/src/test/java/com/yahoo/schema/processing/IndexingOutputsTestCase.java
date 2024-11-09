@@ -56,8 +56,8 @@ public class IndexingOutputsTestCase {
             fail("Expected exception");
         }
         catch (IllegalArgumentException e) {
-            assertEquals("For schema 'indexing_output_confict', field 'bar': For expression 'index bar': Attempting " +
-                         "to assign conflicting values to field 'bar'.",
+            assertEquals("For schema 'indexing_output_confict', field 'bar': Invalid expression 'index bar': Attempting " +
+                         "to assign conflicting values to field 'bar'",
                          Exceptions.toMessageString(e));
         }
     }
@@ -78,7 +78,7 @@ public class IndexingOutputsTestCase {
                 """;
         var builder = ApplicationBuilder.createFromString(sd);
         var schema = builder.getSchema();
-        assertEquals("{ input foo | summary baz | summary bar; }",
+        assertEquals("{ input foo | summary bar; }",
                 schema.getConcreteField("bar").getIndexingScript().toString());
     }
 }

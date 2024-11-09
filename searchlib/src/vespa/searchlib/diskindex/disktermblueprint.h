@@ -15,11 +15,11 @@ class DiskTermBlueprint : public queryeval::SimpleLeafBlueprint
 private:
     queryeval::FieldSpec             _field;
     const DiskIndex               &  _diskIndex;
-    vespalib::string                 _query_term;
-    DiskIndex::LookupResult::UP      _lookupRes;
+    std::string                 _query_term;
+    DiskIndex::LookupResult          _lookupRes;
     bool                             _useBitVector;
     bool                             _fetchPostingsDone;
-    index::PostingListHandle::UP     _postingHandle;
+    index::PostingListHandle         _postingHandle;
     BitVector::UP                    _bitVector;
 
 public:
@@ -33,19 +33,19 @@ public:
      **/
     DiskTermBlueprint(const queryeval::FieldSpec & field,
                       const DiskIndex & diskIndex,
-                      const vespalib::string& query_term,
-                      DiskIndex::LookupResult::UP lookupRes,
+                      const std::string& query_term,
+                      DiskIndex::LookupResult lookupRes,
                       bool useBitVector);
 
     queryeval::FlowStats calculate_flow_stats(uint32_t docid_limit) const override;
     
     // Inherit doc from Blueprint.
     // For now, this DiskTermBlueprint instance must have longer lifetime than the created iterator.
-    std::unique_ptr<queryeval::SearchIterator> createLeafSearch(const fef::TermFieldMatchDataArray & tfmda, bool strict) const override;
+    std::unique_ptr<queryeval::SearchIterator> createLeafSearch(const fef::TermFieldMatchDataArray & tfmda) const override;
 
     void fetchPostings(const queryeval::ExecuteInfo &execInfo) override;
 
-    std::unique_ptr<queryeval::SearchIterator> createFilterSearch(bool strict, FilterConstraint) const override;
+    std::unique_ptr<queryeval::SearchIterator> createFilterSearch(FilterConstraint) const override;
 
     void visitMembers(vespalib::ObjectVisitor& visitor) const override;
 };

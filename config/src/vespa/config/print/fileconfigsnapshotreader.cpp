@@ -8,7 +8,7 @@
 
 namespace config {
 
-FileConfigSnapshotReader::FileConfigSnapshotReader(const vespalib::string & fileName)
+FileConfigSnapshotReader::FileConfigSnapshotReader(const std::string & fileName)
     : _fileName(fileName)
 {
 }
@@ -24,7 +24,7 @@ FileConfigSnapshotReader::read()
     buf << file.rdbuf();
 
     ConfigDataBuffer buffer;
-    buffer.setEncodedString(buf.str());
+    buffer.setEncodedString(buf.view());
     JsonConfigFormatter formatter(true);
     formatter.decode(buffer);
     ConfigSnapshot snapshot;

@@ -18,6 +18,8 @@ import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 
+import static com.yahoo.config.provision.CloudName.YAHOO;
+
 /**
  * A component which sets up all the node repo maintenance jobs.
  *
@@ -61,6 +63,8 @@ public class NodeRepositoryMaintenance extends AbstractComponent {
         maintainers.add(new ScalingSuggestionsMaintainer(nodeRepository, defaults.scalingSuggestionsInterval, metric));
         maintainers.add(new SwitchRebalancer(nodeRepository, defaults.switchRebalancerInterval, metric, deployer));
         maintainers.add(new DeprovisionedExpirer(nodeRepository, defaults.deprovisionedExpiry, metric));
+        maintainers.add(new HostRenamer(nodeRepository, defaults.hostRenamerInterval, metric));
+        maintainers.add(new SnapshotExpirer(nodeRepository, defaults.snapshotExpirerInterval, metric));
 
         provisionServiceProvider.getLoadBalancerService()
                 .ifPresent(lbService -> {
@@ -126,6 +130,8 @@ public class NodeRepositoryMaintenance extends AbstractComponent {
         private final Duration hostRetirerInterval;
         private final Duration hostFlavorUpgraderInterval;
         private final Duration deprovisionedExpiry;
+        private final Duration hostRenamerInterval;
+        private final Duration snapshotExpirerInterval;
 
         private final NodeFailer.ThrottlePolicy throttlePolicy;
 
@@ -140,7 +146,8 @@ public class NodeRepositoryMaintenance extends AbstractComponent {
             hostResumeProvisionerInterval = Duration.ofMinutes(3);
             diskReplacerInterval = Duration.ofMinutes(3);
             failedExpirerInterval = Duration.ofMinutes(10);
-            failGrace = Duration.ofMinutes(10);
+            // Nodes in Yahoo cloud need more time to start, so give those longer time before failing them (need more than 10 mins)
+            failGrace = zone.cloud().name() == YAHOO ? Duration.ofMinutes(20) : Duration.ofMinutes(10);
             infrastructureProvisionInterval = Duration.ofMinutes(3);
             loadBalancerExpirerInterval = Duration.ofMinutes(5);
             loadBalancerPreProvisionerInterval = Duration.ofMinutes(1);
@@ -165,6 +172,8 @@ public class NodeRepositoryMaintenance extends AbstractComponent {
             hostFlavorUpgraderInterval = Duration.ofHours(1);
             // CD, test and staging (de)provisions hosts frequently. Expire deprovisioned ones earlier
             deprovisionedExpiry = (isCdZone || isTest) ? Duration.ofDays(3) : Duration.ofDays(30);
+            hostRenamerInterval = Duration.ofMinutes(5);
+            snapshotExpirerInterval = Duration.ofHours(1);
 
             if (isProduction && ! isCdZone) {
                 inactiveExpiry = Duration.ofHours(4); // enough time for the application owner to discover and redeploy

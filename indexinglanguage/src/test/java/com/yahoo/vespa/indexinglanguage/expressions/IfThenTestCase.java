@@ -10,7 +10,6 @@ import com.yahoo.document.serialization.XmlStream;
 import com.yahoo.vespa.indexinglanguage.SimpleTestAdapter;
 import org.junit.Test;
 
-import java.util.Arrays;
 import java.util.List;
 
 import static com.yahoo.vespa.indexinglanguage.expressions.ExpressionAssert.assertVerify;
@@ -42,29 +41,30 @@ public class IfThenTestCase {
         Expression exp = newRequiredInput(DataType.STRING, Comparator.EQ, DataType.STRING,
                                           DataType.STRING, DataType.STRING);
         assertVerify(DataType.STRING, exp, DataType.STRING);
-        assertVerifyThrows(null, exp, "Expected string input, but no input is specified");
-        assertVerifyThrows(DataType.INT, exp, "Expected string input, got int");
-        assertVerifyThrows(null, () -> newRequiredInput(DataType.INT, Comparator.EQ, DataType.STRING,
-                                                  DataType.STRING, DataType.STRING),
-                           "Operands require conflicting input types, int vs string");
-        assertVerifyThrows(null, () -> newRequiredInput(DataType.STRING, Comparator.EQ, DataType.INT,
-                                                  DataType.STRING, DataType.STRING),
-                           "Operands require conflicting input types, string vs int");
-        assertVerifyThrows(null, () -> newRequiredInput(DataType.STRING, Comparator.EQ, DataType.STRING,
-                                                  DataType.INT, DataType.STRING),
-                           "Operands require conflicting input types, string vs int");
-        assertVerifyThrows(null, () -> newRequiredInput(DataType.STRING, Comparator.EQ, DataType.STRING,
-                                                  DataType.STRING, DataType.INT),
-                           "Operands require conflicting input types, string vs int");
+        String prefix = "Invalid expression 'if (SimpleExpression == SimpleExpression) { SimpleExpression; } else { SimpleExpression; }': ";
+        assertVerifyThrows(prefix + "Expected string input, but no input is specified", null, exp);
+        assertVerifyThrows(prefix + "Expected string input, got int", DataType.INT, exp);
+        assertVerifyThrows("Invalid expression of type 'IfThenExpression': Operands require conflicting input types, int vs string", null, () -> newRequiredInput(DataType.INT, Comparator.EQ, DataType.STRING,
+                                                                                                                            DataType.STRING, DataType.STRING)
+                          );
+        assertVerifyThrows("Invalid expression of type 'IfThenExpression': Operands require conflicting input types, string vs int", null, () -> newRequiredInput(DataType.STRING, Comparator.EQ, DataType.INT,
+                                                                                                                            DataType.STRING, DataType.STRING)
+                          );
+        assertVerifyThrows("Invalid expression of type 'IfThenExpression': Operands require conflicting input types, string vs int", null, () -> newRequiredInput(DataType.STRING, Comparator.EQ, DataType.STRING,
+                                                                                                                            DataType.INT, DataType.STRING)
+                          );
+        assertVerifyThrows("Invalid expression of type 'IfThenExpression': Operands require conflicting input types, string vs int", null, () -> newRequiredInput(DataType.STRING, Comparator.EQ, DataType.STRING,
+                                                                                                                            DataType.STRING, DataType.INT)
+                          );
     }
 
     @Test
     public void requireThatExpressionCanBeVerified() {
         assertVerify(DataType.STRING, new FlattenExpression(), DataType.STRING);
-        assertVerifyThrows(null, new FlattenExpression(),
-                           "Expected string input, but no input is specified");
-        assertVerifyThrows(DataType.INT, new FlattenExpression(),
-                           "Expected string input, got int");
+        assertVerifyThrows("Invalid expression 'flatten': Expected string input, but no input is specified", null, new FlattenExpression()
+                          );
+        assertVerifyThrows("Invalid expression 'flatten': Expected string input, got int", DataType.INT, new FlattenExpression()
+                          );
     }
 
     @Test
@@ -147,7 +147,7 @@ public class IfThenTestCase {
                                               Comparator.GT,
                                               new ConstantExpression(new IntegerFieldValue(9)),
                                               new ConstantExpression(new StringFieldValue("69")));
-        FieldValue val = ctx.setValue(new IntegerFieldValue(96)).execute(exp).getValue();
+        FieldValue val = ctx.setCurrentValue(new IntegerFieldValue(96)).execute(exp).getCurrentValue();
         assertTrue(val instanceof IntegerFieldValue);
         assertEquals(96, ((IntegerFieldValue)val).getInteger());
     }
@@ -174,12 +174,12 @@ public class IfThenTestCase {
 
     @Test
     public void requireThatNumericValuesSupportNumericCompareTo() {
-        List<NumericFieldValue> sixes = Arrays.asList(new ByteFieldValue((byte)6),
+        List<NumericFieldValue> sixes = List.of(new ByteFieldValue((byte)6),
                                                       new DoubleFieldValue(6.0),
                                                       new FloatFieldValue(6.0f),
                                                       new IntegerFieldValue(6),
                                                       new LongFieldValue(6L));
-        List<NumericFieldValue> nines = Arrays.asList(new ByteFieldValue((byte)9),
+        List<NumericFieldValue> nines = List.of(new ByteFieldValue((byte)9),
                                                       new DoubleFieldValue(9.0),
                                                       new FloatFieldValue(9.0f),
                                                       new IntegerFieldValue(9),

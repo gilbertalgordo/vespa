@@ -3,8 +3,8 @@
 
 #include "query_normalization.h"
 #include <vespa/vespalib/objects/objectvisitor.h>
-#include <vespa/vespalib/stllike/string.h>
 #include <vespa/vespalib/util/memory.h>
+#include <string>
 
 namespace search {
 
@@ -14,8 +14,8 @@ namespace search {
 class QueryTermSimple {
 public:
     using UP = std::unique_ptr<QueryTermSimple>;
-    using string = vespalib::string;
-    using stringref = vespalib::stringref;
+    using string = std::string;
+    using string_view = std::string_view;
     using Type = TermType;
 
     template <typename N>
@@ -43,9 +43,10 @@ public:
     size_t                     getMaxPerGroup() const noexcept { return _maxPerGroup; }
     size_t           getDiversityCutoffGroups() const noexcept { return _diversityCutoffGroups; }
     bool             getDiversityCutoffStrict() const noexcept { return _diversityCutoffStrict; }
-    vespalib::stringref getDiversityAttribute() const noexcept { return _diversityAttribute; }
-    size_t            getFuzzyMaxEditDistance() const noexcept { return _fuzzyMaxEditDistance; }
-    size_t               getFuzzyPrefixLength() const noexcept { return _fuzzyPrefixLength; }
+    string_view         getDiversityAttribute() const noexcept { return _diversityAttribute; }
+    [[nodiscard]] size_t fuzzy_max_edit_distance() const noexcept { return _fuzzy_max_edit_distance; }
+    [[nodiscard]] size_t fuzzy_prefix_lock_length() const noexcept { return _fuzzy_prefix_lock_length; }
+    [[nodiscard]] bool   fuzzy_prefix_match() const noexcept { return _fuzzy_prefix_match; }
     bool getAsIntegerTerm(int64_t & lower, int64_t & upper) const noexcept;
     bool getAsFloatTerm(double & lower, double & upper) const noexcept;
     bool getAsFloatTerm(float & lower, float & upper) const noexcept;
@@ -61,7 +62,7 @@ public:
     bool is_nearest_neighbor() const noexcept { return (_type == Type::NEAREST_NEIGHBOR); }
     bool empty()           const noexcept { return _term.empty(); }
     virtual void visitMembers(vespalib::ObjectVisitor &visitor) const;
-    vespalib::string getClassName() const;
+    string getClassName() const;
     bool isValid() const noexcept { return _valid; }
     const string & getTermString() const noexcept { return _term; }
 
@@ -77,20 +78,23 @@ private:
     Type        _type;
     bool        _diversityCutoffStrict;
     bool        _valid;
+protected:
+    bool        _fuzzy_prefix_match; // set in QueryTerm
+private:
     string      _term;
-    stringref   _diversityAttribute;
+    string_view   _diversityAttribute;
     template <typename T, typename D>
     bool    getAsNumericTerm(T & lower, T & upper, D d) const noexcept;
 
 protected:
-    uint32_t    _fuzzyMaxEditDistance;  // set in QueryTerm
-    uint32_t    _fuzzyPrefixLength;
+    uint32_t    _fuzzy_max_edit_distance;  // set in QueryTerm
+    uint32_t    _fuzzy_prefix_lock_length;
 };
 
 }
 
-void visit(vespalib::ObjectVisitor &self, const vespalib::string &name,
+void visit(vespalib::ObjectVisitor &self, const std::string &name,
            const search::QueryTermSimple &obj);
-void visit(vespalib::ObjectVisitor &self, const vespalib::string &name,
+void visit(vespalib::ObjectVisitor &self, const std::string &name,
            const search::QueryTermSimple *obj);
 

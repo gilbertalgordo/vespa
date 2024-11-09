@@ -16,10 +16,10 @@ using Instruction = InterpretedFunction::Instruction;
 
 namespace {
 
-const vespalib::string &
-find_rename(const vespalib::string & original,
-            const std::vector<vespalib::string> &from,
-            const std::vector<vespalib::string> &to)
+const std::string &
+find_rename(const std::string & original,
+            const std::vector<std::string> &from,
+            const std::vector<std::string> &to)
 {
     for (size_t i = 0; i < from.size(); ++i) {
         if (original == from[i]) {
@@ -30,7 +30,7 @@ find_rename(const vespalib::string & original,
 }
 
 size_t
-find_index_of(const vespalib::string & name,
+find_index_of(const std::string & name,
               const std::vector<ValueType::Dimension> & dims)
 {
     for (size_t i = 0; i < dims.size(); ++i) {
@@ -47,8 +47,8 @@ struct RenameParam {
     DenseRenamePlan dense_plan;
     const ValueBuilderFactory &factory;
     RenameParam(const ValueType &lhs_type,
-                const std::vector<vespalib::string> &rename_dimension_from,
-                const std::vector<vespalib::string> &rename_dimension_to,
+                const std::vector<std::string> &rename_dimension_from,
+                const std::vector<std::string> &rename_dimension_to,
                 const ValueBuilderFactory &factory_in)
         : res_type(lhs_type.rename(rename_dimension_from, rename_dimension_to)),
           sparse_plan(lhs_type, res_type, rename_dimension_from, rename_dimension_to),
@@ -82,7 +82,7 @@ generic_rename(const Value &a,
     view->lookup({});
     size_t subspace;
     while (view->next_result(input_address, subspace)) {
-        CT *dst = builder->add_subspace(output_address).begin();
+        CT *dst = builder->add_subspace(output_address).data();
         size_t input_offset = dense_plan.subspace_size * subspace;
         auto copy_cells = [&](size_t input_idx) { *dst++ = cells[input_idx]; };
         dense_plan.execute(input_offset, copy_cells);
@@ -109,16 +109,16 @@ void my_mixed_rename_dense_only_op(State &state, uint64_t param_in) {
     auto lhs_cells = state.peek(0).cells().typify<CT>();
     size_t num_subspaces = index.size();
     size_t num_out_cells = dense_plan.subspace_size * num_subspaces;
-    ArrayRef<CT> out_cells = state.stash.create_uninitialized_array<CT>(num_out_cells);
-    CT *dst = out_cells.begin();
-    const CT *lhs = lhs_cells.begin();
+    std::span<CT> out_cells = state.stash.create_uninitialized_array<CT>(num_out_cells);
+    CT *dst = out_cells.data();
+    const CT *lhs = lhs_cells.data();
     auto copy_cells = [&](size_t input_idx) { *dst++ = lhs[input_idx]; };
     for (size_t i = 0; i < num_subspaces; ++i) {
         dense_plan.execute(0, copy_cells);
         lhs += dense_plan.subspace_size;
     }
-    assert(lhs == lhs_cells.end());
-    assert(dst == out_cells.end());
+    assert(lhs == lhs_cells.data() + lhs_cells.size());
+    assert(dst == out_cells.data() + out_cells.size());
     state.pop_push(state.stash.create<ValueView>(param.res_type, index, TypedCells(out_cells)));
 }
 
@@ -138,8 +138,8 @@ struct SelectGenericRenameOp {
  
 SparseRenamePlan::SparseRenamePlan(const ValueType &input_type,
                                    const ValueType &output_type,
-                                   const std::vector<vespalib::string> &from,
-                                   const std::vector<vespalib::string> &to)
+                                   const std::vector<std::string> &from,
+                                   const std::vector<std::string> &to)
   : output_dimensions(), can_forward_index(true)
 {
     const auto in_dims = input_type.mapped_dimensions();
@@ -162,8 +162,8 @@ SparseRenamePlan::~SparseRenamePlan() = default;
 
 DenseRenamePlan::DenseRenamePlan(const ValueType &lhs_type,
                                  const ValueType &output_type,
-                                 const std::vector<vespalib::string> &from,
-                                 const std::vector<vespalib::string> &to)
+                                 const std::vector<std::string> &from,
+                                 const std::vector<std::string> &to)
     : loop_cnt(),
       stride(),
       subspace_size(output_type.dense_subspace_size())
@@ -204,8 +204,8 @@ DenseRenamePlan::~DenseRenamePlan() = default;
 InterpretedFunction::Instruction
 GenericRename::make_instruction(const ValueType &result_type,
                                 const ValueType &input_type,
-                                const std::vector<vespalib::string> &rename_dimension_from,
-                                const std::vector<vespalib::string> &rename_dimension_to,
+                                const std::vector<std::string> &rename_dimension_from,
+                                const std::vector<std::string> &rename_dimension_to,
                                 const ValueBuilderFactory &factory, Stash &stash)
 {
     auto &param = stash.create<RenameParam>(input_type,

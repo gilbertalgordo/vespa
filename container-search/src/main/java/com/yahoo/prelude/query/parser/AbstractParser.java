@@ -289,6 +289,7 @@ public abstract class AbstractParser implements CustomParser {
      */
     protected void tokenize(String query, String defaultIndexName, IndexFacts.Session indexFacts, Language language) {
         Tokenizer tokenizer = new Tokenizer(environment.getLinguistics());
+        tokenizer.setParserSettings(environment.getParserSettings());
         tokenizer.setSubstringSpecialTokens(language != null && language.isCjk());
         tokenizer.setSpecialTokens(environment.getSpecialTokens());
         tokens.initialize(tokenizer.tokenize(query, defaultIndexName, indexFacts));
@@ -335,7 +336,7 @@ public abstract class AbstractParser implements CustomParser {
     /**
      * Segments a token
      *
-     * @param indexName the index name which preceeded this token, or null if none
+     * @param indexName the index name which preceded this token, or null if none
      * @param token the token to segment
      * @param quoted whether this segment is within quoted text
      * @return the resulting item

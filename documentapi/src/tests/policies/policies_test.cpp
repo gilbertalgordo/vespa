@@ -597,7 +597,7 @@ TEST_F(PoliciesTest, test_document_route_selector_ignore)
 
 namespace {
 
-vespalib::string
+std::string
 createDocumentRouteSelectorConfigWithTwoRoutes()
 {
     return "[DocumentRouteSelector:raw:"
@@ -620,13 +620,13 @@ createFrameWithTwoRoutes(const std::shared_ptr<const DocumentTypeRepo> & repo)
 }
 
 std::unique_ptr<RemoveDocumentMessage>
-makeRemove(vespalib::stringref docId)
+makeRemove(std::string_view docId)
 {
     return std::make_unique<RemoveDocumentMessage>(DocumentId(docId));
 }
 
 std::unique_ptr<GetDocumentMessage>
-makeGet(vespalib::stringref docId)
+makeGet(std::string_view docId)
 {
     return std::make_unique<GetDocumentMessage>(DocumentId(docId));
 }

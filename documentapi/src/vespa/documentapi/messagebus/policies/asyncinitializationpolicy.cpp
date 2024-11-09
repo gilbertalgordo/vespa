@@ -12,6 +12,7 @@
 #include <vespa/messagebus/error.h>
 #include <vespa/documentapi/messagebus/documentprotocol.h>
 #include <vespa/vespalib/text/stringtokenizer.h>
+#include <string>
 
 namespace {
     VESPA_THREAD_STACK_TAG(async_init_policy);
@@ -23,14 +24,13 @@ AsyncInitializationPolicy::parse(string parameters) {
     std::map<string, string> retVal;
 
     vespalib::StringTokenizer tokenizer(parameters, ";");
-    for (uint32_t i = 0; i < tokenizer.size(); i++) {
-        string keyValue = tokenizer[i];
+    for (auto keyValue : tokenizer) {
         vespalib::StringTokenizer keyV(keyValue, "=");
 
         if (keyV.size() == 1) {
-            retVal[keyV[0]] = "true";
+            retVal[string(keyV[0])] = "true";
         } else {
-            retVal[keyV[0]] = keyV[1];
+            retVal[string(keyV[0])] = keyV[1];
         }
     }
 
@@ -56,7 +56,7 @@ AsyncInitializationPolicy::initSynchronous()
 namespace {
 
 mbus::Error
-currentPolicyInitError(vespalib::stringref error) {
+currentPolicyInitError(std::string_view error) {
     // If an init error has been recorded for the last init attempt, report
     // it back until we've managed to successfully complete the init step.
     if (error.empty()) {
@@ -64,7 +64,7 @@ currentPolicyInitError(vespalib::stringref error) {
                            "Waiting to initialize policy");
     } else {
         return mbus::Error(DocumentProtocol::ERROR_POLICY_FAILURE,
-                           "Error when creating policy: " + error);
+                           "Error when creating policy: " + std::string(error));
     }
 }
 

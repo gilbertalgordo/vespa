@@ -59,7 +59,7 @@ protected:
     long onSerializeForAscendingSort(DocId doc, void* serTo, long available, const common::BlobConverter* bc) const override;
     long onSerializeForDescendingSort(DocId doc, void* serTo, long available, const common::BlobConverter* bc) const override;
 public:
-    MultiValueNumericAttribute(const vespalib::string & baseFileName, const AttributeVector::Config & c =
+    MultiValueNumericAttribute(const std::string & baseFileName, const AttributeVector::Config & c =
                                AttributeVector::Config(AttributeVector::BasicType::fromType(T()),
                                                        attribute::CollectionType::ARRAY));
     uint32_t getValueCount(DocId doc) const override;
@@ -144,7 +144,7 @@ public:
         return ret;
     }
 
-    std::unique_ptr<AttributeSaver> onInitSave(vespalib::stringref fileName) override;
+    std::unique_ptr<AttributeSaver> onInitSave(std::string_view fileName) override;
 };
 
 }

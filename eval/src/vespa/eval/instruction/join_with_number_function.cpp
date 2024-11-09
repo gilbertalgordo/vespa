@@ -6,6 +6,7 @@
 #include <vespa/eval/eval/operation.h>
 #include <vespa/eval/eval/inline_operation.h>
 #include <vespa/vespalib/util/typify.h>
+#include <vespa/vespalib/util/unconstify_span.h>
 
 using namespace vespalib::eval::tensor_function;
 using namespace vespalib::eval::operation;
@@ -26,7 +27,7 @@ struct JoinWithNumberParam {
 };
 
 template <typename ICT, typename OCT, bool inplace>
-ArrayRef<OCT> make_dst_cells(ConstArrayRef<ICT> src_cells, Stash &stash) {
+std::span<OCT> make_dst_cells(std::span<const ICT> src_cells, Stash &stash) {
     if constexpr (inplace) {
         static_assert(std::is_same_v<ICT,OCT>);
         return unconstify(src_cells);
@@ -44,7 +45,7 @@ void my_number_join_op(State &state, uint64_t param_in) {
     OCT number = state.peek(swap ? 1 : 0).as_double();
     auto src_cells = tensor.cells().typify<ICT>();
     auto dst_cells = make_dst_cells<ICT, OCT, inplace>(src_cells, state.stash);
-    apply_op2_vec_num(dst_cells.begin(), src_cells.begin(), number, dst_cells.size(), my_op);
+    apply_op2_vec_num(dst_cells.data(), src_cells.data(), number, dst_cells.size(), my_op);
     if (inplace) {
         state.pop_pop_push(tensor);
     } else {

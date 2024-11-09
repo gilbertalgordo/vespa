@@ -48,21 +48,21 @@ void ValueMetricValues<AvgVal, TotVal>::relaxedLoadFrom(const AtomicImpl& source
 
 template<typename AvgVal, typename TotVal>
 template<typename T>
-T ValueMetricValues<AvgVal, TotVal>::getValue(stringref id) const {
+T ValueMetricValues<AvgVal, TotVal>::getValue(string_view id) const {
     if (id == "last") return static_cast<T>(_last);
     if (id == "count") return static_cast<T>(_count);
     if (id == "total") return static_cast<T>(_total);
     if (id == "min") return static_cast<T>(_count > 0 ? _min : 0);
     if (id == "max") return static_cast<T>( _count > 0 ? _max : 0);
-    throw IllegalArgumentException("No value " + vespalib::string(id) + " in value metric.", VESPA_STRLOC);
+    throw IllegalArgumentException("No value " + std::string(id) + " in value metric.", VESPA_STRLOC);
 }
 
 template<typename AvgVal, typename TotVal>
-double ValueMetricValues<AvgVal, TotVal>::getDoubleValue(stringref id) const {
+double ValueMetricValues<AvgVal, TotVal>::getDoubleValue(string_view id) const {
     return getValue<double>(id);
 }
 template<typename AvgVal, typename TotVal>
-uint64_t ValueMetricValues<AvgVal, TotVal>::getLongValue(stringref id) const {
+uint64_t ValueMetricValues<AvgVal, TotVal>::getLongValue(string_view id) const {
     return getValue<uint64_t>(id);
 }
 template<typename AvgVal, typename TotVal>

@@ -72,7 +72,7 @@ allocShrinker(const AttributeVector::SP &attr, vespalib::ISequencedTaskExecutor 
 
     auto shrinkwrap = std::make_shared<ThreadedCompactableLidSpace>(attr, executor,
                                                                     executor.getExecutorIdFromName(attr->getNamePrefix()));
-    const vespalib::string &name = attr->getName();
+    const std::string &name = attr->getName();
     auto dir = diskLayout.createAttributeDir(name);
     search::SerialNum shrinkSerialNum = estimateShrinkSerialNum(*attr);
     return std::make_shared<ShrinkLidSpaceFlushTarget>("attribute.shrink." + name, Type::GC, Component::ATTRIBUTE, shrinkSerialNum, dir->getLastFlushTime(), shrinkwrap);
@@ -125,7 +125,7 @@ AttributeManager::internalAddAttribute(AttributeSpec && spec,
                                        uint64_t serialNum,
                                        const IAttributeFactory &factory)
 {
-    vespalib::string name = spec.getName();
+    std::string name = spec.getName();
     AttributeInitializer initializer(_diskLayout->createAttributeDir(name), _documentSubDbName, std::move(spec), serialNum, factory, _shared_executor);
     AttributeInitializerResult result = initializer.init();
     if (result) {
@@ -141,7 +141,7 @@ AttributeManager::addAttribute(AttributeWrap attributeWrap, const ShrinkerSP &sh
 {
     AttributeVector::SP attribute = attributeWrap.getAttribute();
     bool isExtra = attributeWrap.isExtra();
-    const vespalib::string &name = attribute->getName();
+    const std::string &name = attribute->getName();
     LOG(debug, "Adding attribute vector '%s'", name.c_str());
     _attributes[name] = std::move(attributeWrap);
     assert(attribute->getInterlock() == _interlock);
@@ -155,7 +155,7 @@ AttributeManager::addAttribute(AttributeWrap attributeWrap, const ShrinkerSP &sh
 }
 
 AttributeVector::SP
-AttributeManager::findAttribute(const vespalib::string &name) const
+AttributeManager::findAttribute(std::string_view name) const
 {
     auto itr = _attributes.find(name);
     return (itr != _attributes.end())
@@ -164,7 +164,7 @@ AttributeManager::findAttribute(const vespalib::string &name) const
 }
 
 const AttributeManager::FlushableWrap *
-AttributeManager::findFlushable(const vespalib::string &name) const
+AttributeManager::findFlushable(const std::string &name) const
 {
     auto itr = _flushables.find(name);
     return (itr != _flushables.end()) ? &itr->second : nullptr;
@@ -242,8 +242,8 @@ AttributeManager::transferExtraAttributes(const AttributeManager &currMgr)
     }
 }
 
-AttributeManager::AttributeManager(const vespalib::string &baseDir,
-                                   const vespalib::string &documentSubDbName,
+AttributeManager::AttributeManager(const std::string &baseDir,
+                                   const std::string &documentSubDbName,
                                    const TuneFileAttributes &tuneFileAttributes,
                                    const FileHeaderContext &fileHeaderContext,
                                    std::shared_ptr<search::attribute::Interlock> interlock,
@@ -267,8 +267,8 @@ AttributeManager::AttributeManager(const vespalib::string &baseDir,
 {
 }
 
-AttributeManager::AttributeManager(const vespalib::string &baseDir,
-                                   const vespalib::string &documentSubDbName,
+AttributeManager::AttributeManager(const std::string &baseDir,
+                                   const std::string &documentSubDbName,
                                    const search::TuneFileAttributes &tuneFileAttributes,
                                    const search::common::FileHeaderContext &fileHeaderContext,
                                    std::shared_ptr<search::attribute::Interlock> interlock,
@@ -371,14 +371,14 @@ AttributeManager::flushAll(SerialNum currentSerial)
 }
 
 FlushableAttribute::SP
-AttributeManager::getFlushable(const vespalib::string &name)
+AttributeManager::getFlushable(const std::string &name)
 {
     auto wrap = findFlushable(name);
     return ((wrap != nullptr) ? wrap->getFlusher() : FlushableAttribute::SP());
 }
 
 AttributeManager::ShrinkerSP
-AttributeManager::getShrinker(const vespalib::string &name)
+AttributeManager::getShrinker(const std::string &name)
 {
     auto wrap = findFlushable(name);
     return ((wrap != nullptr) ? wrap->getShrinker() : ShrinkerSP());
@@ -419,13 +419,13 @@ AttributeManager::padAttribute(AttributeVector &v, uint32_t docIdLimit)
 }
 
 AttributeGuard::UP
-AttributeManager::getAttribute(const vespalib::string &name) const
+AttributeManager::getAttribute(std::string_view name) const
 {
     return std::make_unique<AttributeGuard>(findAttribute(name));
 }
 
 std::unique_ptr<search::attribute::AttributeReadGuard>
-AttributeManager::getAttributeReadGuard(const string &name, bool stableEnumGuard) const
+AttributeManager::getAttributeReadGuard(std::string_view name, bool stableEnumGuard) const
 {
     auto attribute = findAttribute(name);
     if (attribute) {
@@ -461,14 +461,14 @@ public:
           _importedCtx(importedAttributes)
     {
     }
-    const IAttributeVector *getAttribute(const vespalib::string &name) const override {
+    const IAttributeVector *getAttribute(std::string_view name) const override {
         const IAttributeVector *result = _ctx.getAttribute(name);
         if (result == nullptr) {
             result = _importedCtx.getAttribute(name);
         }
         return result;
     }
-    const IAttributeVector *getAttributeStableEnum(const vespalib::string &name) const override {
+    const IAttributeVector *getAttributeStableEnum(std::string_view name) const override {
         const IAttributeVector *result = _ctx.getAttributeStableEnum(name);
         if (result == nullptr) {
             result = _importedCtx.getAttributeStableEnum(name);
@@ -487,7 +487,7 @@ public:
         _ctx.enableMultiThreadSafe();
         _importedCtx.enableMultiThreadSafe();
     }
-    void asyncForAttribute(const vespalib::string &name, std::unique_ptr<IAttributeFunctor> func) const override {
+    void asyncForAttribute(std::string_view name, std::unique_ptr<IAttributeFunctor> func) const override {
         _ctx.asyncForAttribute(name, std::move(func));
     }
 };
@@ -524,7 +524,7 @@ AttributeManager::getFlushTargets() const
 }
 
 search::SerialNum
-AttributeManager::getFlushedSerialNum(const vespalib::string &name) const
+AttributeManager::getFlushedSerialNum(const std::string &name) const
 {
     auto wrap = findFlushable(name);
     if (wrap != nullptr) {
@@ -568,7 +568,7 @@ AttributeManager::getAttributeListAll(std::vector<AttributeGuard> &list) const
 void
 AttributeManager::pruneRemovedFields(search::SerialNum serialNum)
 {
-    std::vector<vespalib::string> attributes = _diskLayout->listAttributes();
+    std::vector<std::string> attributes = _diskLayout->listAttributes();
     for (const auto &attribute : attributes) {
         auto itr = _attributes.find(attribute);
         if (itr == _attributes.end()) {
@@ -584,7 +584,7 @@ AttributeManager::getAttributeFieldWriter() const
 }
 
 AttributeVector *
-AttributeManager::getWritableAttribute(const vespalib::string &name) const
+AttributeManager::getWritableAttribute(std::string_view name) const
 {
     auto itr = _attributes.find(name);
     if (itr == _attributes.end() || itr->second.isExtra()) {
@@ -631,13 +631,13 @@ AttributeManager::asyncForEachAttribute(std::shared_ptr<IAttributeFunctor> func,
 }
 
 void
-AttributeManager::asyncForAttribute(const vespalib::string &name, std::unique_ptr<IAttributeFunctor> func) const {
+AttributeManager::asyncForAttribute(std::string_view name, std::unique_ptr<IAttributeFunctor> func) const {
     auto itr = _attributes.find(name);
     if (itr == _attributes.end() || itr->second.isExtra() || !func) {
         return;
     }
     AttributeVector::SP attrsp = itr->second.getAttribute();
-    vespalib::string attrName = attrsp->getNamePrefix();
+    string attrName(attrsp->getNamePrefix());
     _attributeFieldWriter.execute(_attributeFieldWriter.getExecutorIdFromName(attrName),
                                   [attr=std::move(attrsp), func=std::move(func)]() { (*func)(*attr); });
 }
@@ -649,7 +649,7 @@ AttributeManager::setImportedAttributes(std::unique_ptr<ImportedAttributesRepo> 
 }
 
 std::shared_ptr<search::attribute::ReadableAttributeVector>
-AttributeManager::readable_attribute_vector(const string& name) const
+AttributeManager::readable_attribute_vector(std::string_view name) const
 {
     auto attribute = findAttribute(name);
     if (attribute || !_importedAttributes) {

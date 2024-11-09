@@ -23,19 +23,30 @@ public final class TokenizeExpression extends Expression {
         this.config = config;
     }
 
-    public Linguistics getLinguistics() {
-        return linguistics;
+    public Linguistics getLinguistics() { return linguistics; }
+
+    public AnnotatorConfig getConfig() { return config; }
+
+    @Override
+    public DataType setInputType(DataType input, VerificationContext context) {
+        return super.setInputType(input, DataType.STRING, context);
     }
 
-    public AnnotatorConfig getConfig() {
-        return config;
+    @Override
+    public DataType setOutputType(DataType output, VerificationContext context) {
+        return super.setOutputType(DataType.STRING, output, null, context);
+    }
+
+    @Override
+    protected void doVerify(VerificationContext context) {
+        // empty
     }
 
     @Override
     protected void doExecute(ExecutionContext context) {
-        StringFieldValue input = (StringFieldValue)context.getValue();
+        StringFieldValue input = (StringFieldValue)context.getCurrentValue();
         StringFieldValue output = input.clone();
-        context.setValue(output);
+        context.setCurrentValue(output);
 
         AnnotatorConfig cfg = new AnnotatorConfig(config);
         Language lang = context.resolveLanguage(linguistics);
@@ -47,14 +58,7 @@ public final class TokenizeExpression extends Expression {
     }
 
     @Override
-    protected void doVerify(VerificationContext context) {
-        // empty
-    }
-
-    @Override
-    public DataType createdOutputType() {
-        return null;
-    }
+    public DataType createdOutputType() { return null; }
 
     @Override
     public String toString() {
@@ -66,8 +70,11 @@ public final class TokenizeExpression extends Expression {
         if (config.getStemMode() != StemMode.NONE) {
             ret.append(" stem:\""+config.getStemMode()+"\"");
         }
-        if (config.hasNonDefaultMaxTokenLength()) {
+        if (config.hasNonDefaultMaxTokenizeLength()) {
             ret.append(" max-length:" + config.getMaxTokenizeLength());
+        }
+        if (config.hasNonDefaultMaxTokenLength()) {
+            ret.append(" max-token-length:" + config.getMaxTokenLength());
         }
         if (config.hasNonDefaultMaxTermOccurrences()) {
             ret.append(" max-occurrences:" + config.getMaxTermOccurrences());

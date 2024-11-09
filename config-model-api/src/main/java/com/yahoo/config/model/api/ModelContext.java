@@ -12,6 +12,8 @@ import com.yahoo.config.provision.ClusterSpec;
 import com.yahoo.config.provision.DataplaneToken;
 import com.yahoo.config.provision.DockerImage;
 import com.yahoo.config.provision.HostName;
+import com.yahoo.config.provision.NodeResources.Architecture;
+import com.yahoo.config.provision.SharedHosts;
 import com.yahoo.config.provision.Zone;
 
 import java.io.File;
@@ -96,7 +98,6 @@ public interface ModelContext {
         @ModelFeatureFlag(owners = {"baldersheim"}) default int heapSizePercentage() { return 0; }
         @ModelFeatureFlag(owners = {"bjorncs", "tokle"}) default List<String> allowedAthenzProxyIdentities() { return List.of(); }
         @ModelFeatureFlag(owners = {"vekterli"}) default int maxActivationInhibitedOutOfSyncGroups() { return 0; }
-        @ModelFeatureFlag(owners = {"hmusum"}) default String jvmOmitStackTraceInFastThrowOption(ClusterSpec.Type type) { return ""; }
         @ModelFeatureFlag(owners = {"hmusum"}) default double resourceLimitDisk() { return 0.75; }
         @ModelFeatureFlag(owners = {"hmusum"}) default double resourceLimitMemory() { return 0.8; }
         @ModelFeatureFlag(owners = {"geirst", "vekterli"}) default double minNodeRatioPerGroup() { return 0.0; }
@@ -112,6 +113,16 @@ public interface ModelContext {
         @ModelFeatureFlag(owners = {"hmusum"}) default int searchHandlerThreadpool() { return 2; }
         @ModelFeatureFlag(owners = {"baldersheim"}) default boolean alwaysMarkPhraseExpensive() { return false; }
         @ModelFeatureFlag(owners = {"baldersheim"}) default boolean sortBlueprintsByCost() { return false; }
+        @ModelFeatureFlag(owners = {"vekterli"}) default int persistenceThreadMaxFeedOpBatchSize() { return 1; }
+        @ModelFeatureFlag(owners = {"olaa"}) default boolean logserverOtelCol() { return false; }
+        @ModelFeatureFlag(owners = {"bratseth"}) default SharedHosts sharedHosts() { return SharedHosts.empty(); }
+        @ModelFeatureFlag(owners = {"bratseth"}) default Architecture adminClusterArchitecture() { return Architecture.x86_64; }
+        @ModelFeatureFlag(owners = {"arnej"}) default double logserverNodeMemory() { return 0.0; }
+        @ModelFeatureFlag(owners = {"vekterli"}) default boolean symmetricPutAndActivateReplicaSelection() { return false; }
+        @ModelFeatureFlag(owners = {"vekterli"}) default boolean enforceStrictlyIncreasingClusterStateVersions() { return false; }
+        @ModelFeatureFlag(owners = {"vekterli"}) default boolean distributionConfigFromClusterController() { return false; }
+        @ModelFeatureFlag(owners = {"arnej"}) default boolean useLegacyWandQueryParsing() { return true; }
+        @ModelFeatureFlag(owners = {"hmusum"}) default boolean forwardAllLogLevels() { return true; }
     }
 
     /** Warning: As elsewhere in this package, do not make backwards incompatible changes that will break old config models! */
@@ -123,6 +134,7 @@ public interface ModelContext {
         List<ConfigServerSpec> configServerSpecs();
         HostName loadBalancerName();
         URI ztsUrl();
+        AthenzDomain tenantSecretDomain();
         String athenzDnsSuffix();
         boolean hostedVespa();
         Zone zone();
@@ -164,6 +176,10 @@ public interface ModelContext {
         default Duration endpointConnectionTtl() { return Duration.ZERO; }
 
         default List<DataplaneToken> dataplaneTokens() { return List.of(); }
+
+        default List<String> requestPrefixForLoggingContent() { return List.of(); }
+
+        default boolean launchApplicationAthenzService() { return false; }
 
     }
 

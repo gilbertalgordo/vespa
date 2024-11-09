@@ -18,6 +18,7 @@ private:
 public:
     QueryTermData * clone() const override { return new QueryTermData(); }
     search::fef::SimpleTermData &getTermData() noexcept { return _termData; }
+    const search::fef::SimpleTermData &getTermData() const noexcept { return _termData; }
 };
 
 class QueryTermDataFactory final : public search::streaming::QueryNodeResultFactory {
@@ -28,10 +29,10 @@ public:
     std::unique_ptr<search::streaming::QueryNodeResultBase> create() const override {
         return std::make_unique<QueryTermData>();
     }
-    Normalizing normalizing_mode(vespalib::stringref index) const noexcept override {
+    Normalizing normalizing_mode(std::string_view index) const noexcept override {
         return _normalization ? _normalization->normalizing_mode(index) : Normalizing::LOWERCASE_AND_FOLD;
     }
-    bool allow_float_terms_rewrite(vespalib::stringref index ) const noexcept override {
+    bool allow_float_terms_rewrite(std::string_view index ) const noexcept override {
         return _normalization && _normalization->is_text_matching(index);
     }
 private:

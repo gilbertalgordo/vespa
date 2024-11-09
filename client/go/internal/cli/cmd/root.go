@@ -54,6 +54,7 @@ type CLI struct {
 
 	now           func() time.Time
 	retryInterval time.Duration
+	waitTimeout   *time.Duration
 
 	cmd     *cobra.Command
 	config  *Config
@@ -141,7 +142,12 @@ func New(stdout, stderr io.Writer, environment []string) (*CLI, error) {
 
 Use it on Vespa instances running locally, remotely or in Vespa Cloud.
 
-Vespa documentation: https://docs.vespa.ai
+To get started, see the following quick start guides:
+
+- Local Vespa instance: https://docs.vespa.ai/en/vespa-quick-start.html
+- Vespa Cloud: https://cloud.vespa.ai/en/getting-started
+
+The complete Vespa documentation is available at https://docs.vespa.ai.
 
 For detailed description of flags and configuration, see 'vespa help config'.
 `,
@@ -153,6 +159,7 @@ For detailed description of flags and configuration, see 'vespa help config'.
 			return fmt.Errorf("invalid command: %s", args[0])
 		},
 	}
+	cmd.CompletionOptions.HiddenDefaultCmd = true // Do not show the 'completion' command in help output
 	env := make(map[string]string)
 	for _, entry := range environment {
 		parts := strings.SplitN(entry, "=", 2)
@@ -376,7 +383,9 @@ func (c *CLI) confirm(question string, confirmByDefault bool) (bool, error) {
 	}
 }
 
-func (c *CLI) waiter(timeout time.Duration) *Waiter { return &Waiter{Timeout: timeout, cli: c} }
+func (c *CLI) waiter(timeout time.Duration, cmd *cobra.Command) *Waiter {
+	return &Waiter{Timeout: timeout, cli: c, cmd: cmd}
+}
 
 // target creates a target according the configuration of this CLI and given opts.
 func (c *CLI) target(opts targetOptions) (vespa.Target, error) {
@@ -396,9 +405,9 @@ func (c *CLI) target(opts targetOptions) (vespa.Target, error) {
 	if err != nil {
 		return nil, err
 	}
-	if !c.isCloudCI() { // Vespa Cloud always runs an up-to-date version
-		if err := target.CheckVersion(c.version); err != nil {
-			c.printWarning(err, "This version may not work as expected", "Try 'vespa version' to check for a new version")
+	if target.IsCloud() && !c.isCloudCI() { // Vespa Cloud always runs an up-to-date version
+		if err := target.CompatibleWith(c.version); err != nil {
+			c.printWarning(err, "This version of CLI may not work as expected", "Try 'vespa version' to check for a new version")
 		}
 	}
 	return target, nil
@@ -460,7 +469,7 @@ func (c *CLI) createCustomTarget(targetType, customURL string) (vespa.Target, er
 }
 
 func (c *CLI) cloudApiAuthenticator(deployment vespa.Deployment, system vespa.System) (vespa.Authenticator, error) {
-	apiKey, err := c.config.readAPIKey(c, system, deployment.Application.Tenant)
+	apiKey, err := c.config.readAPIKey(c, deployment.Application.Tenant)
 	if err != nil {
 		return nil, err
 	}

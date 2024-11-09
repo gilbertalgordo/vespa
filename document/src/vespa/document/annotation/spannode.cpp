@@ -4,6 +4,7 @@
 #include "spantreevisitor.h"
 #include "alternatespanlist.h"
 #include <vespa/vespalib/stllike/asciistream.h>
+#include <ostream>
 
 namespace document {
 
@@ -13,10 +14,10 @@ class ToStringVisitor : public SpanTreeVisitor {
 public:
     ToStringVisitor();
     ~ToStringVisitor();
-    vespalib::stringref str() const { return _os.str(); }
+    std::string str() const { return _os.str(); }
 private:
     vespalib::asciistream _os;
-    vespalib::string _indent;
+    std::string _indent;
 
     void newline() {
         _os << "\n" << _indent;
@@ -42,7 +43,7 @@ private:
     void visit(const SpanList & list) override {
         _os << "SpanList(";
         if (list.size() > 1) {
-            vespalib::string oldIndent(_indent);
+            std::string oldIndent(_indent);
             _indent += "  ";
             visitChildren(list);
             _indent = oldIndent;
@@ -55,7 +56,7 @@ private:
     void visit(const SimpleSpanList & list) override {
         _os << "SimpleSpanList(";
         if (list.size() > 1) {
-            vespalib::string oldIndent(_indent);
+            std::string oldIndent(_indent);
             _indent += "  ";
             visitChildren(list);
             _indent = oldIndent;
@@ -67,7 +68,7 @@ private:
     }
     void visit(const AlternateSpanList & list) override {
         _os << "AlternateSpanList(";
-        vespalib::string oldIndent(_indent);
+        std::string oldIndent(_indent);
         _indent += "  ";
         for (size_t i = 0; i < list.getNumSubtrees(); ++i) {
             newline();
@@ -81,11 +82,11 @@ private:
 };
 
 ToStringVisitor::ToStringVisitor() : _os(), _indent() { }
-ToStringVisitor::~ToStringVisitor() { }
+ToStringVisitor::~ToStringVisitor() = default;
 
 }
 
-vespalib::string
+std::string
 SpanNode::toString() const {
     ToStringVisitor os;
     accept(os);

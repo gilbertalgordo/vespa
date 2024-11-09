@@ -13,6 +13,7 @@
 #include <vespa/vdslib/distribution/distribution.h>
 #include <vespa/vdslib/state/clusterstate.h>
 #include <algorithm>
+#include <string>
 
 #include <vespa/log/log.h>
 LOG_SETUP(".distributor.operations.external.put");
@@ -180,6 +181,8 @@ void PutOperation::start_direct_put_dispatch(DistributorStripeMessageSender& sen
                                                    _op_ctx.distributor_config().getMinimalBucketSplit(),
                                                    _bucket_space.getDistribution().getRedundancy(),
                                                    _msg->getBucket().getBucketSpace());
+        targetResolver.use_symmetric_replica_selection(
+                _op_ctx.distributor_config().symmetric_put_and_activate_replica_selection());
         OperationTargetList targets(targetResolver.getTargets(OperationTargetResolver::PUT, _doc_id_bucket_id));
 
         for (const auto& target : targets) {
@@ -299,7 +302,7 @@ PutOperation::on_completed_check_condition(CheckCondition::Outcome& outcome,
                                               "Document does not exist"));
     } else if (outcome.failed()) {
         api::ReturnCode wrapped_error(outcome.error_code().getResult(),
-                                      "Failed during write repair condition probe step. Reason: " + outcome.error_code().getMessage());
+                                      "Failed during write repair condition probe step. Reason: " + std::string(outcome.error_code().getMessage()));
         _tracker.fail(sender, wrapped_error);
     } else {
         _tracker.fail(sender, api::ReturnCode(api::ReturnCode::TEST_AND_SET_CONDITION_FAILED,

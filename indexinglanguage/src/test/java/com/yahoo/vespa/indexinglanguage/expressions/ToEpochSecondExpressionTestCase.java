@@ -27,15 +27,15 @@ public class ToEpochSecondExpressionTestCase {
     public void requireThatExpressionCanBeVerified() {
         Expression exp = new ToEpochSecondExpression();
         assertVerify(DataType.STRING, exp, DataType.LONG);
-        assertVerifyThrows(DataType.INT, exp, "Expected string input, got int");
-        assertVerifyThrows(null, exp, "Expected string input, but no input is specified");
+        assertVerifyThrows("Invalid expression 'to_epoch_second': Expected string input, got int", DataType.INT, exp);
+        assertVerifyThrows("Invalid expression 'to_epoch_second': Expected string input, but no input is specified", null, exp);
     }
 
     @Test
     public void requireThatValueIsConvertedWithMs() {
         ExecutionContext ctx = new ExecutionContext(new SimpleTestAdapter());
-        ctx.setValue(new StringFieldValue("2023-12-24T17:00:43.000Z")).execute(new ToEpochSecondExpression());
-        FieldValue val = ctx.getValue();
+        ctx.setCurrentValue(new StringFieldValue("2023-12-24T17:00:43.000Z")).execute(new ToEpochSecondExpression());
+        FieldValue val = ctx.getCurrentValue();
         assertTrue(val instanceof LongFieldValue);
         assertEquals(1703437243L, ((LongFieldValue)val).getLong());
     }
@@ -43,8 +43,8 @@ public class ToEpochSecondExpressionTestCase {
     @Test
     public void requireThatValueIsConverted() {
         ExecutionContext ctx = new ExecutionContext(new SimpleTestAdapter());
-        ctx.setValue(new StringFieldValue("2023-12-24T17:00:43Z")).execute(new ToEpochSecondExpression());
-        FieldValue val = ctx.getValue();
+        ctx.setCurrentValue(new StringFieldValue("2023-12-24T17:00:43Z")).execute(new ToEpochSecondExpression());
+        FieldValue val = ctx.getCurrentValue();
         assertTrue(val instanceof LongFieldValue);
         assertEquals(1703437243L, ((LongFieldValue)val).getLong());
     }

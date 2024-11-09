@@ -1,11 +1,12 @@
 // Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
-#include <vespa/vespalib/testkit/testapp.h>
+#include <vespa/vespalib/testkit/test_kit.h>
 #include <vespa/vespalib/data/slime/slime.h>
 #include <vespa/vespalib/data/slime/json_format.h>
 #include <vespa/vespalib/metrics/simple_metrics.h>
 #include <vespa/vespalib/metrics/simple_metrics_manager.h>
 #include <vespa/vespalib/metrics/stable_store.h>
 #include <vespa/vespalib/metrics/json_formatter.h>
+#include <vespa/vespalib/metrics/prometheus_formatter.h>
 #include "mock_tick.h"
 #include <stdio.h>
 #include <unistd.h>
@@ -70,7 +71,7 @@ TEST("require that simple metrics gauge merge works")
     EXPECT_EQUAL(a.lastValue, 1.0);
 }
 
-bool compare_json(const vespalib::string &a, const vespalib::string &b)
+bool compare_json(const std::string &a, const std::string &b)
 {
     using vespalib::Memory;
     using vespalib::slime::JsonFormat;
@@ -90,9 +91,9 @@ fprintf(stderr, "compares unequal:\n[A]\n%s\n[B]\n%s\n", a.c_str(), b.c_str());
     return slimeA == slimeB;
 }
 
-void check_json(const vespalib::string &actual)
+void check_json(const std::string &actual)
 {
-    vespalib::string expect = "{"
+    std::string expect = "{"
     "   snapshot: { from: 1, to: 4 },"
     "   values: [ { name: 'foo',"
     "       values: { count: 17, rate: 4.85714 }"
@@ -114,6 +115,25 @@ void check_json(const vespalib::string &actual)
     "   } ]"
     "}";
     EXPECT_TRUE(compare_json(expect, actual));
+}
+
+void check_prometheus(const std::string &actual) {
+    std::string expect = R"(foo 17 4500
+foo{chain="default",documenttype="music",thread="0"} 4 4500
+bar_count 4 4500
+bar_count{chain="vespa",documenttype="blogpost",thread="1"} 1 4500
+bar_count{chain="vespa",documenttype="blogpost",thread="2"} 1 4500
+bar_sum 168 4500
+bar_sum{chain="vespa",documenttype="blogpost",thread="1"} 14 4500
+bar_sum{chain="vespa",documenttype="blogpost",thread="2"} 11 4500
+bar_min 41 4500
+bar_min{chain="vespa",documenttype="blogpost",thread="1"} 14 4500
+bar_min{chain="vespa",documenttype="blogpost",thread="2"} 11 4500
+bar_max 43 4500
+bar_max{chain="vespa",documenttype="blogpost",thread="1"} 14 4500
+bar_max{chain="vespa",documenttype="blogpost",thread="2"} 11 4500
+)";
+    EXPECT_EQUAL(expect, actual);
 }
 
 
@@ -188,6 +208,9 @@ TEST("use simple_metrics_collector")
 
     JsonFormatter fmt2(snap2);
     check_json(fmt2.asString());
+
+    PrometheusFormatter fmt3(snap2);
+    check_prometheus(fmt3.as_text_formatted());
 
     // flush sliding window
     for (int i = 5; i <= 10; ++i) {

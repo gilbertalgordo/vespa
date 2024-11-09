@@ -36,8 +36,9 @@ DocumentSubDBCollection::DocumentSubDBCollection(
         matching::QueryLimiter &queryLimiter,
         const std::atomic<vespalib::steady_time> & now_ref,
         std::mutex &configMutex,
-        const vespalib::string &baseDir,
-        const vespalib::HwInfo &hwInfo)
+        const std::string &baseDir,
+        const vespalib::HwInfo &hwInfo,
+        std::shared_ptr<search::diskindex::IPostingListCache> posting_list_cache)
     : _subDBs(),
       _owner(owner),
       _calc(),
@@ -58,13 +59,13 @@ DocumentSubDBCollection::DocumentSubDBCollection(
     _subDBs.push_back
         (new SearchableDocSubDB(FastAccessDocSubDB::Config(
                 StoreOnlyDocSubDB::Config(docTypeName, "0.ready", baseDir,_readySubDbId, SubDbType::READY),
-                true, true, false),
+                false),
                                 SearchableDocSubDB::Context(
                                         FastAccessDocSubDB::Context(context,
                                                                     metrics.ready.attributes,
                                                                     metricsWireService,
                                                                     attribute_interlock),
-                                        queryLimiter, now_ref, warmupExecutor)));
+                                        queryLimiter, now_ref, warmupExecutor, posting_list_cache)));
 
     _subDBs.push_back
         (new StoreOnlyDocSubDB(StoreOnlyDocSubDB::Config(docTypeName, "1.removed", baseDir, _remSubDbId, SubDbType::REMOVED),
@@ -73,7 +74,7 @@ DocumentSubDBCollection::DocumentSubDBCollection(
     _subDBs.push_back
         (new FastAccessDocSubDB(FastAccessDocSubDB::Config(
                 StoreOnlyDocSubDB::Config(docTypeName, "2.notready", baseDir,_notReadySubDbId, SubDbType::NOTREADY),
-                true, true, true),
+                true),
                                 FastAccessDocSubDB::Context(context,
                                                             metrics.notReady.attributes,
                                                             metricsWireService,
@@ -108,7 +109,7 @@ DocumentSubDBCollection::~DocumentSubDBCollection()
 void
 DocumentSubDBCollection::createRetrievers()
 {
-    RetrieversSP retrievers(std::make_shared<std::vector<IDocumentRetriever::SP>>());
+    RetrieversSP retrievers(std::make_shared<std::vector<std::shared_ptr<IDocumentRetriever>>>());
     retrievers->reserve(_subDBs.size());
     for (auto subDb : _subDBs) {
         retrievers->emplace_back(subDb->getDocumentRetriever());

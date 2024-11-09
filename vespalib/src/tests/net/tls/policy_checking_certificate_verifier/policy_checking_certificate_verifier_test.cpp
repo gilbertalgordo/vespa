@@ -3,26 +3,27 @@
 #include <vespa/vespalib/net/tls/policy_checking_certificate_verifier.h>
 #include <vespa/vespalib/test/peer_policy_utils.h>
 #include <vespa/vespalib/testkit/test_kit.h>
+#include <vespa/vespalib/testkit/test_master.hpp>
 
 using namespace vespalib;
 using namespace vespalib::net::tls;
 
-bool dns_glob_matches(vespalib::stringref pattern, vespalib::stringref string_to_check) {
+bool dns_glob_matches(std::string_view pattern, std::string_view string_to_check) {
     auto glob = CredentialMatchPattern::create_from_dns_glob(pattern);
     return glob->matches(string_to_check);
 }
 
-bool uri_glob_matches(vespalib::stringref pattern, vespalib::stringref string_to_check) {
+bool uri_glob_matches(std::string_view pattern, std::string_view string_to_check) {
     auto glob = CredentialMatchPattern::create_from_uri_glob(pattern);
     return glob->matches(string_to_check);
 }
 
-void verify_all_glob_types_match(vespalib::stringref pattern, vespalib::stringref string_to_check) {
+void verify_all_glob_types_match(std::string_view pattern, std::string_view string_to_check) {
     EXPECT_TRUE(dns_glob_matches(pattern, string_to_check));
     EXPECT_TRUE(uri_glob_matches(pattern, string_to_check));
 }
 
-void verify_all_glob_types_mismatch(vespalib::stringref pattern, vespalib::stringref string_to_check) {
+void verify_all_glob_types_mismatch(std::string_view pattern, std::string_view string_to_check) {
     EXPECT_FALSE(dns_glob_matches(pattern, string_to_check));
     EXPECT_FALSE(uri_glob_matches(pattern, string_to_check));
 }
@@ -97,26 +98,26 @@ TEST("special extended regex characters are ignored") {
 }
 
 // TODO CN + SANs
-PeerCredentials creds_with_sans(std::vector<vespalib::string> dns_sans, std::vector<vespalib::string> uri_sans) {
+PeerCredentials creds_with_sans(std::vector<std::string> dns_sans, std::vector<std::string> uri_sans) {
     PeerCredentials creds;
     creds.dns_sans = std::move(dns_sans);
     creds.uri_sans = std::move(uri_sans);
     return creds;
 }
 
-PeerCredentials creds_with_dns_sans(std::vector<vespalib::string> dns_sans) {
+PeerCredentials creds_with_dns_sans(std::vector<std::string> dns_sans) {
     PeerCredentials creds;
     creds.dns_sans = std::move(dns_sans);
     return creds;
 }
 
-PeerCredentials creds_with_uri_sans(std::vector<vespalib::string> uri_sans) {
+PeerCredentials creds_with_uri_sans(std::vector<std::string> uri_sans) {
     PeerCredentials creds;
     creds.uri_sans = std::move(uri_sans);
     return creds;
 }
 
-PeerCredentials creds_with_cn(vespalib::stringref cn) {
+PeerCredentials creds_with_cn(std::string_view cn) {
     PeerCredentials creds;
     creds.common_name = cn;
     return creds;

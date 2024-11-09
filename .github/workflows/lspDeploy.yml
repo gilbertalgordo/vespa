@@ -1,0 +1,87 @@
+name: Vespa Schema LSP - Deploy extension
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        type: choice
+        description: Which kind of release is this
+        required: true
+        options:
+          - patch
+          - minor
+          - major
+
+jobs:
+  lspDeploy:
+    name: Vespa Schema LSP Deployment Job
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: "17"
+          distribution: "temurin"
+          cache: maven
+
+      - name: Build Vespa
+        run: |
+          export MAVEN_OPTS="-Xms128m -Xmx1024m"
+          ./bootstrap.sh java
+          mvn install --threads 1C
+        working-directory: ./
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      
+      - name: "Retrieve version"
+        id: retrieve_version
+        working-directory: ./integration/schema-language-server/utils
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python3 updateVersion.py ${{ github.event.inputs.version }} >> $GITHUB_OUTPUT
+
+      - name: Download node dependencies
+        run: npm ci
+        working-directory: ./integration/schema-language-server/clients/vscode
+
+      - name: Publish VScode extension
+        run: npm run publish
+        working-directory: ./integration/schema-language-server/clients/vscode
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+
+      - name: Publish IntelliJ plugin
+        run: |
+          echo $VERSION > VERSION
+          gradle buildPlugin
+          curl -i --header "Authorization: Bearer $INTELLIJ_PLUGIN_PERM" -F pluginId=$PLUGIN_ID -F file=@./build/distributions/vespa-$VERSION.zip https://plugins.jetbrains.com/plugin/uploadPlugin
+        working-directory: ./integration/schema-language-server/clients/intellij
+        env:
+          VERSION: ${{ steps.retrieve_version.outputs.VERSION }}
+          INTELLIJ_PLUGIN_PERM: ${{ secrets.INTELLIJ_PLUGIN_PERM }}
+          PLUGIN_ID: 18074
+
+      - name: Prepare Github Release
+        working-directory: ./integration/schema-language-server
+        run: |
+          mkdir -p ./clients/github-release/target
+          cp ./language-server/target/schema-language-server-jar-with-dependencies.jar ./clients/github-release/target/vespa-language-server_$VERSION.jar
+        env:
+          VERSION: ${{ steps.retrieve_version.outputs.VERSION }}
+      
+      - name: Create release
+        working-directory: ./integration/schema-language-server
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create lsp-v${{ steps.retrieve_version.outputs.VERSION }} \
+            --notes-file ./clients/github-release/README.md \
+            --latest=false \
+            -t "Vespa Language Server ${{ steps.retrieve_version.outputs.VERSION }}" \
+            './clients/github-release/target/vespa-language-server_${{ steps.retrieve_version.outputs.VERSION }}.jar' 

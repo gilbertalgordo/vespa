@@ -31,14 +31,14 @@ public:
 
 class WeakAnd : public QueryNodeMixin<WeakAnd, Intermediate> {
     uint32_t _targetNumHits;
-    vespalib::string _view;
+    std::string _view;
 public:
     virtual ~WeakAnd() = 0;
 
-    WeakAnd(uint32_t targetNumHits, const vespalib::string & view) : _targetNumHits(targetNumHits), _view(view) {}
+    WeakAnd(uint32_t targetNumHits, std::string view) : _targetNumHits(targetNumHits), _view(std::move(view)) {}
 
     uint32_t getTargetNumHits() const { return _targetNumHits; }
-    const vespalib::string & getView() const { return _view; }
+    const std::string & getView() const { return _view; }
 };
 
 //-----------------------------------------------------------------------------
@@ -72,7 +72,7 @@ class Near : public QueryNodeMixin<Near, Intermediate>
     uint32_t _distance;
 
  public:
-    Near(size_t distance) : _distance(distance) {}
+    explicit Near(size_t distance) : _distance(distance) {}
     virtual ~Near() = 0;
 
     size_t getDistance() const { return _distance; }
@@ -85,7 +85,7 @@ class ONear : public QueryNodeMixin<ONear, Intermediate>
     uint32_t _distance;
 
  public:
-    ONear(size_t distance) : _distance(distance) {}
+    explicit ONear(size_t distance) : _distance(distance) {}
     virtual ~ONear() = 0;
 
     size_t getDistance() const { return _distance; }
@@ -95,8 +95,8 @@ class ONear : public QueryNodeMixin<ONear, Intermediate>
 
 class Phrase : public QueryNodeMixin<Phrase, Intermediate>, public Term {
 public:
-    Phrase(const vespalib::string &view, int32_t id, Weight weight)
-        : Term(view, id, weight), _expensive(false) {}
+    Phrase(std::string view, int32_t id, Weight weight)
+        : Term(std::move(view), id, weight), _expensive(false) {}
     virtual ~Phrase() = 0;
     Phrase &set_expensive(bool value) {
         _expensive = value;
@@ -109,8 +109,8 @@ private:
 
 class SameElement : public QueryNodeMixin<SameElement, Intermediate>, public Term {
 public:
-    SameElement(const vespalib::string &view, int32_t id, Weight weight)
-        : Term(view, id, weight), _expensive(false) {}
+    SameElement(std::string view, int32_t id, Weight weight)
+        : Term(std::move(view), id, weight), _expensive(false) {}
     virtual ~SameElement() = 0;
     SameElement &set_expensive(bool value) {
         _expensive = value;

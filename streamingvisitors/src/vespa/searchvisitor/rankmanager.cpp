@@ -37,8 +37,8 @@ RankManager::Snapshot::addProperties(const vespa::config::search::RankProfilesCo
         _properties.back().first = curr.name;
         Properties & p = _properties.back().second;
         for (uint32_t j = 0; j < curr.fef.property.size(); ++j) {
-            p.add(vespalib::string(curr.fef.property[j].name.c_str()),
-                  vespalib::string(curr.fef.property[j].value.c_str()));
+            p.add(std::string(curr.fef.property[j].name.c_str()),
+                  std::string(curr.fef.property[j].value.c_str()));
         }
     }
 }
@@ -78,20 +78,37 @@ IndexEnvPrototype::detectFields(const vespa::config::search::vsm::VsmfieldsConfi
     }
 }
 
+void
+IndexEnvPrototype::add_virtual_fields()
+{
+    _prototype.add_virtual_fields();
+}
+
 namespace {
 
 FieldIdTList
 buildFieldSet(const VsmfieldsConfig::Documenttype::Index & ci, const search::fef::IIndexEnvironment & indexEnv,
-              const VsmfieldsConfig::Documenttype::IndexVector & indexes)
+              const VsmfieldsConfig::Documenttype::IndexVector & indexes, bool prefer_virtual_fields)
 {
     LOG(spam, "Index %s with %zd fields", ci.name.c_str(), ci.field.size());
     FieldIdTList ifm;
+    if (prefer_virtual_fields) {
+        /*
+         * Stop at an existing virtual field when setting up views
+         * used by the same element query operator.
+         */
+        auto info = indexEnv.getFieldByName(ci.name);
+        if (info != nullptr && info->type() == search::fef::FieldType::VIRTUAL) {
+            ifm.push_back(info->id());
+            return ifm;
+        }
+    }
     for (const VsmfieldsConfig::Documenttype::Index::Field & cf : ci.field) {
         LOG(spam, "Parsing field %s", cf.name.c_str());
         auto foundIndex = std::find_if(indexes.begin(), indexes.end(),
                                        [&cf](const auto & v) { return v.name == cf.name;});
         if ((foundIndex != indexes.end()) && (cf.name != ci.name)) {
-            FieldIdTList sub = buildFieldSet(*foundIndex, indexEnv, indexes);
+            FieldIdTList sub = buildFieldSet(*foundIndex, indexEnv, indexes, prefer_virtual_fields);
             ifm.insert(ifm.end(), sub.begin(), sub.end());
         } else {
             const FieldInfo * info = indexEnv.getFieldByName(cf.name);
@@ -111,20 +128,27 @@ buildFieldSet(const VsmfieldsConfig::Documenttype::Index & ci, const search::fef
 }
 
 void
-RankManager::Snapshot::buildFieldMappings(const VsmfieldsHandle & fields)
+RankManager::Snapshot::build_field_mappings(const VsmfieldsHandle& fields, ViewMap& views, bool prefer_virtual_fields)
 {
     for(const VsmfieldsConfig::Documenttype & di : fields->documenttype) {
         LOG(debug, "Looking through indexes for documenttype '%s'", di.name.c_str());
         for(const VsmfieldsConfig::Documenttype::Index & ci : di.index) {
-            FieldIdTList view = buildFieldSet(ci, _protoEnv.current(), di.index);
-            if (_views.find(ci.name) == _views.end()) {
+            FieldIdTList view = buildFieldSet(ci, _protoEnv.current(), di.index, prefer_virtual_fields);
+            if (views.find(ci.name) == views.end()) {
                 std::sort(view.begin(), view.end()); // lowest field id first
-                _views[ci.name] = view;
+                views[ci.name] = view;
             } else {
                 LOG(warning, "We already have a view for index '%s'. Drop the new view.", ci.name.c_str());
             }
         }
     }
+}
+
+void
+RankManager::Snapshot::build_field_mappings(const VsmfieldsHandle& fields)
+{
+    build_field_mappings(fields, _views, false);
+    build_field_mappings(fields, _same_element_views, true);
 }
 
 bool
@@ -154,11 +178,11 @@ RankManager::Snapshot::initRankSetup(const BlueprintFactory & factory)
     LOG(debug, "Number of index environments and rank setups: %u", (uint32_t)_indexEnv.size());
     LOG_ASSERT(_properties.size() == _rankSetup.size());
     for (uint32_t i = 0; i < _properties.size(); ++i) {
-        vespalib::string number = fmt("%u", i);
+        std::string number = fmt("%u", i);
         _rpmap[number] = i;
     }
     for (uint32_t i = 0; i < _properties.size(); ++i) {
-        const vespalib::string &name = _properties[i].first;
+        const std::string &name = _properties[i].first;
         _rpmap[name] = i;
     }
     return true;
@@ -170,7 +194,8 @@ RankManager::Snapshot::Snapshot() :
     _indexEnv(),
     _rankSetup(),
     _rpmap(),
-    _views()
+    _views(),
+    _same_element_views()
 {
 }
 
@@ -181,7 +206,8 @@ RankManager::Snapshot::setup(const RankManager & rm)
 {
     VsmfieldsHandle fields = rm._vsmAdapter->getFieldsConfig();
     _protoEnv.detectFields(*fields);
-    buildFieldMappings(fields);
+    _protoEnv.add_virtual_fields();
+    build_field_mappings(fields);
     if (!initRankSetup(rm._blueprintFactory)) {
         return false;
     }
@@ -213,7 +239,7 @@ RankManager::configureRankProfiles(const RankProfilesConfig & cfg, std::shared_p
         _snapshot.set(snapshot.release());
         _snapshot.latch(); // switch to the new config object
     } else {
-        vespalib::string msg = "(re-)configuration of rank manager failed";
+        std::string msg = "(re-)configuration of rank manager failed";
         LOG(error, "%s", msg.c_str());
         throw vespalib::Exception(msg, VESPA_STRLOC);
     }

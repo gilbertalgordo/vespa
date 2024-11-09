@@ -2,6 +2,7 @@
 package com.yahoo.vespa.hosted.provision.autoscale;
 
 import com.yahoo.config.provision.ApplicationId;
+import com.yahoo.config.provision.CloudAccount;
 import com.yahoo.config.provision.ClusterResources;
 import com.yahoo.config.provision.ClusterSpec;
 import com.yahoo.config.provision.Flavor;
@@ -35,18 +36,23 @@ public class AllocatableResources {
     /** Fake allocatable resources from requested capacity */
     public AllocatableResources(ClusterResources requested,
                                 ClusterSpec clusterSpec,
-                                NodeRepository nodeRepository) {
+                                NodeRepository nodeRepository,
+                                CloudAccount cloudAccount) {
         this.nodes = requested.nodes();
         this.groups = requested.groups();
-        this.realResources = nodeRepository.resourcesCalculator().requestToReal(requested.nodeResources(), nodeRepository.exclusiveAllocation(clusterSpec), false);
+        this.realResources = nodeRepository.resourcesCalculator().requestToReal(requested.nodeResources(), cloudAccount,
+                                                                                nodeRepository.exclusivity().allocation(clusterSpec), false);
         this.advertisedResources = requested.nodeResources();
         this.clusterSpec = clusterSpec;
         this.fulfilment = 1;
     }
 
     public AllocatableResources(NodeList nodes, NodeRepository nodeRepository) {
+        if (nodes.isEmpty()) {
+            throw new IllegalArgumentException("Expected a non-empty node list");
+        }
         this.nodes = nodes.size();
-        this.groups = (int)nodes.stream().map(node -> node.allocation().get().membership().cluster().group()).distinct().count();
+        this.groups = (int) nodes.stream().map(node -> node.allocation().get().membership().cluster().group()).distinct().count();
         this.realResources = averageRealResourcesOf(nodes.asList(), nodeRepository); // Average since we average metrics over nodes
         this.advertisedResources = nodes.requestedResources();
         this.clusterSpec = nodes.clusterSpec();
@@ -77,19 +83,6 @@ public class AllocatableResources {
         this.advertisedResources = advertisedResources;
         this.clusterSpec = clusterSpec;
         this.fulfilment = fulfilment;
-    }
-
-    /** Returns this with the redundant node or group removed from counts. */
-    public AllocatableResources withoutRedundancy() {
-        int groupSize = nodes / groups;
-        int nodesAdjustedForRedundancy   = nodes > 1 ? (groups == 1 ? nodes - 1 : nodes - groupSize) : nodes;
-        int groupsAdjustedForRedundancy  = nodes > 1 ? (groups == 1 ? 1 : groups - 1) : groups;
-        return new AllocatableResources(nodesAdjustedForRedundancy,
-                                        groupsAdjustedForRedundancy,
-                                        realResources,
-                                        advertisedResources,
-                                        clusterSpec,
-                                        fulfilment);
     }
 
     /**
@@ -123,15 +116,23 @@ public class AllocatableResources {
      */
     public double fulfilment() { return fulfilment; }
 
+    public boolean notFulfiled() {
+        return fulfilment < 0.9999999;
+    }
+
     private static double fulfilment(ClusterResources realResources, ClusterResources idealResources) {
         double vcpuFulfilment     = Math.min(1, realResources.totalResources().vcpu()     / idealResources.totalResources().vcpu());
-        double memoryGbFulfilment = Math.min(1, realResources.totalResources().memoryGb() / idealResources.totalResources().memoryGb());
+        double memoryGbFulfilment = Math.min(1, realResources.totalResources().memoryGiB() / idealResources.totalResources().memoryGiB());
         double diskGbFulfilment   = Math.min(1, realResources.totalResources().diskGb()   / idealResources.totalResources().diskGb());
-        return (vcpuFulfilment + memoryGbFulfilment + diskGbFulfilment) / 3;
+        double fulfilment = (vcpuFulfilment + memoryGbFulfilment + diskGbFulfilment) / 3;
+        if (equal(fulfilment, 0)) return 0;
+        if (equal(fulfilment, 1)) return 1;
+        return fulfilment;
     }
 
     public boolean preferableTo(AllocatableResources other, ClusterModel model) {
-        if (other.fulfilment() < 1 || this.fulfilment() < 1) // always fulfil as much as possible
+        // always fulfil as much as possible unless fulfilment is considered to be equal
+        if ((other.fulfilment() < 1 || this.fulfilment() < 1) && ! equal(this.fulfilment(), other.fulfilment()))
             return this.fulfilment() > other.fulfilment();
 
         return this.cost() * toHours(model.allocationDuration()) + this.costChangingFrom(model)
@@ -162,7 +163,7 @@ public class AllocatableResources {
         }
         return nodes.get(0).allocation().get().requestedResources()
                                        .withVcpu(sum.vcpu() / nodes.size())
-                                       .withMemoryGb(sum.memoryGb() / nodes.size())
+                                       .withMemoryGiB(sum.memoryGiB() / nodes.size())
                                        .withDiskGb(sum.diskGb() / nodes.size())
                                        .withBandwidthGbps(sum.bandwidthGbps() / nodes.size());
     }
@@ -175,22 +176,25 @@ public class AllocatableResources {
                                                       ClusterModel model,
                                                       NodeRepository nodeRepository) {
         var systemLimits = nodeRepository.nodeResourceLimits();
-        boolean exclusive = nodeRepository.exclusiveAllocation(clusterSpec);
+        boolean exclusive = nodeRepository.exclusivity().allocation(clusterSpec);
         if (! exclusive) {
             // We decide resources: Add overhead to what we'll request (advertised) to make sure real becomes (at least) cappedNodeResources
             var allocatableResources = calculateAllocatableResources(wantedResources,
                                                                      nodeRepository,
+                                                                     model.cloudAccount(),
                                                                      clusterSpec,
                                                                      applicationLimits,
                                                                      exclusive,
                                                                      true);
 
             var worstCaseRealResources = nodeRepository.resourcesCalculator().requestToReal(allocatableResources.advertisedResources,
+                                                                                            model.cloudAccount(),
                                                                                             exclusive,
                                                                                             false);
             if ( ! systemLimits.isWithinRealLimits(worstCaseRealResources, clusterSpec)) {
                 allocatableResources = calculateAllocatableResources(wantedResources,
                                                                      nodeRepository,
+                                                                     model.cloudAccount(),
                                                                      clusterSpec,
                                                                      applicationLimits,
                                                                      exclusive,
@@ -210,7 +214,7 @@ public class AllocatableResources {
             for (Flavor flavor : nodeRepository.flavors().getFlavors()) {
                 // Flavor decide resources: Real resources are the worst case real resources we'll get if we ask for these advertised resources
                 NodeResources advertisedResources = nodeRepository.resourcesCalculator().advertisedResourcesOf(flavor);
-                NodeResources realResources = nodeRepository.resourcesCalculator().requestToReal(advertisedResources, exclusive, false);
+                NodeResources realResources = nodeRepository.resourcesCalculator().requestToReal(advertisedResources, model.cloudAccount(), exclusive, false);
 
                 // Adjust where we don't need exact match to the flavor
                 if (flavor.resources().storageType() == NodeResources.StorageType.remote) {
@@ -251,20 +255,21 @@ public class AllocatableResources {
 
     private static AllocatableResources calculateAllocatableResources(ClusterResources wantedResources,
                                                                       NodeRepository nodeRepository,
+                                                                      CloudAccount cloudAccount,
                                                                       ClusterSpec clusterSpec,
                                                                       Limits applicationLimits,
                                                                       boolean exclusive,
                                                                       boolean bestCase) {
         var systemLimits = nodeRepository.nodeResourceLimits();
-        var advertisedResources = nodeRepository.resourcesCalculator().realToRequest(wantedResources.nodeResources(), exclusive, bestCase);
+        var advertisedResources = nodeRepository.resourcesCalculator().realToRequest(wantedResources.nodeResources(), cloudAccount, exclusive, bestCase);
         advertisedResources = systemLimits.enlargeToLegal(advertisedResources, clusterSpec, exclusive, true); // Ask for something legal
         advertisedResources = applicationLimits.cap(advertisedResources); // Overrides other conditions, even if it will then fail
-        var realResources = nodeRepository.resourcesCalculator().requestToReal(advertisedResources, exclusive, bestCase); // What we'll really get
+        var realResources = nodeRepository.resourcesCalculator().requestToReal(advertisedResources, cloudAccount, exclusive, bestCase); // What we'll really get
         if ( ! systemLimits.isWithinRealLimits(realResources, clusterSpec)
              && advertisedResources.storageType() == NodeResources.StorageType.any) {
             // Since local disk reserves some of the storage, try to constrain to remote disk
             advertisedResources = advertisedResources.with(NodeResources.StorageType.remote);
-            realResources = nodeRepository.resourcesCalculator().requestToReal(advertisedResources, exclusive, bestCase);
+            realResources = nodeRepository.resourcesCalculator().requestToReal(advertisedResources, cloudAccount, exclusive, bestCase);
         }
         return new AllocatableResources(wantedResources.with(realResources),
                                         advertisedResources,
@@ -283,6 +288,10 @@ public class AllocatableResources {
         if ( ! min.isUnspecified() && ! r.justNumbers().satisfies(min.justNumbers())) return false;
         if ( ! max.isUnspecified() && ! max.justNumbers().satisfies(r.justNumbers())) return false;
         return true;
+    }
+
+    private static boolean equal(double a, double b) {
+        return Math.abs(a - b) < 1e-9;
     }
 
 }

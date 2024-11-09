@@ -73,13 +73,13 @@ double
 BoolFieldValue::getAsDouble() const {
     return _value ? 1 : 0;
 }
-vespalib::string
+std::string
 BoolFieldValue::getAsString() const {
     return _value ? "true" : "false";
 }
 
 BoolFieldValue&
-BoolFieldValue::operator=(vespalib::stringref v) {
+BoolFieldValue::operator=(std::string_view v) {
     _value = (v == "true");
     return *this;
 }

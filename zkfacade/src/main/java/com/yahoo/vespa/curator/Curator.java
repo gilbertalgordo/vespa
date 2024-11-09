@@ -70,15 +70,14 @@ public class Curator extends AbstractComponent implements AutoCloseable {
     private static final Duration BASE_SLEEP_TIME = Duration.ofSeconds(1);
     private static final int MAX_RETRIES = 4;
     private static final RetryPolicy DEFAULT_RETRY_POLICY = new ExponentialBackoffRetry((int) BASE_SLEEP_TIME.toMillis(), MAX_RETRIES);
-    // Default value taken from ZookeeperServerConfig
-    static final long defaultJuteMaxBuffer = Long.parseLong(System.getProperty("jute.maxbuffer", "52428800"));
+    private static final int defaultJuteMaxBuffer = new CuratorConfig.Builder().build().juteMaxBuffer();
 
     private final CuratorFramework curatorFramework;
     private final ConnectionSpec connectionSpec;
     private final long juteMaxBuffer;
     private final Duration sessionTimeout;
 
-    // All lock keys, to allow re-entrancy. This will grow forever, but this should be too slow to be a problem
+    // All lock keys, to allow re-entrance. This will grow forever, but this should be too slow to be a problem
     private final ConcurrentHashMap<Path, Lock> locks = new ConcurrentHashMap<>();
 
     /** Creates a curator instance from a comma-separated string of ZooKeeper host:port strings */
@@ -101,7 +100,7 @@ public class Curator extends AbstractComponent implements AutoCloseable {
                                    CuratorConfig.Server::port,
                                    curatorConfig.zookeeperLocalhostAffinity()),
              Optional.of(ZK_CLIENT_CONFIG_FILE),
-             defaultJuteMaxBuffer,
+             curatorConfig.juteMaxBuffer(),
              Duration.ofSeconds(curatorConfig.zookeeperSessionTimeoutSeconds()));
     }
 
@@ -110,7 +109,7 @@ public class Curator extends AbstractComponent implements AutoCloseable {
              defaultJuteMaxBuffer, DEFAULT_ZK_SESSION_TIMEOUT);
     }
 
-    Curator(ConnectionSpec connectionSpec, Optional<File> clientConfigFile, long juteMaxBuffer, Duration sessionTimeout) {
+    Curator(ConnectionSpec connectionSpec, Optional<File> clientConfigFile, int juteMaxBuffer, Duration sessionTimeout) {
         this(connectionSpec,
              CuratorFrameworkFactory
                      .builder()
@@ -126,7 +125,7 @@ public class Curator extends AbstractComponent implements AutoCloseable {
              sessionTimeout);
     }
 
-    private Curator(ConnectionSpec connectionSpec, CuratorFramework curatorFramework, long juteMaxBuffer, Duration sessionTimeout) {
+    private Curator(ConnectionSpec connectionSpec, CuratorFramework curatorFramework, int juteMaxBuffer, Duration sessionTimeout) {
         this.connectionSpec = Objects.requireNonNull(connectionSpec);
         this.curatorFramework = Objects.requireNonNull(curatorFramework);
         this.juteMaxBuffer = juteMaxBuffer;
@@ -228,7 +227,9 @@ public class Curator extends AbstractComponent implements AutoCloseable {
 
 
     /** @see #create(Path, Duration) */
-    public boolean create(Path path) { return create(path, null); }
+    public boolean create(Path path) {
+        return create(path, null);
+    }
 
     /**
      * Creates an empty node at a path, creating any parents as necessary.
@@ -238,6 +239,7 @@ public class Curator extends AbstractComponent implements AutoCloseable {
     public boolean create(Path path, Duration ttl) {
         return create(path, ttl, null);
     }
+
     private boolean create(Path path, Duration ttl, Stat stat) {
         if (exists(path)) return false;
 
@@ -261,7 +263,9 @@ public class Curator extends AbstractComponent implements AutoCloseable {
     }
 
     /**
-     * Creates all the given paths in a single transaction. Any paths which already exists are ignored.
+     * Creates all the given paths in a single transaction. Any paths which already exists are ignored.<br>
+     * <em>No, this is <strong>NOT</strong> atomic, when viewed from other ZK clients!</em> Maybe it once was, but it is not anymore,
+     * unless ZK is configured to run commits and read in a single thread, which is not the default.
      */
     public void createAtomically(Path... paths) {
         try {
@@ -271,7 +275,7 @@ public class Curator extends AbstractComponent implements AutoCloseable {
                     transaction = transaction.create().forPath(path.getAbsolute(), new byte[0]).and();
                 }
             }
-            ((CuratorTransactionFinal)transaction).commit();
+            ((CuratorTransactionFinal) transaction).commit();
         } catch (Exception e) {
             throw new RuntimeException("Could not create " + Arrays.toString(paths), e);
         }

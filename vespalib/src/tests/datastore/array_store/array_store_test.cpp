@@ -16,7 +16,6 @@
 
 using namespace vespalib::datastore;
 using generation_t = vespalib::GenerationHandler::generation_t;
-using vespalib::ArrayRef;
 using vespalib::MemoryUsage;
 using vespalib::alloc::MemoryAllocator;
 using vespalib::alloc::test::MemoryAllocatorObserver;
@@ -173,7 +172,7 @@ struct ArrayStoreTest : public TestT
             refs.emplace_back(itr->first);
         }
         std::vector<AtomicEntryRef> compactedRefs = refs;
-        ctx->compact(ArrayRef<AtomicEntryRef>(compactedRefs));
+        ctx->compact(std::span<AtomicEntryRef>(compactedRefs));
         ReferenceStore compactedRefStore;
         for (size_t i = 0; i < refs.size(); ++i) {
             ASSERT_EQ(0u, compactedRefStore.count(compactedRefs[i].load_relaxed()));
@@ -278,10 +277,10 @@ TYPED_TEST(NumberStoreTest, control_static_sizes) {
     MemoryUsage usage = this->store.getMemoryUsage();
     if (this->simple_buffers()) {
         EXPECT_EQ(202140u, usage.allocatedBytes());
-        EXPECT_EQ(197680u, usage.usedBytes());
+        EXPECT_EQ(197648u, usage.usedBytes());
     } else {
         EXPECT_EQ(202328u, usage.allocatedBytes());
-        EXPECT_EQ(197568u, usage.usedBytes());
+        EXPECT_EQ(197536u, usage.usedBytes());
     }
 }
 

@@ -58,11 +58,11 @@ public:
     GetDocsumsStateCallback    &_callback;
 
     class DynTeaserState {
-        vespalib::hash_map<vespalib::string, std::unique_ptr<juniper::QueryHandle>> _queries;  // juniper query representations
+        vespalib::hash_map<std::string, std::unique_ptr<juniper::QueryHandle>> _queries;  // juniper query representations
     public:
         DynTeaserState();
         ~DynTeaserState();
-        std::unique_ptr<juniper::QueryHandle>& get_query(vespalib::stringref field);
+        std::unique_ptr<juniper::QueryHandle>& get_query(std::string_view field);
     };
     DynTeaserState _dynteaser;
     std::unique_ptr<search::attribute::IAttributeContext> _attrCtx;

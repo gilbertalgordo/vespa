@@ -457,7 +457,7 @@ RequestBucketInfoCommand::RequestBucketInfoCommand(
 RequestBucketInfoCommand::RequestBucketInfoCommand(
         document::BucketSpace bucketSpace,
         uint16_t distributor, const lib::ClusterState& state,
-        vespalib::stringref distributionHash)
+        std::string_view distributionHash)
     : StorageCommand(MessageType::REQUESTBUCKETINFO),
       _bucketSpace(bucketSpace),
       _buckets(),
@@ -624,7 +624,7 @@ SetBucketStateCommand::print(std::ostream& out,
     }
 }
 
-vespalib::string
+std::string
 SetBucketStateCommand::getSummary() const
 {
     vespalib::asciistream stream;

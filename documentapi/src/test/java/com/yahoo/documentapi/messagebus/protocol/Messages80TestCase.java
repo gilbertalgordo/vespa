@@ -16,6 +16,7 @@ import com.yahoo.text.Utf8;
 import com.yahoo.vdslib.SearchResult;
 
 import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
 
@@ -141,11 +142,35 @@ public class Messages80TestCase extends MessagesTestBase {
             });
         }
 
+        private record NamedCondition(String name, TestAndSetCondition condition) {}
+
+        static List<NamedCondition> tasConditions() {
+            return List.of(new NamedCondition("cond-only",   new TestAndSetCondition("There's just one condition")),
+                           new NamedCondition("ts-only",     TestAndSetCondition.ofRequiredTimestamp(0x1badcafef000000dL)),
+                           new NamedCondition("cond-and-ts", TestAndSetCondition.ofRequiredTimestampWithSelectionFallback(
+                                   0x1badcafef000000dL, "There's just one condition")));
+        }
+
+        // We assume TaS codec is the same across message types, so use Put as a proxy for all TaS-support types.
+        void verifyTasConditionsCanHaveSelectionAndOrTimestamp() {
+            for (var tas : tasConditions()) {
+                var msg = new PutDocumentMessage(new DocumentPut(new Document(protocol.getDocumentTypeManager().getDocumentType("testdoc"), "id:ns:testdoc::")));
+                msg.setCondition(tas.condition);
+                var msgAndCondName = "PutDocumentMessage-%s".formatted(tas.name);
+                serialize(msgAndCondName, msg);
+                forEachLanguage((lang) -> {
+                    var decoded = (PutDocumentMessage)deserialize(msgAndCondName, DocumentProtocol.MESSAGE_PUTDOCUMENT, lang);
+                    assertEquals(msg.getCondition(), decoded.getCondition());
+                });
+            }
+        }
+
         @Override
         public void run() {
             var msg = new PutDocumentMessage(new DocumentPut(new Document(protocol.getDocumentTypeManager().getDocumentType("testdoc"), "id:ns:testdoc::")));
             msg.setTimestamp(666);
             msg.setCondition(new TestAndSetCondition(CONDITION_STRING));
+            msg.setPersistedTimestamp(0x1badcafef000000dL);
             serialize("PutDocumentMessage", msg);
 
             forEachLanguage((lang) -> {
@@ -155,10 +180,12 @@ public class Messages80TestCase extends MessagesTestBase {
                 assertEquals(msg.getDocumentPut().getDocument().getDataType().getName(), deserializedDoc.getDataType().getName());
                 assertEquals(msg.getDocumentPut().getDocument().getId().toString(), deserializedDoc.getId().toString());
                 assertEquals(msg.getTimestamp(), deserializedMsg.getTimestamp());
-                assertEquals(msg.getCondition().getSelection(), deserializedMsg.getCondition().getSelection());
+                assertEquals(msg.getCondition(), deserializedMsg.getCondition());
                 assertFalse(deserializedMsg.getCreateIfNonExistent());
+                assertEquals(0x1badcafef000000dL, deserializedMsg.getPersistedTimestamp());
             });
             verifyCreateIfNonExistentFlag();
+            verifyTasConditionsCanHaveSelectionAndOrTimestamp();
         }
     }
 
@@ -176,8 +203,52 @@ public class Messages80TestCase extends MessagesTestBase {
     }
 
     class UpdateDocumentMessageTest implements RunnableTest {
-        @Override
-        public void run() {
+
+        UpdateDocumentMessage makeUpdateWithCreateIfMissing(boolean createIfMissing) {
+            var docType = protocol.getDocumentTypeManager().getDocumentType("testdoc");
+            var update = new DocumentUpdate(docType, new DocumentId("id:ns:testdoc::"));
+            update.addFieldPathUpdate(new RemoveFieldPathUpdate(docType, "intfield", "testdoc.intfield > 0"));
+            update.setCreateIfNonExistent(createIfMissing);
+
+            var msg = new UpdateDocumentMessage(update);
+            msg.setNewTimestamp(777);
+            msg.setOldTimestamp(666);
+            msg.setCondition(new TestAndSetCondition(CONDITION_STRING));
+            return msg;
+        }
+
+        void testLegacyCreateIfMissingFlagCanBeDeserializedFromDocumentUpdate() {
+            // Legacy binary files were created _prior_ to the createIfMissing flag being
+            // written as part of the serialization process.
+            forEachLanguage((lang) -> {
+                var msg = (UpdateDocumentMessage) deserialize(
+                        "UpdateDocumentMessage-legacy-no-create-if-missing",
+                        DocumentProtocol.MESSAGE_UPDATEDOCUMENT, lang);
+                assertFalse(msg.createIfMissing());
+
+                msg = (UpdateDocumentMessage) deserialize(
+                        "UpdateDocumentMessage-legacy-with-create-if-missing",
+                        DocumentProtocol.MESSAGE_UPDATEDOCUMENT, lang);
+                assertTrue(msg.createIfMissing());
+            });
+        }
+
+        void checkDeserialization(Language lang, String name, boolean expectedCreate) {
+            var msg = (UpdateDocumentMessage) deserialize(name, DocumentProtocol.MESSAGE_UPDATEDOCUMENT, lang);
+            assertEquals(expectedCreate, msg.createIfMissing());
+        };
+
+        void testCreateIfMissingFlagIsPropagated() {
+            serialize("UpdateDocumentMessage-no-create-if-missing",   makeUpdateWithCreateIfMissing(false));
+            serialize("UpdateDocumentMessage-with-create-if-missing", makeUpdateWithCreateIfMissing(true));
+
+            forEachLanguage((lang) -> {
+                checkDeserialization(lang, "UpdateDocumentMessage-no-create-if-missing",   false);
+                checkDeserialization(lang, "UpdateDocumentMessage-with-create-if-missing", true);
+            });
+        }
+
+        void testAllUpdateFieldsArePropagated() {
             var docType = protocol.getDocumentTypeManager().getDocumentType("testdoc");
             var update = new DocumentUpdate(docType, new DocumentId("id:ns:testdoc::"));
             update.addFieldPathUpdate(new RemoveFieldPathUpdate(docType, "intfield", "testdoc.intfield > 0"));
@@ -194,8 +265,15 @@ public class Messages80TestCase extends MessagesTestBase {
                 assertEquals(msg.getDocumentUpdate(), deserializedMsg.getDocumentUpdate());
                 assertEquals(msg.getNewTimestamp(), deserializedMsg.getNewTimestamp());
                 assertEquals(msg.getOldTimestamp(), deserializedMsg.getOldTimestamp());
-                assertEquals(msg.getCondition().getSelection(), deserializedMsg.getCondition().getSelection());
+                assertEquals(msg.getCondition(), deserializedMsg.getCondition());
             });
+        }
+
+        @Override
+        public void run() {
+            testAllUpdateFieldsArePropagated();
+            testLegacyCreateIfMissingFlagCanBeDeserializedFromDocumentUpdate();
+            testCreateIfMissingFlagIsPropagated();
         }
     }
 
@@ -220,11 +298,13 @@ public class Messages80TestCase extends MessagesTestBase {
         public void run() {
             var msg = new RemoveDocumentMessage(new DocumentId("id:ns:testdoc::"));
             msg.setCondition(new TestAndSetCondition(CONDITION_STRING));
+            msg.setPersistedTimestamp(0x1badcafef000000dL);
             serialize("RemoveDocumentMessage", msg);
             forEachLanguage((lang) -> {
                 var deserializedMsg = (RemoveDocumentMessage)deserialize("RemoveDocumentMessage", DocumentProtocol.MESSAGE_REMOVEDOCUMENT, lang);
                 assertEquals(msg.getDocumentId().toString(), deserializedMsg.getDocumentId().toString());
                 assertEquals(msg.getCondition(), deserializedMsg.getCondition());
+                assertEquals(0x1badcafef000000dL, deserializedMsg.getPersistedTimestamp());
             });
         }
     }

@@ -3,7 +3,8 @@
 #pragma once
 
 #include <cstdint>
-#include <vespa/vespalib/objects/nbostream.h>
+
+namespace vespalib { class nbostream; }
 
 namespace vespalib::eval {
 
@@ -31,16 +32,11 @@ public:
     constexpr float to_float() const noexcept { return _bits; }
     constexpr void assign(float value) noexcept { _bits = value; }
 
-    constexpr int8_t get_bits() const { return _bits; }
+    constexpr int8_t get_bits() const noexcept { return _bits; }
     constexpr void assign_bits(int8_t value) noexcept { _bits = value; }
 };
 
-inline nbostream & operator << (nbostream &stream, Int8Float v)   { return stream << v.get_bits(); }
-inline nbostream & operator >> (nbostream &stream, Int8Float & v) {
-    int8_t byte;
-    stream >> byte;
-    v.assign_bits(byte);
-    return stream;
-}
+nbostream & operator << (nbostream &stream, Int8Float v);
+nbostream & operator >> (nbostream &stream, Int8Float & v);
 
 }

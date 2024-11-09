@@ -28,17 +28,17 @@ public class LowerCaseTestCase {
     public void requireThatExpressionCanBeVerified() {
         Expression exp = new LowerCaseExpression();
         assertVerify(DataType.STRING, exp, DataType.STRING);
-        assertVerifyThrows(null, exp, "Expected string input, but no input is specified");
-        assertVerifyThrows(DataType.INT, exp, "Expected string input, got int");
+        assertVerifyThrows("Invalid expression 'lowercase': Expected string input, but no input is specified", null, exp);
+        assertVerifyThrows("Invalid expression 'lowercase': Expected string input, got int", DataType.INT, exp);
     }
 
     @Test
     public void requireThatStringIsLowerCased() {
         ExecutionContext ctx = new ExecutionContext(new SimpleTestAdapter());
-        ctx.setValue(new StringFieldValue("FOO"));
+        ctx.setCurrentValue(new StringFieldValue("FOO"));
         new LowerCaseExpression().execute(ctx);
 
-        FieldValue val = ctx.getValue();
+        FieldValue val = ctx.getCurrentValue();
         assertTrue(val instanceof StringFieldValue);
         assertEquals("foo", ((StringFieldValue)val).getString());
     }

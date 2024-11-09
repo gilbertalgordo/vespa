@@ -2,9 +2,11 @@
 
 #include "ucaconverter.h"
 #include <unicode/ustring.h>
-#include <vespa/vespalib/util/stringfmt.h>
 #include <vespa/vespalib/text/utf8.h>
+#include <vespa/vespalib/util/stringfmt.h>
 #include <mutex>
+#include <string>
+
 #include <vespa/log/log.h>
 LOG_SETUP(".search.common.sortspec");
 
@@ -19,11 +21,11 @@ std::mutex _GlobalDirtyICUThreadSafeLock;
 }
 
 BlobConverter::UP
-UcaConverterFactory::create(stringref local, stringref strength) const {
+UcaConverterFactory::create(string_view local, string_view strength) const {
     return std::make_unique<UcaConverter>(local, strength);
 }
 
-UcaConverter::UcaConverter(vespalib::stringref locale, vespalib::stringref strength) :
+UcaConverter::UcaConverter(std::string_view locale, std::string_view strength) :
     _buffer(),
     _u16Buffer(128),
     _collator()
@@ -49,11 +51,11 @@ UcaConverter::UcaConverter(vespalib::stringref locale, vespalib::stringref stren
         } else if (strength == "IDENTICAL") {
             _collator->setStrength(Collator::IDENTICAL);
         } else {
-            throw std::runtime_error("Illegal uca collation strength : " + strength);
+            throw std::runtime_error("Illegal uca collation strength : " + std::string(strength));
         }
     } else {
         delete coll;
-        throw std::runtime_error("Failed Collator::createInstance(Locale(locale.c_str()), status) with locale : " + locale);
+        throw std::runtime_error("Failed Collator::createInstance(Locale(locale.c_str()), status) with locale : " + std::string(locale));
     }
 }
 

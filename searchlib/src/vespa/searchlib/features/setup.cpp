@@ -22,6 +22,7 @@
 #include "fieldmatchfeature.h"
 #include "fieldtermmatchfeature.h"
 #include "firstphasefeature.h"
+#include "first_phase_rank_feature.h"
 #include "flow_completeness_feature.h"
 #include "foreachfeature.h"
 #include "freshnessfeature.h"
@@ -48,6 +49,7 @@
 #include "rankingexpressionfeature.h"
 #include "raw_score_feature.h"
 #include "reverseproximityfeature.h"
+#include "second_phase_feature.h"
 #include "subqueries_feature.h"
 #include "tensor_from_labels_feature.h"
 #include "tensor_from_weighted_set_feature.h"
@@ -90,6 +92,7 @@ void setup_search_features(fef::IBlueprintRegistry & registry)
     registry.addPrototype(std::make_shared<FieldMatchBlueprint>());
     registry.addPrototype(std::make_shared<FieldTermMatchBlueprint>());
     registry.addPrototype(std::make_shared<FirstPhaseBlueprint>());
+    registry.addPrototype(std::make_shared<FirstPhaseRankBlueprint>());
     registry.addPrototype(std::make_shared<FlowCompletenessBlueprint>());
     registry.addPrototype(std::make_shared<ForeachBlueprint>());
     registry.addPrototype(std::make_shared<FreshnessBlueprint>());
@@ -109,6 +112,7 @@ void setup_search_features(fef::IBlueprintRegistry & registry)
     registry.addPrototype(std::make_shared<RandomNormalBlueprint>());
     registry.addPrototype(std::make_shared<RandomNormalStableBlueprint>());
     registry.addPrototype(std::make_shared<RawScoreBlueprint>());
+    registry.addPrototype(std::make_shared<SecondPhaseBlueprint>());
     registry.addPrototype(std::make_shared<SubqueriesBlueprint>());
     registry.addPrototype(std::make_shared<TensorFromLabelsBlueprint>());
     registry.addPrototype(std::make_shared<TensorFromWeightedSetBlueprint>());

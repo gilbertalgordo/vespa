@@ -3,7 +3,6 @@ package com.yahoo.component.chain.dependencies.ordering;
 
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -50,7 +49,7 @@ public class ChainBuilder<T extends ChainedComponent> {
     }
 
     private Set<String> set(String... s) {
-        return new HashSet<>(Arrays.asList(s));
+        return new HashSet<>(List.of(s));
     }
 
     public PhaseNameProvider addPhase(Phase phase) {
@@ -149,14 +148,7 @@ public class ChainBuilder<T extends ChainedComponent> {
     }
 
     private NameProvider getNameProvider(String name) {
-        NameProvider nameProvider = nameProviders.get(name);
-        if (nameProvider != null)
-            return nameProvider;
-        else {
-            nameProvider = new ComponentNameProvider(name);
-            nameProviders.put(name, nameProvider);
-            return nameProvider;
-        }
+        return nameProviders.computeIfAbsent(name, ComponentNameProvider::new);
     }
 
     private OrderedReadyNodes getReadyNodes() {

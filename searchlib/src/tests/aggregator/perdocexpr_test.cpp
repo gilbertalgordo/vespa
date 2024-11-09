@@ -7,16 +7,18 @@
 #include <vespa/searchlib/attribute/singleboolattribute.h>
 #include <vespa/searchcommon/attribute/config.h>
 #include <vespa/vespalib/objects/objectdumper.h>
-#include <vespa/vespalib/testkit/testapp.h>
 #include <vespa/document/base/testdocman.h>
 #include <vespa/document/fieldvalue/bytefieldvalue.h>
 #include <vespa/document/fieldvalue/weightedsetfieldvalue.h>
 #include <vespa/vespalib/util/md5.h>
 #include <vespa/searchlib/expression/getdocidnamespacespecificfunctionnode.h>
 #include <vespa/searchlib/expression/documentfieldnode.h>
+#include <cctype>
 #include <cmath>
 #include <iostream>
 #include <list>
+#include <vespa/vespalib/testkit/test_kit.h>
+#include <vespa/vespalib/testkit/test_master.hpp>
 
 #include <vespa/log/log.h>
 LOG_SETUP("per_doc_expr_test");
@@ -583,14 +585,16 @@ std::string
 getVespaChecksumV2(const std::string& ymumid, int fid, const std::string& flags_str)
 {
     if (fid == 6 || fid == 0 || fid == 5) {
-        return 0;
+        return {};
     }
 
     std::list<char> flags_list;
     flags_list.clear();
-    for (unsigned int i = 0; i< flags_str.length();i++)
-      if (isalpha(flags_str[i]))
-        flags_list.push_back(flags_str[i]);
+    for (unsigned int i = 0; i< flags_str.length();i++) {
+        if (std::isalpha(static_cast<unsigned char>(flags_str[i]))) {
+            flags_list.push_back(flags_str[i]);
+        }
+    }
     flags_list.sort();
 
     std::string new_flags_str ="";
@@ -604,6 +608,7 @@ getVespaChecksumV2(const std::string& ymumid, int fid, const std::string& flags_
                  sizeof(networkFid)+
                  new_flags_str.length();
 
+    // GNU extension: Variable-length automatic array
     unsigned char buffer[length];
     memset(buffer, 0x00, length);
     memcpy(buffer, ymumid.c_str(), ymumid.length());

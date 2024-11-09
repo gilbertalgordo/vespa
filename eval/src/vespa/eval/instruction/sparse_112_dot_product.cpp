@@ -16,17 +16,17 @@ using namespace instruction;
 namespace {
 
 template <typename T, size_t N>
-ConstArrayRef<T> as_car(std::array<T, N> &array) noexcept {
+std::span<const T> as_car(std::array<T, N> &array) noexcept {
     return {array.data(), array.size()};
 }
 
 template <typename T, size_t N>
-ConstArrayRef<const T *> as_ccar(std::array<T *, N> &array) noexcept {
+std::span<const T* const> as_ccar(std::array<T *, N> &array) noexcept {
     return {array.data(), array.size()};
 }
 
 template <typename T>
-ConstArrayRef<T> as_car(T &value) noexcept {
+std::span<const T> as_car(T &value) noexcept {
     return {&value, 1};
 }
 
@@ -94,9 +94,9 @@ void my_sparse_112_dot_product_op(InterpretedFunction::State &state, uint64_t) {
     const auto &a_idx = state.peek(2).index();
     const auto &b_idx = state.peek(1).index();
     const auto &c_idx = state.peek(0).index();
-    const CT *a_cells = state.peek(2).cells().unsafe_typify<CT>().cbegin();
-    const CT *b_cells = state.peek(1).cells().unsafe_typify<CT>().cbegin();
-    const CT *c_cells = state.peek(0).cells().unsafe_typify<CT>().cbegin();
+    const CT *a_cells = state.peek(2).cells().unsafe_typify<CT>().data();
+    const CT *b_cells = state.peek(1).cells().unsafe_typify<CT>().data();
+    const CT *c_cells = state.peek(0).cells().unsafe_typify<CT>().data();
     double result = __builtin_expect(are_fast(a_idx, b_idx, c_idx), true)
         ? my_fast_sparse_112_dot_product<CT>(&as_fast(a_idx).map, &as_fast(b_idx).map, &as_fast(c_idx).map,
                                              a_cells, b_cells, c_cells)

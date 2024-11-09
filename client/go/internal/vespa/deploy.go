@@ -7,6 +7,7 @@ package vespa
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -20,12 +21,14 @@ import (
 
 	"github.com/vespa-engine/vespa/client/go/internal/ioutil"
 	"github.com/vespa-engine/vespa/client/go/internal/version"
+	"github.com/vespa-engine/vespa/client/go/internal/vespa/ignore"
 )
 
 var (
 	DefaultApplication = ApplicationID{Tenant: "default", Application: "application", Instance: "default"}
 	DefaultZone        = ZoneID{Environment: "prod", Region: "default"}
 	DefaultDeployment  = Deployment{Application: DefaultApplication, Zone: DefaultZone}
+	ErrUnauthorized    = errors.New("unauthorized")
 )
 
 type ApplicationID struct {
@@ -197,7 +200,7 @@ func fetchFromConfigServer(deployment DeploymentOptions, path string) error {
 		return err
 	}
 	zipFile := filepath.Join(tmpDir, "application.zip")
-	if err := zipDir(dir, zipFile); err != nil {
+	if err := zipDir(dir, zipFile, &ignore.List{}); err != nil {
 		return err
 	}
 	return os.Rename(zipFile, path)
@@ -417,7 +420,7 @@ func Submit(opts DeploymentOptions, submission Submission) (int64, error) {
 		Header: make(http.Header),
 	}
 	request.Header.Set("Content-Type", writer.FormDataContentType())
-	response, err := deployServiceDo(request, time.Minute*10, opts)
+	response, err := deployServiceDo(request, time.Minute*40, opts)
 	if err != nil {
 		return 0, err
 	}
@@ -505,7 +508,7 @@ func uploadApplicationPackage(url *url.URL, opts DeploymentOptions) (PrepareResu
 	if err != nil {
 		return PrepareResult{}, err
 	}
-	response, err := service.Do(request, time.Minute*10)
+	response, err := service.Do(request, time.Minute*40)
 	if err != nil {
 		return PrepareResult{}, err
 	}
@@ -537,10 +540,12 @@ func uploadApplicationPackage(url *url.URL, opts DeploymentOptions) (PrepareResu
 }
 
 func checkResponse(req *http.Request, response *http.Response) error {
-	if response.StatusCode/100 == 4 {
-		return fmt.Errorf("invalid application package (%s)\n%s", response.Status, extractError(response.Body))
+	if response.StatusCode == 401 || response.StatusCode == 403 {
+		return fmt.Errorf("deployment failed: %w (status %d)\n%s", ErrUnauthorized, response.StatusCode, ioutil.ReaderToJSON(response.Body))
+	} else if response.StatusCode/100 == 4 {
+		return fmt.Errorf("invalid application package (status %d)\n%s", response.StatusCode, extractError(response.Body))
 	} else if response.StatusCode != 200 {
-		return fmt.Errorf("error from deploy API at %s (%s):\n%s", req.URL.Host, response.Status, ioutil.ReaderToJSON(response.Body))
+		return fmt.Errorf("error from deploy API at %s (status %d):\n%s", req.URL.Host, response.StatusCode, ioutil.ReaderToJSON(response.Body))
 	}
 	return nil
 }

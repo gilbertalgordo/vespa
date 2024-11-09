@@ -30,8 +30,8 @@ AssignFieldPathUpdate::AssignFieldPathUpdate()
 
 AssignFieldPathUpdate::AssignFieldPathUpdate(
         const DataType& type,
-        stringref fieldPath,
-        stringref whereClause,
+        string_view fieldPath,
+        string_view whereClause,
         std::unique_ptr<FieldValue> newValue)
     : FieldPathUpdate(Assign, fieldPath, whereClause),
       _newValue(std::move(newValue)),
@@ -42,7 +42,7 @@ AssignFieldPathUpdate::AssignFieldPathUpdate(
     checkCompatibility(*_newValue, type);
 }
 
-AssignFieldPathUpdate::AssignFieldPathUpdate(stringref fieldPath, stringref whereClause, stringref expression)
+AssignFieldPathUpdate::AssignFieldPathUpdate(string_view fieldPath, string_view whereClause, string_view expression)
     : FieldPathUpdate(Assign, fieldPath, whereClause),
       _newValue(),
       _expression(expression),
@@ -85,7 +85,7 @@ public:
     AssignExpressionIteratorHandler(
             const DocumentTypeRepo& repo,
             Document& doc,
-            const vespalib::string& expression,
+            const std::string& expression,
             bool removeIfZero,
             bool createMissingPath_)
             : _calc(repo, expression),
@@ -109,7 +109,7 @@ ModificationStatus
 AssignValueIteratorHandler::doModify(FieldValue& fv) {
     LOG(spam, "fv = %s", fv.toString().c_str());
     if (!(*fv.getDataType() == *_newValue.getDataType())) {
-        vespalib::string err = vespalib::make_string(
+        std::string err = vespalib::make_string(
                 "Trying to assign \"%s\" of type %s to an instance of type %s",
                 _newValue.toString().c_str(), _newValue.className(), fv.className());
         throw vespalib::IllegalArgumentException(err, VESPA_STRLOC);

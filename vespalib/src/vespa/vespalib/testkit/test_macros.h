@@ -11,21 +11,22 @@
 #define TEST_CAT(a, b) TEST_CAT_IMPL(a, b)
 #define TEST_MASTER vespalib::TestMaster::master
 #define TEST_DEBUG(lhsFile, rhsFile) TEST_MASTER.openDebugFiles(lhsFile, rhsFile)
+#define TEST_DEBUG_STOP() TEST_MASTER.close_debug_files()
 #define TEST_STATE(msg) vespalib::TestStateGuard TEST_CAT(testStateGuard, __LINE__) (__FILE__, __LINE__, msg)
 #define TEST_DO(doit) do { TEST_STATE(TEST_STR(doit)); doit; } while(false)
 #define TEST_FLUSH() TEST_MASTER.flush(__FILE__, __LINE__)
 #define TEST_TRACE() TEST_MASTER.trace(__FILE__, __LINE__)
 #define TEST_THREAD(name) TEST_MASTER.setThreadName(name)
 #define TEST_BARRIER() TEST_MASTER.awaitThreadBarrier(__FILE__, __LINE__)
-#define TEST_MAIN()                        \
-  void test_kit_main();                    \
-  int main(int, char **)                   \
-  {                                        \
-      TEST_MASTER.init(__FILE__);          \
-      test_kit_main();                     \
-      return (TEST_MASTER.fini() ? 0 : 1); \
-  }                                        \
-  void test_kit_main()
+#define TEST_MAIN()                          \
+  void test_kit_main(int argc, char **argv); \
+  int main(int argc, char **argv)            \
+  {                                          \
+      TEST_MASTER.init(__FILE__);            \
+      test_kit_main(argc, argv);             \
+      return (TEST_MASTER.fini() ? 0 : 1);   \
+  }                                          \
+  void test_kit_main([[maybe_unused]] int argc, [[maybe_unused]] char **argv)
 
 //-----------------------------------------------------------------------------
 #include "generated_fixture_macros.h"

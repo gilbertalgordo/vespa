@@ -2,16 +2,18 @@
 
 #include "diskindex.h"
 #include "disktermblueprint.h"
-#include "pagedict4randread.h"
 #include "fileheader.h"
+#include "pagedict4randread.h"
 #include <vespa/searchlib/index/schemautil.h>
 #include <vespa/searchlib/queryeval/create_blueprint_visitor_helper.h>
 #include <vespa/searchlib/queryeval/leaf_blueprints.h>
 #include <vespa/searchlib/queryeval/intermediate_blueprints.h>
 #include <vespa/searchlib/util/dirtraverse.h>
+#include <vespa/searchlib/util/disk_space_calculator.h>
 #include <vespa/vespalib/stllike/hash_set.h>
 #include <vespa/vespalib/stllike/hash_map.hpp>
 #include <vespa/vespalib/stllike/cache.hpp>
+#include <filesystem>
 
 #include <vespa/log/log.h>
 LOG_SETUP(".diskindex.diskindex");
@@ -28,15 +30,13 @@ void swap(DiskIndex::LookupResult & a, DiskIndex::LookupResult & b)
 }
 
 DiskIndex::LookupResult::LookupResult() noexcept
-    : indexId(0u),
-      wordNum(0),
-      counts(),
-      bitOffset(0)
+    : DictionaryLookupResult(),
+      indexId(0u)
 {
 }
 
 DiskIndex::Key::Key() noexcept = default;
-DiskIndex::Key::Key(IndexList indexes, vespalib::stringref word) noexcept :
+DiskIndex::Key::Key(IndexList indexes, std::string_view word) noexcept :
     _word(word),
     _indexes(std::move(indexes))
 {
@@ -46,18 +46,17 @@ DiskIndex::Key::Key(const Key &) = default;
 DiskIndex::Key & DiskIndex::Key::operator = (const Key &) = default;
 DiskIndex::Key::~Key() = default;
 
-DiskIndex::DiskIndex(const vespalib::string &indexDir, size_t cacheSize)
+DiskIndex::DiskIndex(const std::string &indexDir, std::shared_ptr<IPostingListCache> posting_list_cache, size_t dictionary_cache_size)
     : _indexDir(indexDir),
-      _cacheSize(cacheSize),
+      _dictionary_cache_size(dictionary_cache_size),
       _schema(),
-      _postingFiles(),
-      _bitVectorDicts(),
-      _dicts(),
+      _field_indexes(),
+      _nonfield_size_on_disk(0),
       _tuneFileSearch(),
-      _cache(*this, cacheSize),
-      _size(0)
+      _posting_list_cache(std::move(posting_list_cache)),
+      _cache(*this, dictionary_cache_size)
 {
-    calculateSize();
+    calculate_nonfield_size_on_disk();
 }
 
 DiskIndex::~DiskIndex() = default;
@@ -65,7 +64,7 @@ DiskIndex::~DiskIndex() = default;
 bool
 DiskIndex::loadSchema()
 {
-    vespalib::string schemaName = _indexDir + "/schema.txt";
+    std::string schemaName = _indexDir + "/schema.txt";
     if (!_schema.loadFromFile(schemaName)) {
         LOG(error, "Could not open schema '%s'", schemaName.c_str());
         return false;
@@ -81,64 +80,13 @@ bool
 DiskIndex::openDictionaries(const TuneFileSearch &tuneFileSearch)
 {
     for (SchemaUtil::IndexIterator itr(_schema); itr.isValid(); ++itr) {
-        vespalib::string dictName = _indexDir + "/" + itr.getName() + "/dictionary";
-        auto dict = std::make_unique<PageDict4RandRead>();
-        if (!dict->open(dictName, tuneFileSearch._read)) {
-            LOG(warning, "Could not open disk dictionary '%s'", dictName.c_str());
-            _dicts.clear();
+        std::string field_dir = _indexDir + "/" + itr.getName();
+        _field_indexes.emplace_back(_posting_list_cache);
+        if (!_field_indexes.back().open_dictionary(field_dir, tuneFileSearch)) {
+            _field_indexes.clear();
             return false;
         }
-        _dicts.push_back(std::move(dict));
     }
-    return true;
-}
-
-bool
-DiskIndex::openField(const vespalib::string &fieldDir,
-                     const TuneFileSearch &tuneFileSearch)
-{
-    vespalib::string postingName = fieldDir + "posocc.dat.compressed";
-
-    DiskPostingFile::SP pFile;
-    BitVectorDictionary::SP bDict;
-    FileHeader fileHeader;
-    bool dynamicK = false;
-    if (fileHeader.taste(postingName, tuneFileSearch._read)) {
-        if (fileHeader.getVersion() == 1 &&
-            fileHeader.getBigEndian() &&
-            fileHeader.getFormats().size() == 2 &&
-            fileHeader.getFormats()[0] ==
-            DiskPostingFileDynamicKReal::getIdentifier() &&
-            fileHeader.getFormats()[1] ==
-            DiskPostingFileDynamicKReal::getSubIdentifier()) {
-            dynamicK = true;
-        } else if (fileHeader.getVersion() == 1 &&
-                   fileHeader.getBigEndian() &&
-                   fileHeader.getFormats().size() == 2 &&
-                   fileHeader.getFormats()[0] ==
-                   DiskPostingFileReal::getIdentifier() &&
-                   fileHeader.getFormats()[1] ==
-                   DiskPostingFileReal::getSubIdentifier()) {
-            dynamicK = false;
-        } else {
-            LOG(warning, "Could not detect format for posocc file read %s", postingName.c_str());
-        }
-    }
-    pFile.reset(dynamicK
-                ? new DiskPostingFileDynamicKReal()
-                : new DiskPostingFileReal());
-    if (!pFile->open(postingName, tuneFileSearch._read)) {
-        LOG(warning, "Could not open posting list file '%s'", postingName.c_str());
-        return false;
-    }
-
-    bDict.reset(new BitVectorDictionary());
-    if (!bDict->open(fieldDir, tuneFileSearch._read, BitVectorKeyScope::PERFIELD_WORDS)) {
-        LOG(warning, "Could not open bit vector dictionary in '%s'", fieldDir.c_str());
-        return false;
-    }
-    _postingFiles.push_back(pFile);
-    _bitVectorDicts.push_back(bDict);
     return true;
 }
 
@@ -152,8 +100,9 @@ DiskIndex::setup(const TuneFileSearch &tuneFileSearch)
         return false;
     }
     for (SchemaUtil::IndexIterator itr(_schema); itr.isValid(); ++itr) {
-        vespalib::string fieldDir = _indexDir + "/" + itr.getName() + "/";
-        if (!openField(fieldDir, tuneFileSearch)) {
+        std::string fieldDir = _indexDir + "/" + itr.getName() + "/";
+        auto& field_index = _field_indexes[itr.getIndex()];
+        if (!field_index.open(fieldDir, tuneFileSearch)) {
             return false;
         }
     }
@@ -172,38 +121,37 @@ DiskIndex::setup(const TuneFileSearch &tuneFileSearch, const DiskIndex &old)
     }
     const Schema &oldSchema = old._schema;
     for (SchemaUtil::IndexIterator itr(_schema); itr.isValid(); ++itr) {
-        vespalib::string fieldDir = _indexDir + "/" + itr.getName() + "/";
+        std::string fieldDir = _indexDir + "/" + itr.getName() + "/";
         SchemaUtil::IndexSettings settings = itr.getIndexSettings();
         if (settings.hasError()) {
             return false;
         }
+        auto& field_index = _field_indexes[itr.getIndex()];
         SchemaUtil::IndexIterator oItr(oldSchema, itr);
         if (!itr.hasMatchingOldFields(oldSchema) || !oItr.isValid()) {
-            if (!openField(fieldDir, tuneFileSearch)) {
+            if (!field_index.open(fieldDir, tuneFileSearch)) {
                 return false;
             }
         } else {
-            uint32_t oldPacked = oItr.getIndex();
-            _postingFiles.push_back(old._postingFiles[oldPacked]);
-            _bitVectorDicts.push_back(old._bitVectorDicts[oldPacked]);
+            auto& old_field_index = old._field_indexes[oItr.getIndex()];
+            field_index.reuse_files(old_field_index);
         }
     }
     _tuneFileSearch = tuneFileSearch;
     return true;
 }
 
-DiskIndex::LookupResult::UP
-DiskIndex::lookup(uint32_t index, vespalib::stringref word)
+DiskIndex::LookupResult
+DiskIndex::lookup(uint32_t index, std::string_view word)
 {
     /** Only used for testing */
     IndexList indexes;
     indexes.push_back(index);
     Key key(std::move(indexes), word);
     LookupResultVector resultV(1);
-    LookupResult::UP result;
+    LookupResult result;
     if ( read(key, resultV)) {
-        result = std::make_unique<LookupResult>();
-        result->swap(resultV[0]);
+        result.swap(resultV[0]);
     }
     return result;
 }
@@ -246,11 +194,11 @@ unite(const DiskIndex::IndexList & indexes, const DiskIndex::LookupResultVector 
 }
 
 DiskIndex::LookupResultVector
-DiskIndex::lookup(const std::vector<uint32_t> & indexes, vespalib::stringref word)
+DiskIndex::lookup(const std::vector<uint32_t> & indexes, std::string_view word)
 {
     Key key(indexes, word);
     LookupResultVector result;
-    if (_cacheSize > 0) {
+    if (_dictionary_cache_size > 0) {
         result = _cache.read(key);
         if (!containsAll(indexes, result)) {
             key = Key(unite(indexes, result), word);
@@ -276,8 +224,8 @@ DiskIndex::read(const Key & key, LookupResultVector & result)
         wordNum = 0;
         SchemaUtil::IndexIterator it(_schema, lr.indexId);
         uint32_t fieldId = it.getIndex();
-        if (fieldId < _dicts.size()) {
-            (void) _dicts[fieldId]->lookup(key.getWord(), wordNum,offsetAndCounts);
+        if (fieldId < _field_indexes.size()) {
+            (void) _field_indexes[fieldId].get_dictionary()->lookup(key.getWord(), wordNum,offsetAndCounts);
         }
         lr.wordNum = wordNum;
         lr.counts.swap(offsetAndCounts._counts);
@@ -286,39 +234,45 @@ DiskIndex::read(const Key & key, LookupResultVector & result)
     return true;
 }
 
-index::PostingListHandle::UP
+index::PostingListHandle
 DiskIndex::readPostingList(const LookupResult &lookupRes) const
 {
-    PostingListHandle::UP handle(new PostingListHandle());
-    handle->_bitOffset = lookupRes.bitOffset;
-    handle->_bitLength = lookupRes.counts._bitLength;
-    SchemaUtil::IndexIterator it(_schema, lookupRes.indexId);
-    handle->_file = _postingFiles[it.getIndex()].get();
-    if (handle->_file == nullptr) {
-        return {};
-    }
-    const uint32_t firstSegment = 0;
-    const uint32_t numSegments = 0; // means all segments
-    handle->_file->readPostingList(lookupRes.counts, firstSegment, numSegments,*handle);
-    return handle;
+    auto& field_index = _field_indexes[lookupRes.indexId];
+    return field_index.read_posting_list(lookupRes);
 }
 
 BitVector::UP
 DiskIndex::readBitVector(const LookupResult &lookupRes) const
 {
-    SchemaUtil::IndexIterator it(_schema, lookupRes.indexId);
-    BitVectorDictionary * dict = _bitVectorDicts[it.getIndex()].get();
-    if (dict == nullptr) {
-        return {};
-    }
-    return dict->lookup(lookupRes.wordNum);
+    auto& field_index = _field_indexes[lookupRes.indexId];
+    return field_index.read_bit_vector(lookupRes);
+}
+
+std::unique_ptr<search::queryeval::SearchIterator>
+DiskIndex::create_iterator(const LookupResult& lookup_result,
+                           const index::PostingListHandle& handle,
+                           const search::fef::TermFieldMatchDataArray& tfmda) const
+{
+    auto& field_index = _field_indexes[lookup_result.indexId];
+    return field_index.create_iterator(lookup_result, handle, tfmda);
+}
+
+namespace {
+
+const std::vector<std::string> nonfield_file_names{
+    "docsum.qcnt",
+    "schema.txt",
+    "schema.txt.orig",
+    "selector.dat",
+    "serial.dat"
+};
+
 }
 
 void
-DiskIndex::calculateSize()
+DiskIndex::calculate_nonfield_size_on_disk()
 {
-    search::DirectoryTraverse dirt(_indexDir.c_str());
-    _size = dirt.GetTreeSize();
+    _nonfield_size_on_disk = FieldIndex::calculate_size_on_disk(_indexDir + "/", nonfield_file_names);
 }
 
 namespace {
@@ -333,7 +287,7 @@ public:
           _cache()
     { }
     const DiskIndex::LookupResult &
-    lookup(const vespalib::string & word, uint32_t fieldId) {
+    lookup(const std::string & word, uint32_t fieldId) {
         auto it = _cache.find(word);
         if (it == _cache.end()) {
             _cache[word] = _diskIndex.lookup(_fieldIds, word);
@@ -348,7 +302,7 @@ public:
     }
 private:
 
-    using Cache = vespalib::hash_map<vespalib::string, DiskIndex::LookupResultVector>;
+    using Cache = vespalib::hash_map<std::string, DiskIndex::LookupResultVector>;
     DiskIndex &                   _diskIndex;
     const std::vector<uint32_t> & _fieldIds;
     Cache                         _cache;
@@ -376,11 +330,11 @@ public:
 
     template <class TermNode>
     void visitTerm(TermNode &n) {
-        const vespalib::string termStr = termAsString(n);
+        const std::string termStr = termAsString(n);
         const DiskIndex::LookupResult & lookupRes = _cache.lookup(termStr, _fieldId);
         if (lookupRes.valid()) {
             bool useBitVector = _field.isFilter();
-            setResult(std::make_unique<DiskTermBlueprint>(_field, _diskIndex, termStr, std::make_unique<DiskIndex::LookupResult>(lookupRes), useBitVector));
+            setResult(std::make_unique<DiskTermBlueprint>(_field, _diskIndex, termStr, lookupRes, useBitVector));
         } else {
             setResult(std::make_unique<EmptyBlueprint>(_field));
         }
@@ -457,14 +411,30 @@ DiskIndex::createBlueprint(const IRequestContext & requestContext, const FieldSp
 }
 
 FieldLengthInfo
-DiskIndex::get_field_length_info(const vespalib::string& field_name) const
+DiskIndex::get_field_length_info(const std::string& field_name) const
 {
     uint32_t fieldId = _schema.getIndexFieldId(field_name);
     if (fieldId != Schema::UNKNOWN_FIELD_ID) {
-        return _postingFiles[fieldId]->get_field_length_info();
+        return _field_indexes[fieldId].get_field_length_info();
     } else {
         return {};
     }
+}
+
+SearchableStats
+DiskIndex::get_stats() const
+{
+    SearchableStats stats;
+    uint64_t size_on_disk = _nonfield_size_on_disk;
+    uint32_t field_id = 0;
+    for (auto& field_index : _field_indexes) {
+        auto field_stats = field_index.get_stats();
+        size_on_disk += field_stats.size_on_disk();
+        stats.add_field_stats(_schema.getIndexField(field_id).getName(), field_stats);
+        ++field_id;
+    }
+    stats.sizeOnDisk(size_on_disk);
+    return stats;
 }
 
 }

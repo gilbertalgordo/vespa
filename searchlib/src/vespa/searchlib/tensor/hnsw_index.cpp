@@ -2,7 +2,6 @@
 
 #include "hnsw_index.h"
 #include "bitvector_visited_tracker.h"
-#include "distance_function.h"
 #include "hash_set_visited_tracker.h"
 #include "hnsw_index_loader.hpp"
 #include "hnsw_index_saver.h"
@@ -43,9 +42,9 @@ constexpr float alloc_grow_factor = 0.3;
 // TODO: Adjust these numbers to what we accept as max in config.
 constexpr size_t max_level_array_size = 16;
 constexpr size_t max_link_array_size = 193;
-constexpr vespalib::duration MAX_COUNT_DURATION(100ms);
+constexpr vespalib::duration MAX_COUNT_DURATION(1000ms);
 
-const vespalib::string hnsw_max_squared_norm = "hnsw.max_squared_norm";
+const std::string hnsw_max_squared_norm = "hnsw.max_squared_norm";
 
 void save_mips_max_distance(GenericHeader& header, DistanceFunctionFactory& dff) {
     auto* mips_dff = dynamic_cast<MipsDistanceFunctionFactoryBase*>(&dff);
@@ -68,7 +67,7 @@ void load_mips_max_distance(const GenericHeader& header, DistanceFunctionFactory
     }
 }
 
-bool has_link_to(vespalib::ConstArrayRef<uint32_t> links, uint32_t id) {
+bool has_link_to(std::span<const uint32_t> links, uint32_t id) {
     for (uint32_t link : links) {
         if (link == id) return true;
     }
@@ -145,6 +144,9 @@ PreparedAddDoc::~PreparedAddDoc() = default;
 PreparedAddDoc::PreparedAddDoc(PreparedAddDoc&& other) noexcept = default;
 }
 
+SelectResult::SelectResult() noexcept = default;
+SelectResult::~SelectResult() = default;
+
 template <HnswIndexType type>
 ArrayStoreConfig
 HnswIndex<type>::make_default_level_array_store_config()
@@ -153,8 +155,8 @@ HnswIndex<type>::make_default_level_array_store_config()
                                                        vespalib::alloc::MemoryAllocator::HUGEPAGE_SIZE,
                                                        vespalib::alloc::MemoryAllocator::PAGE_SIZE,
                                                        ArrayStoreConfig::default_max_buffer_size,
-                                                 min_num_arrays_for_new_buffer,
-                                                 alloc_grow_factor).enable_free_lists(true);
+                                                       min_num_arrays_for_new_buffer,
+                                                       alloc_grow_factor).enable_free_lists(true);
 }
 
 template <HnswIndexType type>
@@ -180,7 +182,16 @@ template <HnswIndexType type>
 bool
 HnswIndex<type>::have_closer_distance(HnswTraversalCandidate candidate, const HnswTraversalCandidateVector& result) const
 {
-    auto df = _distance_ff->for_insertion_vector(get_vector(candidate.nodeid));
+    auto candidate_vector = get_vector(candidate.nodeid);
+    if (candidate_vector.non_existing_attribute_value()) {
+        /*
+         * We are in a read thread and the write thread has removed the
+         * tensor for the candidate. Return true to prevent the candidate
+         * from being considered.
+         */
+        return true;
+    }
+    auto df = _distance_ff->for_insertion_vector(candidate_vector);
     for (const auto & neighbor : result) {
         double dist = calc_distance(*df, neighbor.nodeid);
         if (dist < candidate.distance) {
@@ -192,7 +203,7 @@ HnswIndex<type>::have_closer_distance(HnswTraversalCandidate candidate, const Hn
 
 template <HnswIndexType type>
 template <typename HnswCandidateVectorT>
-typename HnswIndex<type>::SelectResult
+SelectResult
 HnswIndex<type>::select_neighbors_simple(const HnswCandidateVectorT& neighbors, uint32_t max_links) const
 {
     HnswCandidateVectorT sorted(neighbors);
@@ -210,7 +221,7 @@ HnswIndex<type>::select_neighbors_simple(const HnswCandidateVectorT& neighbors, 
 
 template <HnswIndexType type>
 template <typename HnswCandidateVectorT>
-typename HnswIndex<type>::SelectResult
+SelectResult
 HnswIndex<type>::select_neighbors_heuristic(const HnswCandidateVectorT& neighbors, uint32_t max_links) const
 {
     SelectResult result;
@@ -239,7 +250,7 @@ HnswIndex<type>::select_neighbors_heuristic(const HnswCandidateVectorT& neighbor
 
 template <HnswIndexType type>
 template <typename HnswCandidateVectorT>
-typename HnswIndex<type>::SelectResult
+SelectResult
 HnswIndex<type>::select_neighbors(const HnswCandidateVectorT& neighbors, uint32_t max_links) const
 {
     if (_cfg.heuristic_select_neighbors()) {
@@ -303,12 +314,29 @@ HnswIndex<type>::remove_link_to(uint32_t remove_from, uint32_t remove_id, uint32
     _graph.set_link_array(remove_from, level, new_links);
 }
 
+namespace {
+
+double
+calc_distance_helper(const BoundDistanceFunction &df, vespalib::eval::TypedCells rhs)
+{
+    if (rhs.non_existing_attribute_value()) [[unlikely]] {
+        /*
+         * We are in a read thread and the write thread has removed the
+         * tensor.
+         */
+        return std::numeric_limits<double>::max();
+    }
+    return df.calc(rhs);
+}
+
+}
+
 template <HnswIndexType type>
 double
 HnswIndex<type>::calc_distance(const BoundDistanceFunction &df, uint32_t rhs_nodeid) const
 {
     auto rhs = get_vector(rhs_nodeid);
-    return df.calc(rhs);
+    return calc_distance_helper(df, rhs);
 }
 
 template <HnswIndexType type>
@@ -316,7 +344,7 @@ double
 HnswIndex<type>::calc_distance(const BoundDistanceFunction &df, uint32_t rhs_docid, uint32_t rhs_subspace) const
 {
     auto rhs = get_vector(rhs_docid, rhs_subspace);
-    return df.calc(rhs);
+    return calc_distance_helper(df, rhs);
 }
 
 template <HnswIndexType type>
@@ -345,9 +373,7 @@ HnswIndex<type>::estimate_visited_nodes(uint32_t level, uint32_t nodeid_limit, u
 
 template <HnswIndexType type>
 HnswCandidate
-HnswIndex<type>::find_nearest_in_layer(
-        const BoundDistanceFunction &df,
-        const HnswCandidate& entry_point, uint32_t level) const
+HnswIndex<type>::find_nearest_in_layer(const BoundDistanceFunction &df, const HnswCandidate& entry_point, uint32_t level) const
 {
     HnswCandidate nearest = entry_point;
     bool keep_searching = true;
@@ -373,12 +399,10 @@ HnswIndex<type>::find_nearest_in_layer(
 template <HnswIndexType type>
 template <class VisitedTracker, class BestNeighbors>
 void
-HnswIndex<type>::search_layer_helper(
-        const BoundDistanceFunction &df,
-        uint32_t neighbors_to_find,
-        BestNeighbors& best_neighbors, uint32_t level, const GlobalFilter *filter,
-        uint32_t nodeid_limit, const vespalib::Doom* const doom,
-        uint32_t estimated_visited_nodes) const
+HnswIndex<type>::search_layer_helper(const BoundDistanceFunction &df, uint32_t neighbors_to_find,
+                                     BestNeighbors& best_neighbors, uint32_t level, const GlobalFilter *filter,
+                                     uint32_t nodeid_limit, const vespalib::Doom* const doom,
+                                     uint32_t estimated_visited_nodes) const
 {
     NearestPriQ candidates;
     GlobalFilterWrapper<type> filter_wrapper(filter);
@@ -443,11 +467,8 @@ HnswIndex<type>::search_layer_helper(
 template <HnswIndexType type>
 template <class BestNeighbors>
 void
-HnswIndex<type>::search_layer(
-        const BoundDistanceFunction &df,
-        uint32_t neighbors_to_find,
-        BestNeighbors& best_neighbors, uint32_t level,
-        const vespalib::Doom* const doom, const GlobalFilter *filter) const
+HnswIndex<type>::search_layer(const BoundDistanceFunction &df, uint32_t neighbors_to_find, BestNeighbors& best_neighbors,
+                              uint32_t level, const vespalib::Doom* const doom, const GlobalFilter *filter) const
 {
     uint32_t nodeid_limit = _graph.nodes_size.load(std::memory_order_acquire);
     uint32_t estimated_visited_nodes = estimate_visited_nodes(level, nodeid_limit, neighbors_to_find, filter);
@@ -460,7 +481,7 @@ HnswIndex<type>::search_layer(
 
 template <HnswIndexType type>
 HnswIndex<type>::HnswIndex(const DocVectorAccess& vectors, DistanceFunctionFactory::UP distance_ff,
-                     RandomLevelGenerator::UP level_generator, const HnswIndexConfig& cfg)
+                           RandomLevelGenerator::UP level_generator, const HnswIndexConfig& cfg)
     : _graph(),
       _vectors(vectors),
       _distance_ff(std::move(distance_ff)),
@@ -556,7 +577,7 @@ HnswIndex<type>::internal_prepare_add_node(PreparedAddDoc& op, TypedCells input_
 }
 
 template <HnswIndexType type>
-typename HnswIndex<type>::LinkArray
+LinkArray
 HnswIndex<type>::filter_valid_nodeids(uint32_t level, const typename PreparedAddNode::Links &neighbors, uint32_t self_nodeid)
 {
     LinkArray valid;
@@ -605,9 +626,7 @@ HnswIndex<type>::internal_complete_add_node(uint32_t nodeid, uint32_t docid, uin
 
 template <HnswIndexType type>
 std::unique_ptr<PrepareResult>
-HnswIndex<type>::prepare_add_document(uint32_t docid,
-                                VectorBundle vectors,
-                                vespalib::GenerationHandler::Guard read_guard) const
+HnswIndex<type>::prepare_add_document(uint32_t docid, VectorBundle vectors, vespalib::GenerationHandler::Guard read_guard) const
 {
     uint32_t active_nodes = _graph.get_active_nodes();
     if (active_nodes < _cfg.min_size_before_two_phase()) {
@@ -644,15 +663,18 @@ HnswIndex<type>::mutual_reconnect(const LinkArrayRef &cluster, uint32_t level)
     std::vector<PairDist> pairs;
     for (uint32_t i = 0; i + 1 < cluster.size(); ++i) {
         uint32_t n_id_1 = cluster[i];
+        TypedCells n_cells_1 = get_vector(n_id_1);
+        if (n_cells_1.non_existing_attribute_value()) [[unlikely]] continue;
         LinkArrayRef n_list_1 = _graph.get_link_array(n_id_1, level);
-        std::unique_ptr<BoundDistanceFunction> df;
+        std::unique_ptr<BoundDistanceFunction> df = _distance_ff->for_insertion_vector(n_cells_1);
         for (uint32_t j = i + 1; j < cluster.size(); ++j) {
             uint32_t n_id_2 = cluster[j];
-            if (has_link_to(n_list_1, n_id_2)) continue;
-            if (!df) {
-                df = _distance_ff->for_insertion_vector(get_vector(n_id_1));
+            if ( ! has_link_to(n_list_1, n_id_2)) {
+                auto n_cells_2 = get_vector(n_id_2);
+                if (!n_cells_2.non_existing_attribute_value()) {
+                    pairs.emplace_back(n_id_1, n_id_2, df->calc(n_cells_2));
+                }
             }
-            pairs.emplace_back(n_id_1, n_id_2, calc_distance(*df, n_id_2));
         }
     }
     std::sort(pairs.begin(), pairs.end());
@@ -733,7 +755,7 @@ HnswIndex<type>::compact_level_arrays(const CompactionStrategy& compaction_strat
     auto compacting_buffers = _graph.levels_store.start_compact_worst_buffers(compaction_strategy);
     uint32_t nodeid_limit = _graph.nodes.size();
     auto filter = compacting_buffers->make_entry_ref_filter();
-    vespalib::ArrayRef<NodeType> nodes(&_graph.nodes[0], nodeid_limit);
+    std::span<NodeType> nodes(&_graph.nodes[0], nodeid_limit);
     for (auto& node : nodes) {
         auto levels_ref = node.levels_ref().load_relaxed();
         if (levels_ref.valid() && filter.has(levels_ref)) {
@@ -753,7 +775,7 @@ HnswIndex<type>::compact_link_arrays(const CompactionStrategy& compaction_strate
     for (uint32_t nodeid = 1; nodeid < nodeid_limit; ++nodeid) {
         EntryRef levels_ref = _graph.get_levels_ref(nodeid);
         if (levels_ref.valid()) {
-            vespalib::ArrayRef<AtomicEntryRef> refs(_graph.levels_store.get_writable(levels_ref));
+            std::span<AtomicEntryRef> refs(_graph.levels_store.get_writable(levels_ref));
             context->compact(refs);
         }
     }
@@ -899,12 +921,8 @@ struct NeighborsByDocId {
 
 template <HnswIndexType type>
 std::vector<NearestNeighborIndex::Neighbor>
-HnswIndex<type>::top_k_by_docid(
-        uint32_t k,
-        const BoundDistanceFunction &df,
-        const GlobalFilter *filter, uint32_t explore_k,
-        const vespalib::Doom& doom,
-        double distance_threshold) const
+HnswIndex<type>::top_k_by_docid(uint32_t k, const BoundDistanceFunction &df, const GlobalFilter *filter,
+                                uint32_t explore_k, const vespalib::Doom& doom, double distance_threshold) const
 {
     SearchBestNeighbors candidates = top_k_candidates(df, std::max(k, explore_k), filter, doom);
     auto result = candidates.get_neighbors(k, distance_threshold);
@@ -914,34 +932,23 @@ HnswIndex<type>::top_k_by_docid(
 
 template <HnswIndexType type>
 std::vector<NearestNeighborIndex::Neighbor>
-HnswIndex<type>::find_top_k(
-        uint32_t k,
-        const BoundDistanceFunction &df,
-        uint32_t explore_k,
-        const vespalib::Doom& doom,
-        double distance_threshold) const
+HnswIndex<type>::find_top_k(uint32_t k, const BoundDistanceFunction &df, uint32_t explore_k,
+                            const vespalib::Doom& doom, double distance_threshold) const
 {
     return top_k_by_docid(k, df, nullptr, explore_k, doom, distance_threshold);
 }
 
 template <HnswIndexType type>
 std::vector<NearestNeighborIndex::Neighbor>
-HnswIndex<type>::find_top_k_with_filter(
-        uint32_t k,
-        const BoundDistanceFunction &df,
-        const GlobalFilter &filter, uint32_t explore_k,
-        const vespalib::Doom& doom,
-        double distance_threshold) const
+HnswIndex<type>::find_top_k_with_filter(uint32_t k, const BoundDistanceFunction &df, const GlobalFilter &filter,
+                                        uint32_t explore_k, const vespalib::Doom& doom, double distance_threshold) const
 {
     return top_k_by_docid(k, df, &filter, explore_k, doom, distance_threshold);
 }
 
 template <HnswIndexType type>
 typename HnswIndex<type>::SearchBestNeighbors
-HnswIndex<type>::top_k_candidates(
-        const BoundDistanceFunction &df,
-        uint32_t k, const GlobalFilter *filter,
-        const vespalib::Doom& doom) const
+HnswIndex<type>::top_k_candidates(const BoundDistanceFunction &df, uint32_t k, const GlobalFilter *filter, const vespalib::Doom& doom) const
 {
     SearchBestNeighbors best_neighbors;
     auto entry = _graph.get_entry_node();
@@ -969,7 +976,7 @@ HnswIndex<type>::get_node(uint32_t nodeid) const
 {
     auto levels_ref = _graph.acquire_levels_ref(nodeid);
     if (!levels_ref.valid()) {
-        return HnswTestNode();
+        return {};
     }
     auto levels = _graph.levels_store.get(levels_ref);
     HnswTestNode::LevelArray result;
@@ -979,7 +986,7 @@ HnswIndex<type>::get_node(uint32_t nodeid) const
         std::sort(result_links.begin(), result_links.end());
         result.push_back(result_links);
     }
-    return HnswTestNode(result);
+    return {std::move(result)};
 }
 
 template <HnswIndexType type>
@@ -1090,6 +1097,32 @@ HnswIndex<type>::count_reachable_nodes() const
             );
     }
     return {found_cnt, true};
+}
+
+template <HnswIndexType type>
+uint32_t
+HnswIndex<type>::get_subspaces(uint32_t docid) const noexcept
+{
+    if constexpr (type == HnswIndexType::SINGLE) {
+        return (docid < _graph.nodes.get_size() && _graph.nodes.get_elem_ref(docid).levels_ref().load_relaxed().valid()) ? 1 : 0;
+    } else {
+        return _id_mapping.get_ids(docid).size();
+    }
+}
+
+template <HnswIndexType type>
+uint32_t
+HnswIndex<type>::check_consistency(uint32_t docid_limit) const noexcept
+{
+    uint32_t inconsistencies = 0;
+    for (uint32_t docid = 1; docid < docid_limit; ++docid) {
+        auto index_subspaces = get_subspaces(docid);
+        auto store_subspaces = get_vectors(docid).subspaces();
+        if (index_subspaces != store_subspaces) {
+            ++inconsistencies;
+        }
+    }
+    return inconsistencies;
 }
 
 template class HnswIndex<HnswIndexType::SINGLE>;

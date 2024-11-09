@@ -21,11 +21,13 @@
 #include <vespa/document/repo/documenttyperepo.h>
 #include <vespa/document/repo/fixedtyperepo.h>
 #include <vespa/vespalib/util/rand48.h>
-#include <vespa/vespalib/testkit/testapp.h>
 #include <vespa/vespalib/util/threadstackexecutor.h>
 #include <vespa/vespalib/util/sequencedtaskexecutor.h>
 #include <vespa/vespalib/util/size_literals.h>
 #include <vespa/vespalib/stllike/asciistream.h>
+#include <vespa/vespalib/testkit/test_kit.h>
+#include <memory>
+#include <vespa/vespalib/testkit/test_master.hpp>
 
 #include <vespa/log/log.h>
 LOG_SETUP("memoryindexstress_test");
@@ -55,15 +57,15 @@ using vespalib::makeLambdaTask;
 
 namespace {
 
-const vespalib::string SPANTREE_NAME("linguistics");
-const vespalib::string title("title");
-const vespalib::string body("body");
-const vespalib::string foo("foo");
-const vespalib::string bar("bar");
-const vespalib::string doc_type_name = "test";
-const vespalib::string header_name = doc_type_name + ".header";
-const vespalib::string body_name = doc_type_name + ".body";
-
+const std::string SPANTREE_NAME("linguistics");
+const std::string title("title");
+const std::string body("body");
+const std::string foo("foo");
+const std::string bar("bar");
+const std::string doc_type_name = "test";
+const std::string header_name = doc_type_name + ".header";
+const std::string body_name = doc_type_name + ".body";
+uint32_t docid_limit = 100; // needed for relative estimates
 
 Schema
 makeSchema()
@@ -99,11 +101,10 @@ bool isWordChar(char c) {
 void
 tokenizeStringFieldValue(const document::FixedTypeRepo & repo, StringFieldValue &field)
 {
-    document::SpanTree::UP spanTree;
-    SpanList::UP spanList(std::make_unique<SpanList>());
+    auto spanList = std::make_unique<SpanList>();
     SpanList *spans = spanList.get();
-    spanTree.reset(new document::SpanTree(SPANTREE_NAME, std::move(spanList)));
-    const vespalib::string &text = field.getValue();
+    auto spanTree = std::make_unique<document::SpanTree>(SPANTREE_NAME, std::move(spanList));
+    const std::string &text = field.getValue();
     uint32_t cur = 0;
     int32_t start = 0;
     bool inWord = false;
@@ -134,24 +135,20 @@ tokenizeStringFieldValue(const document::FixedTypeRepo & repo, StringFieldValue 
 
 
 void
-setFieldValue(Document &doc, const vespalib::string &fieldName,
-              const vespalib::string &fieldString)
+setFieldValue(Document &doc, std::string_view fieldName, std::string_view fieldString)
 {
-    std::unique_ptr<StringFieldValue> fieldValue =
-        StringFieldValue::make(fieldString);
+    std::unique_ptr<StringFieldValue> fieldValue = StringFieldValue::make(fieldString);
     document::FixedTypeRepo repo(*doc.getRepo(), doc.getType());
     tokenizeStringFieldValue(repo, *fieldValue);
     doc.setFieldValue(doc.getField(fieldName), std::move(fieldValue));
 }
 
 Document::UP
-makeDoc(const DocumentTypeRepo &repo, uint32_t i,
-        const vespalib::string &titleString,
-        const vespalib::string &bodyString = "")
+makeDoc(const DocumentTypeRepo &repo, uint32_t i, std::string_view titleString, std::string_view bodyString = "")
 {
     asciistream idstr;
     idstr << "id:test:test:: " << i;
-    DocumentId id(idstr.str());
+    DocumentId id(idstr.view());
     const DocumentType *docType = repo.getDocumentType(doc_type_name);
     auto doc(std::make_unique<Document>(repo, *docType, id));
     if (!titleString.empty()) {
@@ -175,26 +172,26 @@ makeDoc(const DocumentTypeRepo &repo, uint32_t i)
     asciistream bodyStr;
     titleStr << i;
     bodyStr << (i * 3);
-    return makeDoc(repo, i, titleStr.str(), bodyStr.str());
+    return makeDoc(repo, i, titleStr.view(), bodyStr.view());
 }
 
 
-SimpleStringTerm makeTerm(const std::string &term) {
-    return SimpleStringTerm(term, "field", 0, search::query::Weight(0));
+SimpleStringTerm makeTerm(std::string_view term) {
+    return SimpleStringTerm(std::string(term), "field", 0, search::query::Weight(0));
 }
 
 Node::UP makePhrase(const std::string &term1, const std::string &term2) {
-    SimplePhrase * phrase = new SimplePhrase("field", 0, search::query::Weight(0));
+    auto * phrase = new SimplePhrase("field", 0, search::query::Weight(0));
     Node::UP node(phrase);
-    phrase->append(Node::UP(new SimpleStringTerm(makeTerm(term1))));
-    phrase->append(Node::UP(new SimpleStringTerm(makeTerm(term2))));
+    phrase->append(std::make_unique<SimpleStringTerm>(makeTerm(term1)));
+    phrase->append(std::make_unique<SimpleStringTerm>(makeTerm(term2)));
     return node;
 }
 
 class HoldDoc : public IDestructorCallback {
     std::unique_ptr<Document> _doc;
 public:
-    HoldDoc(std::unique_ptr<Document> doc) noexcept
+    explicit HoldDoc(std::unique_ptr<Document> doc) noexcept
         : _doc(std::move(doc))
     {
     }
@@ -223,8 +220,11 @@ struct Fixture {
     std::atomic<int> _stopRead;
     bool _reportWork;
 
-    Fixture(uint32_t readThreads = 1);
-
+    explicit Fixture(uint32_t readThreads = 1);
+    Fixture(const Fixture &index) = delete;
+    Fixture(Fixture &&index) = delete;
+    Fixture &operator=(const Fixture &index) = delete;
+    Fixture &operator=(Fixture &&index) = delete;
     ~Fixture();
 
     void internalSyncCommit() {
@@ -249,12 +249,6 @@ struct Fixture {
     void writeWork(uint32_t cnt);
     uint32_t getReadThreads() const { return _readThreads; }
     void stressTest(uint32_t writeCnt);
-
-private:
-    Fixture(const Fixture &index) = delete;
-    Fixture(Fixture &&index) = delete;
-    Fixture &operator=(const Fixture &index) = delete;
-    Fixture &operator=(Fixture &&index) = delete;
 };
 
 VESPA_THREAD_STACK_TAG(invert_executor)
@@ -315,7 +309,7 @@ Fixture::readWork(uint32_t cnt)
         asciistream keyStr;
         keyStr << key;
 
-        SimpleStringTerm term = makeTerm(keyStr.str());
+        SimpleStringTerm term = makeTerm(keyStr.view());
 
         uint32_t fieldId = 0;
         FakeRequestContext requestContext;
@@ -327,18 +321,19 @@ Fixture::readWork(uint32_t cnt)
         FieldSpec field(fieldName, fieldId, handle);
         FieldSpecList fields;
         fields.add(field);
-        Blueprint::UP result = index.createBlueprint(requestContext, fields, term);
-        if (!EXPECT_TRUE(result.get() != 0)) {
+        auto result = index.createBlueprint(requestContext, fields, term);
+        if (!EXPECT_TRUE(result)) {
             LOG(error, "Did not get blueprint");
             break;
         }
+        result->basic_plan(true, docid_limit);
         if (result->getState().estimate().empty) {
             ++emptyCount;
         } else {
             ++nonEmptyCount;
         }
-        result->fetchPostings(ExecuteInfo::TRUE);
-        SearchIterator::UP search = result->createSearch(*match_data, true);
+        result->fetchPostings(ExecuteInfo::FULL);
+        SearchIterator::UP search = result->createSearch(*match_data);
         if (!EXPECT_TRUE(search)) {
             LOG(error, "Did not get search iterator");
             break;
@@ -409,10 +404,7 @@ std::string toString(SearchIterator & search)
 //-----------------------------------------------------------------------------
 
 bool
-verifyResult(const FakeResult &expect,
-             Searchable &index,
-             std::string fieldName,
-             const Node &term)
+verifyResult(const FakeResult &expect, Searchable &index, std::string fieldName, const Node &term)
 {
     uint32_t fieldId = 0;
     FakeRequestContext requestContext;
@@ -425,16 +417,17 @@ verifyResult(const FakeResult &expect,
     FieldSpecList fields;
     fields.add(field);
 
-    Blueprint::UP result = index.createBlueprint(requestContext, fields, term);
-    if (!EXPECT_TRUE(result.get() != 0)) {
+    auto result = index.createBlueprint(requestContext, fields, term);
+    if (!EXPECT_TRUE(result)) {
         return false;
     }
+    result->basic_plan(true, docid_limit);
     EXPECT_EQUAL(expect.inspect().size(), result->getState().estimate().estHits);
     EXPECT_EQUAL(expect.inspect().empty(), result->getState().estimate().empty);
 
-    result->fetchPostings(ExecuteInfo::TRUE);
-    SearchIterator::UP search = result->createSearch(*match_data, true);
-    if (!EXPECT_TRUE(search.get() != 0)) {
+    result->fetchPostings(ExecuteInfo::FULL);
+    SearchIterator::UP search = result->createSearch(*match_data);
+    if (!EXPECT_TRUE(search)) {
         return false;
     }
     TermFieldMatchData &tmd = *match_data->resolveTermField(handle);

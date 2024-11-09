@@ -1,6 +1,6 @@
 // Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
-#include <vespa/vespalib/testkit/testapp.h>
+#include <vespa/vespalib/testkit/test_kit.h>
 #include <vespa/vespalib/objects/identifiable.h>
 #include <vespa/vespalib/objects/visit.hpp>
 
@@ -40,8 +40,8 @@ struct Bar : public Base
     uint64_t         _uint64;
     float            _float;
     double           _double;
-    vespalib::string _string;
-    Bar() : _bool(true), _int8(-1), _uint8(1), _int16(-2), _uint16(2),
+    std::string _string;
+    Bar() noexcept : _bool(true), _int8(-1), _uint8(1), _int16(-2), _uint16(2),
             _int32(-4), _uint32(4), _int64(-8), _uint64(8),
             _float(2.5), _double(2.75), _string("bla bla") {}
 
@@ -76,20 +76,20 @@ struct Foo : public Base
     std::vector<IdentifiablePtr<Base> > _list2;
 
     Foo();
-    ~Foo();
+    ~Foo() override;
     Foo *clone() const override { return new Foo(*this); }
     void visitMembers(ObjectVisitor &v) const override;
 };
 
-Foo::~Foo() { }
+Foo::~Foo() = default;
 Foo::Foo()
         : _objMember(), _objMember2(), _objPtr(0), _list(), _list2()
 {
-    _list.push_back(Bar());
-    _list.push_back(Bar());
-    _list.push_back(Bar());
-    _list2.push_back(Bar());
-    _list2.push_back(Baz());
+    _list.emplace_back();
+    _list.emplace_back();
+    _list.emplace_back();
+    _list2.emplace_back(Bar());
+    _list2.emplace_back(Baz());
 }
 
 void
@@ -103,13 +103,9 @@ Foo::visitMembers(ObjectVisitor &v) const {
 
 IMPLEMENT_IDENTIFIABLE(Foo, Base);
 
-TEST_SETUP(Test);
-
-int
-Test::Main()
-{
-    TEST_INIT("objectdump_test");
+TEST("objectdump_test") {
     Foo foo;
     fprintf(stderr, "%s", foo.asString().c_str());
-    TEST_DONE();
 }
+
+TEST_MAIN() { TEST_RUN_ALL(); }

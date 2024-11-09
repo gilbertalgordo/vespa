@@ -3,6 +3,8 @@
 #include "auxTest.h"
 #include <vespa/juniper/juniper_separators.h>
 #include <vespa/fastos/file.h>
+#include <cctype>
+
 #include <vespa/log/log.h>
 LOG_SETUP(".auxtest");
 
@@ -361,7 +363,7 @@ void AuxTest::TestUTF8(unsigned int size)
         const unsigned char* pc = &c;
         ucs4_t u = Fast_UnicodeUtil::GetUTF8Char(pc);
         bool utf8res = Fast_UnicodeUtil::IsWordChar(u);
-        bool asciires = isalnum(c);
+        bool asciires = std::isalnum(c);
         _test(utf8res == asciires);
         if (utf8res != asciires)
             fprintf(stderr, ":%c:%d != :%c:%d\n", u, utf8res, c, asciires);
@@ -827,7 +829,7 @@ AuxTest::TestSpecialTokenRegistry()
 void
 AuxTest::TestWhiteSpacePreserved()
 {
-    vespalib::string input = "\x1f"
+    std::string input = "\x1f"
         "best"
         "\x1f"
         "  "
@@ -856,8 +858,8 @@ AuxTest::TestWhiteSpacePreserved()
     _test(static_cast<bool>(res));
 
     juniper::Summary* sum = juniper::GetTeaser(*res, nullptr);
-    vespalib::string expected = "<hi>best</hi>  of  \nmetallica";
-    vespalib::string actual(sum->Text(), sum->Length());
+    std::string expected = "<hi>best</hi>  of  \nmetallica";
+    std::string actual(sum->Text(), sum->Length());
     _test(actual == expected);
 }
 

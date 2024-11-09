@@ -30,15 +30,15 @@ public class ToIntegerTestCase {
         Expression exp = new ToIntegerExpression();
         assertVerify(DataType.INT, exp, DataType.INT);
         assertVerify(DataType.STRING, exp, DataType.INT);
-        assertVerifyThrows(null, exp, "Expected any input, but no input is specified");
+        assertVerifyThrows("Invalid expression 'to_int': Expected any input, but no input is specified", null, exp);
     }
 
     @Test
     public void requireThatValueIsConverted() {
         ExecutionContext ctx = new ExecutionContext(new SimpleTestAdapter());
-        ctx.setValue(new StringFieldValue("69")).execute(new ToIntegerExpression());
+        ctx.setCurrentValue(new StringFieldValue("69")).execute(new ToIntegerExpression());
 
-        FieldValue val = ctx.getValue();
+        FieldValue val = ctx.getCurrentValue();
         assertTrue(val instanceof IntegerFieldValue);
         assertEquals(69, ((IntegerFieldValue)val).getInteger());
     }

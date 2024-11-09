@@ -46,10 +46,10 @@ namespace search {
 
 namespace {
 
-const vespalib::string enumeratedTag = "enumerated";
-const vespalib::string dataTypeTag = "datatype";
-const vespalib::string collectionTypeTag = "collectiontype";
-const vespalib::string docIdLimitTag = "docIdLimit";
+const std::string enumeratedTag = "enumerated";
+const std::string dataTypeTag = "datatype";
+const std::string collectionTypeTag = "collectiontype";
+const std::string docIdLimitTag = "docIdLimit";
 
 bool
 allow_paged(const search::attribute::Config& config)
@@ -68,7 +68,7 @@ allow_paged(const search::attribute::Config& config)
 }
 
 std::unique_ptr<vespalib::alloc::MemoryAllocator>
-make_memory_allocator(const vespalib::string& name, const search::attribute::Config& config)
+make_memory_allocator(const std::string& name, const search::attribute::Config& config)
 {
     if (allow_paged(config)) {
         return vespalib::alloc::MmapFileAllocatorFactory::instance().make_memory_allocator(name);
@@ -77,13 +77,13 @@ make_memory_allocator(const vespalib::string& name, const search::attribute::Con
 }
 
 bool
-exists(vespalib::stringref name) {
+exists(std::string_view name) {
     return fs::exists(fs::path(name)); 
 }
 
 }
 
-AttributeVector::AttributeVector(vespalib::stringref baseFileName, const Config &c)
+AttributeVector::AttributeVector(std::string_view baseFileName, const Config &c)
     : _baseFileName(baseFileName),
       _config(std::make_unique<Config>(c)),
       _interlock(std::make_shared<attribute::Interlock>()),
@@ -101,7 +101,8 @@ AttributeVector::AttributeVector(vespalib::stringref baseFileName, const Config 
       _loaded(false),
       _isUpdateableInMemoryOnly(attribute::isUpdateableInMemoryOnly(getName(), getConfig())),
       _nextStatUpdateTime(),
-      _memory_allocator(make_memory_allocator(_baseFileName.getAttributeName(), c))
+      _memory_allocator(make_memory_allocator(_baseFileName.getAttributeName(), c)),
+      _size_on_disk(0)
 {
 }
 
@@ -248,7 +249,7 @@ IEnumStore* AttributeVector::getEnumStoreBase() { return nullptr; }
 const attribute::MultiValueMappingBase * AttributeVector::getMultiValueBase() const { return nullptr; }
 
 bool
-AttributeVector::save(vespalib::stringref fileName)
+AttributeVector::save(std::string_view fileName)
 {
     TuneFileAttributes tune;
     DummyFileHeaderContext fileHeaderContext;
@@ -264,7 +265,7 @@ AttributeVector::save()
 
 
 bool
-AttributeVector::save(IAttributeSaveTarget &saveTarget, vespalib::stringref fileName)
+AttributeVector::save(IAttributeSaveTarget &saveTarget, std::string_view fileName)
 {
     commit();
     // First check if new style save is available.
@@ -272,7 +273,11 @@ AttributeVector::save(IAttributeSaveTarget &saveTarget, vespalib::stringref file
     if (saver) {
         // Normally, new style save happens in background, but here it
         // will occur in the foreground.
-        return saver->save(saveTarget);
+        auto result = saver->save(saveTarget);
+        if (result) {
+            set_size_on_disk(saveTarget);
+        }
+        return result;
     }
     // New style save not available, use old style save
     saveTarget.setHeader(createAttributeHeader(fileName));
@@ -281,12 +286,13 @@ AttributeVector::save(IAttributeSaveTarget &saveTarget, vespalib::stringref file
     }
     onSave(saveTarget);
     saveTarget.close();
+    set_size_on_disk(saveTarget);
     return true;
 }
 
 attribute::AttributeHeader
-AttributeVector::createAttributeHeader(vespalib::stringref fileName) const {
-    return attribute::AttributeHeader(fileName,
+AttributeVector::createAttributeHeader(std::string_view fileName) const {
+    return attribute::AttributeHeader(std::string(fileName),
                                       getConfig().basicType(),
                                       getConfig().collectionType(),
                                       getConfig().tensorType(),
@@ -327,7 +333,7 @@ AttributeVector::hasLoadData() const {
 bool
 AttributeVector::isEnumeratedSaveFormat() const
 {
-    vespalib::string datName(fmt("%s.dat", getBaseFileName().c_str()));
+    std::string datName(fmt("%s.dat", getBaseFileName().c_str()));
     Fast_BufferedFile   datFile(16_Ki);
     vespalib::FileHeader datHeader(FileSettings::DIRECTIO_ALIGNMENT);
     if ( ! datFile.OpenReadOnly(datName.c_str()) ) {
@@ -537,14 +543,14 @@ void AttributeVector::setInterlock(const std::shared_ptr<attribute::Interlock> &
 
 
 std::unique_ptr<AttributeSaver>
-AttributeVector::initSave(vespalib::stringref fileName)
+AttributeVector::initSave(std::string_view fileName)
 {
     commit();
     return onInitSave(fileName);
 }
 
 std::unique_ptr<AttributeSaver>
-AttributeVector::onInitSave(vespalib::stringref)
+AttributeVector::onInitSave(std::string_view)
 {
     return std::unique_ptr<AttributeSaver>();
 }
@@ -693,8 +699,8 @@ AttributeVector::logEnumStoreEvent(const char *reason, const char *stage)
     jstr.beginObject();
     jstr.appendKey("path").appendString(getBaseFileName());
     jstr.endObject();
-    vespalib::string eventName(fmt("%s.attribute.enumstore.%s", reason, stage));
-    EV_STATE(eventName.c_str(), jstr.toString().data());
+    std::string eventName(fmt("%s.attribute.enumstore.%s", reason, stage));
+    EV_STATE(eventName.c_str(), jstr.str().data());
 }
 
 void
@@ -730,6 +736,15 @@ vespalib::alloc::Alloc
 AttributeVector::get_initial_alloc()
 {
     return (_memory_allocator ? vespalib::alloc::Alloc::alloc_with_allocator(_memory_allocator.get()) : vespalib::alloc::Alloc::alloc());
+}
+
+void
+AttributeVector::set_size_on_disk(const IAttributeSaveTarget& target)
+{
+    auto save_target_size_on_disk = target.size_on_disk();
+    if (save_target_size_on_disk != 0) {
+        set_size_on_disk(save_target_size_on_disk);
+    }
 }
 
 template bool AttributeVector::append<StringChangeData>(ChangeVectorT< ChangeTemplate<StringChangeData> > &changes, uint32_t , const StringChangeData &, int32_t, bool);

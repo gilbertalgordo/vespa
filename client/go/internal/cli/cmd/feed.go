@@ -18,8 +18,9 @@ import (
 
 func addFeedFlags(cli *CLI, cmd *cobra.Command, options *feedOptions) {
 	cmd.PersistentFlags().IntVar(&options.connections, "connections", 8, "The number of connections to use")
-	cmd.PersistentFlags().StringVar(&options.compression, "compression", "auto", `Compression mode to use. Default is "auto" which compresses large documents. Must be "auto", "gzip" or "none"`)
+	cmd.PersistentFlags().StringVar(&options.compression, "compression", "auto", `Whether to compress the document data when sending the HTTP request. Default is "auto", which compresses large documents. Must be "auto", "gzip" or "none"`)
 	cmd.PersistentFlags().IntVar(&options.timeoutSecs, "timeout", 0, "Individual feed operation timeout in seconds. 0 to disable (default 0)")
+	cmd.Flags().StringSliceVarP(&options.headers, "header", "", nil, "Add a header to all HTTP requests, on the format 'Header: Value'. This can be specified multiple times")
 	cmd.PersistentFlags().IntVar(&options.doomSecs, "deadline", 0, "Exit if this number of seconds elapse without any successful operations. 0 to disable (default 0)")
 	cmd.PersistentFlags().BoolVar(&options.verbose, "verbose", false, "Verbose mode. Print successful operations in addition to errors")
 	cmd.PersistentFlags().StringVar(&options.route, "route", "", `Target Vespa route for feed operations (default "default")`)
@@ -49,6 +50,7 @@ type feedOptions struct {
 	speedtestBytes int
 	speedtestSecs  int
 	waitSecs       int
+	headers        []string
 
 	memprofile string
 	cpuprofile string
@@ -84,7 +86,7 @@ in a JSON format:
 - http.request.MBps: Request throughput measured in MB/s. This is the raw
   operation throughput, and not the network throughput,
   I.e. using compression does not affect this number.
-- http.exception.count: Same as feeder.error.count. Present for compatiblity
+- http.exception.count: Same as feeder.error.count. Present for compatibility
   with vespa-feed-client.
 - http.response.count: Number of HTTP responses received.
 - http.response.bytes: Number of bytes received.
@@ -108,7 +110,7 @@ $ cat docs.jsonl | vespa feed -`,
 				pprof.StartCPUProfile(f)
 				defer pprof.StopCPUProfile()
 			}
-			err := feed(args, options, cli)
+			err := feed(args, options, cli, cmd)
 			if options.memprofile != "" {
 				f, err := os.Create(options.memprofile)
 				if err != nil {
@@ -124,7 +126,7 @@ $ cat docs.jsonl | vespa feed -`,
 	return cmd
 }
 
-func createServices(n int, timeout time.Duration, waitSecs int, cli *CLI) ([]httputil.Client, string, error) {
+func createServices(n int, timeout time.Duration, cli *CLI, waiter *Waiter) ([]httputil.Client, string, error) {
 	if n < 1 {
 		return nil, "", fmt.Errorf("need at least one client")
 	}
@@ -134,8 +136,7 @@ func createServices(n int, timeout time.Duration, waitSecs int, cli *CLI) ([]htt
 	}
 	services := make([]httputil.Client, 0, n)
 	baseURL := ""
-	waiter := cli.waiter(time.Duration(waitSecs) * time.Second)
-	for i := 0; i < n; i++ {
+	for range n {
 		service, err := waiter.Service(target, cli.config.cluster())
 		if err != nil {
 			return nil, "", err
@@ -144,7 +145,7 @@ func createServices(n int, timeout time.Duration, waitSecs int, cli *CLI) ([]htt
 		// Create a separate HTTP client for each service
 		client := cli.httpClientFactory(timeout)
 		// Feeding should always use HTTP/2
-		httputil.ForceHTTP2(client, service.TLSOptions.KeyPair, service.TLSOptions.CACertificate, service.TLSOptions.TrustAll)
+		httputil.ForceHTTP2(client, service.TLSOptions.KeyPair, service.TLSOptions.CACertificatePEM, service.TLSOptions.TrustAll)
 		service.SetClient(client)
 		services = append(services, service)
 	}
@@ -228,13 +229,18 @@ func enqueueAndWait(files []string, dispatcher *document.Dispatcher, options fee
 	return fmt.Errorf("at least one file to feed from must specified")
 }
 
-func feed(files []string, options feedOptions, cli *CLI) error {
+func feed(files []string, options feedOptions, cli *CLI, cmd *cobra.Command) error {
 	timeout := time.Duration(options.timeoutSecs) * time.Second
-	clients, baseURL, err := createServices(options.connections, timeout, options.waitSecs, cli)
+	waiter := cli.waiter(time.Duration(options.waitSecs)*time.Second, cmd)
+	clients, baseURL, err := createServices(options.connections, timeout, cli, waiter)
 	if err != nil {
 		return err
 	}
 	compression, err := options.compressionMode()
+	if err != nil {
+		return err
+	}
+	header, err := httputil.ParseHeader(options.headers)
 	if err != nil {
 		return err
 	}
@@ -244,6 +250,7 @@ func feed(files []string, options feedOptions, cli *CLI) error {
 		Route:       options.route,
 		TraceLevel:  options.traceLevel,
 		BaseURL:     baseURL,
+		Header:      header,
 		Speedtest:   options.speedtestBytes > 0,
 		NowFunc:     cli.now,
 	}, clients)

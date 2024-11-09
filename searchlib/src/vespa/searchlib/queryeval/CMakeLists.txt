@@ -14,6 +14,7 @@ vespa_add_library(searchlib_queryeval OBJECT
     emptysearch.cpp
     equiv_blueprint.cpp
     equivsearch.cpp
+    exact_nearest_neighbor_iterator.cpp
     executeinfo.cpp
     fake_requestcontext.cpp
     fake_result.cpp
@@ -21,6 +22,7 @@ vespa_add_library(searchlib_queryeval OBJECT
     fake_searchable.cpp
     field_spec.cpp
     filter_wrapper.cpp
+    first_phase_rescorer.cpp
     flow.cpp
     full_search.cpp
     get_weight_from_node.cpp
@@ -37,7 +39,6 @@ vespa_add_library(searchlib_queryeval OBJECT
     multibitvectoriterator.cpp
     multisearch.cpp
     nearest_neighbor_blueprint.cpp
-    nearest_neighbor_iterator.cpp
     nearsearch.cpp
     nns_index_iterator.cpp
     orsearch.cpp

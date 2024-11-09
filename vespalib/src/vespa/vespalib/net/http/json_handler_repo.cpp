@@ -18,7 +18,7 @@ void remove_seq(T &collection, size_t seq) {
 } // namespace vespalib::<unnamed>
 
 size_t
-JsonHandlerRepo::State::bind(vespalib::stringref path_prefix,
+JsonHandlerRepo::State::bind(std::string_view path_prefix,
                              const JsonGetHandler &get_handler)
 {
     std::lock_guard<std::mutex> guard(lock);
@@ -29,7 +29,7 @@ JsonHandlerRepo::State::bind(vespalib::stringref path_prefix,
 }
 
 size_t
-JsonHandlerRepo::State::add_root_resource(vespalib::stringref path)
+JsonHandlerRepo::State::add_root_resource(std::string_view path)
 {
     std::lock_guard<std::mutex> guard(lock);
     size_t my_seq = ++seq;
@@ -51,23 +51,23 @@ JsonHandlerRepo::JsonHandlerRepo()
 {}
 JsonHandlerRepo::~JsonHandlerRepo() = default;
 JsonHandlerRepo::Token::UP
-JsonHandlerRepo::bind(vespalib::stringref path_prefix,
+JsonHandlerRepo::bind(std::string_view path_prefix,
                       const JsonGetHandler &get_handler)
 {
     return std::make_unique<Unbinder>(_state, _state->bind(path_prefix, get_handler));
 }
 
 JsonHandlerRepo::Token::UP
-JsonHandlerRepo::add_root_resource(vespalib::stringref path)
+JsonHandlerRepo::add_root_resource(std::string_view path)
 {
     return std::make_unique<Unbinder>(_state, _state->add_root_resource(path));
 }
 
-std::vector<vespalib::string>
+std::vector<std::string>
 JsonHandlerRepo::get_root_resources() const
 {
     std::lock_guard<std::mutex> guard(_state->lock);
-    std::vector<vespalib::string> result;
+    std::vector<std::string> result;
     for (const Resource &resource: _state->root_resources) {
         result.push_back(resource.path);
     }
@@ -75,9 +75,9 @@ JsonHandlerRepo::get_root_resources() const
 }
 
 JsonGetHandler::Response
-JsonHandlerRepo::get(const vespalib::string &host,
-                     const vespalib::string &path,
-                     const std::map<vespalib::string,vespalib::string> &params,
+JsonHandlerRepo::get(const std::string &host,
+                     const std::string &path,
+                     const std::map<std::string,std::string> &params,
                      const net::ConnectionAuthContext &auth_ctx) const
 {
     std::lock_guard<std::mutex> guard(_state->lock);

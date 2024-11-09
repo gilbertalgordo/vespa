@@ -16,7 +16,7 @@ class DirectTensorAttribute final : public TensorAttribute
 
     void set_tensor(DocId docId, std::unique_ptr<vespalib::eval::Value> tensor);
 public:
-    DirectTensorAttribute(vespalib::stringref baseFileName, const Config &cfg, const NearestNeighborIndexFactory& index_factory = DefaultNearestNeighborIndexFactory());
+    DirectTensorAttribute(std::string_view baseFileName, const Config &cfg, const NearestNeighborIndexFactory& index_factory = DefaultNearestNeighborIndexFactory());
     ~DirectTensorAttribute() override;
     void setTensor(DocId docId, const vespalib::eval::Value &tensor) override;
     void update_tensor(DocId docId,
@@ -26,8 +26,8 @@ public:
     bool supports_get_tensor_ref() const override { return true; }
 
     // Implements DocVectorAccess
-    vespalib::eval::TypedCells get_vector(uint32_t docid, uint32_t subspace) const override;
-    VectorBundle get_vectors(uint32_t docid) const override;
+    vespalib::eval::TypedCells get_vector(uint32_t docid, uint32_t subspace) const noexcept override;
+    VectorBundle get_vectors(uint32_t docid) const noexcept override;
 };
 
 }  // namespace search::tensor

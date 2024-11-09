@@ -43,7 +43,7 @@ using search::SerialNum;
 using vespalib::makeLambdaTask;
 using vespalib::makeSharedLambdaCallback;
 using std::ostringstream;
-using vespalib::string;
+using std::string;
 using vespalib::Executor;
 using vespalib::Runnable;
 using vespalib::IDestructorCallback;
@@ -146,14 +146,14 @@ public:
     /**
      * Implements IFieldLengthInspector
      */
-    search::index::FieldLengthInfo get_field_length_info(const vespalib::string& field_name) const override {
+    search::index::FieldLengthInfo get_field_length_info(const std::string& field_name) const override {
         return _index->get_field_length_info(field_name);
     }
 
     /**
      * Implements IDiskIndex
      */
-    const vespalib::string &getIndexDir() const override { return _index->getIndexDir(); }
+    const std::string &getIndexDir() const override { return _index->getIndexDir(); }
     const search::index::Schema &getSchema() const override { return _index->getSchema(); }
 
 };
@@ -219,7 +219,7 @@ IndexMaintainer::reopenDiskIndexes(ISearchableIndexCollection &coll)
             continue;	// not a disk index
         }
         const string indexDir = d->getIndexDir();
-        vespalib::string schemaName = IndexDiskLayout::getSchemaFileName(indexDir);
+        std::string schemaName = IndexDiskLayout::getSchemaFileName(indexDir);
         Schema trimmedSchema;
         if (!trimmedSchema.loadFromFile(schemaName)) {
             LOG(error, "Could not open schema '%s'", schemaName.c_str());
@@ -234,7 +234,7 @@ IndexMaintainer::reopenDiskIndexes(ISearchableIndexCollection &coll)
 }
 
 void
-IndexMaintainer::updateDiskIndexSchema(const vespalib::string &indexDir,
+IndexMaintainer::updateDiskIndexSchema(const std::string &indexDir,
                                        const Schema &schema,
                                        SerialNum serialNum)
 {
@@ -269,9 +269,9 @@ IndexMaintainer::updateActiveFusionPrunedSchema(const Schema &schema)
 {
     assert(_ctx.getThreadingService().master().isCurrentThread());
     for (;;) {
-        std::shared_ptr<Schema> activeFusionSchema;
-        std::shared_ptr<Schema> activeFusionPrunedSchema;
-        std::shared_ptr<Schema> newActiveFusionPrunedSchema;
+        std::shared_ptr<const Schema> activeFusionSchema;
+        std::shared_ptr<const Schema> activeFusionPrunedSchema;
+        std::shared_ptr<const Schema> newActiveFusionPrunedSchema;
         {
             LockGuard lock(_state_lock);
             activeFusionSchema = _activeFusionSchema;
@@ -300,7 +300,7 @@ IndexMaintainer::updateActiveFusionPrunedSchema(const Schema &schema)
 }
 
 void
-IndexMaintainer::deactivateDiskIndexes(vespalib::string indexDir)
+IndexMaintainer::deactivateDiskIndexes(std::string indexDir)
 {
     _disk_indexes->notActive(indexDir);
     removeOldDiskIndexes();
@@ -586,7 +586,7 @@ void
 IndexMaintainer::updateFlushStats(const FlushArgs &args)
 {
     // Called by a flush worker thread
-    vespalib::string flushDir;
+    std::string flushDir;
     if (!args._skippedEmptyLast) {
         flushDir = getFlushDir(args.old_absolute_id);
     } else {
@@ -822,7 +822,7 @@ IndexMaintainer::getSchema(void) const
     return _schema;
 }
 
-std::shared_ptr<Schema>
+std::shared_ptr<const Schema>
 IndexMaintainer::getActiveFusionPrunedSchema(void) const
 {
     LockGuard lock(_index_update_lock);
@@ -1203,14 +1203,14 @@ IndexMaintainer::getNumFrozenMemoryIndexes(void) const
 }
 
 void
-IndexMaintainer::putDocument(uint32_t lid, const Document &doc, SerialNum serialNum, OnWriteDoneType on_write_done)
+IndexMaintainer::putDocument(uint32_t lid, const Document &doc, SerialNum serialNum, const OnWriteDoneType& on_write_done)
 {
     assert(_ctx.getThreadingService().index().isCurrentThread());
     LockGuard lock(_index_update_lock);
     try {
         _current_index->insertDocument(lid, doc, on_write_done);
     } catch (const vespalib::IllegalStateException & e) {
-        vespalib::string s = "Failed inserting document :\n"  + doc.toXml("  ") + "\n";
+        std::string s = "Failed inserting document :\n"  + doc.toXml("  ") + "\n";
         LOG(error, "%s", s.c_str());
         throw vespalib::IllegalStateException(s, e, VESPA_STRLOC);
     }
@@ -1254,7 +1254,7 @@ IndexMaintainer::commit(vespalib::Gate& gate)
 }
 
 void
-IndexMaintainer::commit(SerialNum serialNum, OnWriteDoneType onWriteDone)
+IndexMaintainer::commit(SerialNum serialNum, const OnWriteDoneType& onWriteDone)
 {
     assert(_ctx.getThreadingService().index().isCurrentThread());
     LockGuard lock(_index_update_lock);

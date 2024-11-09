@@ -1,5 +1,4 @@
 // Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
-#include <vespa/vespalib/testkit/test_kit.h>
 #include <vespa/vespalib/net/socket_spec.h>
 #include <vespa/vespalib/net/tls/capability_env_config.h>
 #include <vespa/vespalib/net/tls/statistics.h>
@@ -14,6 +13,8 @@
 #include <mutex>
 #include <condition_variable>
 #include <string_view>
+#include <vespa/vespalib/testkit/test_kit.h>
+#include <vespa/vespalib/testkit/test_master.hpp>
 
 using vespalib::SocketSpec;
 using vespalib::BenchmarkTimer;
@@ -301,7 +302,7 @@ class Fixture
 private:
     fnet::frt::StandaloneFRT  _client;
     fnet::frt::StandaloneFRT  _server;
-    vespalib::string   _peerSpec;
+    std::string   _peerSpec;
     FRT_Target        *_target;
     TestRPC            _testRPC;
     EchoTest           _echoTest;

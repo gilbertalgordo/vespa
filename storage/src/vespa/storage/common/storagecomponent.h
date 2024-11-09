@@ -35,6 +35,7 @@
 #include <vespa/storageframework/generic/component/component.h>
 #include <vespa/storageframework/generic/component/componentregister.h>
 #include <vespa/document/bucket/bucketidfactory.h>
+#include <vespa/document/repo/documenttyperepo.h>
 #include <vespa/vdslib/state/node.h>
 #include <mutex>
 
@@ -61,13 +62,13 @@ public:
         const std::shared_ptr<const document::FieldSetRepo> fieldSetRepo;
     };
     using UP = std::unique_ptr<StorageComponent>;
-    using DistributionSP = std::shared_ptr<lib::Distribution>;
+    using DistributionSP = std::shared_ptr<const lib::Distribution>;
 
     /**
      * Node type is supposed to be set immediately, and never be updated.
      * Thus it does not need to be threadsafe. Should never be used before set.
      */
-    void setNodeInfo(vespalib::stringref clusterName, const lib::NodeType& nodeType, uint16_t index);
+    void setNodeInfo(std::string_view clusterName, const lib::NodeType& nodeType, uint16_t index);
 
     /**
      * Node state updater is supposed to be set immediately, and never be
@@ -79,7 +80,7 @@ public:
     void setBucketIdFactory(const document::BucketIdFactory&);
     void setDistribution(DistributionSP);
 
-    StorageComponent(StorageComponentRegister&, vespalib::stringref name);
+    StorageComponent(StorageComponentRegister&, std::string_view name);
     ~StorageComponent() override;
 
     const ClusterContext & cluster_context() const noexcept { return _cluster_ctx; }
@@ -87,10 +88,12 @@ public:
     uint16_t getIndex() const { return _index; }
     lib::Node getNode() const { return lib::Node(*_nodeType, _index); }
 
-    vespalib::string getIdentity() const;
+    std::string getIdentity() const;
 
     std::shared_ptr<Repos> getTypeRepo() const;
     const document::BucketIdFactory& getBucketIdFactory() const { return _bucketIdFactory; }
+    // Must NOT be used by lower-level components, as it may be out of sync with distribution
+    // config propagated from the cluster controller.
     DistributionSP getDistribution() const;
     NodeStateUpdater& getStateUpdater() const;
     uint64_t getGeneration() const { return _generation.load(std::memory_order_relaxed); }

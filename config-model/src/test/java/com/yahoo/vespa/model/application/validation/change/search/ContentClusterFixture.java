@@ -9,7 +9,6 @@ import com.yahoo.vespa.model.content.utils.ContentClusterUtils;
 import com.yahoo.vespa.model.content.utils.SchemaBuilder;
 import com.yahoo.vespa.model.search.DocumentDatabase;
 
-import java.util.Arrays;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -30,17 +29,24 @@ public abstract class ContentClusterFixture {
         nextCluster = createCluster(nextSd);
     }
 
+    protected ContentClusterFixture(ContentCluster currentCluster, ContentCluster nextCluster) {
+        this.currentCluster = currentCluster;
+        this.nextCluster = nextCluster;
+    }
+
     public ContentClusterFixture(String entireSd) throws Exception {
-        currentCluster = new ContentClusterBuilder().build(
-            ContentClusterUtils.createMockRoot(Arrays.asList(entireSd)));
-        nextCluster = new ContentClusterBuilder().build(
-            ContentClusterUtils.createMockRoot(Arrays.asList(entireSd)));
+        currentCluster = createClusterFromEntireSd(entireSd);
+        nextCluster = createClusterFromEntireSd(entireSd);
+    }
+
+    protected static ContentCluster createClusterFromEntireSd(String sdContent) throws Exception {
+        return new ContentClusterBuilder().build(ContentClusterUtils.createMockRoot(List.of(sdContent)));
     }
 
     private static ContentCluster createCluster(String sdContent) throws Exception {
         return new ContentClusterBuilder().build(
                 ContentClusterUtils.createMockRoot(
-                        Arrays.asList(new SchemaBuilder().content(sdContent).build())));
+                        List.of(new SchemaBuilder().content(sdContent).build())));
     }
 
     protected DocumentDatabase currentDb() {
@@ -65,7 +71,7 @@ public abstract class ContentClusterFixture {
     }
 
     public void assertValidation(VespaConfigChangeAction exp) {
-        assertValidation(Arrays.asList(exp));
+        assertValidation(List.of(exp));
     }
 
     public void assertValidation(List<VespaConfigChangeAction> exp) {

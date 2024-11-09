@@ -4,14 +4,14 @@
 
 namespace vespalib {
 
-std::vector<vespalib::string>
+std::vector<std::string>
 StateExplorer::get_children_names() const
 {
-    return std::vector<vespalib::string>();
+    return std::vector<std::string>();
 }
  
 std::unique_ptr<StateExplorer>
-StateExplorer::get_child(vespalib::stringref) const
+StateExplorer::get_child(std::string_view) const
 {
     return std::unique_ptr<StateExplorer>(nullptr);
 }

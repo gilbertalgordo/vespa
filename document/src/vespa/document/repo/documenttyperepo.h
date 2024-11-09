@@ -2,10 +2,10 @@
 
 #pragma once
 
+#include "i_documenttype_repo.h"
+#include <vespa/document/config/documenttypes_config_fwd.h>
 #include <functional>
 #include <memory>
-#include <vespa/vespalib/stllike/string.h>
-#include <vespa/document/config/documenttypes_config_fwd.h>
 
 namespace document {
 
@@ -18,7 +18,7 @@ class DataType;
 struct DataTypeRepo;
 class DocumentType;
 
-class DocumentTypeRepo {
+class DocumentTypeRepo : public  IDocumentTypeRepo {
 public:
     // This one should only be used for testing. If you do not have any config.
     explicit DocumentTypeRepo(const DocumentType & docType);
@@ -27,12 +27,12 @@ public:
     DocumentTypeRepo &operator=(const DocumentTypeRepo &) = delete;
     DocumentTypeRepo();
     explicit DocumentTypeRepo(const DocumenttypesConfig & config);
-    ~DocumentTypeRepo();
+    ~DocumentTypeRepo() override;
 
     const DocumentType *getDocumentType(int32_t doc_type_id) const noexcept;
-    const DocumentType *getDocumentType(vespalib::stringref name) const noexcept;
+    const DocumentType *getDocumentType(std::string_view name) const noexcept override;
     const DataType *getDataType(const DocumentType &doc_type, int32_t id) const;
-    const DataType *getDataType(const DocumentType &doc_type, vespalib::stringref name) const;
+    const DataType *getDataType(const DocumentType &doc_type, std::string_view name) const;
     const AnnotationType *getAnnotationType(const DocumentType &doc_type, int32_t id) const;
     void forEachDocumentType(std::function<void(const DocumentType &)> handler) const;
     const DocumentType *getDefaultDocType() const { return _default; }

@@ -51,7 +51,7 @@ public:
     ~MirrorAPI() override;
 
     // Inherit doc from IMirrorAPI.
-    SpecList lookup(vespalib::stringref pattern) const override;
+    SpecList lookup(std::string_view pattern) const override;
 
     // Inherit doc from IMirrorAPI.
     uint32_t updates() const override { return _updates.getAsInt(); }
@@ -71,7 +71,7 @@ public:
     bool ready() const override;
 
 private:
-    using SpecMap = vespalib::hash_map<vespalib::string, vespalib::string>;
+    using SpecMap = vespalib::hash_map<std::string, std::string>;
     /** from FNET_Task, polls slobrok **/
     void PerformTask() override;
 

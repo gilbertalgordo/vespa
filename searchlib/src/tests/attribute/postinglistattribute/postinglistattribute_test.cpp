@@ -16,6 +16,7 @@
 #include <vespa/searchlib/parsequery/parse.h>
 #include <vespa/searchcommon/attribute/config.h>
 #include <vespa/vespalib/stllike/asciistream.h>
+#include <string>
 #include <vespa/vespalib/util/compress.h>
 #include <vespa/fastos/file.h>
 #include <vespa/searchlib/attribute/enumstore.hpp>
@@ -27,17 +28,11 @@ LOG_SETUP("postinglistattribute_test");
 
 namespace {
 
-vespalib::string tmp_dir("tmp");
+std::string tmp_dir("tmp");
 
 }
 
 using std::shared_ptr;
-
-bool
-FastOS_UNIX_File::Sync()
-{
-    return true;
-}
 
 namespace search {
 
@@ -124,7 +119,7 @@ protected:
 
     IntegerAttribute & asInt(AttributePtr &v);
     StringAttribute & asString(AttributePtr &v);
-    void buildTermQuery(std::vector<char> & buffer, const vespalib::string & index, const vespalib::string & term, bool prefix);
+    void buildTermQuery(std::vector<char> & buffer, const std::string & index, const std::string & term, bool prefix);
 
     template <typename V, typename T>
     SearchContextPtr getSearch(const V & vec, const T & term, bool prefix, const attribute::SearchContextParams & params=attribute::SearchContextParams());
@@ -308,8 +303,8 @@ PostingListAttributeTest::asString(AttributePtr &v)
 
 void
 PostingListAttributeTest::buildTermQuery(std::vector<char> &buffer,
-                                   const vespalib::string &index,
-                                   const vespalib::string &term,
+                                   const std::string &index,
+                                   const std::string &term,
                                    bool prefix)
 {
     uint32_t indexLen = index.size();
@@ -337,7 +332,7 @@ PostingListAttributeTest::getSearch(const V &vec, const T &term, bool prefix, co
     ss << term;
     buildTermQuery(query, vec.getName(), ss.str(), prefix);
 
-    return (static_cast<const AttributeVector &>(vec)).getSearch(vespalib::stringref(&query[0], query.size()), params);
+    return (static_cast<const AttributeVector &>(vec)).getSearch(std::string_view(&query[0], query.size()), params);
 }
 
 
@@ -353,7 +348,7 @@ template <>
 SearchContextPtr
 PostingListAttributeTest::getSearch<StringAttribute>(const StringAttribute &v)
 {
-    return getSearch<StringAttribute, const vespalib::string &>(v, "foo", false);
+    return getSearch<StringAttribute, const std::string &>(v, "foo", false);
 }
 
 
@@ -369,7 +364,7 @@ template <>
 SearchContextPtr
 PostingListAttributeTest::getSearch2<StringAttribute>(const StringAttribute &v)
 {
-    return getSearch<StringAttribute, const vespalib::string &>(v, "bar", false);
+    return getSearch<StringAttribute, const std::string &>(v, "bar", false);
 }
 
 
@@ -378,7 +373,7 @@ PostingListAttributeTest::assertSearch(const std::string &exp, StringAttribute &
 {
     TermFieldMatchData md;
     SearchContextPtr sc = getSearch<StringAttribute>(sa);
-    sc->fetchPostings(queryeval::ExecuteInfo::TRUE);
+    sc->fetchPostings(queryeval::ExecuteInfo::FULL, true);
     SearchBasePtr sb = sc->createIterator(&md, true);
     bool retval = true;
     EXPECT_TRUE(assertIterator(exp, *sb)) << (retval = false, "");
@@ -391,7 +386,7 @@ PostingListAttributeTest::assertSearch(const std::string &exp, StringAttribute &
 {
     TermFieldMatchData md;
     SearchContextPtr sc = getSearch<StringAttribute, std::string>(sa, key, false);
-    sc->fetchPostings(queryeval::ExecuteInfo::TRUE);
+    sc->fetchPostings(queryeval::ExecuteInfo::FULL, true);
     SearchBasePtr sb = sc->createIterator(&md, true);
     bool retval = true;
     EXPECT_TRUE(assertIterator(exp, *sb, &md)) << (retval = false, "");
@@ -403,7 +398,7 @@ PostingListAttributeTest::assertSearch(const std::string &exp, IntegerAttribute 
 {
     TermFieldMatchData md;
     SearchContextPtr sc = getSearch<IntegerAttribute, int32_t>(ia, key, false);
-    sc->fetchPostings(queryeval::ExecuteInfo::TRUE);
+    sc->fetchPostings(queryeval::ExecuteInfo::FULL, true);
     SearchBasePtr sb = sc->createIterator(&md, true);
     bool retval = true;
     EXPECT_TRUE(assertIterator(exp, *sb, &md)) << (retval = false, "");
@@ -497,7 +492,7 @@ PostingListAttributeTest::checkSearch(bool useBitVector, bool need_unpack, bool 
 {
     SearchContextPtr sc = getSearch(vec, term, false, attribute::SearchContextParams().useBitVector(useBitVector));
     EXPECT_FALSE( ! sc );
-    sc->fetchPostings(queryeval::ExecuteInfo::TRUE);
+    sc->fetchPostings(queryeval::ExecuteInfo::FULL, true);
     auto est = sc->calc_hit_estimate();
     uint32_t est_hits = est.est_hits();
     EXPECT_FALSE(est.is_unknown());
@@ -531,9 +526,9 @@ PostingListAttributeTest::checkSearch(bool useBitVector, bool need_unpack, bool 
 
 
 AttributePtr
-create_attribute(const vespalib::stringref name, const Config& cfg)
+create_attribute(const std::string_view name, const Config& cfg)
 {
-    return AttributeFactory::createAttribute(tmp_dir + "/" + name, cfg);
+    return AttributeFactory::createAttribute(tmp_dir + "/" + std::string(name), cfg);
 }
 
 AttributePtr
@@ -662,14 +657,14 @@ PostingListAttributeTest::testPostingList(bool enable_only_bitvector, uint32_t n
     }
 
     { // StringAttribute
-        std::vector<vespalib::string> values;
+        std::vector<std::string> values;
         std::vector<const char *> charValues;
         values.reserve(numUniqueValues);
         charValues.reserve(numUniqueValues);
         for (uint32_t i = 0; i < numUniqueValues; ++i) {
             vespalib::asciistream ss;
             ss << "string" << i;
-            values.push_back(ss.str());
+            values.emplace_back(ss.view());
             charValues.push_back(values.back().c_str());
         }
         {
@@ -896,12 +891,12 @@ PostingListAttributeTest::testReload()
         {
             AttributePtr ptr1 = create_attribute("sstr_1", cfg);
             AttributePtr ptr2 = create_attribute("sstr_2", cfg);
-            testReload<StringPostingListAttribute, vespalib::string>(ptr1, ptr2, "unique");
+            testReload<StringPostingListAttribute, std::string>(ptr1, ptr2, "unique");
         }
         {
             AttributePtr ptr1 = create_attribute("sstr_1", cfg);
             AttributePtr ptr2 = create_attribute("sstr_2", cfg);
-            testReload<StringPostingListAttribute, vespalib::string>(ptr1, ptr2, "");
+            testReload<StringPostingListAttribute, std::string>(ptr1, ptr2, "");
         }
     }
 }
@@ -912,7 +907,7 @@ PostingListAttributeTest::testMinMax(AttributePtr &ptr1, uint32_t trimmed)
 {
     TermFieldMatchData md;
     SearchContextPtr sc = getSearch<VectorType>(as<VectorType>(ptr1));
-    sc->fetchPostings(queryeval::ExecuteInfo::TRUE);
+    sc->fetchPostings(queryeval::ExecuteInfo::FULL, true);
     SearchBasePtr sb = sc->createIterator(&md, true);
     sb->initFullRange();
 
@@ -937,7 +932,7 @@ PostingListAttributeTest::testMinMax(AttributePtr &ptr1, uint32_t trimmed)
     EXPECT_EQ(1u, sb->getDocId());
 
     sc = getSearch2<VectorType>(as<VectorType>(ptr1));
-    sc->fetchPostings(queryeval::ExecuteInfo::TRUE);
+    sc->fetchPostings(queryeval::ExecuteInfo::FULL, true);
     sb = sc->createIterator(&md, true);
     sb->initFullRange();
 

@@ -14,24 +14,32 @@ public final class ToLongExpression extends Expression {
     }
 
     @Override
-    protected void doExecute(ExecutionContext context) {
-        context.setValue(new LongFieldValue(Long.valueOf(String.valueOf(context.getValue()))));
-    }
-
-    @Override
-    protected void doVerify(VerificationContext context) {
-        context.setValueType(createdOutputType());
-    }
-
-    @Override
-    public DataType createdOutputType() {
+    public DataType setInputType(DataType input, VerificationContext context) {
+        super.setInputType(input, context);
         return DataType.LONG;
     }
 
     @Override
-    public String toString() {
-        return "to_long";
+    public DataType setOutputType(DataType output, VerificationContext context) {
+        super.setOutputType(DataType.LONG, output, null, context);
+        return getInputType(context);
     }
+
+    @Override
+    protected void doVerify(VerificationContext context) {
+        context.setCurrentType(createdOutputType());
+    }
+
+    @Override
+    protected void doExecute(ExecutionContext context) {
+        context.setCurrentValue(new LongFieldValue(Long.valueOf(String.valueOf(context.getCurrentValue()))));
+    }
+
+    @Override
+    public DataType createdOutputType() { return DataType.LONG; }
+
+    @Override
+    public String toString() { return "to_long"; }
 
     @Override
     public boolean equals(Object obj) {

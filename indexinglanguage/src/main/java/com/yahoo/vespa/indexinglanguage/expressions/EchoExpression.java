@@ -21,44 +21,28 @@ public final class EchoExpression extends Expression {
         this.out = out;
     }
 
-    public PrintStream getOutputStream() {
-        return out;
-    }
+    public PrintStream getOutputStream() { return out; }
 
     @Override
     protected void doExecute(ExecutionContext context) {
-        out.println(String.valueOf(context.getValue()));
+        out.println(context.getCurrentValue());
     }
 
     @Override
-    protected void doVerify(VerificationContext context) {
-        // empty
-    }
+    public DataType createdOutputType() { return null; }
 
     @Override
-    public DataType createdOutputType() {
-        return null;
-    }
-
-    @Override
-    public String toString() {
-        return "echo";
-    }
+    public String toString() { return "echo"; }
 
     @Override
     public boolean equals(Object obj) {
-        if (!(obj instanceof EchoExpression)) {
-            return false;
-        }
-        EchoExpression rhs = (EchoExpression)obj;
-        if (out != rhs.out) {
-            return false;
-        }
-        return true;
+        if (!(obj instanceof EchoExpression rhs)) return false;
+        return out == rhs.out;
     }
 
     @Override
     public int hashCode() {
         return getClass().hashCode() + out.hashCode();
     }
+
 }

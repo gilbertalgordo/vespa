@@ -4,21 +4,16 @@
 #include <vespa/config/common/configcontext.h>
 #include <vespa/config/helper/legacy.h>
 
-namespace {
-bool checkEmpty(const vespalib::string & configId) {
-    return configId.empty();
-}
-}
 namespace config {
 
-ConfigUri::ConfigUri(vespalib::stringref configId)
+ConfigUri::ConfigUri(std::string_view configId)
     : _configId(legacyConfigId2ConfigId(configId)),
       _context(std::make_shared<ConfigContext>(*legacyConfigId2Spec(configId))),
-      _empty(checkEmpty(configId))
+      _empty(configId.empty())
 {
 }
 
-ConfigUri::ConfigUri(const vespalib::string &configId, std::shared_ptr<IConfigContext> context)
+ConfigUri::ConfigUri(const std::string &configId, std::shared_ptr<IConfigContext> context)
     : _configId(configId),
       _context(std::move(context)),
       _empty(false)
@@ -28,12 +23,12 @@ ConfigUri::ConfigUri(const vespalib::string &configId, std::shared_ptr<IConfigCo
 ConfigUri::~ConfigUri() = default;
 
 ConfigUri
-ConfigUri::createWithNewId(const vespalib::string & configId) const
+ConfigUri::createWithNewId(const std::string & configId) const
 {
     return ConfigUri(configId, _context);
 }
 
-const vespalib::string & ConfigUri::getConfigId() const { return _configId; }
+const std::string & ConfigUri::getConfigId() const { return _configId; }
 const std::shared_ptr<IConfigContext> & ConfigUri::getContext() const { return _context; }
 
 ConfigUri
@@ -50,7 +45,7 @@ ConfigUri::createEmpty()
     return uri;
 }
 
-ConfigUri ConfigUri::createFromSpec(const vespalib::string& configId, const SourceSpec& spec)
+ConfigUri ConfigUri::createFromSpec(const std::string& configId, const SourceSpec& spec)
 {
     return ConfigUri(configId, std::make_shared<ConfigContext>(spec));
 }

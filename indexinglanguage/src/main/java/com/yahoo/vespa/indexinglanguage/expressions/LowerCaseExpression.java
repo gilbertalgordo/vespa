@@ -16,24 +16,30 @@ public final class LowerCaseExpression extends Expression {
     }
 
     @Override
-    protected void doExecute(ExecutionContext context) {
-        context.setValue(new StringFieldValue(toLowerCase(String.valueOf(context.getValue()))));
+    public DataType setInputType(DataType inputType, VerificationContext context) {
+        return super.setInputType(inputType, context);
+    }
+
+    @Override
+    public DataType setOutputType(DataType outputType, VerificationContext context) {
+        return super.setOutputType(DataType.STRING, outputType, null, context);
     }
 
     @Override
     protected void doVerify(VerificationContext context) {
-        context.setValueType(createdOutputType());
+        context.setCurrentType(createdOutputType());
     }
 
     @Override
-    public DataType createdOutputType() {
-        return DataType.STRING;
+    protected void doExecute(ExecutionContext context) {
+        context.setCurrentValue(new StringFieldValue(toLowerCase(String.valueOf(context.getCurrentValue()))));
     }
 
     @Override
-    public String toString() {
-        return "lowercase";
-    }
+    public DataType createdOutputType() { return DataType.STRING; }
+
+    @Override
+    public String toString() { return "lowercase"; }
 
     @Override
     public boolean equals(Object obj) {

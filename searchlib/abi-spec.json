@@ -257,7 +257,7 @@
       "public"
     ],
     "methods" : [
-      "public void <init>(com.yahoo.searchlib.rankingexpression.ExpressionFunction, java.lang.String, java.lang.String)",
+      "public void <init>(java.lang.String, java.lang.String)",
       "public java.lang.String getName()",
       "public java.lang.String getExpressionString()"
     ],
@@ -424,6 +424,7 @@
       "public com.yahoo.searchlib.rankingexpression.evaluation.Value get(java.lang.String)",
       "public final com.yahoo.searchlib.rankingexpression.evaluation.Value get(int)",
       "public final double getDouble(int)",
+      "public java.lang.String resolveBinding(java.lang.String)",
       "public com.yahoo.searchlib.rankingexpression.evaluation.ArrayContext clone()",
       "public bridge synthetic com.yahoo.searchlib.rankingexpression.evaluation.AbstractArrayContext clone()",
       "public bridge synthetic com.yahoo.tensor.TensorType getType(com.yahoo.tensor.evaluation.Name)",
@@ -537,6 +538,7 @@
       "public com.yahoo.tensor.TensorType getType(com.yahoo.searchlib.rankingexpression.Reference)",
       "public com.yahoo.searchlib.rankingexpression.evaluation.Value get(java.lang.String)",
       "public final com.yahoo.searchlib.rankingexpression.evaluation.Value get(int)",
+      "public java.lang.String resolveBinding(java.lang.String)",
       "public com.yahoo.searchlib.rankingexpression.evaluation.DoubleOnlyArrayContext clone()",
       "public bridge synthetic com.yahoo.searchlib.rankingexpression.evaluation.AbstractArrayContext clone()",
       "public bridge synthetic com.yahoo.tensor.TensorType getType(com.yahoo.tensor.evaluation.Name)",
@@ -629,6 +631,7 @@
       "public com.yahoo.tensor.TensorType getType(com.yahoo.searchlib.rankingexpression.Reference)",
       "public com.yahoo.searchlib.rankingexpression.evaluation.Value get(java.lang.String)",
       "public void put(java.lang.String, com.yahoo.searchlib.rankingexpression.evaluation.Value)",
+      "public java.lang.String resolveBinding(java.lang.String)",
       "public java.util.Map bindings()",
       "public com.yahoo.searchlib.rankingexpression.evaluation.MapContext thawedCopy()",
       "public java.util.Set names()",
@@ -651,6 +654,7 @@
       "public void setType(com.yahoo.searchlib.rankingexpression.Reference, com.yahoo.tensor.TensorType)",
       "public com.yahoo.tensor.TensorType getType(java.lang.String)",
       "public com.yahoo.tensor.TensorType getType(com.yahoo.searchlib.rankingexpression.Reference)",
+      "public java.lang.String resolveBinding(java.lang.String)",
       "public java.util.Map bindings()",
       "public bridge synthetic com.yahoo.tensor.TensorType getType(com.yahoo.tensor.evaluation.Name)"
     ],
@@ -861,6 +865,21 @@
       "protected int maxNextCharInd"
     ]
   },
+  "com.yahoo.searchlib.rankingexpression.parser.CellMapHelper" : {
+    "superClass" : "java.lang.Object",
+    "interfaces" : [ ],
+    "attributes" : [
+      "public"
+    ],
+    "methods" : [
+      "public void <init>(com.yahoo.tensor.TensorType, java.util.List)",
+      "public java.util.Map map()",
+      "public com.yahoo.searchlib.rankingexpression.parser.CellMapHelper bind(java.lang.String)",
+      "public void handleScalar(com.yahoo.searchlib.rankingexpression.rule.ExpressionNode)",
+      "public void handleDenseSubspace(java.util.List)"
+    ],
+    "fields" : [ ]
+  },
   "com.yahoo.searchlib.rankingexpression.parser.CharStream" : {
     "superClass" : "java.lang.Object",
     "interfaces" : [ ],
@@ -975,10 +994,11 @@
       "public final com.yahoo.searchlib.rankingexpression.rule.TensorFunctionNode tensorValueBody(com.yahoo.tensor.TensorType, java.util.List)",
       "public final com.yahoo.tensor.functions.DynamicTensor mappedTensorValueBody(com.yahoo.tensor.TensorType)",
       "public final com.yahoo.tensor.functions.DynamicTensor mixedTensorValueBody(com.yahoo.tensor.TensorType, java.util.List)",
+      "public final void mixedValueObject(com.yahoo.searchlib.rankingexpression.parser.CellMapHelper)",
       "public final com.yahoo.tensor.functions.DynamicTensor indexedTensorValueBody(com.yahoo.tensor.TensorType, java.util.List)",
-      "public final void keyValueOrMixedBlock(com.yahoo.tensor.TensorType, java.util.List, java.util.Map)",
-      "public final void keyValue(com.yahoo.tensor.TensorType, java.util.Map)",
-      "public final void mixedBlock(com.yahoo.tensor.TensorType, java.util.List, java.util.Map)",
+      "public final void keyValueOrMixedBlock(com.yahoo.searchlib.rankingexpression.parser.CellMapHelper)",
+      "public final void keyValue(com.yahoo.searchlib.rankingexpression.parser.CellMapHelper)",
+      "public final void mixedBlock(com.yahoo.searchlib.rankingexpression.parser.CellMapHelper)",
       "public final java.util.List indexedTensorCells()",
       "public final void indexedTensorCellSubspaceList(java.util.List)",
       "public final void indexedTensorCellSubspace(java.util.List)",

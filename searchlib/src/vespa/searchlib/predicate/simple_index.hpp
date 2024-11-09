@@ -9,7 +9,7 @@ namespace search::predicate {
 
 namespace simpleindex {
     bool log_enabled();
-    void log_debug(vespalib::string &str);
+    void log_debug(std::string &str);
 }
 
 template <typename Posting, typename Key, typename DocId>
@@ -250,6 +250,12 @@ template <typename Posting, typename Key, typename DocId>
 size_t
 SimpleIndex<Posting, Key, DocId>::getDocumentCount(vespalib::datastore::EntryRef ref) const {
     return _btree_posting_lists.size(ref);
+};
+
+template <typename Posting, typename Key, typename DocId>
+size_t
+SimpleIndex<Posting, Key, DocId>::get_frozen_document_count(vespalib::datastore::EntryRef ref) const {
+    return _btree_posting_lists.frozenSize(ref);
 };
 
 template <typename Posting, typename Key, typename DocId>

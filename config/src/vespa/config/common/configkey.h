@@ -7,15 +7,15 @@ namespace config {
 
 class ConfigKey {
 public:
-    ConfigKey(vespalib::stringref configId,
-              vespalib::stringref defName,
-              vespalib::stringref defNamespace,
-              vespalib::stringref defMd5);
+    ConfigKey(std::string_view configId,
+              std::string_view defName,
+              std::string_view defNamespace,
+              std::string_view defMd5);
 
-    ConfigKey(vespalib::stringref configId,
-              vespalib::stringref defName,
-              vespalib::stringref defNamespace,
-              vespalib::stringref defMd5,
+    ConfigKey(std::string_view configId,
+              std::string_view defName,
+              std::string_view defNamespace,
+              std::string_view defMd5,
               const StringVector & defSchema);
 
     ConfigKey(const ConfigKey &);
@@ -29,14 +29,14 @@ public:
     bool operator>(const ConfigKey & rhs) const;
     bool operator==(const ConfigKey & rhs) const;
 
-    const vespalib::string & getDefName() const;
-    const vespalib::string & getConfigId() const;
-    const vespalib::string & getDefNamespace() const;
-    const vespalib::string & getDefMd5() const;
+    const std::string & getDefName() const;
+    const std::string & getConfigId() const;
+    const std::string & getDefNamespace() const;
+    const std::string & getDefMd5() const;
     const StringVector & getDefSchema() const;
 
     template <typename ConfigType>
-    static const ConfigKey create(vespalib::stringref configId)
+    static const ConfigKey create(std::string_view configId)
     {
         return ConfigKey(configId, ConfigType::CONFIG_DEF_NAME,
                                    ConfigType::CONFIG_DEF_NAMESPACE,
@@ -44,14 +44,14 @@ public:
                                    ConfigType::CONFIG_DEF_SCHEMA);
     }
 
-    const vespalib::string toString() const;
+    const std::string toString() const;
 private:
-    vespalib::string _configId;
-    vespalib::string _defName;
-    vespalib::string _defNamespace;
-    vespalib::string _defMd5;
+    std::string _configId;
+    std::string _defName;
+    std::string _defNamespace;
+    std::string _defMd5;
     StringVector     _defSchema;
-    vespalib::string _key;
+    std::string _key;
 };
 
 } //namespace config

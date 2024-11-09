@@ -2,16 +2,16 @@
 vespa_define_module(
     DEPENDS
     vespadefaults
-    metrics
-    config_cloudconfig
-    configdefinitions
+    vespa_metrics
+    vespa_config
+    vespa_configdefinitions
     vespalog
-    messagebus
-    documentapi
-    document
+    vespa_messagebus
+    vespa_documentapi
+    vespa_document
     vespalib
-    vdslib
-    persistence
+    vespa_vdslib
+    vespa_persistence
 
     EXTERNAL_DEPENDS
     ${VESPA_GLIBC_RT_LIB}
@@ -53,8 +53,7 @@ vespa_define_module(
     src/vespa/storageapi/messageapi
 
     TEST_DEPENDS
-    messagebus_messagebus-test
-    vdstestlib
+    vespa_messagebus-test
     TEST_EXTERNAL_DEPENDS
     ${VESPA_ATOMIC_LIB}
 

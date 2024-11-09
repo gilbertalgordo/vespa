@@ -25,6 +25,7 @@
 #include <vespa/vespalib/util/sequencedtaskexecutor.h>
 #include <vespa/vespalib/util/string_escape.h>
 #include <vespa/vespalib/util/stringfmt.h>
+#include <vespa/vespalib/util/tls_linkage.h>
 #include <vespa/config-stor-filestor.h>
 #include <vespa/config/helper/configfetcher.hpp>
 #include <thread>
@@ -164,12 +165,6 @@ dynamic_throttle_params_from_config(const StorFilestorConfig& config, uint32_t n
     return params;
 }
 
-#ifdef __PIC__
-#define TLS_LINKAGE __attribute__((visibility("hidden"), tls_model("initial-exec")))
-#else
-#define TLS_LINKAGE __attribute__((visibility("hidden"), tls_model("local-exec")))
-#endif
-
 thread_local PersistenceHandler * _g_threadLocalHandler TLS_LINKAGE = nullptr;
 
 size_t
@@ -239,6 +234,7 @@ FileStorManager::on_configure(const StorFilestorConfig& config)
         auto updated_dyn_throttle_params = dynamic_throttle_params_from_config(config, _threads.size());
         _filestorHandler->reconfigure_dynamic_throttler(updated_dyn_throttle_params);
     }
+    _filestorHandler->set_max_feed_op_batch_size(std::max(1, config.maxFeedOpBatchSize));
     // TODO remove once desired throttling behavior is set in stone
     {
         _filestorHandler->use_dynamic_operation_throttling(use_dynamic_throttling);
@@ -248,7 +244,7 @@ FileStorManager::on_configure(const StorFilestorConfig& config)
 
 void
 FileStorManager::replyDroppedOperation(api::StorageMessage& msg, const document::Bucket& bucket,
-                                       api::ReturnCode::Result returnCode, vespalib::stringref reason)
+                                       api::ReturnCode::Result returnCode, std::string_view reason)
 {
     std::ostringstream error;
     error << "Dropping " << msg.getType() << " to bucket "
@@ -519,10 +515,10 @@ FileStorManager::onDeleteBucket(const shared_ptr<api::DeleteBucketCommand>& cmd)
                 << ", but storage bucket database contains "
                 << entry->getBucketInfo().toString();
 
-            LOG(debug, "Rejecting bucket delete: %s", ost.str().data());
+            LOG(debug, "Rejecting bucket delete: %s", ost.c_str());
             std::shared_ptr<api::StorageReply> reply = cmd->makeReply();
             static_cast<api::DeleteBucketReply&>(*reply).setBucketInfo(entry->getBucketInfo());
-            reply->setResult(api::ReturnCode(api::ReturnCode::REJECTED, ost.str()));
+            reply->setResult(api::ReturnCode(api::ReturnCode::REJECTED, ost.view()));
             entry.unlock();
             sendUp(reply);
             return true;
@@ -886,9 +882,9 @@ bool
 FileStorManager::maintenance_in_all_spaces(const lib::Node& node) const noexcept
 {
     for (const auto& elem :  _component.getBucketSpaceRepo()) {
-        const ContentBucketSpace& bucket_space = *elem.second;
-        auto derived_cluster_state = bucket_space.getClusterState();
-        if (!derived_cluster_state->getNodeState(node).getState().oneOf("m")) {
+        const auto space_state_and_distr = elem.second->state_and_distribution();
+        const auto& derived_cluster_state = space_state_and_distr->cluster_state();
+        if (!derived_cluster_state.getNodeState(node).getState().oneOf("m")) {
             return false;
         }
     }
@@ -914,8 +910,7 @@ FileStorManager::maybe_log_received_cluster_state()
 {
     if (LOG_WOULD_LOG(debug)) {
         auto cluster_state_bundle = _component.getStateUpdater().getClusterStateBundle();
-        auto baseline_state = cluster_state_bundle->getBaselineClusterState();
-        LOG(debug, "FileStorManager received baseline cluster state '%s'", baseline_state->toString().c_str());
+        LOG(debug, "FileStorManager received baseline cluster state '%s'", cluster_state_bundle->toString().c_str());
     }
 }
 
@@ -929,8 +924,9 @@ FileStorManager::updateState()
     for (const auto &elem : _component.getBucketSpaceRepo()) {
         BucketSpace bucketSpace(elem.first);
         ContentBucketSpace& contentBucketSpace = *elem.second;
-        auto derivedClusterState = contentBucketSpace.getClusterState();
-        const bool node_up_in_space = derivedClusterState->getNodeState(node).getState().oneOf("uir");
+        auto state_and_distr = contentBucketSpace.state_and_distribution();
+        assert(state_and_distr->valid());
+        const bool node_up_in_space = state_and_distr->cluster_state().getNodeState(node).getState().oneOf("uir");
         if (should_deactivate_buckets(contentBucketSpace, node_up_in_space, in_maintenance)) {
             LOG(debug, "Received cluster state where this node is down; de-activating all buckets "
                        "in database for bucket space %s", bucketSpace.toString().c_str());
@@ -940,9 +936,8 @@ FileStorManager::updateState()
         }
         contentBucketSpace.setNodeUpInLastNodeStateSeenByProvider(node_up_in_space);
         contentBucketSpace.setNodeMaintenanceInLastNodeStateSeenByProvider(in_maintenance);
-        spi::ClusterState spiState(*derivedClusterState, _component.getIndex(),
-                                   *contentBucketSpace.getDistribution(),
-                                   in_maintenance);
+        spi::ClusterState spiState(state_and_distr->cluster_state_sp(), state_and_distr->distribution_sp(),
+                                   _component.getIndex(), in_maintenance);
         _provider->setClusterState(bucketSpace, spiState);
     }
 }
@@ -950,15 +945,17 @@ FileStorManager::updateState()
 void
 FileStorManager::storageDistributionChanged()
 {
-    updateState();
 }
 
 void
 FileStorManager::propagateClusterStates()
 {
     auto clusterStateBundle = _component.getStateUpdater().getClusterStateBundle();
-    for (const auto &elem : _component.getBucketSpaceRepo()) {
-        elem.second->setClusterState(clusterStateBundle->getDerivedClusterState(elem.first));
+    assert(clusterStateBundle->has_distribution_config());
+    for (const auto& elem : _component.getBucketSpaceRepo()) {
+        elem.second->set_state_and_distribution(std::make_shared<ClusterStateAndDistribution>(
+                clusterStateBundle->getDerivedClusterState(elem.first),
+                clusterStateBundle->bucket_space_distribution_or_nullptr(elem.first)));
     }
 }
 

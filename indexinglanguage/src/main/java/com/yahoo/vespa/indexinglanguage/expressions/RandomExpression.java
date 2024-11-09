@@ -23,26 +23,34 @@ public final class RandomExpression extends Expression {
         this.max = max;
     }
 
-    public Integer getMaxValue() {
-        return max;
+    public Integer getMaxValue() { return max; }
+
+    @Override
+    public DataType setInputType(DataType inputType, VerificationContext context) {
+        super.setInputType(inputType, context);
+        return DataType.INT;
+    }
+
+    @Override
+    public DataType setOutputType(DataType outputType, VerificationContext context) {
+        super.setOutputType(DataType.INT, outputType, null, context);
+        return AnyDataType.instance;
+    }
+
+    @Override
+    protected void doVerify(VerificationContext context) {
+        context.setCurrentType(createdOutputType());
     }
 
     @Override
     protected void doExecute(ExecutionContext context) {
         int max;
-        max = Objects.requireNonNullElseGet(this.max, () -> Integer.parseInt(String.valueOf(context.getValue())));
-        context.setValue(new IntegerFieldValue(ThreadLocalRandom.current().nextInt(max)));
+        max = Objects.requireNonNullElseGet(this.max, () -> Integer.parseInt(String.valueOf(context.getCurrentValue())));
+        context.setCurrentValue(new IntegerFieldValue(ThreadLocalRandom.current().nextInt(max)));
     }
 
     @Override
-    protected void doVerify(VerificationContext context) {
-        context.setValueType(createdOutputType());
-    }
-
-    @Override
-    public DataType createdOutputType() {
-        return DataType.INT;
-    }
+    public DataType createdOutputType() { return DataType.INT; }
 
     @Override
     public String toString() {
@@ -60,4 +68,5 @@ public final class RandomExpression extends Expression {
     public int hashCode() {
         return getClass().hashCode();
     }
+
 }

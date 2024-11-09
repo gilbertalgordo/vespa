@@ -73,7 +73,7 @@ namespace {
 
 class IndexManagerDummyReconfigurer : public searchcorespi::IIndexManager::Reconfigurer {
 
-    virtual bool reconfigure(std::unique_ptr<Configure> configure) override {
+    bool reconfigure(std::unique_ptr<Configure> configure) override {
         bool ret = true;
         if (configure) {
             ret = configure->configure(); // Perform index manager reconfiguration now
@@ -196,7 +196,7 @@ struct IndexManagerTest : public ::testing::Test {
     }
     bool has_urgent_memory_index_flush() const;
     bool has_urgent_fusion() const;
-    void assert_urgent(const vespalib::string& label, bool pending, bool flush, bool fusion);
+    void assert_urgent(const std::string& label, bool pending, bool flush, bool fusion);
 };
 
 void
@@ -253,9 +253,10 @@ void
 IndexManagerTest::resetIndexManager(SerialNum serial_num)
 {
     _index_manager.reset();
-    _index_manager = std::make_unique<IndexManager>(index_dir, IndexConfig(), getSchema(_interleaved_features), serial_num,
-                             _reconfigurer, _service.write(), _service.shared(),
-                             TuneFileIndexManager(), TuneFileAttributes(), _fileHeaderContext);
+    _index_manager = std::make_unique<IndexManager>(index_dir, std::shared_ptr<search::diskindex::IPostingListCache>(),
+                                                    IndexConfig(), getSchema(_interleaved_features), serial_num,
+                                                    _reconfigurer, _service.write(), _service.shared(),
+                                                    TuneFileIndexManager(), TuneFileAttributes(), _fileHeaderContext);
     _serial_num = std::max(serial_num, _index_manager->getFlushedSerialNum());
 }
 
@@ -281,7 +282,7 @@ IndexManagerTest::assertStats(uint32_t expNumDiskIndexes, uint32_t expNumMemoryI
 }
 
 void
-IndexManagerTest::assert_urgent(const vespalib::string& label, bool pending, bool flush, bool fusion)
+IndexManagerTest::assert_urgent(const std::string& label, bool pending, bool flush, bool fusion)
 {
     SCOPED_TRACE(label);
     EXPECT_EQ(pending, has_pending_urgent_flush());
@@ -773,7 +774,7 @@ TEST_F(IndexManagerTest, require_that_serial_number_is_read_on_load)
 void crippleFusion(uint32_t fusionId) {
     vespalib::asciistream ost;
     ost << index_dir << "/index.flush." << fusionId << "/serial.dat";
-    std::filesystem::remove(std::filesystem::path(ost.str()));
+    std::filesystem::remove(std::filesystem::path(ost.view()));
 }
 
 TEST_F(IndexManagerTest, require_that_failed_fusion_is_retried)
@@ -937,11 +938,14 @@ struct EnableInterleavedFeaturesParam
         RESTART1,
         RESTART2
     };
-    vespalib::string name = "no_restart";
+    std::string name = "no_restart";
     Restart restart = Restart::NONE;
     bool doc = false;          // Feed doc after enabling interleaved fatures
     bool pruned_config = false; // Original config has been pruned
 
+    EnableInterleavedFeaturesParam() noexcept;
+    EnableInterleavedFeaturesParam(const EnableInterleavedFeaturesParam &) noexcept;
+    ~EnableInterleavedFeaturesParam();
     EnableInterleavedFeaturesParam no_doc_restart1() && {
         name = "restart1";
         restart = Restart::RESTART1;
@@ -968,6 +972,10 @@ struct EnableInterleavedFeaturesParam
     }
 };
 
+EnableInterleavedFeaturesParam::EnableInterleavedFeaturesParam(const EnableInterleavedFeaturesParam &) noexcept = default;
+EnableInterleavedFeaturesParam::EnableInterleavedFeaturesParam() noexcept = default;
+EnableInterleavedFeaturesParam::~EnableInterleavedFeaturesParam() = default;
+
 std::ostream& operator<<(std::ostream& os, const EnableInterleavedFeaturesParam& param)
 {
     os << param.name;
@@ -989,11 +997,11 @@ class IndexManagerEnableInterleavedFeaturesTest : public IndexManagerTest,
                                                   public testing::WithParamInterface<std::tuple<bool, bool, EnableInterleavedFeaturesParam>>
 {
 protected:
-    void enable_interleaved_features(const vespalib::string& label, bool old_config_docs, bool flushed_interleaved_features, std::optional<SerialNum> serial_num = std::nullopt);
+    void enable_interleaved_features(const std::string& label, bool old_config_docs, bool flushed_interleaved_features, std::optional<SerialNum> serial_num = std::nullopt);
 };
 
 void
-IndexManagerEnableInterleavedFeaturesTest::enable_interleaved_features(const vespalib::string& label, bool old_config_docs, bool flushed_interleaved_features, std::optional<SerialNum> serial_num)
+IndexManagerEnableInterleavedFeaturesTest::enable_interleaved_features(const std::string& label, bool old_config_docs, bool flushed_interleaved_features, std::optional<SerialNum> serial_num)
 {
     if (!serial_num.has_value()) {
         serial_num = ++_serial_num;

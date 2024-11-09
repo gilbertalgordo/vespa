@@ -3,8 +3,8 @@ vespa_define_module(
     DEPENDS
     vespalog
     vespalib
-    document
-    vdslib
+    vespa_document
+    vespa_vdslib
 
     LIBS
     src/vespa/persistence

@@ -278,9 +278,9 @@ TEST(PrimitiveFieldValueTest, testBool)
     v.setValue(true);
     EXPECT_TRUE(v.getValue());
 
-    v = vespalib::stringref("true");
+    v = std::string_view("true");
     EXPECT_TRUE(v.getValue());
-    v = vespalib::stringref("something not true");
+    v = std::string_view("something not true");
     EXPECT_FALSE(v.getValue());
 }
 
@@ -342,7 +342,7 @@ TEST(PrimitiveFieldValueTest, testNumerics)
     EXPECT_EQ(-1, (int) b1.getValue());
     b1 = "53";
     EXPECT_EQ(53, (int) b1.getValue());
-    EXPECT_EQ(vespalib::string("53"), b1.getAsString());
+    EXPECT_EQ(std::string("53"), b1.getAsString());
 
     try{
         b1 = "-129";

@@ -15,22 +15,39 @@ public final class ToArrayExpression extends Expression {
         super(UnresolvedDataType.INSTANCE);
     }
 
+    @Override
+    public DataType setInputType(DataType input, VerificationContext context) {
+        super.setInputType(input, context);
+        return new ArrayDataType(input);
+    }
+
+    @Override
+    public DataType setOutputType(DataType output, VerificationContext context) {
+        super.setOutputType(output, context);
+        if (output instanceof ArrayDataType arrayType)
+            return arrayType.getNestedType();
+        if (output instanceof AnyDataType)
+            return AnyDataType.instance;
+        else
+            throw new VerificationException(this, "Produces an array,  but " + output + " is required");
+    }
+
+    @Override
+    protected void doVerify(VerificationContext context) {
+        context.setCurrentType(DataType.getArray(context.getCurrentType()));
+    }
+
     @SuppressWarnings({ "unchecked", "rawtypes" })
     @Override
     protected void doExecute(ExecutionContext context) {
-        FieldValue input = context.getValue();
+        FieldValue input = context.getCurrentValue();
         DataType inputType = input.getDataType();
 
         ArrayDataType outputType = DataType.getArray(inputType);
         Array output = outputType.createFieldValue();
         output.add(input);
 
-        context.setValue(output);
-    }
-
-    @Override
-    protected void doVerify(VerificationContext context) {
-        context.setValueType(DataType.getArray(context.getValueType()));
+        context.setCurrentValue(output);
     }
 
     @Override
@@ -39,9 +56,7 @@ public final class ToArrayExpression extends Expression {
     }
 
     @Override
-    public String toString() {
-        return "to_array";
-    }
+    public String toString() { return "to_array"; }
 
     @Override
     public boolean equals(Object obj) {

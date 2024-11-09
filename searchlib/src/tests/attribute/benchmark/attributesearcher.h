@@ -79,13 +79,13 @@ public:
     void start() { _thread = std::thread([this](){doRun();}); }
     void join() { _thread.join(); }
     AttributeSearcherStatus & getStatus() { return _status; }
-    void buildTermQuery(std::vector<char> & buffer, const vespalib::string & index, const char * term, bool prefix = false);
+    void buildTermQuery(std::vector<char> & buffer, const std::string & index, const char * term, bool prefix = false);
 };
 AttributeSearcher::~AttributeSearcher() = default;
 
 
 void
-AttributeSearcher::buildTermQuery(std::vector<char> & buffer, const vespalib::string & index, const char * term, bool prefix)
+AttributeSearcher::buildTermQuery(std::vector<char> & buffer, const std::string & index, const char * term, bool prefix)
 {
     uint32_t indexLen = index.size();
     uint32_t termLen = strlen(term);
@@ -133,14 +133,14 @@ AttributeFindSearcher<T>::doRun()
         // build simple term query
         vespalib::asciistream ss;
         ss << _values[i % _values.size()].getValue();
-        this->buildTermQuery(_query, _attrPtr->getName(), ss.str().data());
+        this->buildTermQuery(_query, _attrPtr->getName(), ss.view().data());
 
         AttributeGuard guard(_attrPtr);
         std::unique_ptr<attribute::SearchContext> searchContext =
-            _attrPtr->getSearch(vespalib::stringref(&_query[0], _query.size()),
+            _attrPtr->getSearch(std::string_view(&_query[0], _query.size()),
                                 attribute::SearchContextParams());
 
-        searchContext->fetchPostings(queryeval::ExecuteInfo::TRUE);
+        searchContext->fetchPostings(queryeval::ExecuteInfo::FULL, true);
         std::unique_ptr<queryeval::SearchIterator> iterator = searchContext->createIterator(nullptr, true);
         std::unique_ptr<ResultSet> results = performSearch(*iterator, _attrPtr->getNumDocs());
 
@@ -211,14 +211,14 @@ AttributeRangeSearcher::doRun()
         // build simple range term query
         vespalib::asciistream ss;
         ss << "[" << iter.a() << ";" << iter.b() << "]";
-        buildTermQuery(_query, _attrPtr->getName(), ss.str().data());
+        buildTermQuery(_query, _attrPtr->getName(), ss.view().data());
 
         AttributeGuard guard(_attrPtr);
         std::unique_ptr<attribute::SearchContext> searchContext =
-            _attrPtr->getSearch(vespalib::stringref(&_query[0], _query.size()),
+            _attrPtr->getSearch(std::string_view(&_query[0], _query.size()),
                                 attribute::SearchContextParams());
 
-        searchContext->fetchPostings(queryeval::ExecuteInfo::TRUE);
+        searchContext->fetchPostings(queryeval::ExecuteInfo::FULL, true);
         std::unique_ptr<queryeval::SearchIterator> iterator = searchContext->createIterator(nullptr, true);
         std::unique_ptr<ResultSet> results = performSearch(*iterator, _attrPtr->getNumDocs());
 
@@ -231,12 +231,12 @@ AttributeRangeSearcher::doRun()
 class AttributePrefixSearcher : public AttributeSearcher
 {
 private:
-    const std::vector<vespalib::string> & _values;
+    const std::vector<std::string> & _values;
     std::vector<char> _query;
 
 public:
     AttributePrefixSearcher(const AttributePtr & attrPtr,
-                            const std::vector<vespalib::string> & values, uint32_t numQueries) :
+                            const std::vector<std::string> & values, uint32_t numQueries) :
         AttributeSearcher(attrPtr), _values(values), _query()
     {
         _status._numQueries = numQueries;
@@ -254,10 +254,10 @@ AttributePrefixSearcher::doRun()
 
         AttributeGuard guard(_attrPtr);
         std::unique_ptr<attribute::SearchContext> searchContext =
-            _attrPtr->getSearch(vespalib::stringref(&_query[0], _query.size()),
+            _attrPtr->getSearch(std::string_view(&_query[0], _query.size()),
                                 attribute::SearchContextParams());
 
-        searchContext->fetchPostings(queryeval::ExecuteInfo::TRUE);
+        searchContext->fetchPostings(queryeval::ExecuteInfo::FULL, true);
         std::unique_ptr<queryeval::SearchIterator> iterator = searchContext->createIterator(nullptr, true);
         std::unique_ptr<ResultSet> results = performSearch(*iterator, _attrPtr->getNumDocs());
 

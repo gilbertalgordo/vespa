@@ -1,9 +1,10 @@
 // Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #pragma once
+
+#include <vespa/vespalib/hwaccelerated/iaccelerated.h>
 #include <cstring>
-#include <vespa/vespalib/util/arrayref.h>
-#include <vespa/vespalib/hwaccelrated/iaccelrated.h>
+#include <span>
 
 template <typename T, size_t VLEN>
 static double hw_l2_sq_dist(const T * af, const T * bf, size_t sz)
@@ -34,23 +35,23 @@ static double hw_l2_sq_dist(const T * af, const T * bf, size_t sz)
 
 template <typename FltType = float>
 struct L2DistCalc {
-    const vespalib::hwaccelrated::IAccelrated & _hw;
+    const vespalib::hwaccelerated::IAccelerated & _hw;
 
-    L2DistCalc() : _hw(vespalib::hwaccelrated::IAccelrated::getAccelerator()) {}
+    L2DistCalc() : _hw(vespalib::hwaccelerated::IAccelerated::getAccelerator()) {}
 
-    using Arr = vespalib::ArrayRef<FltType>;
-    using ConstArr = vespalib::ConstArrayRef<FltType>;
+    using Arr = std::span<FltType>;
+    using ConstArr = std::span<const FltType>;
 
     double product(const FltType *v1, const FltType *v2, size_t sz) {
         return _hw.dotProduct(v1, v2, sz);
     }
     double product(ConstArr v1, ConstArr v2) {
-        const FltType *p1 = v1.begin();
-        const FltType *p2 = v2.begin();
+        const FltType *p1 = v1.data();
+        const FltType *p2 = v2.data();
         return _hw.dotProduct(p1, p2, v1.size());
     }
     double l2sq(ConstArr vector) {
-        const FltType *v = vector.begin();
+        const FltType *v = vector.data();
         return _hw.dotProduct(v, v, vector.size());
     }
     double l2sq_dist(ConstArr v1, ConstArr v2, Arr tmp) {
@@ -60,7 +61,7 @@ struct L2DistCalc {
         return l2sq(tmp);
     }
     double l2sq_dist(ConstArr v1, ConstArr v2) {
-        return hw_l2_sq_dist<FltType, 32>(v1.cbegin(), v2.cbegin(), v1.size());
+        return hw_l2_sq_dist<FltType, 32>(v1.data(), v2.data(), v1.size());
     }
 };
 

@@ -3,9 +3,9 @@
 #pragma once
 
 #include "currentindex.h"
-#include <vespa/vespalib/stllike/string.h>
 #include <vespa/vespalib/stllike/hash_map.h>
 #include <vespa/vespalib/stllike/hash_set.h>
+#include <string>
 #include <utility>
 
 namespace search::expression {
@@ -15,15 +15,15 @@ public:
     class Usage {
     private:
         friend class CurrentIndexSetup;
-        vespalib::hash_set<vespalib::string> _unbound;
-        void notify_unbound_struct_usage(vespalib::stringref name);
+        vespalib::hash_set<std::string> _unbound;
+        void notify_unbound_struct_usage(std::string_view name);
     public:
         Usage();
         ~Usage();
         [[nodiscard]] bool has_single_unbound_struct() const noexcept {
             return (_unbound.size() == 1);
         }
-        vespalib::stringref get_unbound_struct_name() const;
+        std::string_view get_unbound_struct_name() const;
         class Bind {
         private:
             CurrentIndexSetup &_setup;
@@ -33,7 +33,7 @@ public:
         };
     };
 private:
-    vespalib::hash_map<vespalib::string, const CurrentIndex *> _bound;
+    vespalib::hash_map<std::string, const CurrentIndex *> _bound;
     Usage *_usage;
     [[nodiscard]] Usage *capture(Usage *usage) noexcept {
         return std::exchange(_usage, usage);
@@ -41,8 +41,8 @@ private:
 public:
     CurrentIndexSetup();
     ~CurrentIndexSetup();
-    [[nodiscard]] const CurrentIndex *resolve(vespalib::stringref field_name) const;    
-    void bind(vespalib::stringref struct_name, const CurrentIndex &index);
+    [[nodiscard]] const CurrentIndex *resolve(std::string_view field_name) const;    
+    void bind(std::string_view struct_name, const CurrentIndex &index);
 };
 
 }

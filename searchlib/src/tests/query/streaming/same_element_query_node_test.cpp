@@ -33,10 +33,10 @@ namespace {
 class AllowRewrite : public QueryNodeResultFactory
 {
 public:
-    explicit AllowRewrite(vespalib::stringref index) noexcept : _allowedIndex(index) {}
-    bool allow_float_terms_rewrite(vespalib::stringref index) const noexcept override { return index == _allowedIndex; }
+    explicit AllowRewrite(std::string_view index) noexcept : _allowedIndex(index) {}
+    bool allow_float_terms_rewrite(std::string_view index) const noexcept override { return index == _allowedIndex; }
 private:
-    vespalib::string _allowedIndex;
+    std::string _allowedIndex;
 };
 
 }
@@ -44,7 +44,7 @@ private:
 TEST(SameElementQueryNodeTest, a_unhandled_sameElement_stack)
 {
     const char * stack = "\022\002\026xyz_abcdefghij_xyzxyzxQ\001\vxxxxxx_name\034xxxxxx_xxxx_xxxxxxx_xxxxxxxxE\002\005delta\b<0.00393";
-    vespalib::stringref stackDump(stack);
+    std::string_view stackDump(stack);
     EXPECT_EQ(85u, stackDump.size());
     AllowRewrite empty("");
     const Query q(empty, stackDump);
@@ -61,7 +61,7 @@ TEST(SameElementQueryNodeTest, a_unhandled_sameElement_stack)
 }
 
 namespace {
-    void verifyQueryTermNode(const vespalib::string & index, const QueryNode *node) {
+    void verifyQueryTermNode(const std::string & index, const QueryNode *node) {
         EXPECT_TRUE(dynamic_cast<const QueryTerm *>(node) != nullptr);
         EXPECT_EQ(index, node->getIndex());
     }
@@ -77,7 +77,7 @@ TEST(SameElementQueryNodeTest, test_same_element_evaluate)
         builder.addStringTerm("c", "f3", 2, Weight(0));
     }
     Node::UP node = builder.build();
-    vespalib::string stackDump = StackDumpCreator::create(*node);
+    std::string stackDump = StackDumpCreator::create(*node);
     QueryNodeResultFactory empty;
     Query q(empty, stackDump);
     auto * sameElem = dynamic_cast<SameElementQueryNode *>(&q.getRoot());

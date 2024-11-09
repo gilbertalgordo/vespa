@@ -29,14 +29,14 @@ public class SetLanguageTestCase {
     public void requireThatExpressionCanBeVerified() {
         Expression exp = new SetLanguageExpression();
         assertVerify(DataType.STRING, exp, DataType.STRING);
-        assertVerifyThrows(null, exp, "Expected string input, but no input is specified");
-        assertVerifyThrows(DataType.INT, exp, "Expected string input, got int");
+        assertVerifyThrows("Invalid expression 'set_language': Expected string input, but no input is specified", null, exp);
+        assertVerifyThrows("Invalid expression 'set_language': Expected string input, got int", DataType.INT, exp);
     }
 
     @Test
     public void testsettingEnglish() {
         ExecutionContext ctx = new ExecutionContext(new SimpleTestAdapter());
-        ctx.setValue(new StringFieldValue("en"));
+        ctx.setCurrentValue(new StringFieldValue("en"));
         new SetLanguageExpression().execute(ctx);
         assertEquals(Language.ENGLISH, ctx.getLanguage());
     }
@@ -44,7 +44,7 @@ public class SetLanguageTestCase {
     @Test
     public void testSettingUnknown() {
         ExecutionContext ctx = new ExecutionContext(new SimpleTestAdapter());
-        ctx.setValue(new StringFieldValue("unknown"));
+        ctx.setCurrentValue(new StringFieldValue("unknown"));
         new SetLanguageExpression().execute(ctx);
         assertEquals(Language.UNKNOWN, ctx.getLanguage());
     }

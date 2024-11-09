@@ -34,7 +34,7 @@ public:
 
     HitEstimate calc_hit_estimate() const override;
     std::unique_ptr<queryeval::SearchIterator> createIterator(fef::TermFieldMatchData* matchData, bool strict) override;
-    void fetchPostings(const queryeval::ExecuteInfo& execInfo) override;
+    void fetchPostings(const queryeval::ExecuteInfo& execInfo, bool strict) override;
     bool valid() const override { return false; }
     Int64Range getAsIntegerTerm() const override { return Int64Range(); }
     DoubleRange getAsDoubleTerm() const override { return DoubleRange(); }
@@ -42,7 +42,7 @@ public:
     const QueryTermUCS4* queryTerm() const override {
         return static_cast<const QueryTermUCS4*>(nullptr);
     }
-    const vespalib::string& attributeName() const override;
+    const std::string& attributeName() const override;
 
     const AttributeVector& attribute() const { return _attr; }
 

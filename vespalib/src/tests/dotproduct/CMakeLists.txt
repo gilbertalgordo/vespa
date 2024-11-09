@@ -4,6 +4,7 @@ vespa_add_executable(vespalib_dotproductbenchmark_app
     dotproductbenchmark.cpp
     DEPENDS
     vespalib
+    vespa_hwaccelerated
 )
 vespa_add_test(NAME vespalib_dotproductbenchmark_app_sparse-ordered COMMAND vespalib_dotproductbenchmark_app 10 10 1000 1000 BENCHMARK)
 vespa_add_test(NAME vespalib_dotproductbenchmark_app_sparse-unordered COMMAND vespalib_dotproductbenchmark_app 10 10 1000 1000 BENCHMARK)

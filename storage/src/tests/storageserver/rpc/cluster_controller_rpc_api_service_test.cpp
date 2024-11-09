@@ -1,5 +1,6 @@
 // Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
+#include <tests/common/storage_config_set.h>
 #include <vespa/document/bucket/fixed_bucket_spaces.h>
 #include <vespa/fnet/frt/rpcrequest.h>
 #include <vespa/messagebus/testlib/slobrok.h>
@@ -11,7 +12,6 @@
 #include <vespa/storageapi/message/state.h>
 #include <vespa/vdslib/state/clusterstate.h>
 #include <vespa/vespalib/stllike/asciistream.h>
-#include <tests/common/testhelper.h>
 #include <vespa/vespalib/gtest/gtest.h>
 #include <vector>
 
@@ -43,7 +43,7 @@ struct DummyReturnHandler : FRT_IReturnHandler {
 
 struct FixtureBase {
     mbus::Slobrok slobrok;
-    vdstestlib::DirConfig config;
+    std::unique_ptr<StorageConfigSet> config;
     MockOperationDispatcher dispatcher;
     std::unique_ptr<SharedRpcResources> shared_rpc_resources;
     std::unique_ptr<ClusterControllerApiRpcService> cc_service;
@@ -52,12 +52,12 @@ struct FixtureBase {
     FRT_RPCRequest* bound_request{nullptr};
 
     FixtureBase()
-        : config(getStandardConfig(true))
+        : config(StorageConfigSet::make_storage_node_config())
     {
-        config.getConfig("stor-server").set("node_index", "1");
-        addSlobrokConfig(config, slobrok);
+        config->set_node_index(1);
+        config->set_slobrok_config_port(slobrok.port());
 
-        shared_rpc_resources = std::make_unique<SharedRpcResources>(config::ConfigUri(config.getConfigId()), 0, 1, 1);
+        shared_rpc_resources = std::make_unique<SharedRpcResources>(config->config_uri(), 0, 1, 1);
         cc_service = std::make_unique<ClusterControllerApiRpcService>(dispatcher, *shared_rpc_resources);
         shared_rpc_resources->start_server_and_register_slobrok("my_cool_rpc_test");
     }
@@ -121,21 +121,21 @@ struct SetStateFixture : FixtureBase {
     }
 
     static lib::ClusterStateBundle dummy_baseline_bundle_with_deferred_activation(bool deferred) {
-        return lib::ClusterStateBundle(lib::ClusterState("version:123 distributor:3 storage:3"), {}, deferred);
+        return {lib::ClusterState("version:123 distributor:3 storage:3"), {}, deferred};
     }
 };
 
-std::shared_ptr<const lib::ClusterState> state_of(vespalib::stringref state) {
+std::shared_ptr<const lib::ClusterState> state_of(std::string_view state) {
     return std::make_shared<const lib::ClusterState>(state);
 }
 
-vespalib::string make_compressable_state_string() {
+std::string make_compressable_state_string() {
     vespalib::asciistream ss;
     for (int i = 0; i < 99; ++i) {
         ss << " ." << i << ".s:d";
     }
     return vespalib::make_string("version:123 distributor:100%s storage:100%s",
-                                 ss.str().data(), ss.str().data());
+                                 ss.view().data(), ss.view().data());
 }
 
 } // anon namespace
@@ -162,6 +162,16 @@ TEST_F(ClusterControllerApiRpcServiceTest, set_distribution_states_rpc_with_feed
     lib::ClusterStateBundle bundle(
             lib::ClusterState("version:123 distributor:3 storage:3"), {},
             lib::ClusterStateBundle::FeedBlock(true, "full disk"), true);
+
+    f.assert_request_received_and_propagated(bundle);
+}
+
+TEST_F(ClusterControllerApiRpcServiceTest, can_receive_cluster_state_bundle_with_embedded_distribution_config) {
+    auto distr_cfg = lib::DistributionConfigBundle::of(lib::Distribution::getDefaultDistributionConfig(3, 14));
+    SetStateFixture f;
+    lib::ClusterStateBundle bundle(
+            std::make_shared<const lib::ClusterState>("version:123 distributor:3 storage:3"),
+            {}, std::nullopt, std::move(distr_cfg), false);
 
     f.assert_request_received_and_propagated(bundle);
 }

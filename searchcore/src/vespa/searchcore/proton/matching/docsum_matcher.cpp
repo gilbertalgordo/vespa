@@ -24,6 +24,7 @@ using search::queryeval::AndNotBlueprint;
 using search::queryeval::Blueprint;
 using search::queryeval::IntermediateBlueprint;
 using search::queryeval::MatchingElementsSearch;
+using search::queryeval::MatchingPhase;
 using search::queryeval::SameElementBlueprint;
 using search::queryeval::SearchIterator;
 using vespalib::FeatureSet;
@@ -41,8 +42,10 @@ get_feature_set(const MatchToolsFactory &mtf,
 {
     MatchTools::UP matchTools = mtf.createMatchTools();
     if (summaryFeatures) {
+        mtf.query().set_matching_phase(MatchingPhase::SUMMARY_FEATURES);
         matchTools->setup_summary();
     } else {
+        mtf.query().set_matching_phase(MatchingPhase::DUMP_FEATURES);
         matchTools->setup_dump();
     }
     auto retval = ExtractFeatures::get_feature_set(matchTools->search(), matchTools->rank_program(), docs,
@@ -58,7 +61,7 @@ const T *as(const Blueprint &bp) { return dynamic_cast<const T *>(&bp); }
 
 void find_matching_elements(const std::vector<uint32_t> &docs, const SameElementBlueprint &same_element, MatchingElements &result) {
     search::fef::TermFieldMatchData dummy_tfmd;
-    auto search = same_element.create_same_element_search(dummy_tfmd, false);
+    auto search = same_element.create_same_element_search(dummy_tfmd);
     search->initRange(docs.front(), docs.back()+1);
     std::vector<uint32_t> matches;
     for (uint32_t doc : docs) {
@@ -77,7 +80,7 @@ void find_matching_elements(const std::vector<uint32_t> &docs, MatchingElementsS
     }
 }
 
-void find_matching_elements(const std::vector<uint32_t> &docs, const vespalib::string &field_name, const AttrSearchCtx &attr_ctx, MatchingElements &result) {
+void find_matching_elements(const std::vector<uint32_t> &docs, const std::string &field_name, const AttrSearchCtx &attr_ctx, MatchingElements &result) {
     int32_t weight = 0;
     std::vector<uint32_t> matches;
     for (uint32_t doc : docs) {

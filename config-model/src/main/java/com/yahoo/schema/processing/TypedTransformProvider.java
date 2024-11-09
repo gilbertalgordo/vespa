@@ -5,6 +5,7 @@ import com.yahoo.document.DataType;
 import com.yahoo.document.Field;
 import com.yahoo.schema.Schema;
 import com.yahoo.schema.document.Attribute;
+import com.yahoo.vespa.documentmodel.SummaryField;
 import com.yahoo.vespa.indexinglanguage.ValueTransformProvider;
 import com.yahoo.vespa.indexinglanguage.expressions.AttributeExpression;
 import com.yahoo.vespa.indexinglanguage.expressions.Expression;
@@ -29,6 +30,10 @@ public abstract class TypedTransformProvider extends ValueTransformProvider {
     protected final boolean requiresTransform(Expression exp) {
         if (exp instanceof OutputExpression) {
             String fieldName = ((OutputExpression)exp).getFieldName();
+            if (fieldName == null) {
+                // Incomplete output expressions never require a transform.
+                return false;
+            }
             if (exp instanceof AttributeExpression) {
                 Attribute attribute = schema.getAttribute(fieldName);
                 if (attribute == null)
@@ -42,7 +47,7 @@ public abstract class TypedTransformProvider extends ValueTransformProvider {
                 fieldType = field.getDataType();
             }
             else if (exp instanceof SummaryExpression) {
-                Field field = schema.getSummaryField(fieldName);
+                SummaryField field = schema.getSummaryField(fieldName);
                 if (field == null) {
                     // Use document field if summary field is not found
                     var sdField = schema.getConcreteField(fieldName);

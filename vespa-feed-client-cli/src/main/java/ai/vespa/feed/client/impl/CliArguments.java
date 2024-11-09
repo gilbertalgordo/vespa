@@ -18,7 +18,6 @@ import java.net.URISyntaxException;
 import java.net.URL;
 import java.nio.file.Path;
 import java.time.Duration;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
@@ -26,7 +25,6 @@ import java.util.OptionalDouble;
 import java.util.OptionalInt;
 
 import static ai.vespa.feed.client.FeedClientBuilder.Compression.auto;
-import static ai.vespa.feed.client.FeedClientBuilder.Compression.none;
 
 /**
  * Parses command line arguments
@@ -63,6 +61,7 @@ class CliArguments {
     private static final String DOOM_OPTION = "max-failure-seconds";
     private static final String PROXY_OPTION = "proxy";
     private static final String COMPRESSION = "compression";
+    private static final String LOG_CONFIG_OPTION = "log-config";
 
     private final CommandLine arguments;
 
@@ -139,7 +138,7 @@ class CliArguments {
 
     Map<String, String> headers() throws CliArgumentsException {
         String[] rawArguments = arguments.getOptionValues(HEADER_OPTION);
-        if (rawArguments == null) return Collections.emptyMap();
+        if (rawArguments == null) return Map.of();
         Map<String, String> headers = new HashMap<>();
         for (String rawArgument : rawArguments) {
             if (rawArgument.startsWith("\"") || rawArgument.startsWith("'")) {
@@ -152,7 +151,7 @@ class CliArguments {
             if (colonIndex == -1) throw new CliArgumentsException("Invalid header: '" + rawArgument + "'");
             headers.put(rawArgument.substring(0, colonIndex), rawArgument.substring(colonIndex + 1).trim());
         }
-        return Collections.unmodifiableMap(headers);
+        return Map.copyOf(headers);
     }
 
     boolean sslHostnameVerificationDisabled() { return has(DISABLE_SSL_HOSTNAME_VERIFICATION_OPTION); }
@@ -206,6 +205,8 @@ class CliArguments {
             throw new CliArgumentsException("Invalid proxy: " + e.getMessage(), e);
         }
     }
+
+    Optional<Path> logConfigFile() throws CliArgumentsException { return fileValue(LOG_CONFIG_OPTION); }
 
     private OptionalInt intValue(String option) throws CliArgumentsException {
         try {
@@ -375,6 +376,14 @@ class CliArguments {
                               "Valid arguments are: 'auto' (default), 'none', 'gzip'")
                         .hasArg()
                         .type(Compression.class)
+                        .build())
+                .addOption(Option.builder()
+                        .longOpt(LOG_CONFIG_OPTION)
+                        .desc("Specify a path to a Java Util Logging properties file. " +
+                                      "Overrides the default configuration from " +
+                                      "VESPA_HOME/conf/vespa-feed-client/logging.properties")
+                        .hasArg()
+                        .type(File.class)
                         .build());
     }
 

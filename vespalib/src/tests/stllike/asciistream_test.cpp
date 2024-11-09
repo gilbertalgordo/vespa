@@ -15,12 +15,12 @@ namespace {
 
 template <typename T>
 void
-verifyBothWays(T value, const char * expected, const vespalib::string& label)
+verifyBothWays(T value, const char * expected, const std::string& label)
 {
     SCOPED_TRACE(label);
     asciistream os;
     os << value;
-    EXPECT_EQ(os.str(), string(expected));
+    EXPECT_EQ(os.view(), std::string(expected));
     EXPECT_EQ(os.size(), strlen(expected));
     {
         T v;
@@ -41,14 +41,14 @@ verifyBothWays(T value, const char * expected, const vespalib::string& label)
 
 template <typename T>
 void
-verify(T first, T second, const char * firstResult, const char * secondResult, char delim, const vespalib::string& label)
+verify(T first, T second, const char * firstResult, const char * secondResult, char delim, const std::string& label)
 {
     SCOPED_TRACE(label);
     asciistream os;
     std::ostringstream ss;
     os << first;
     ss << first;
-    EXPECT_EQ(os.str(), string(firstResult));
+    EXPECT_EQ(os.view(), std::string(firstResult));
     EXPECT_EQ(os.size(), strlen(firstResult));
     EXPECT_EQ(ss.str().size(), strlen(firstResult));
     EXPECT_EQ(strcmp(ss.str().c_str(), firstResult), 0);
@@ -102,7 +102,7 @@ TEST(AsciistreamTest, test_illegal_numbers)
         float f(0);
         EXPECT_THROW(is >> f, IllegalArgumentException);
         EXPECT_EQ(40u, is.size());
-        vespalib::string tmp = is.str();
+       std::string_view tmp = is.view();
         is << "e" << tmp;
         EXPECT_EQ(81u, is.size());
         double d(0);
@@ -153,33 +153,33 @@ TEST(AsciistreamTest, test_copy_construct)
     asciistream os;
     os << "test1";
     asciistream os2(os);
-    EXPECT_EQ(os.str(), os2.str());
+    EXPECT_EQ(os.view(), os2.view());
     os2 << " test2";
-    EXPECT_FALSE(os.str() == os2.str());
+    EXPECT_FALSE(os.view() == os2.view());
     asciistream os3(os);
     os3 = os2;
-    EXPECT_EQ(os2.str(), os3.str());
+    EXPECT_EQ(os2.view(), os3.view());
     os.swap(os2);
-    EXPECT_EQ(os.str(), os3.str());
-    EXPECT_FALSE(os3.str() == os2.str());
+    EXPECT_EQ(os.view(), os3.view());
+    EXPECT_FALSE(os3.view() == os2.view());
     os.swap(os2);
-    EXPECT_TRUE(os3.str() == os2.str());
+    EXPECT_TRUE(os3.view() == os2.view());
 }
 
 TEST(AsciistreamTest, test_move_is_well_defined)
 {
     asciistream read_only("hello world");
     asciistream dest(std::move(read_only));
-    EXPECT_EQ("hello world", dest.str());
+    EXPECT_EQ("hello world", dest.view());
 
     read_only = asciistream("a string long enough to not be short string optimized");
     dest = std::move(read_only);
-    EXPECT_EQ("a string long enough to not be short string optimized", dest.str());
+    EXPECT_EQ("a string long enough to not be short string optimized", dest.view());
 
     asciistream written_src;
     written_src << "a foo walks into a bar";
     dest = std::move(written_src);
-    EXPECT_EQ("a foo walks into a bar", dest.str());
+    EXPECT_EQ("a foo walks into a bar", dest.view());
 }
 
 TEST(AsciistreamTest, test_integer_manip)
@@ -220,7 +220,7 @@ TEST(AsciistreamTest, test_integer_manip)
     // Also test that number base is restored OK after ptr print
     os << dec << ' ' << fooptr << ' ' << 1234;
     ss << std::dec << ' ' << fooptr << ' ' << 1234;
-    EXPECT_EQ(std::string("10 10 a b 12 0b1010 0x1badbadc0ffee 1234"), os.str());
+    EXPECT_EQ(std::string("10 10 a b 12 0b1010 0x1badbadc0ffee 1234"), os.view());
     EXPECT_EQ(std::string("10 10 a b 12 0x1badbadc0ffee 1234"), ss.str());
 
     int i = 0;
@@ -230,7 +230,7 @@ TEST(AsciistreamTest, test_integer_manip)
     std_istr >> i;
     EXPECT_EQ(1234, i);
 
-    stringref firstfour(digits, 4);
+    std::string_view firstfour(digits, 4);
     asciistream istr(firstfour);
     istr >> i;
     EXPECT_EQ(1234, i);
@@ -310,7 +310,7 @@ TEST(AsciistreamTest, test_string)
 {
 
     std::string ss("a");
-    vespalib::string vs("a");
+    std::string vs("a");
     {
         std::ostringstream oss;
         oss << ss << vs;
@@ -319,7 +319,7 @@ TEST(AsciistreamTest, test_string)
     {
         asciistream oss;
         oss << ss << vs;
-        EXPECT_EQ("aa", oss.str());
+        EXPECT_EQ("aa", oss.view());
     }
     {
         std::istringstream iss("b c");
@@ -355,7 +355,7 @@ TEST(AsciistreamTest, test_create_from_file)
     is = asciistream::createFromFile(TEST_PATH("test.txt"));
     EXPECT_FALSE(is.eof());
     EXPECT_EQ(12u, is.size());
-    string s;
+    std::string s;
     is >> s;
     EXPECT_EQ("line1", s);
     is >> s;
@@ -376,7 +376,7 @@ TEST(AsciistreamTest, test_write_then_read)
     asciistream ios;
     ios << "3 words";
     int n(0);
-    string v;
+    std::string v;
     ios >> n >> v;
     EXPECT_EQ(3, n);
     EXPECT_EQ("words", v);
@@ -386,7 +386,7 @@ TEST(AsciistreamTest, test_write_then_read)
 TEST(AsciistreamTest, test_get_line)
 {
     asciistream is = asciistream("line 1\nline 2\nline 3");
-    string s;
+    std::string s;
     getline(is, s);
     EXPECT_EQ("line 1", s);
     getline(is, s);
@@ -400,7 +400,7 @@ TEST(AsciistreamTest, test_get_line)
     mystream << format; \
     if (precision > 0) mystream << asciistream::Precision(precision); \
     mystream << value; \
-    EXPECT_EQ(expected, mystream.str()); \
+    EXPECT_EQ(expected, mystream.view()); \
 }
 
 TEST(AsciistreamTest, test_double)
@@ -557,8 +557,7 @@ TEST(AsciistreamTest, test_ascii_stream)
     verify<uint32_t>(789, -1, "789", "789 4294967295", ' ', "uint32_t");
     verify<uint64_t>(789789789789789l, -1, "789789789789789", "789789789789789 18446744073709551615", ' ', "uint64_t");
 
-    verifyBothWays<vespalib::string>("7.89", "7.89", "vespalib::string");
-    verifyBothWays<std::string>("7.89", "7.89", "stsd::string");
+    verifyBothWays<std::string>("7.89", "7.89", "std::string");
     verifyBothWays<float>(7.89, "7.89", "float");
     verifyBothWays<double>(7.89, "7.89", "double");
     verifyBothWays<bool>(true, "1", "bool");

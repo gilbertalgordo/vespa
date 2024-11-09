@@ -38,8 +38,7 @@ using search::common::FileHeaderContext;
 using search::index::DummyFileHeaderContext;
 using search::attribute::BasicType;
 using search::attribute::IAttributeVector;
-using vespalib::stringref;
-using vespalib::string;
+using std::string;
 namespace fs = std::filesystem;
 
 namespace {
@@ -55,6 +54,8 @@ constexpr size_t sizeof_large_string_entry = sizeof(vespalib::datastore::UniqueS
 namespace search {
 
 namespace {
+
+size_t sizeof_initial_string_change_vector = vespalib::roundUp2inN<ChangeTemplate<StringChangeData>>(4) * sizeof(ChangeTemplate<StringChangeData>);
 
 string empty;
 
@@ -108,7 +109,7 @@ statSize(const string &fileName)
 uint64_t
 statSize(const AttributeVector &a)
 {
-    vespalib::string baseFileName = a.getBaseFileName();
+    std::string baseFileName = a.getBaseFileName();
     uint64_t resultSize = statSize(baseFileName + ".dat");
     if (a.hasMultiValue()) {
         resultSize += statSize(baseFileName + ".idx");
@@ -139,15 +140,15 @@ baseFileName(const string &attrName)
 }
 
 AttributeVector::SP
-createAttribute(stringref attrName, const search::attribute::Config &cfg)
+createAttribute(std::string attrName, const search::attribute::Config &cfg)
 {
     return search::AttributeFactory::createAttribute(baseFileName(attrName), cfg);
 }
 
-vespalib::string
-replace_suffix(AttributeVector &v, const vespalib::string &suffix)
+std::string
+replace_suffix(AttributeVector &v, const std::string &suffix)
 {
-    vespalib::string name = v.getName();
+    std::string name = v.getName();
     if (name.size() >= suffix.size()) {
         name.resize(name.size() - suffix.size());
     }
@@ -288,7 +289,7 @@ protected:
     void testPendingCompaction();
     void testConditionalCommit();
 
-    int test_paged_attribute(const vespalib::string& name, const vespalib::string& swapfile, const search::attribute::Config& cfg);
+    int test_paged_attribute(const std::string& name, const std::string& swapfile, const search::attribute::Config& cfg);
     void test_paged_attributes();
 
 public:
@@ -492,25 +493,36 @@ void AttributeTest::testReload(const AttributePtr & a)
     auto c = createAttribute(replace_suffix(*a, "3"), a->getConfig());
 
     a->setCreateSerialNum(43u);
-    EXPECT_TRUE( a->save(b->getBaseFileName()) );
-    a->commit(true);
-    if (preciseEstimatedSize(*a)) {
-        EXPECT_EQ(statSize(*b), a->getEstimatedSaveByteSize());
+    if (a->getCommittedDocIdLimit() == 0) {
+        EXPECT_EQ(0, a->size_on_disk());
     } else {
-        double estSize = a->getEstimatedSaveByteSize();
-        double actSize = statSize(*b);
-        EXPECT_LE(actSize * 1.0, estSize * 1.3);
-        EXPECT_GE(actSize * 1.0, estSize * 0.7);
+        EXPECT_NE(0, a->size_on_disk());
     }
-    EXPECT_TRUE( a->save(c->getBaseFileName()) );
-    if (preciseEstimatedSize(*a)) {
-        EXPECT_EQ(statSize(*c), a->getEstimatedSaveByteSize());
+    EXPECT_TRUE( a->save(b->getBaseFileName()) );
+    EXPECT_NE(0, a->size_on_disk());
+    a->commit(true);
+    {
+        double actSize = statSize(*b);
+        EXPECT_LE(actSize, a->size_on_disk());
+        if (preciseEstimatedSize(*a)) {
+            EXPECT_EQ(actSize, a->getEstimatedSaveByteSize());
+        } else {
+            double estSize = a->getEstimatedSaveByteSize();
+            EXPECT_LE(actSize * 1.0, estSize * 1.3);
+            EXPECT_GE(actSize * 1.0, estSize * 0.7);
+        }
+        EXPECT_TRUE( a->save(c->getBaseFileName()) );
+        if (preciseEstimatedSize(*a)) {
+            EXPECT_EQ(statSize(*c), a->getEstimatedSaveByteSize());
+        }
     }
     EXPECT_TRUE( b->load() );
     EXPECT_EQ(43u, b->getCreateSerialNum());
+    EXPECT_EQ(a->size_on_disk(), b->size_on_disk());
     compare<VectorType, BufferType>
         (*(static_cast<VectorType *>(a.get())), *(static_cast<VectorType *>(b.get())));
     EXPECT_TRUE( c->load() );
+    EXPECT_EQ(a->size_on_disk(), c->size_on_disk());
     compare<VectorType, BufferType>
         (*(static_cast<VectorType *>(a.get())), *(static_cast<VectorType *>(c.get())));
 
@@ -695,11 +707,14 @@ AttributeTest::testMemorySaver(const AttributePtr & a)
     auto b = createAttribute(replace_suffix(*a, "2ms"), a->getConfig());
     AttributeMemorySaveTarget saveTarget;
     EXPECT_TRUE(a->save(saveTarget, b->getBaseFileName()));
-    vespalib::string datFile = vespalib::make_string("%s.dat", b->getBaseFileName().c_str());
+    std::string datFile = vespalib::make_string("%s.dat", b->getBaseFileName().c_str());
     EXPECT_FALSE(fs::exists(fs::path(datFile)));
     EXPECT_TRUE(saveTarget.writeToFile(TuneFileAttributes(), DummyFileHeaderContext()));
     EXPECT_TRUE(fs::exists(fs::path(datFile)));
+    EXPECT_EQ(0, a->size_on_disk());
+    EXPECT_NE(0, saveTarget.size_on_disk());
     EXPECT_TRUE(b->load());
+    EXPECT_EQ(saveTarget.size_on_disk(), b->size_on_disk());
     compare<VectorType, BufferType>(*(static_cast<VectorType *>(a.get())), *(static_cast<VectorType *>(b.get())));
 }
 
@@ -758,7 +773,7 @@ AttributeTest::fillString(std::vector<string> & values, uint32_t numValues)
     for (uint32_t i = 0; i < numValues; ++i) {
         vespalib::asciistream ss;
         ss << "string" << (i < 10 ? "0" : "") << i;
-        values.emplace_back(ss.str());
+        values.emplace_back(ss.view());
     }
 }
 
@@ -907,7 +922,7 @@ AttributeTest::testSingle()
             AttributePtr ptr = createAttribute("sv-post-int32", cfg);
             ptr->updateStat(true);
             EXPECT_EQ(338972u, ptr->getStatus().getAllocated());
-            EXPECT_EQ(101632u, ptr->getStatus().getUsed());
+            EXPECT_EQ(101512u, ptr->getStatus().getUsed());
             addDocs(ptr, numDocs);
             testSingle<IntegerAttribute, AttributeVector::largeint_t, int32_t>(ptr, values);
         }
@@ -929,7 +944,7 @@ AttributeTest::testSingle()
             AttributePtr ptr = createAttribute("sv-post-float", cfg);
             ptr->updateStat(true);
             EXPECT_EQ(338972u, ptr->getStatus().getAllocated());
-            EXPECT_EQ(101632u, ptr->getStatus().getUsed());
+            EXPECT_EQ(101512u, ptr->getStatus().getUsed());
             addDocs(ptr, numDocs);
             testSingle<FloatingPointAttribute, double, float>(ptr, values);
         }
@@ -941,8 +956,8 @@ AttributeTest::testSingle()
         {
             AttributePtr ptr = createAttribute("sv-string", Config(BasicType::STRING, CollectionType::SINGLE));
             ptr->updateStat(true);
-            EXPECT_EQ(116528u + sizeof_large_string_entry, ptr->getStatus().getAllocated());
-            EXPECT_EQ(52844u + sizeof_large_string_entry, ptr->getStatus().getUsed());
+            EXPECT_EQ(116048u + sizeof_large_string_entry + sizeof_initial_string_change_vector, ptr->getStatus().getAllocated());
+            EXPECT_EQ(52684u + sizeof_large_string_entry, ptr->getStatus().getUsed());
             addDocs(ptr, numDocs);
             testSingle<StringAttribute, string, string>(ptr, values);
         }
@@ -951,8 +966,8 @@ AttributeTest::testSingle()
             cfg.setFastSearch(true);
             AttributePtr ptr = createAttribute("sv-fs-string", cfg);
             ptr->updateStat(true);
-            EXPECT_EQ(344848u + sizeof_large_string_entry, ptr->getStatus().getAllocated());
-            EXPECT_EQ(104556u + sizeof_large_string_entry, ptr->getStatus().getUsed());
+            EXPECT_EQ(344368u + sizeof_large_string_entry + sizeof_initial_string_change_vector, ptr->getStatus().getAllocated());
+            EXPECT_EQ(104300u + sizeof_large_string_entry, ptr->getStatus().getUsed());
             addDocs(ptr, numDocs);
             testSingle<StringAttribute, string, string>(ptr, values);
         }
@@ -1083,8 +1098,8 @@ AttributeTest::testArray()
         {
             AttributePtr ptr = createAttribute("a-int32", Config(BasicType::INT32, CollectionType::ARRAY));
             ptr->updateStat(true);
-            EXPECT_EQ(297952u, ptr->getStatus().getAllocated());
-            EXPECT_EQ(256092u, ptr->getStatus().getUsed());
+            EXPECT_EQ(293856u, ptr->getStatus().getAllocated());
+            EXPECT_EQ(253668u, ptr->getStatus().getUsed());
             addDocs(ptr, numDocs);
             testArray<IntegerAttribute, AttributeVector::largeint_t>(ptr, values);
         }
@@ -1093,8 +1108,8 @@ AttributeTest::testArray()
             cfg.setFastSearch(true);
             AttributePtr ptr = createAttribute("flags", cfg);
             ptr->updateStat(true);
-            EXPECT_EQ(297952u, ptr->getStatus().getAllocated());
-            EXPECT_EQ(256092u, ptr->getStatus().getUsed());
+            EXPECT_EQ(293856u, ptr->getStatus().getAllocated());
+            EXPECT_EQ(253668u, ptr->getStatus().getUsed());
             addDocs(ptr, numDocs);
             testArray<IntegerAttribute, AttributeVector::largeint_t>(ptr, values);
         }
@@ -1103,8 +1118,8 @@ AttributeTest::testArray()
             cfg.setFastSearch(true);
             AttributePtr ptr = createAttribute("a-fs-int32", cfg);
             ptr->updateStat(true);
-            EXPECT_EQ(654588u, ptr->getStatus().getAllocated());
-            EXPECT_EQ(357744u, ptr->getStatus().getUsed());
+            EXPECT_EQ(650492u, ptr->getStatus().getAllocated());
+            EXPECT_EQ(355200u, ptr->getStatus().getUsed());
             addDocs(ptr, numDocs);
             testArray<IntegerAttribute, AttributeVector::largeint_t>(ptr, values);
         }
@@ -1122,8 +1137,8 @@ AttributeTest::testArray()
             cfg.setFastSearch(true);
             AttributePtr ptr = createAttribute("a-fs-float", cfg);
             ptr->updateStat(true);
-            EXPECT_EQ(654588u, ptr->getStatus().getAllocated());
-            EXPECT_EQ(357744u, ptr->getStatus().getUsed());
+            EXPECT_EQ(650492u, ptr->getStatus().getAllocated());
+            EXPECT_EQ(355200u, ptr->getStatus().getUsed());
             addDocs(ptr, numDocs);
             testArray<FloatingPointAttribute, double>(ptr, values);
         }
@@ -1134,8 +1149,8 @@ AttributeTest::testArray()
         {
             AttributePtr ptr = createAttribute("a-string", Config(BasicType::STRING, CollectionType::ARRAY));
             ptr->updateStat(true);
-            EXPECT_EQ(410256u + sizeof_large_string_entry, ptr->getStatus().getAllocated());
-            EXPECT_EQ(308936u + sizeof_large_string_entry, ptr->getStatus().getUsed());
+            EXPECT_EQ(405680u + sizeof_large_string_entry + sizeof_initial_string_change_vector, ptr->getStatus().getAllocated());
+            EXPECT_EQ(306352u + sizeof_large_string_entry, ptr->getStatus().getUsed());
             addDocs(ptr, numDocs);
             testArray<StringAttribute, string>(ptr, values);
         }
@@ -1144,8 +1159,8 @@ AttributeTest::testArray()
             cfg.setFastSearch(true);
             AttributePtr ptr = createAttribute("afs-string", cfg);
             ptr->updateStat(true);
-            EXPECT_EQ(660464u + sizeof_large_string_entry, ptr->getStatus().getAllocated());
-            EXPECT_EQ(360668u + sizeof_large_string_entry, ptr->getStatus().getUsed());
+            EXPECT_EQ(655888u + sizeof_large_string_entry + sizeof_initial_string_change_vector, ptr->getStatus().getAllocated());
+            EXPECT_EQ(357988u + sizeof_large_string_entry, ptr->getStatus().getUsed());
             addDocs(ptr, numDocs);
             testArray<StringAttribute, string>(ptr, values);
         }
@@ -1976,13 +1991,13 @@ AttributeTest::testCompactLidSpace(const Config &config,
 {
     uint32_t highDocs = 100;
     uint32_t trimmedDocs = 30;
-    vespalib::string bts = config.basicType().asString();
-    vespalib::string cts = config.collectionType().asString();
-    vespalib::string fas = fast_search ? "-fs" : "";
+    std::string bts = config.basicType().asString();
+    std::string cts = config.collectionType().asString();
+    std::string fas = fast_search ? "-fs" : "";
     Config cfg = config;
     cfg.setFastSearch(fast_search);
     
-    vespalib::string name = clsDir + "/" + bts + "-" + cts + fas;
+    std::string name = clsDir + "/" + bts + "-" + cts + fas;
     LOG(info, "testCompactLidSpace(%s)", name.c_str());
     AttributePtr attr = AttributeFactory::createAttribute(name, cfg);
     auto &v = static_cast<VectorType &>(*attr.get());
@@ -2029,7 +2044,7 @@ AttributeTest::testCompactLidSpace(const Config &config)
 void
 AttributeTest::testCompactLidSpaceForPredicateAttribute(const Config &config)
 {
-    vespalib::string name = clsDir + "/predicate-single";
+    std::string name = clsDir + "/predicate-single";
     LOG(info, "testCompactLidSpace(%s)", name.c_str());
     AttributePtr attr = AttributeFactory::createAttribute(name, config);
     attr->addDocs(10);
@@ -2134,7 +2149,7 @@ AttributeTest::test_default_value_ref_count_is_updated_after_shrink_lid_space()
 {
     Config cfg(BasicType::INT32, CollectionType::SINGLE);
     cfg.setFastSearch(true);
-    vespalib::string name = "shrink";
+    std::string name = "shrink";
     AttributePtr attr = AttributeFactory::createAttribute(name, cfg);
     const auto & iattr = dynamic_cast<const search::IntegerAttributeTemplate<int32_t> &>(*attr);
     attr->addReservedDoc();
@@ -2152,7 +2167,7 @@ void
 AttributeTest::requireThatAddressSpaceUsageIsReported(const Config &config, bool fastSearch)
 {
     uint32_t numDocs = 10;
-    vespalib::string attrName = asuDir + "/" + config.basicType().asString() + "-" +
+    std::string attrName = asuDir + "/" + config.basicType().asString() + "-" +
             config.collectionType().asString() + (fastSearch ? "-fs" : "");
     Config cfg = config;
     cfg.setFastSearch(fastSearch);
@@ -2220,7 +2235,7 @@ AttributeTest::testReaderDuringLastUpdate(const Config &config, bool fs, bool co
         config.collectionType().asString() <<
         (fs ? "-fs" : "") <<
         (compact ? "-compact" : "");
-    string name(ss.str());
+    string name(ss.view());
     Config cfg = config;
     cfg.setFastSearch(fs);
     cfg.setGrowStrategy(GrowStrategy::make(100, 0.5, 0));
@@ -2322,7 +2337,7 @@ AttributeTest::testConditionalCommit() {
 }
 
 int
-AttributeTest::test_paged_attribute(const vespalib::string& name, const vespalib::string& swapfile, const search::attribute::Config& cfg)
+AttributeTest::test_paged_attribute(const std::string& name, const std::string& swapfile, const search::attribute::Config& cfg)
 {
     int result = 1;
     size_t rounded_size = std::max(vespalib::round_up_to_page_size(1), size_t(vespalib::alloc::MmapFileAllocator::default_small_limit));
@@ -2384,7 +2399,7 @@ AttributeTest::test_paged_attribute(const vespalib::string& name, const vespalib
 void
 AttributeTest::test_paged_attributes()
 {
-    vespalib::string basedir("mmap-file-allocator-factory-dir");
+    std::string basedir("mmap-file-allocator-factory-dir");
     vespalib::alloc::MmapFileAllocatorFactory::instance().setup(basedir);
     search::attribute::Config cfg1(BasicType::INT32, CollectionType::SINGLE);
     cfg1.setPaged(true);
@@ -2425,7 +2440,7 @@ void testNamePrefix() {
 
 class MyMultiValueAttribute : public ArrayStringAttribute {
 public:
-    MyMultiValueAttribute(const vespalib::string& name)
+    MyMultiValueAttribute(const std::string& name)
         : ArrayStringAttribute(name, Config(BasicType::STRING, CollectionType::ARRAY))
     {
     }

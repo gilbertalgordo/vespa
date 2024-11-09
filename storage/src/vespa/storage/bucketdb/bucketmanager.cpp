@@ -2,26 +2,26 @@
 
 #include "bucketmanager.h"
 #include "minimumusedbitstracker.h"
-#include <iomanip>
+#include <vespa/config/helper/configgetter.hpp>
+#include <vespa/document/bucket/fixed_bucket_spaces.h>
+#include <vespa/metrics/jsonwriter.h>
 #include <vespa/storage/common/content_bucket_space_repo.h>
 #include <vespa/storage/common/nodestateupdater.h>
-#include <vespa/storage/common/global_bucket_space_distribution_converter.h>
-#include <vespa/vdslib/state/cluster_state_bundle.h>
 #include <vespa/storage/config/config-stor-server.h>
 #include <vespa/storage/storageutil/distributorstatecache.h>
+#include <vespa/storageapi/message/bucketsplitting.h>
+#include <vespa/storageapi/message/persistence.h>
+#include <vespa/storageapi/message/stat.h>
+#include <vespa/storageapi/message/state.h>
+#include <vespa/storageframework/generic/clock/timer.h>
 #include <vespa/storageframework/generic/status/htmlstatusreporter.h>
 #include <vespa/storageframework/generic/status/xmlstatusreporter.h>
 #include <vespa/storageframework/generic/thread/thread.h>
-#include <vespa/storageframework/generic/clock/timer.h>
-#include <vespa/storageapi/message/persistence.h>
-#include <vespa/storageapi/message/state.h>
-#include <vespa/storageapi/message/bucketsplitting.h>
-#include <vespa/storageapi/message/stat.h>
-#include <vespa/metrics/jsonwriter.h>
-#include <vespa/document/bucket/fixed_bucket_spaces.h>
+#include <vespa/vdslib/distribution/global_bucket_space_distribution_converter.h>
+#include <vespa/vdslib/state/cluster_state_bundle.h>
 #include <vespa/vespalib/util/stringfmt.h>
+#include <iomanip>
 #include <ranges>
-#include <vespa/config/helper/configgetter.hpp>
 #include <chrono>
 #include <thread>
 
@@ -202,7 +202,7 @@ struct MetricsUpdater {
 namespace {
 
 void
-output(vespalib::JsonStream & json, vespalib::stringref name, uint64_t value, vespalib::stringref bucketSpace) {
+output(vespalib::JsonStream & json, std::string_view name, uint64_t value, std::string_view bucketSpace) {
     using namespace vespalib::jsonstream;
     json << Object();
     json << "name" << name;
@@ -216,7 +216,7 @@ output(vespalib::JsonStream & json, vespalib::stringref name, uint64_t value, ve
 }
 
 void
-output(vespalib::JsonStream & json, vespalib::stringref name, uint64_t value) {
+output(vespalib::JsonStream & json, std::string_view name, uint64_t value) {
     output(json, name, value, "");
 }
 
@@ -342,7 +342,7 @@ void BucketManager::run(framework::ThreadHandle& thread)
     }
 }
 
-vespalib::string
+std::string
 BucketManager::getReportContentType(const framework::HttpUrlPath& path) const
 {
     bool showAll = path.hasAttribute("showall");
@@ -526,11 +526,12 @@ BucketManager::processRequestBucketInfoCommands(document::BucketSpace bucketSpac
     using RBISP = std::shared_ptr<api::RequestBucketInfoCommand>;
     std::map<uint16_t, RBISP> requests;
 
-    auto distribution(_component.getBucketSpaceRepo().get(bucketSpace).getDistribution());
-    auto clusterStateBundle(_component.getStateUpdater().getClusterStateBundle());
-    assert(clusterStateBundle);
-    lib::ClusterState::CSP clusterState(clusterStateBundle->getDerivedClusterState(bucketSpace));
-    assert(clusterState.get());
+    auto clusterStateBundle = _component.getStateUpdater().getClusterStateBundle();
+    assert(clusterStateBundle && clusterStateBundle->has_distribution_config());
+    auto clusterState = clusterStateBundle->getDerivedClusterState(bucketSpace);
+    assert(clusterState);
+    const auto distribution = clusterStateBundle->bucket_space_distribution_or_nullptr(bucketSpace);
+    assert(distribution);
 
     const auto our_hash = distribution->getNodeGraph().getDistributionConfigHash();
 

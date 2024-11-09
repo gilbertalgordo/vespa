@@ -49,7 +49,7 @@ public:
 
     void reclaim_all_entry_refs() override;
 
-    bool getCompacting(EntryRef ref) {
+    bool getCompacting(EntryRef ref) noexcept {
         return getBufferState(RefType(ref).bufferId()).getCompacting();
     }
 
@@ -96,7 +96,7 @@ public:
 
     EntryRef addEntry(const EntryType &e);
 
-    const EntryType &getEntry(EntryRef ref) const {
+    const EntryType &getEntry(EntryRef ref) const noexcept {
         return *this->template getEntry<EntryType>(RefType(ref));
     }
 };

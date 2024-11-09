@@ -15,31 +15,37 @@ public final class HexEncodeExpression extends Expression {
     }
 
     @Override
-    protected void doExecute(ExecutionContext context) {
-        long input = ((LongFieldValue) context.getValue()).getLong();
-        context.setValue(new StringFieldValue(Long.toHexString(input)));
-    }
-
-    @Override
-    protected void doVerify(VerificationContext context) {
-        context.setValueType(createdOutputType());
-    }
-
-    @Override
-    public DataType createdOutputType() {
+    public DataType setInputType(DataType inputType, VerificationContext context) {
+        super.setInputType(inputType, DataType.LONG, context);
         return DataType.STRING;
     }
 
     @Override
-    public String toString() {
-        return "hexencode";
+    public DataType setOutputType(DataType outputType, VerificationContext context) {
+        super.setOutputType(DataType.STRING, outputType, null, context);
+        return DataType.LONG;
     }
 
     @Override
+    protected void doVerify(VerificationContext context) {
+        context.setCurrentType(createdOutputType());
+    }
+
+    @Override
+    protected void doExecute(ExecutionContext context) {
+        long input = ((LongFieldValue) context.getCurrentValue()).getLong();
+        context.setCurrentValue(new StringFieldValue(Long.toHexString(input)));
+    }
+
+    @Override
+    public DataType createdOutputType() { return DataType.STRING; }
+
+    @Override
+    public String toString() { return "hexencode"; }
+
+    @Override
     public boolean equals(Object obj) {
-        if (!(obj instanceof HexEncodeExpression)) {
-            return false;
-        }
+        if (!(obj instanceof HexEncodeExpression)) return false;
         return true;
     }
 

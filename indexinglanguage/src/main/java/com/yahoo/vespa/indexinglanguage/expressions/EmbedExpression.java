@@ -9,6 +9,7 @@ import com.yahoo.document.TensorDataType;
 import com.yahoo.document.datatypes.Array;
 import com.yahoo.document.datatypes.StringFieldValue;
 import com.yahoo.document.datatypes.TensorFieldValue;
+import com.yahoo.language.Linguistics;
 import com.yahoo.language.process.Embedder;
 import com.yahoo.tensor.Tensor;
 import com.yahoo.tensor.TensorType;
@@ -26,6 +27,7 @@ import java.util.Map;
  */
 public class EmbedExpression extends Expression  {
 
+    private final Linguistics linguistics;
     private final Embedder embedder;
     private final String embedderId;
     private final List<String> embedderArguments;
@@ -36,14 +38,15 @@ public class EmbedExpression extends Expression  {
     /** The target type we are embedding into. */
     private TensorType targetType;
 
-    public EmbedExpression(Map<String, Embedder> embedders, String embedderId, List<String> embedderArguments) {
+    public EmbedExpression(Linguistics linguistics, Map<String, Embedder> embedders, String embedderId, List<String> embedderArguments) {
         super(null);
+        this.linguistics = linguistics;
         this.embedderId = embedderId;
         this.embedderArguments = List.copyOf(embedderArguments);
 
         boolean embedderIdProvided = embedderId != null && !embedderId.isEmpty();
 
-        if (embedders.size() == 0) {
+        if (embedders.isEmpty()) {
             throw new IllegalStateException("No embedders provided");  // should never happen
         }
         else if (embedders.size() == 1 && ! embedderIdProvided) {
@@ -62,37 +65,82 @@ public class EmbedExpression extends Expression  {
     }
 
     @Override
+    public DataType setInputType(DataType type, VerificationContext context) {
+        super.setInputType(type, context);
+        if ( ! (type == DataType.STRING) &&
+             ! (type instanceof ArrayDataType array && array.getNestedType() == DataType.STRING))
+            throw new VerificationException(this, "This requires either a string or array<string> input type, but got " +
+                                                  type.getName());
+        return getOutputType(context); // embed cannot determine the output type from the input
+    }
+
+    @Override
+    public DataType setOutputType(DataType type, VerificationContext context) {
+        super.setOutputType(null, type, TensorDataType.any(), context);
+        return getInputType(context); // the input (string vs. array of string) cannot be determined from the output
+    }
+
+    @Override
     public void setStatementOutput(DocumentType documentType, Field field) {
         targetType = toTargetTensor(field.getDataType());
         destination = documentType.getName() + "." + field.getName();
     }
 
     @Override
+    protected void doVerify(VerificationContext context) {
+        targetType = toTargetTensor(getOutputType(context));
+        if ( ! validTarget(targetType))
+            throw new VerificationException(this, "The embedding target field must either be a dense 1d tensor, a mapped 1d tensor, a mapped 2d tensor, " +
+                                                  "an array of dense 1d tensors, or a mixed 2d or 3d tensor");
+        if (targetType.rank() == 2 && targetType.mappedSubtype().rank() == 2) {
+            if (embedderArguments.size() != 1)
+                throw new VerificationException(this, "When the embedding target field is a 2d mapped tensor " +
+                                                      "the name of the tensor dimension that corresponds to the input array elements must " +
+                                                      "be given as a second argument to embed, e.g: ... | embed splade paragraph | ...");
+            if ( ! targetType.mappedSubtype().dimensionNames().contains(embedderArguments.get(0))) {
+                throw new VerificationException(this, "The dimension '" + embedderArguments.get(0) + "' given to embed " +
+                                                      "is not a sparse dimension of the target type " + targetType);
+
+            }
+        }
+        if (targetType.rank() == 3) {
+            if (embedderArguments.size() != 1)
+                throw new VerificationException(this, "When the embedding target field is a 3d tensor " +
+                                                      "the name of the tensor dimension that corresponds to the input array elements must " +
+                                                      "be given as a second argument to embed, e.g: ... | embed colbert paragraph | ...");
+            if ( ! targetType.mappedSubtype().dimensionNames().contains(embedderArguments.get(0)))
+                throw new VerificationException(this, "The dimension '" + embedderArguments.get(0) + "' given to embed " +
+                                                      "is not a sparse dimension of the target type " + targetType);
+        }
+        context.setCurrentType(createdOutputType());
+    }
+
+    @Override
     protected void doExecute(ExecutionContext context) {
-        if (context.getValue() == null) return;
+        if (context.getCurrentValue() == null) return;
         Tensor output;
-        if (context.getValue().getDataType() == DataType.STRING) {
+        if (context.getCurrentValue().getDataType() == DataType.STRING) {
             output = embedSingleValue(context);
         }
-        else if (context.getValue().getDataType() instanceof ArrayDataType &&
-                 ((ArrayDataType)context.getValue().getDataType()).getNestedType() == DataType.STRING) {
+        else if (context.getCurrentValue().getDataType() instanceof ArrayDataType arrayType
+                 && arrayType.getNestedType() == DataType.STRING) {
             output = embedArrayValue(context);
         }
         else {
             throw new IllegalArgumentException("Embedding can only be done on string or string array fields, not " +
-                                               context.getValue().getDataType());
+                                               context.getCurrentValue().getDataType());
         }
-        context.setValue(new TensorFieldValue(output));
+        context.setCurrentValue(new TensorFieldValue(output));
     }
 
     private Tensor embedSingleValue(ExecutionContext context) {
-        StringFieldValue input = (StringFieldValue)context.getValue();
+        StringFieldValue input = (StringFieldValue)context.getCurrentValue();
         return embed(input.getString(), targetType, context);
     }
 
     @SuppressWarnings("unchecked")
     private Tensor embedArrayValue(ExecutionContext context) {
-        var input = (Array<StringFieldValue>)context.getValue();
+        var input = (Array<StringFieldValue>)context.getCurrentValue();
         var builder = Tensor.Builder.of(targetType);
         if (targetType.rank() == 2)
             if (targetType.indexedSubtype().rank() == 1)
@@ -169,43 +217,9 @@ public class EmbedExpression extends Expression  {
 
     private Tensor embed(String input, TensorType targetType, ExecutionContext context) {
         return embedder.embed(input,
-                              new Embedder.Context(destination).setLanguage(context.getLanguage()).setEmbedderId(embedderId),
+                              new Embedder.Context(destination, context.getCache()).setLanguage(context.resolveLanguage(linguistics))
+                                                                                   .setEmbedderId(embedderId),
                               targetType);
-
-    }
-
-    @Override
-    protected void doVerify(VerificationContext context) {
-        String outputField = context.getOutputField();
-        if (outputField == null)
-            throw new VerificationException(this, "No output field in this statement: " +
-                                                  "Don't know what tensor type to embed into");
-        targetType = toTargetTensor(context.getInputType(this, outputField));
-        if ( ! validTarget(targetType))
-            throw new VerificationException(this, "The embedding target field must either be a dense 1d tensor, a mapped 1d tensor, a mapped 2d tensor, " +
-                                                  "an array of dense 1d tensors, or a mixed 2d or 3d tensor");
-        if (targetType.rank() == 2 && targetType.mappedSubtype().rank() == 2) {
-            if (embedderArguments.size() != 1)
-                throw new VerificationException(this, "When the embedding target field is a 2d mapped tensor " +
-                                                "the name of the tensor dimension that corresponds to the input array elements must " +
-                                                    "be given as a second argument to embed, e.g: ... | embed splade paragraph | ...");
-            if ( ! targetType.mappedSubtype().dimensionNames().contains(embedderArguments.get(0))) {
-                throw new VerificationException(this, "The dimension '" + embedderArguments.get(0) + "' given to embed " +
-                                                      "is not a sparse dimension of the target type " + targetType);
-
-            }
-        }
-        if (targetType.rank() == 3) {
-            if (embedderArguments.size() != 1)
-                throw new VerificationException(this, "When the embedding target field is a 3d tensor " +
-                                                      "the name of the tensor dimension that corresponds to the input array elements must " +
-                                                      "be given as a second argument to embed, e.g: ... | embed colbert paragraph | ...");
-            if ( ! targetType.mappedSubtype().dimensionNames().contains(embedderArguments.get(0)))
-                throw new VerificationException(this, "The dimension '" + embedderArguments.get(0) + "' given to embed " +
-                                                      "is not a sparse dimension of the target type " + targetType);
-        }
-
-        context.setValueType(createdOutputType());
     }
 
     @Override
@@ -214,7 +228,7 @@ public class EmbedExpression extends Expression  {
     }
 
     private static TensorType toTargetTensor(DataType dataType) {
-        if (dataType instanceof ArrayDataType) return toTargetTensor(((ArrayDataType) dataType).getNestedType());
+        if (dataType instanceof ArrayDataType) return toTargetTensor(dataType.getNestedType());
         if  ( ! ( dataType instanceof TensorDataType))
             throw new IllegalArgumentException("Expected a tensor data type but got " + dataType);
         return ((TensorDataType)dataType).getTensorType();
@@ -254,7 +268,7 @@ public class EmbedExpression extends Expression  {
         List<String> embedderIds = new ArrayList<>();
         embedders.forEach((key, value) -> embedderIds.add(key));
         embedderIds.sort(null);
-        return String.join(",", embedderIds);
+        return String.join(", ", embedderIds);
     }
 
 }

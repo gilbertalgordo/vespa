@@ -30,15 +30,15 @@ public class ToStringTestCase {
         Expression exp = new ToStringExpression();
         assertVerify(DataType.INT, exp, DataType.STRING);
         assertVerify(DataType.STRING, exp, DataType.STRING);
-        assertVerifyThrows(null, exp, "Expected any input, but no input is specified");
+        assertVerifyThrows("Invalid expression 'to_string': Expected any input, but no input is specified", null, exp);
     }
 
     @Test
     public void requireThatValueIsConverted() {
         ExecutionContext ctx = new ExecutionContext(new SimpleTestAdapter());
-        ctx.setValue(new IntegerFieldValue(69)).execute(new ToStringExpression());
+        ctx.setCurrentValue(new IntegerFieldValue(69)).execute(new ToStringExpression());
 
-        FieldValue val = ctx.getValue();
+        FieldValue val = ctx.getCurrentValue();
         assertTrue(val instanceof StringFieldValue);
         assertEquals("69", ((StringFieldValue)val).getString());
     }

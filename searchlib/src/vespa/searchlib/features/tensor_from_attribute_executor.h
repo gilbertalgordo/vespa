@@ -5,7 +5,7 @@
 #include <vespa/searchcommon/attribute/iattributevector.h>
 #include <vespa/eval/eval/fast_value.h>
 #include <vespa/eval/eval/value.h>
-#include <vespa/vespalib/stllike/string.h>
+#include <string>
 
 using vespalib::eval::FastValueBuilderFactory;
 using vespalib::eval::CellType;
@@ -23,7 +23,7 @@ private:
     const search::attribute::IAttributeVector *_attribute;
     vespalib::eval::ValueType _type;
     WeightedBufferType _attrBuffer;
-    std::vector<vespalib::stringref> _addr_ref;
+    std::vector<std::string_view> _addr_ref;
     std::unique_ptr<vespalib::eval::Value> _tensor;
 
 public:
@@ -49,7 +49,7 @@ TensorFromAttributeExecutor<WeightedBufferType>::execute(uint32_t docId)
     auto factory = FastValueBuilderFactory::get();
     auto builder = factory.create_value_builder<double>(_type, 1, 1, _attrBuffer.size());
     for (size_t i = 0; i < _attrBuffer.size(); ++i) {
-        vespalib::string label(_attrBuffer[i].value());
+        std::string label(_attrBuffer[i].value());
         _addr_ref.clear();
         _addr_ref.push_back(label);
         auto cell_array = builder->add_subspace(_addr_ref);

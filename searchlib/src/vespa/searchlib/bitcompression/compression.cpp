@@ -6,8 +6,10 @@
 #include <vespa/searchlib/index/postinglistparams.h>
 #include <vespa/vespalib/data/fileheader.h>
 #include <vespa/vespalib/data/databuffer.h>
-#include <vespa/vespalib/util/arrayref.h>
+#include <vespa/vespalib/datastore/aligner.h>
+#include <vespa/vespalib/util/round_up_to_page_size.h>
 #include <vespa/vespalib/util/size_literals.h>
+#include <span>
 
 namespace search::bitcompression {
 
@@ -94,7 +96,7 @@ EncodeContext64EBase<false>::writeBits(uint64_t data, uint32_t length)
 {
     // While there are enough bits remaining in "data",
     // fill the cacheInt and flush it to vector
-    if (length >= _cacheFree) {
+    if (length >= _cacheFree) [[unlikely]] {
         // Shift new bits into cacheInt
         _cacheInt |= (data << (64 - _cacheFree));
         *_valI++ = bswap(_cacheInt);
@@ -105,7 +107,7 @@ EncodeContext64EBase<false>::writeBits(uint64_t data, uint32_t length)
         _cacheFree = 64;
     }
 
-    if (length > 0) {
+    if (length > 0) [[likely]] {
         uint64_t dataFragment = (data & CodingTables::_intMask64[length]);
         _cacheInt |= (dataFragment << (64 - _cacheFree));
         _cacheFree -= length;
@@ -114,7 +116,7 @@ EncodeContext64EBase<false>::writeBits(uint64_t data, uint32_t length)
 
 namespace {
 
-vespalib::string noFeatures = "NoFeatures";
+std::string noFeatures = "NoFeatures";
 
 }
 
@@ -181,6 +183,12 @@ readHeader(vespalib::GenericHeader &header, int64_t fileSize)
     return headerLen;
 }
 
+bool
+DecodeContext64Base::is_padded_for_memory_map(uint64_t file_bit_size, uint64_t file_size) noexcept
+{
+    using Aligner = vespalib::datastore::Aligner<64>;
+    return (Aligner::align(file_bit_size) + 128 <= (vespalib::round_up_to_page_size(file_size) * 8));
+}
 
 template <bool bigEndian>
 void
@@ -250,7 +258,7 @@ writeBits(const uint64_t *bits, uint32_t bitOffset, uint32_t bitLength)
 
 template <bool bigEndian>
 void
-FeatureEncodeContext<bigEndian>::writeBytes(vespalib::ConstArrayRef<char> buf)
+FeatureEncodeContext<bigEndian>::writeBytes(std::span<const char> buf)
 {
     for (unsigned char c : buf) {
         writeBits(c, 8);
@@ -262,8 +270,18 @@ FeatureEncodeContext<bigEndian>::writeBytes(vespalib::ConstArrayRef<char> buf)
 
 template <bool bigEndian>
 void
+FeatureEncodeContext<bigEndian>::writeBytes(std::span<const unsigned char> buf)
+{
+    for (unsigned char c : buf) {
+        writeBits(c, 8);
+        writeComprBufferIfNeeded();
+    }
+}
+
+template <bool bigEndian>
+void
 FeatureEncodeContext<bigEndian>::
-writeString(vespalib::stringref buf)
+writeString(std::string_view buf)
 {
     size_t len = buf.size();
     for (unsigned int i = 0; i < len; ++i) {
@@ -299,7 +317,7 @@ template <bool bigEndian>
 void
 FeatureDecodeContext<bigEndian>::
 readHeader(const vespalib::GenericHeader &header,
-            const vespalib::string &prefix)
+            const std::string &prefix)
 {
     (void) header;
     (void) prefix;
@@ -307,7 +325,7 @@ readHeader(const vespalib::GenericHeader &header,
 
 
 template <bool bigEndian>
-const vespalib::string &
+const std::string &
 FeatureDecodeContext<bigEndian>::getIdentifier() const
 {
     return noFeatures;
@@ -359,12 +377,30 @@ getParams(PostingListParams &params) const
     params.clear();
 }
 
+template <bool bigEndian>
+void
+FeatureEncodeContext<bigEndian>::pad_for_memory_map_and_flush()
+{
+    // Write some pad bits to avoid decompression readahead going past
+    // memory mapped file during search and into SIGSEGV territory.
+
+    // First pad to 64 bits alignment.
+    this->smallAlign(64);
+    writeComprBufferIfNeeded();
+
+    // Then write 128 more bits.  This allows for 64-bit decoding
+    // with a readbits that always leaves a nonzero preRead
+    padBits(128);
+    this->alignDirectIO();
+    this->flush();
+    writeComprBuffer(); // Also flushes slack
+}
 
 template <bool bigEndian>
 void
 FeatureEncodeContext<bigEndian>::
 readHeader(const vespalib::GenericHeader &header,
-           const vespalib::string &prefix)
+           const std::string &prefix)
 {
     (void) header;
     (void) prefix;
@@ -375,7 +411,7 @@ template <bool bigEndian>
 void
 FeatureEncodeContext<bigEndian>::
 writeHeader(vespalib::GenericHeader &header,
-            const vespalib::string &prefix) const
+            const std::string &prefix) const
 {
     (void) header;
     (void) prefix;
@@ -383,7 +419,7 @@ writeHeader(vespalib::GenericHeader &header,
 
 
 template <bool bigEndian>
-const vespalib::string &
+const std::string &
 FeatureEncodeContext<bigEndian>::getIdentifier() const
 {
     return noFeatures;
@@ -421,7 +457,7 @@ EncodeContext64EBase<true>::writeBits(uint64_t data, uint32_t length)
 {
     // While there are enough bits remaining in "data",
     // fill the cacheInt and flush it to vector
-    if (length >= _cacheFree) {
+    if (length >= _cacheFree) [[unlikely]] {
         // Shift new bits into cacheInt
         _cacheInt |= ((data >> (length - _cacheFree)) &
                       CodingTables::_intMask64[_cacheFree]);
@@ -433,7 +469,7 @@ EncodeContext64EBase<true>::writeBits(uint64_t data, uint32_t length)
         _cacheFree = 64;
     }
 
-    if (length > 0) {
+    if (length > 0) [[likely]] {
         uint64_t dataFragment = (data & CodingTables::_intMask64[length]);
         _cacheInt |= (dataFragment << (_cacheFree - length));
         _cacheFree -= length;

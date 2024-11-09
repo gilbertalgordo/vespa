@@ -15,24 +15,32 @@ public final class HostNameExpression extends Expression {
     }
 
     @Override
-    protected void doExecute(ExecutionContext context) {
-        context.setValue(new StringFieldValue(normalizeHostName(getDefaults().vespaHostname())));
-    }
-
-    @Override
-    protected void doVerify(VerificationContext context) {
-        context.setValueType(createdOutputType());
-    }
-
-    @Override
-    public DataType createdOutputType() {
+    public DataType setInputType(DataType inputType, VerificationContext context) {
+        super.setInputType(inputType, context);
         return DataType.STRING;
     }
 
     @Override
-    public String toString() {
-        return "hostname";
+    public DataType setOutputType(DataType outputType, VerificationContext context) {
+        super.setOutputType(DataType.STRING, outputType, null, context);
+        return AnyDataType.instance;
     }
+
+    @Override
+    protected void doVerify(VerificationContext context) {
+        context.setCurrentType(createdOutputType());
+    }
+
+    @Override
+    protected void doExecute(ExecutionContext context) {
+        context.setCurrentValue(new StringFieldValue(normalizeHostName(getDefaults().vespaHostname())));
+    }
+
+    @Override
+    public DataType createdOutputType() { return DataType.STRING; }
+
+    @Override
+    public String toString() { return "hostname"; }
 
     @Override
     public boolean equals(Object obj) {

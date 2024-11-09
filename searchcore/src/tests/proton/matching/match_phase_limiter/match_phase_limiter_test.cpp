@@ -1,5 +1,4 @@
 // Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
-#include <vespa/vespalib/testkit/test_kit.h>
 #include <vespa/searchcore/proton/matching/match_phase_limiter.h>
 #include <vespa/searchcore/proton/matching/rangequerylocator.h>
 #include <vespa/searchlib/queryeval/termasstring.h>
@@ -17,6 +16,9 @@
 #include <vespa/searchlib/engine/trace.h>
 #include <vespa/vespalib/data/slime/slime.h>
 #include <vespa/vespalib/util/stringfmt.h>
+#include <vespa/vespalib/testkit/test_kit.h>
+#include <utility>
+#include <vespa/vespalib/testkit/test_master.hpp>
 
 using namespace proton::matching;
 using namespace search::engine;
@@ -45,19 +47,19 @@ SearchIterator::UP prepare(SearchIterator * search)
 
 struct MockSearch : SearchIterator {
     FieldSpec spec;
-    vespalib::string term;
+    std::string term;
     vespalib::Trinary _strict;
     TermFieldMatchDataArray tfmda;
     bool postings_fetched;
     uint32_t last_seek = beginId();
     uint32_t last_unpack = beginId();
-    explicit MockSearch(const vespalib::string &term_in)
-        : spec("", 0, 0), term(term_in), _strict(vespalib::Trinary::True), tfmda(), postings_fetched(false) {}
-    MockSearch(const FieldSpec &spec_in, const vespalib::string &term_in, bool strict_in,
-               const TermFieldMatchDataArray &tfmda_in, bool postings_fetched_in)
-        : spec(spec_in), term(term_in),
+    explicit MockSearch(std::string term_in)
+        : spec("", 0, 0), term(std::move(term_in)), _strict(vespalib::Trinary::True), tfmda(), postings_fetched(false) {}
+    MockSearch(const FieldSpec &spec_in, std::string term_in, bool strict_in,
+               TermFieldMatchDataArray tfmda_in, bool postings_fetched_in)
+        : spec(spec_in), term(std::move(term_in)),
           _strict(strict_in ? vespalib::Trinary::True : vespalib::Trinary::False),
-          tfmda(tfmda_in),
+          tfmda(std::move(tfmda_in)),
           postings_fetched(postings_fetched_in) {}
     void doSeek(uint32_t docid) override { last_seek = docid; setDocId(docid); }
     void doUnpack(uint32_t docid) override { last_unpack = docid; }
@@ -67,29 +69,29 @@ struct MockSearch : SearchIterator {
 
 struct MockBlueprint : SimpleLeafBlueprint {
     FieldSpec spec;
-    vespalib::string term;
+    std::string term;
     bool postings_fetched = false;
     bool postings_strict = false;
-    MockBlueprint(const FieldSpec &spec_in, const vespalib::string &term_in)
-        : SimpleLeafBlueprint(spec_in), spec(spec_in), term(term_in)
+    MockBlueprint(const FieldSpec &spec_in, std::string term_in)
+        : SimpleLeafBlueprint(spec_in), spec(spec_in), term(std::move(term_in))
     {
         setEstimate(HitEstimate(756, false));
     }    
     search::queryeval::FlowStats calculate_flow_stats(uint32_t docid_limit) const override {
         return default_flow_stats(docid_limit, 756, 0);
     }
-    SearchIterator::UP createLeafSearch(const TermFieldMatchDataArray &tfmda, bool strict) const override
+    SearchIterator::UP createLeafSearch(const TermFieldMatchDataArray &tfmda) const override
     {
         if (postings_fetched) {
-            EXPECT_EQUAL(postings_strict, strict);
+            EXPECT_EQUAL(postings_strict, strict());
         }
-        return std::make_unique<MockSearch>(spec, term, strict, tfmda, postings_fetched);
+        return std::make_unique<MockSearch>(spec, term, strict(), tfmda, postings_fetched);
     }
-    SearchIteratorUP createFilterSearch(bool strict, FilterConstraint constraint) const override {
-        return create_default_filter(strict, constraint);
+    SearchIteratorUP createFilterSearch(FilterConstraint constraint) const override {
+        return create_default_filter(constraint);
     }
-    void fetchPostings(const search::queryeval::ExecuteInfo &execInfo) override {
-        postings_strict = execInfo.is_strict();
+    void fetchPostings(const search::queryeval::ExecuteInfo &) override {
+        postings_strict = strict();
         postings_fetched = true;
     }
 };
@@ -172,7 +174,9 @@ TEST("require that max group size is calculated correctly") {
     for (size_t min_groups: std::vector<size_t>({0, 1, 2, 3, 4, 10, 500})) {
         for (size_t wanted_hits: std::vector<size_t>({0, 3, 321, 921})) {
             MatchPhaseLimitCalculator calc(100, min_groups, 0.2);
-            if (min_groups == 0) {
+            if (wanted_hits <= min_groups) {
+                EXPECT_EQUAL(size_t(1), calc.max_group_size(wanted_hits));
+            } else if (min_groups == 0) {
                 EXPECT_EQUAL(wanted_hits, calc.max_group_size(wanted_hits));
             } else {
                 EXPECT_EQUAL((wanted_hits / min_groups), calc.max_group_size(wanted_hits));
@@ -305,7 +309,7 @@ TEST_F("require that the match phase limiter may chose to limit the query even w
     EXPECT_TRUE(limiter.was_limited());
 }
 
-void verify(vespalib::stringref expected, const vespalib::Slime & slime) {
+void verify(std::string_view expected, const vespalib::Slime & slime) {
     vespalib::Slime expectedSlime;
     vespalib::slime::JsonFormat::decode(expected, expectedSlime);
     EXPECT_EQUAL(expectedSlime, slime);
@@ -454,7 +458,7 @@ struct RangeLimitFixture {
 };
 
 void
-verifyLocateRange(const vespalib::string & from, const vespalib::string & to,
+verifyLocateRange(const std::string & from, const std::string & to,
                   const FieldSpec & fieldSpec, RangeLimitFixture & f)
 {
     search::query::SimpleNumberTerm term(fmt("[%s;%s]", from.c_str(), to.c_str()), fieldSpec.getName(), 0, search::query::Weight(1));
@@ -474,7 +478,7 @@ TEST_F("require that RangeLocator locates range from attribute blueprint", Range
 
 
 void
-verifyRangeIsReflectedInLimiter(const vespalib::string & from, const vespalib::string & to,
+verifyRangeIsReflectedInLimiter(const std::string & from, const std::string & to,
                                 const FieldSpec & fieldSpec, RangeLimitFixture & f)
 {
     search::query::SimpleNumberTerm term(fmt("[%s;%s]", from.c_str(), to.c_str()), fieldSpec.getName(), 0, search::query::Weight(1));

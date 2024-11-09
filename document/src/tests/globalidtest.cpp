@@ -55,12 +55,12 @@ TEST_F(GlobalIdTest, testNormalUsage)
     }
     { // Test printing and parsing
         GlobalId id1("LIN!#LNKASD#!MYL#&NK");
-        EXPECT_EQ(vespalib::string("gid(0x4c494e21234c4e4b41534423)"),
+        EXPECT_EQ(std::string("gid(0x4c494e21234c4e4b41534423)"),
                              id1.toString());
         GlobalId id2 = GlobalId::parse(id1.toString());
         EXPECT_EQ(id1, id2);
             // Verify string representation too, to verify that operator== works
-        EXPECT_EQ(vespalib::string("gid(0x4c494e21234c4e4b41534423)"),
+        EXPECT_EQ(std::string("gid(0x4c494e21234c4e4b41534423)"),
                              id2.toString());
     }
 }
@@ -155,12 +155,12 @@ TEST_F(GlobalIdTest, testGidRangeConversion)
         }
         uint32_t scheme = randomizer.nextUint32(0, 2);
         switch (scheme) {
-            case 0: ost << "id:" << name_space.str() << ":mytype::";
+            case 0: ost << "id:" << name_space.view() << ":mytype::";
                     break;
-            case 1: ost << "id:" << name_space.str() << ":mytype:n=";
+            case 1: ost << "id:" << name_space.view() << ":mytype:n=";
                     ost << randomizer.nextUint32() << ":";
                     break;
-            case 2: ost << "id:" << name_space.str() << ":mytype:g=";
+            case 2: ost << "id:" << name_space.view() << ":mytype:g=";
                     for (uint32_t i=0, n=randomizer.nextUint32(1, 10); i<n; ++i) {
                         ost << (char) ('a' + randomizer.nextUint32(0, 25));
                     }
@@ -172,7 +172,7 @@ TEST_F(GlobalIdTest, testGidRangeConversion)
         for (uint32_t i=0, n=randomizer.nextUint32(1, 20); i<n; ++i) {
             ost << (char) ('a' + randomizer.nextUint32(0, 25));
         }
-        docIds.push_back(DocumentId(ost.str()));
+        docIds.push_back(DocumentId(ost.view()));
     }
     //std::cerr << "\nDoing " << ((58 - 16) * docIds.size() * docIds.size())
     //          << " tests for whether global id calculation is correct.\n";

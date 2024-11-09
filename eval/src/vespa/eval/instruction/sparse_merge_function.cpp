@@ -24,7 +24,7 @@ const Value& my_fast_sparse_merge(const FastAddrMap &a_map, const FastAddrMap &b
     auto &result = stash.create<FastValue<CT,true>>(params.res_type, params.num_mapped_dimensions, 1u, guess_size);
     if constexpr (single_dim) {
         string_id cur_label;
-        ConstArrayRef<string_id> addr(&cur_label, 1);
+        std::span<const string_id> addr(&cur_label, 1);
         const auto &a_labels = a_map.labels();
         for (size_t i = 0; i < a_labels.size(); ++i) {
             cur_label = a_labels[i];
@@ -77,7 +77,7 @@ void my_sparse_merge_op(InterpretedFunction::State &state, uint64_t param_in) {
         auto a_cells = a.cells().typify<CT>();
         auto b_cells = b.cells().typify<CT>();
         const Value &v = my_fast_sparse_merge<CT,single_dim,Fun>(as_fast(a_idx).map, as_fast(b_idx).map,
-                                                                 a_cells.cbegin(), b_cells.cbegin(),
+                                                                 a_cells.data(), b_cells.data(),
                                                                  param, state.stash);
         state.pop_pop_push(v);
     } else {

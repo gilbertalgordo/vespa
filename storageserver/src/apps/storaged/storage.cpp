@@ -21,6 +21,7 @@
 #include <vespa/config/helper/configgetter.hpp>
 #include <vespa/vespalib/util/signalhandler.h>
 #include <google/protobuf/message_lite.h>
+#include <absl/debugging/failure_signal_handler.h>
 #include <iostream>
 #include <csignal>
 #include <cstdlib>
@@ -33,7 +34,7 @@ namespace storage {
 
 namespace {
 
-Process::UP createProcess(vespalib::stringref configId) {
+Process::UP createProcess(std::string_view configId) {
     // FIXME: Rewrite parameter to config uri and pass when all subsequent configs are converted.
     config::ConfigUri uri(configId);
     std::unique_ptr<vespa::config::content::core::StorServerConfig> serverConfig = config::ConfigGetter<vespa::config::content::core::StorServerConfig>::getConfig(uri.getConfigId(), uri.getContext());
@@ -213,8 +214,15 @@ int StorageApp::main(int argc, char **argv)
 } // storage
 
 int main(int argc, char **argv) {
+    absl::FailureSignalHandlerOptions opts;
+    // See `searchcore/src/apps/proton/proton.cpp` for parameter and handler ordering rationale.
+    opts.call_previous_handler = true;
+    opts.use_alternate_stack = false;
+    absl::InstallFailureSignalHandler(opts);
+
     vespalib::SignalHandler::PIPE.ignore();
     vespalib::SignalHandler::enable_cross_thread_stack_tracing();
+
     storage::StorageApp app;
     storage::sigtramp = &app;
     int retval = app.main(argc,argv);

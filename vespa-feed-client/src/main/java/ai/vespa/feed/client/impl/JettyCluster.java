@@ -41,13 +41,15 @@ import java.net.Inet4Address;
 import java.net.InetSocketAddress;
 import java.net.URI;
 import java.time.Duration;
-import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Supplier;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import java.util.stream.Collectors;
 import java.util.zip.GZIPOutputStream;
 
@@ -62,6 +64,7 @@ import static org.eclipse.jetty.http.MimeTypes.Type.APPLICATION_JSON;
  * @author bjorncs
  */
 class JettyCluster implements Cluster {
+    private static final Logger log = Logger.getLogger(JettyCluster.class.getName());
 
     // Socket timeout must be longer than the longest feasible response timeout
     private static final Duration IDLE_TIMEOUT = Duration.ofMinutes(15);
@@ -82,9 +85,12 @@ class JettyCluster implements Cluster {
             Endpoint endpoint = findLeastBusyEndpoint(endpoints);
             try {
                 endpoint.inflight.incrementAndGet();
-                long reqTimeoutMillis = req.timeout() != null
-                        ? req.timeout().toMillis() * 11 / 10 + 1000 : IDLE_TIMEOUT.toMillis();
-                Request jettyReq = client.newRequest(URI.create(endpoint.uri + req.path()))
+                long reqTimeoutMillis = req.timeLeft().toMillis();
+                if (reqTimeoutMillis <= 0) {
+                    vessel.completeExceptionally(new TimeoutException("operation timed out after '" + req.timeout() + "'"));
+                    return;
+                }
+                Request jettyReq = client.newRequest(URI.create(endpoint.uri + req.pathAndQuery()))
                         .version(HttpVersion.HTTP_2)
                         .method(HttpMethod.fromString(req.method()))
                         .headers(hs -> req.headers().forEach((k, v) -> hs.add(k, v.get())))
@@ -105,17 +111,25 @@ class JettyCluster implements Cluster {
                     }
                     jettyReq.body(new BytesRequestContent(APPLICATION_JSON.asString(), bytes));
                 }
+                log.log(Level.FINER, () ->
+                        String.format("Dispatching request %s (%s)", req, System.identityHashCode(vessel)));
                 jettyReq.send(new BufferingResponseListener() {
                     @Override
                     public void onComplete(Result result) {
+                        log.log(Level.FINER, () ->
+                                String.format("Completed request %s (%s): %s",
+                                        req, System.identityHashCode(vessel),
+                                        result.isFailed()
+                                                ? result.getFailure().toString() : result.getResponse().getStatus()));
                         endpoint.inflight.decrementAndGet();
                         if (result.isFailed()) vessel.completeExceptionally(result.getFailure());
                         else vessel.complete(new JettyResponse(result.getResponse(), getContent()));
                     }
                 });
-            } catch (Exception e) {
+            } catch (Throwable t) {
+                log.log(t instanceof Exception ? Level.FINE : Level.WARNING, "Failed to dispatch request: " + req, t.getMessage());
                 endpoint.inflight.decrementAndGet();
-                vessel.completeExceptionally(e);
+                vessel.completeExceptionally(t);
             }
         });
     }
@@ -194,7 +208,7 @@ class JettyCluster implements Cluster {
             proxySslCtxFactory.setSslContext(b.constructProxySslContext());
             try { proxySslCtxFactory.start(); } catch (Exception e) { throw new IOException(e); }
             httpClient.getProxyConfiguration().addProxy(
-                    new HttpProxy(address, proxySslCtxFactory, new Origin.Protocol(Collections.singletonList("h2"), false)));
+                    new HttpProxy(address, proxySslCtxFactory, new Origin.Protocol(List.of("h2"), false)));
             URI proxyUri = URI.create(endpointUri(b.proxy));
             httpClient.getAuthenticationStore().addAuthenticationResult(new Authentication.Result() {
                 @Override public URI getURI() { return proxyUri; }
@@ -205,7 +219,7 @@ class JettyCluster implements Cluster {
         } else {
             // Assume insecure proxy uses HTTP/1.1
             httpClient.getProxyConfiguration().addProxy(
-                    new HttpProxy(address, false, new Origin.Protocol(Collections.singletonList("http/1.1"), false)));
+                    new HttpProxy(address, false, new Origin.Protocol(List.of("http/1.1"), false)));
             // Bug in Jetty cause authentication result to be ignored for HTTP/1.1 CONNECT requests
             httpClient.getRequestListeners().add(new Request.Listener() {
                 @Override

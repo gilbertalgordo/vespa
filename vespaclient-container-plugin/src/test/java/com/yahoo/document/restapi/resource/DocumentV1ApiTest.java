@@ -113,6 +113,7 @@ public class DocumentV1ApiTest {
             .build();
     final DocumentOperationExecutorConfig executorConfig = new DocumentOperationExecutorConfig.Builder()
             .maxThrottled(2)
+            .maxThrottledAge(1.0)
             .resendDelayMillis(1 << 30)
             .build();
     final DocumentmanagerConfig docConfig = Deriver.getDocumentManagerConfig("src/test/cfg/music.sd")
@@ -184,8 +185,71 @@ public class DocumentV1ApiTest {
         StorageCluster cluster = DocumentV1ApiHandler.resolveCluster(Optional.of("content"), clusters);
         assertEquals(FixedBucketSpaces.defaultSpace(),
                      DocumentV1ApiHandler.resolveBucket(cluster, Optional.of("music"), List.of(), Optional.empty()));
+        assertEquals(FixedBucketSpaces.defaultSpace(),
+                     DocumentV1ApiHandler.resolveBucket(cluster, Optional.empty(), List.of(), Optional.empty()));
         assertEquals(FixedBucketSpaces.globalSpace(),
                      DocumentV1ApiHandler.resolveBucket(cluster, Optional.empty(), List.of(FixedBucketSpaces.globalSpace()), Optional.of("global")));
+        try {
+            DocumentV1ApiHandler.resolveBucket(cluster, Optional.of("musicc"), List.of(), Optional.empty());
+            fail("should fail with unknown document type");
+        }
+        catch (IllegalArgumentException e) {
+            assertEquals("There is no document type 'musicc' in cluster 'content', only 'music'",
+                         e.getMessage());
+        }
+    }
+
+    @Test
+    public void testOverLoadBySize() {
+        RequestHandlerTestDriver driver = new RequestHandlerTestDriver(handler);
+        // OVERLOAD is a 429
+        access.session.expect((id, parameters) -> new Result(Result.ResultType.TRANSIENT_ERROR, Result.toError(Result.ResultType.TRANSIENT_ERROR)));
+        var response1 = driver.sendRequest("http://localhost/document/v1/space/music/number/1/two", POST, "{\"fields\": {}}");
+        var response2 = driver.sendRequest("http://localhost/document/v1/space/music/number/1/two", POST, "{\"fields\": {}}");
+        var response3 = driver.sendRequest("http://localhost/document/v1/space/music/number/1/two", POST, "{\"fields\": {}}");
+        assertSameJson("{" +
+                "  \"pathId\": \"/document/v1/space/music/number/1/two\"," +
+                "  \"message\": \"Rejecting execution due to overload: 2 requests already enqueued\"" +
+                "}", response3.readAll());
+        assertEquals(429, response3.getStatus());
+
+        access.session.expect((id, parameters) -> new Result(Result.ResultType.FATAL_ERROR, Result.toError(Result.ResultType.FATAL_ERROR)));
+        handler.dispatchEnqueued();
+        assertSameJson("{" +
+                "  \"pathId\": \"/document/v1/space/music/number/1/two\"," +
+                "  \"message\": \"[FATAL_ERROR @ localhost]: FATAL_ERROR\"" +
+                "}", response1.readAll());
+        assertEquals(500, response1.getStatus());
+        assertSameJson("{" +
+                "  \"pathId\": \"/document/v1/space/music/number/1/two\"," +
+                "  \"message\": \"[FATAL_ERROR @ localhost]: FATAL_ERROR\"" +
+                "}", response2.readAll());
+        assertEquals(500, response2.getStatus());
+        driver.close();
+    }
+
+    @Test
+    public void testOverLoadByAge() {
+        RequestHandlerTestDriver driver = new RequestHandlerTestDriver(handler);
+        // OVERLOAD is a 429
+        access.session.expect((id, parameters) -> new Result(Result.ResultType.TRANSIENT_ERROR, Result.toError(Result.ResultType.TRANSIENT_ERROR)));
+        var response1 = driver.sendRequest("http://localhost/document/v1/space/music/number/1/two", POST, "{\"fields\": {}}");
+        try { Thread.sleep(3_000); } catch (InterruptedException e) {}
+        var response2 = driver.sendRequest("http://localhost/document/v1/space/music/number/1/two", POST, "{\"fields\": {}}");
+        assertSameJson("{" +
+                "  \"pathId\": \"/document/v1/space/music/number/1/two\"," +
+                "  \"message\": \"Rejecting execution due to overload: 1.0 seconds worth of work enqueued\"" +
+                "}", response2.readAll());
+        assertEquals(429, response2.getStatus());
+
+        access.session.expect((id, parameters) -> new Result(Result.ResultType.FATAL_ERROR, Result.toError(Result.ResultType.FATAL_ERROR)));
+        handler.dispatchEnqueued();
+        assertSameJson("{" +
+                "  \"pathId\": \"/document/v1/space/music/number/1/two\"," +
+                "  \"message\": \"[FATAL_ERROR @ localhost]: FATAL_ERROR\"" +
+                "}", response1.readAll());
+        assertEquals(500, response1.getStatus());
+        driver.close();
     }
 
     @Test
@@ -236,7 +300,7 @@ public class DocumentV1ApiTest {
             parameters.getLocalDataHandler().onMessage(new RemoveDocumentMessage(new DocumentId("id:space:music::t-square-truth")), tokens.get(3));
             VisitorStatistics statistics = new VisitorStatistics();
             statistics.setBucketsVisited(1);
-            statistics.setDocumentsVisited(3);
+            statistics.setDocumentsVisited(123); // Ignored in favor of tracking actually emitted entries
             parameters.getControlHandler().onVisitorStatistics(statistics);
             parameters.getControlHandler().onDone(VisitorControlHandler.CompletionCode.TIMEOUT, "timeout is OK");
         });
@@ -269,7 +333,7 @@ public class DocumentV1ApiTest {
                             "remove": "id:space:music::t-square-truth"
                            }
                          ],
-                         "documentCount": 3,
+                         "documentCount": 4,
                          "trace": [
                            { "message": "Tracy Chapman" },
                            {
@@ -387,13 +451,18 @@ public class DocumentV1ApiTest {
             assertEquals("[Content:cluster=content]", parameters.getRemoteDataHandler());
             assertEquals("[document]", parameters.fieldSet());
             assertEquals(60_000L, parameters.getSessionTimeoutMs());
+            VisitorStatistics statistics = new VisitorStatistics();
+            statistics.setBucketsVisited(1);
+            statistics.setDocumentsVisited(2);
+            // Visiting with remote data handlers should report the remotely aggregated statistics
+            parameters.getControlHandler().onVisitorStatistics(statistics);
             parameters.getControlHandler().onDone(VisitorControlHandler.CompletionCode.SUCCESS, "We made it!");
         });
         response = driver.sendRequest("http://localhost/document/v1/space/music/docid?destinationCluster=content&selection=true&cluster=content&timeout=60", POST);
         assertSameJson("""
                        {
                          "pathId": "/document/v1/space/music/docid",
-                         "documentCount": 0
+                         "documentCount": 2
                        }""",
                        response.readAll());
         assertEquals(200, response.getStatus());
@@ -434,7 +503,7 @@ public class DocumentV1ApiTest {
         assertSameJson("""
                        {
                          "pathId": "/document/v1/space/music/docid",
-                         "documentCount": 0
+                         "documentCount": 1
                        }""",
                        response.readAll());
         assertEquals(200, response.getStatus());
@@ -488,7 +557,7 @@ public class DocumentV1ApiTest {
         assertSameJson("""
                        {
                          "pathId": "/document/v1/space/music/docid",
-                         "documentCount": 0,
+                         "documentCount": 1,
                          "message": "boom"
                        }""",
                        response.readAll());
@@ -923,29 +992,6 @@ public class DocumentV1ApiTest {
                        "}", response.readAll());
         assertEquals(405, response.getStatus());
 
-        // OVERLOAD is a 429
-        access.session.expect((id, parameters) -> new Result(Result.ResultType.TRANSIENT_ERROR, Result.toError(Result.ResultType.TRANSIENT_ERROR)));
-        var response1 = driver.sendRequest("http://localhost/document/v1/space/music/number/1/two", POST, "{\"fields\": {}}");
-        var response2 = driver.sendRequest("http://localhost/document/v1/space/music/number/1/two", POST, "{\"fields\": {}}");
-        var response3 = driver.sendRequest("http://localhost/document/v1/space/music/number/1/two", POST, "{\"fields\": {}}");
-        assertSameJson("{" +
-                       "  \"pathId\": \"/document/v1/space/music/number/1/two\"," +
-                       "  \"message\": \"Rejecting execution due to overload: 2 requests already enqueued\"" +
-                       "}", response3.readAll());
-        assertEquals(429, response3.getStatus());
-        access.session.expect((id, parameters) -> new Result(Result.ResultType.FATAL_ERROR, Result.toError(Result.ResultType.FATAL_ERROR)));
-        handler.dispatchEnqueued();
-        assertSameJson("{" +
-                       "  \"pathId\": \"/document/v1/space/music/number/1/two\"," +
-                       "  \"message\": \"[FATAL_ERROR @ localhost]: FATAL_ERROR\"" +
-                       "}", response1.readAll());
-        assertEquals(500, response1.getStatus());
-        assertSameJson("{" +
-                       "  \"pathId\": \"/document/v1/space/music/number/1/two\"," +
-                       "  \"message\": \"[FATAL_ERROR @ localhost]: FATAL_ERROR\"" +
-                       "}", response2.readAll());
-        assertEquals(500, response2.getStatus());
-
         // Request response does not arrive before timeout has passed.
         AtomicReference<ResponseHandler> handler = new AtomicReference<>();
         access.session.expect((id, parameters) -> {
@@ -970,6 +1016,71 @@ public class DocumentV1ApiTest {
         assertEquals(1, metric.metrics().get("httpapi_not_found").get(Map.of()), 0);
         assertEquals(1, metric.metrics().get("httpapi_failed").get(Map.of()), 0);
         driver.close();
+    }
+
+    @Test
+    public void batch_update_rewrites_tas_condition_with_timestamp_predicate_if_provided_by_backend() {
+        var driver = new RequestHandlerTestDriver(handler); // try-with-resources hangs the test on assertion failure, which isn't optimal
+        List<AckToken> tokens = List.of(new AckToken(null), new AckToken(null), new AckToken(null), new AckToken(null));
+        long backendTimestamp = 1234567890;
+
+        access.expect(tokens.subList(2, 3));
+        access.expect(parameters -> {
+            var put = new PutDocumentMessage(new DocumentPut(doc3));
+            put.setPersistedTimestamp(backendTimestamp);
+            parameters.getLocalDataHandler().onMessage(put, tokens.get(2));
+            parameters.getControlHandler().onDone(VisitorControlHandler.CompletionCode.TIMEOUT, "Won't care");
+        });
+        access.session.expect((update, parameters) -> {
+            // TaS condition should now have _both_ the original selection and the exact backend timestamp.
+            var expectedCondition = TestAndSetCondition.ofRequiredTimestampWithSelectionFallback(backendTimestamp, "optimist");
+            assertEquals(expectedCondition, ((DocumentUpdate) update).getCondition());
+            parameters.responseHandler().get().handleResponse(new UpdateResponse(0, false));
+            return new Result();
+        });
+        var response = driver.sendRequest("http://localhost/document/v1/space/music/docid?selection=optimist&cluster=content&timeChunk=10", PUT,
+                """
+                        {
+                          "fields": {
+                            "artist": { "assign": "Jahn Teigen" }
+                          }
+                        }""");
+        assertSameJson("""
+                        {
+                          "pathId": "/document/v1/space/music/docid",
+                          "documentCount": 1
+                        }""",
+                response.readAll());
+        assertEquals(200, response.getStatus());
+    }
+
+    @Test
+    public void batch_remove_rewrites_tas_condition_with_timestamp_predicate_if_provided_by_backend() {
+        var driver = new RequestHandlerTestDriver(handler); // try-with-resources hangs the test on assertion failure, which isn't optimal
+        List<AckToken> tokens = List.of(new AckToken(null), new AckToken(null), new AckToken(null), new AckToken(null));
+        long backendTimestamp = 1234567890;
+
+        access.expect(tokens.subList(2, 3));
+        access.expect(parameters -> {
+            var put = new PutDocumentMessage(new DocumentPut(doc3.getDataType(), doc3.getId())); // Only the document ID
+            put.setPersistedTimestamp(backendTimestamp);
+            parameters.getLocalDataHandler().onMessage(put, tokens.get(2));
+            parameters.getControlHandler().onDone(VisitorControlHandler.CompletionCode.TIMEOUT, "Won't care");
+        });
+        access.session.expect((remove, parameters) -> {
+            var expectedCondition = TestAndSetCondition.ofRequiredTimestampWithSelectionFallback(backendTimestamp, "pessimist");
+            assertEquals(expectedCondition, ((DocumentRemove) remove).getCondition());
+            parameters.responseHandler().get().handleResponse(new DocumentIdResponse(0, doc2.getId()));
+            return new Result();
+        });
+        var response = driver.sendRequest("http://localhost/document/v1/?selection=pessimist&cluster=content&timeChunk=10", DELETE);
+        assertSameJson("""
+                        {
+                          "pathId": "/document/v1/",
+                          "documentCount": 1
+                        }""",
+                response.readAll());
+        assertEquals(200, response.getStatus());
     }
 
     private void doTestVisitRequestWithParams(String httpReqParams, Consumer<VisitorParameters> paramChecker) {

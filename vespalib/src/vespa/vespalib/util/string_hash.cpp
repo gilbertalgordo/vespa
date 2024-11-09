@@ -2,6 +2,7 @@
 
 #include "string_hash.h"
 #include <vespa/vespalib/stllike/hash_fun.h>
+#include <cstring>
 
 namespace vespalib {
 
@@ -17,7 +18,7 @@ double hash2d(const char *str, size_t len) {
     return d;
 }
 
-double hash2d(vespalib::stringref str) {
+double hash2d(std::string_view str) {
     return hash2d(str.data(), str.size());
 }
 

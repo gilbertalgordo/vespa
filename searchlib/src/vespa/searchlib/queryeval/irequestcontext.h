@@ -2,8 +2,8 @@
 
 #pragma once
 
-#include <vespa/vespalib/stllike/string.h>
 #include <vespa/searchcommon/attribute/i_document_meta_store_context.h>
+#include <string>
 
 namespace search::attribute { struct AttributeBlueprintParams; }
 namespace search::attribute { class IAttributeVector; }
@@ -38,14 +38,14 @@ public:
      * Provide access to attributevectors
      * @return AttributeVector or nullptr if it does not exist.
      */
-    virtual const attribute::IAttributeVector *getAttribute(const vespalib::string &name) const = 0;
-    virtual const attribute::IAttributeVector *getAttributeStableEnum(const vespalib::string &name) const = 0;
+    virtual const attribute::IAttributeVector *getAttribute(std::string_view name) const = 0;
+    virtual const attribute::IAttributeVector *getAttributeStableEnum(std::string_view name) const = 0;
 
     /**
      * Returns the tensor of the given name that was passed with the query.
      * Returns nullptr if the tensor is not found or if it is not a tensor.
      */
-    virtual const vespalib::eval::Value* get_query_tensor(const vespalib::string& tensor_name) const = 0;
+    virtual const vespalib::eval::Value* get_query_tensor(const std::string& tensor_name) const = 0;
 
     virtual const search::attribute::AttributeBlueprintParams& get_attribute_blueprint_params() const = 0;
 

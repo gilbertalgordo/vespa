@@ -49,19 +49,20 @@ public:
     ~PredicateBlueprint();
     void fetchPostings(const ExecuteInfo &execInfo) override;
 
+    void sort(InFlow in_flow) override;
     FlowStats calculate_flow_stats(uint32_t) const override {
         return default_flow_stats(_interval_btree_iterators.size() + _interval_vector_iterators.size() +
                                   _bounds_btree_iterators.size() + _bounds_vector_iterators.size() + 2);
     }
 
     SearchIterator::UP
-    createLeafSearch(const fef::TermFieldMatchDataArray &tfmda, bool strict) const override;
-    SearchIteratorUP createFilterSearch(bool strict, FilterConstraint constraint) const override {
-        return create_default_filter(strict, constraint);
+    createLeafSearch(const fef::TermFieldMatchDataArray &tfmda) const override;
+    SearchIteratorUP createFilterSearch(FilterConstraint constraint) const override {
+        return create_default_filter(constraint);
     }
 
     // Exposed for testing
-    const BitVectorCache::CountVector &  getKV() const { return _kV; }
+    std::span<uint8_t>  getKV() const { return _kV; }
     const BitVectorCache::KeySet &       getCachedFeatures() const { return _cachedFeatures; }
 private:
     using BTreeIterator = predicate::SimpleIndex<vespalib::datastore::EntryRef>::BTreeIterator;
@@ -84,7 +85,7 @@ private:
     const PredicateAttribute        & _attribute;
     const predicate::PredicateIndex &_index;
     Alloc                            _kVBacking;
-    BitVectorCache::CountVector      _kV;
+    std::span<uint8_t>               _kV;
     BitVectorCache::KeySet           _cachedFeatures;
 
     std::vector<IntervalEntry>       _interval_dict_entries;

@@ -7,7 +7,7 @@
 #include <vespa/searchlib/query/query_term_ucs4.h>
 #include <vespa/searchlib/query/weight.h>
 #include <vespa/vespalib/objects/objectvisitor.h>
-#include <vespa/vespalib/stllike/string.h>
+#include <string>
 
 namespace search::fef {
 
@@ -61,12 +61,11 @@ public:
         uint32_t _hitCount;
         uint32_t _fieldLength;
     };
-    QueryTerm(std::unique_ptr<QueryNodeResultBase> resultBase, stringref term, const string & index, Type type)
-        : QueryTerm(std::move(resultBase), term, index, type, (type == Type::EXACTSTRINGTERM)
-                                                              ? Normalizing::LOWERCASE
-                                                              : Normalizing::LOWERCASE_AND_FOLD)
+    QueryTerm(std::unique_ptr<QueryNodeResultBase> resultBase, string_view term, string index, Type type)
+        : QueryTerm(std::move(resultBase), term, std::move(index), type,
+                    (type == Type::EXACTSTRINGTERM) ? Normalizing::LOWERCASE : Normalizing::LOWERCASE_AND_FOLD)
     {}
-    QueryTerm(std::unique_ptr<QueryNodeResultBase> resultBase, stringref term, const string & index, Type type, Normalizing normalizing);
+    QueryTerm(std::unique_ptr<QueryNodeResultBase> resultBase, string_view term, string index, Type type, Normalizing normalizing);
     QueryTerm(const QueryTerm &) = delete;
     QueryTerm & operator = (const QueryTerm &) = delete;
     QueryTerm(QueryTerm &&) = delete;
@@ -96,18 +95,21 @@ public:
     FieldInfo         & getFieldInfo(size_t fid)         { return _fieldInfo[fid]; }
     size_t              getFieldInfoSize()         const { return _fieldInfo.size(); }
     QueryNodeResultBase & getQueryItem() { return *_result; }
+    const QueryNodeResultBase & getQueryItem() const noexcept { return *_result; }
     const HitList &     getHitList() const { return _hitList; }
     void visitMembers(vespalib::ObjectVisitor &visitor) const override;
-    void setIndex(const string & index_) override { _index = index_; }
+    void setIndex(std::string index_) override { _index = std::move(index_); }
     const string & getIndex() const override { return _index; }
-    void setFuzzyMaxEditDistance(uint32_t fuzzyMaxEditDistance) { _fuzzyMaxEditDistance = fuzzyMaxEditDistance; }
-    void setFuzzyPrefixLength(uint32_t fuzzyPrefixLength) { _fuzzyPrefixLength = fuzzyPrefixLength; }
+    void set_fuzzy_max_edit_distance(uint32_t fuzzy_max_edit_distance) noexcept { _fuzzy_max_edit_distance = fuzzy_max_edit_distance; }
+    void set_fuzzy_prefix_lock_length(uint32_t fuzzy_prefix_length) noexcept { _fuzzy_prefix_lock_length = fuzzy_prefix_length; }
+    void set_fuzzy_prefix_match(bool prefix_match) noexcept { _fuzzy_prefix_match = prefix_match; }
     virtual NearestNeighborQueryNode* as_nearest_neighbor_query_node() noexcept;
     virtual MultiTerm* as_multi_term() noexcept;
     virtual const MultiTerm* as_multi_term() const noexcept;
     virtual RegexpTerm* as_regexp_term() noexcept;
     virtual FuzzyTerm* as_fuzzy_term() noexcept;
     virtual const EquivQueryNode* as_equiv_query_node() const noexcept;
+    virtual bool is_same_element_query_node() const noexcept;
     virtual void unpack_match_data(uint32_t docid, const fef::ITermData& td, fef::MatchData& match_data, const fef::IIndexEnvironment& index_env);
 protected:
     template <typename HitListType>

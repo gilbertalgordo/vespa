@@ -56,9 +56,11 @@ class SignedIdentityDocumentEntityTypeResolver implements TypeIdResolver {
     public JavaType typeFromId(DatabindContext databindContext, String s) throws IOException {
         try {
             int version = Integer.parseInt(s);
-            Class<? extends SignedIdentityDocumentEntity> cls = version <= SignedIdentityDocument.LEGACY_DEFAULT_DOCUMENT_VERSION
-                    ? LegacySignedIdentityDocumentEntity.class
-                    : DefaultSignedIdentityDocumentEntity.class;
+            Class<? extends SignedIdentityDocumentEntity> cls = switch (version) {
+                case SignedIdentityDocument.LEGACY_DOCUMENT_VERSION -> V4SignedIdentityDocumentEntity.class;
+                case SignedIdentityDocument.DEFAULT_DOCUMENT_VERSION -> V5SignedIdentityDocumentEntity.class;
+                default -> throw new IllegalArgumentException("Unknown document version: " + version);
+            };
             return TypeFactory.defaultInstance().constructSpecializedType(javaType,cls);
         } catch (NumberFormatException e) {
             throw new IllegalArgumentException("Unable to deserialize document with version: \"%s\"".formatted(s));

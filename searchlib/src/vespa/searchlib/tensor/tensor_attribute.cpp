@@ -45,7 +45,7 @@ createEmptyTensor(const ValueType &type)
     return vespalib::eval::value_from_spec(empty_spec, factory);
 }
 
-vespalib::string makeWrongTensorTypeMsg(const ValueType &fieldTensorType, const ValueType &tensorType)
+std::string makeWrongTensorTypeMsg(const ValueType &fieldTensorType, const ValueType &tensorType)
 {
     return vespalib::make_string("Field tensor type is '%s' but other tensor type is '%s'",
                                  fieldTensorType.to_spec().c_str(),
@@ -54,7 +54,7 @@ vespalib::string makeWrongTensorTypeMsg(const ValueType &fieldTensorType, const 
 
 }
 
-TensorAttribute::TensorAttribute(vespalib::stringref name, const Config &cfg, TensorStore &tensorStore, const NearestNeighborIndexFactory& index_factory)
+TensorAttribute::TensorAttribute(std::string_view name, const Config &cfg, TensorStore &tensorStore, const NearestNeighborIndexFactory& index_factory)
     : NotImplementedAttribute(name, cfg),
       _refVector(cfg.getGrowStrategy(), getGenerationHolder()),
       _tensorStore(tensorStore),
@@ -103,7 +103,7 @@ TensorAttribute::onCommit()
     if (_tensorStore.consider_compact()) {
         auto context = _tensorStore.start_compact(getConfig().getCompactionStrategy());
         if (context) {
-            context->compact(vespalib::ArrayRef<AtomicEntryRef>(&_refVector[0], _refVector.size()));
+            context->compact(std::span<AtomicEntryRef>(&_refVector[0], _refVector.size()));
         }
         _compactGeneration = getCurrentGeneration();
         incGeneration();
@@ -353,7 +353,7 @@ TensorAttribute::onLoad(vespalib::Executor* executor)
 }
 
 std::unique_ptr<AttributeSaver>
-TensorAttribute::onInitSave(vespalib::stringref fileName)
+TensorAttribute::onInitSave(std::string_view fileName)
 {
     vespalib::GenerationHandler::Guard guard(getGenerationHandler().
                                              takeGuard());
@@ -418,18 +418,25 @@ TensorAttribute::complete_set_tensor(DocId docid, const vespalib::eval::Value& t
                                      std::unique_ptr<PrepareResult> prepare_result)
 {
     if (_index && !prepare_result) {
-        // The tensor cells are unchanged
-        if (!_is_dense) {
-            // but labels might have changed.
-            EntryRef ref = _tensorStore.store_tensor(tensor);
-            assert(ref.valid());
-            setTensorRef(docid, ref);
+        VectorBundle vectors(tensor.cells().data, tensor.index().size(), _subspace_type);
+        if (tensor_cells_are_unchanged(docid, vectors)) {
+            // The tensor cells are unchanged
+            if (!_is_dense) {
+                // but labels might have changed.
+                EntryRef ref = _tensorStore.store_tensor(tensor);
+                assert(ref.valid());
+                setTensorRef(docid, ref);
+            }
+            return;
         }
-        return;
     }
     internal_set_tensor(docid, tensor);
     if (_index) {
-        _index->complete_add_document(docid, std::move(prepare_result));
+        if (prepare_result) {
+            _index->complete_add_document(docid, std::move(prepare_result));
+        } else {
+            _index->add_document(docid);
+        }
     }
 }
 

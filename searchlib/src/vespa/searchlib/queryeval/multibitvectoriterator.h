@@ -5,8 +5,9 @@
 #include "multisearch.h"
 #include "unpackinfo.h"
 #include <vespa/searchlib/common/bitword.h>
+#include <vespa/vespalib/util/vespa_dll_local.h>
 
-namespace vespalib::hwaccelrated { class IAccelrated; }
+namespace vespalib::hwaccelerated { class IAccelerated; }
 
 namespace search::queryeval {
 
@@ -46,10 +47,10 @@ private:
     VESPA_DLL_LOCAL bool updateLastValueCold(uint32_t docId) noexcept __attribute__((noinline));
     VESPA_DLL_LOCAL void fetchChunk(uint32_t docId) noexcept __attribute__((noinline));
 
-    using IAccelrated = vespalib::hwaccelrated::IAccelrated;
+    using IAccelerated = vespalib::hwaccelerated::IAccelerated;
 
     Update              _update;
-    const IAccelrated & _accel;
+    const IAccelerated & _accel;
     alignas(64) Word    _lastWords[16];
     static constexpr size_t NumWordsInBatch = sizeof(_lastWords) / sizeof(Word);
 };

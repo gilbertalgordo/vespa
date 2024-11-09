@@ -54,11 +54,6 @@ public class Zone {
         this.region = region;
     }
 
-    // TODO(mpolden): For compatibility with older config models. Remove when versions < 8.76 are gone
-    public Cloud getCloud() {
-        return cloud();
-    }
-
     /** Returns the current cloud */
     public Cloud cloud() { return cloud; }
 
@@ -91,8 +86,7 @@ public class Zone {
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;
-        if (!(o instanceof Zone)) return false;
-        Zone zone = (Zone) o;
+        if (!(o instanceof Zone zone)) return false;
         return environment == zone.environment &&
                Objects.equals(region, zone.region);
     }

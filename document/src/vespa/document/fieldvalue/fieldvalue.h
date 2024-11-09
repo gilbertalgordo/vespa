@@ -128,7 +128,7 @@ public:
      * @return Returns the wrapped value if it is a string or compatible type.
      * @throws document::InvalidDataTypeConversionException
      */
-    virtual vespalib::string getAsString() const;
+    virtual std::string getAsString() const;
 
     /**
      * @return Returns the wrapped value if it is a raw or compatible type.
@@ -161,7 +161,7 @@ public:
     virtual void printXml(XmlOutputStream& out) const = 0;
 
     // Utility functions to set commonly used value types.
-    virtual FieldValue& operator=(vespalib::stringref);
+    virtual FieldValue& operator=(std::string_view);
 
     Type type() const noexcept { return _type; }
     bool isA(Type type) const noexcept { return type == _type; }

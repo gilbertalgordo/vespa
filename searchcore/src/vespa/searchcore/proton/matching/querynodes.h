@@ -30,7 +30,7 @@ public:
         FieldSpec _field_spec;
         bool attribute_field;
 
-        FieldEntry(const vespalib::string &name, uint32_t fieldId, bool is_filter) noexcept
+        FieldEntry(const std::string &name, uint32_t fieldId, bool is_filter) noexcept
             : ITermFieldData(fieldId),
               _field_spec(name, fieldId, search::fef::IllegalHandle, is_filter),
               attribute_field(false)
@@ -41,7 +41,7 @@ public:
         }
         [[nodiscard]] TermFieldHandle getHandle() const { return getHandle(MatchDataDetails::Normal); }
         [[nodiscard]] TermFieldHandle getHandle(MatchDataDetails requested_details) const override;
-        [[nodiscard]] const vespalib::string & getName() const noexcept { return _field_spec.getName(); }
+        [[nodiscard]] const std::string & getName() const noexcept { return _field_spec.getName(); }
         [[nodiscard]] bool is_filter() const noexcept { return _field_spec.isFilter(); }
     };
 
@@ -52,7 +52,7 @@ private:
 
 protected:
     void resolve(const ViewResolver &resolver, const search::fef::IIndexEnvironment &idxEnv,
-                 const vespalib::string &view, bool forceFilter);
+                 const std::string &view, bool forceFilter);
 
 public:
     ProtonTermData() noexcept;
@@ -64,7 +64,7 @@ public:
     void setDocumentFrequency(uint32_t estHits, uint32_t numDocs);
 
     // ITermData interface
-    [[nodiscard]] std::optional<vespalib::string> query_tensor_name() const override { return std::nullopt; }
+    [[nodiscard]] std::optional<std::string> query_tensor_name() const override { return std::nullopt; }
     [[nodiscard]] size_t numFields() const final { return _fields.size(); }
     [[nodiscard]] const FieldEntry &field(size_t i) const final { return _fields[i]; }
     [[nodiscard]] const FieldEntry *lookupField(uint32_t fieldId) const final;
@@ -121,17 +121,20 @@ using ProtonFalse =       search::query::SimpleFalse;
 struct ProtonEquiv final : public ProtonTermBase<search::query::Equiv> {
     search::fef::MatchDataLayout children_mdl;
     using ProtonTermBase::ProtonTermBase;
+    ~ProtonEquiv() override;
 };
 
 struct ProtonSameElement final : public ProtonTermBase<search::query::SameElement> {
     using ProtonTermBase::ProtonTermBase;
+    ~ProtonSameElement() override;
 };
 
 struct ProtonNearestNeighborTerm : public ProtonTermBase<search::query::NearestNeighborTerm> {
     using ProtonTermBase::ProtonTermBase;
-    [[nodiscard]] std::optional<vespalib::string> query_tensor_name() const override {
+    [[nodiscard]] std::optional<std::string> query_tensor_name() const override {
         return ProtonTermBase::NearestNeighborTerm::get_query_tensor_name();
     }
+    ~ProtonNearestNeighborTerm() override;
 };
 
 using ProtonLocationTerm = ProtonTerm<search::query::LocationTerm>;
@@ -180,5 +183,21 @@ struct ProtonNodeTypes {
     using FuzzyTerm =           ProtonFuzzyTerm;
     using InTerm =              ProtonInTerm;
 };
+
+extern template struct ProtonTerm<search::query::LocationTerm>;
+extern template struct ProtonTerm<search::query::NumberTerm>;
+extern template struct ProtonTerm<search::query::Phrase>;
+extern template struct ProtonTerm<search::query::PrefixTerm>;
+extern template struct ProtonTerm<search::query::RangeTerm>;
+extern template struct ProtonTerm<search::query::StringTerm>;
+extern template struct ProtonTerm<search::query::SubstringTerm>;
+extern template struct ProtonTerm<search::query::SuffixTerm>;
+extern template struct ProtonTerm<search::query::WeightedSetTerm>;
+extern template struct ProtonTerm<search::query::DotProduct>;
+extern template struct ProtonTerm<search::query::WandTerm>;
+extern template struct ProtonTerm<search::query::PredicateQuery>;
+extern template struct ProtonTerm<search::query::RegExpTerm>;
+extern template struct ProtonTerm<search::query::FuzzyTerm>;
+extern template struct ProtonTerm<search::query::InTerm>;
 
 }

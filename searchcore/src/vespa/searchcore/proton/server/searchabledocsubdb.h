@@ -46,16 +46,20 @@ public:
         matching::QueryLimiter            &_queryLimiter;
         const std::atomic<steady_time>    &_now_ref;
         vespalib::Executor                &_warmupExecutor;
+        std::shared_ptr<search::diskindex::IPostingListCache> _posting_list_cache;
 
         Context(const FastAccessDocSubDB::Context &fastUpdCtx,
                 matching::QueryLimiter &queryLimiter,
                 const std::atomic<steady_time> & now_ref,
-                vespalib:: Executor &warmupExecutor)
+                vespalib:: Executor &warmupExecutor,
+                std::shared_ptr<search::diskindex::IPostingListCache> posting_list_cache)
             : _fastUpdCtx(fastUpdCtx),
               _queryLimiter(queryLimiter),
               _now_ref(now_ref),
-              _warmupExecutor(warmupExecutor)
+              _warmupExecutor(warmupExecutor),
+              _posting_list_cache(std::move(posting_list_cache))
         { }
+        ~Context();
     };
 
 private:
@@ -72,6 +76,7 @@ private:
     vespalib::Executor                         &_warmupExecutor;
     std::shared_ptr<GidToLidChangeHandler>      _realGidToLidChangeHandler;
     DocumentDBFlushConfig                       _flushConfig;
+    std::shared_ptr<search::diskindex::IPostingListCache> _posting_list_cache;
 
     // Note: lifetime of indexManager must be handled by caller.
     std::shared_ptr<initializer::InitializerTask>
@@ -79,9 +84,10 @@ private:
                                   const IndexConfig &indexCfg,
                                   std::shared_ptr<searchcorespi::IIndexManager::SP> indexManager) const;
 
-    void setupIndexManager(searchcorespi::IIndexManager::SP indexManager);
+    void setupIndexManager(searchcorespi::IIndexManager::SP indexManager, const Schema& schema);
     void initFeedView(IAttributeWriter::SP attrWriter, const DocumentDBConfig &configSnapshot);
     void reconfigureMatchingMetrics(const vespa::config::search::RankProfilesConfig &config);
+    void reconfigure_index_metrics(const Schema& schema);
 
     bool reconfigure(std::unique_ptr<Configure> configure) override;
     void reconfigureIndexSearchable();
@@ -126,11 +132,11 @@ public:
 
     SerialNum getOldestFlushedSerial() override;
     SerialNum getNewestFlushedSerial() override;
-    void setIndexSchema(const Schema::SP &schema, SerialNum serialNum) override;
+    void setIndexSchema(std::shared_ptr<const Schema> schema, SerialNum serialNum) override;
     size_t getNumActiveDocs() const override;
     search::SearchableStats getSearchableStats() const override ;
-    IDocumentRetriever::UP getDocumentRetriever() override;
-    matching::MatchingStats getMatcherStats(const vespalib::string &rankProfile) const override;
+    std::shared_ptr<IDocumentRetriever> getDocumentRetriever() override;
+    matching::MatchingStats getMatcherStats(const std::string &rankProfile) const override;
     void close() override;
     std::shared_ptr<IDocumentDBReference> getDocumentDBReference() override;
     void tearDownReferences(IDocumentDBReferenceResolver &resolver) override;

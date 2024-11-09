@@ -36,20 +36,20 @@ public class SetVarTestCase {
         Expression exp = new SetVarExpression("foo");
         assertVerify(DataType.INT, exp, DataType.INT);
         assertVerify(DataType.STRING, exp, DataType.STRING);
-        assertVerifyThrows(null, exp, "Expected any input, but no input is specified");
+        assertVerifyThrows("Invalid expression 'set_var foo': Expected any input, but no input is specified", null, exp);
 
         try {
-            new VerificationContext().setVariable("foo", DataType.INT).setValueType(DataType.STRING).execute(exp);
+            new VerificationContext().setVariable("foo", DataType.INT).setCurrentType(DataType.STRING).verify(exp);
             fail();
         } catch (VerificationException e) {
-            assertEquals("Attempting to assign conflicting types to variable 'foo', int vs string", e.getMessage());
+            assertEquals("Invalid expression 'set_var foo': Cannot set variable 'foo' to type string: It is already set to type int", e.getMessage());
         }
     }
 
     @Test
     public void requireThatSymbolIsWritten() {
         ExecutionContext ctx = new ExecutionContext(new SimpleTestAdapter());
-        ctx.setValue(new IntegerFieldValue(69));
+        ctx.setCurrentValue(new IntegerFieldValue(69));
         new SetVarExpression("out").execute(ctx);
 
         FieldValue val = ctx.getVariable("out");
@@ -60,16 +60,16 @@ public class SetVarTestCase {
     @Test
     public void requireThatVariableTypeCanNotChange() {
         VerificationContext ctx = new VerificationContext(new SimpleTestAdapter());
-        ctx.setValueType(DataType.INT);
+        ctx.setCurrentType(DataType.INT);
         new SetVarExpression("out").verify(ctx);
 
         try {
-            ctx.setValueType(DataType.STRING);
+            ctx.setCurrentType(DataType.STRING);
             new SetVarExpression("out").verify(ctx);
             fail();
         } catch (VerificationException e) {
             assertTrue(e.getExpressionType().equals(SetVarExpression.class));
-            assertEquals("Attempting to assign conflicting types to variable 'out', int vs string", e.getMessage());
+            assertEquals("Invalid expression 'set_var out': Cannot set variable 'out' to type string: It is already set to type int", e.getMessage());
         }
     }
 

@@ -122,7 +122,7 @@ public class MetricsReporter extends NodeRepositoryMaintainer {
         byCluster.forEach((clusterId, clusterNodes) -> {
             Metric.Context context = getContext(dimensions(clusterId.application(), clusterId.cluster()));
             updateExclusiveSwitchMetrics(clusterNodes, nodes, context);
-            updateClusterCostMetrics(clusterId, clusterNodes, context);
+            updateClusterMetrics(clusterId, clusterNodes, context);
         });
     }
 
@@ -133,8 +133,7 @@ public class MetricsReporter extends NodeRepositoryMaintainer {
         metric.set(ConfigServerMetrics.NODES_EXCLUSIVE_SWITCH_FRACTION.baseName(), exclusiveSwitchRatio,context);
     }
 
-    private void updateClusterCostMetrics(ClusterId clusterId,
-                                          List<Node>  clusterNodes, Metric.Context context) {
+    private void updateClusterMetrics(ClusterId clusterId, List<Node>  clusterNodes, Metric.Context context) {
         var cluster = nodeRepository().applications().get(clusterId.application())
                                       .flatMap(application -> application.cluster(clusterId.cluster()));
         if (cluster.isEmpty()) return;
@@ -143,6 +142,9 @@ public class MetricsReporter extends NodeRepositoryMaintainer {
         metric.set(ConfigServerMetrics.CLUSTER_LOAD_IDEAL_CPU.baseName(), cluster.get().target().ideal().cpu(), context);
         metric.set(ConfigServerMetrics.CLUSTER_LOAD_IDEAL_MEMORY.baseName(), cluster.get().target().ideal().memory(), context);
         metric.set(ConfigServerMetrics.CLUSTER_LOAD_IDEAL_DISK.baseName(), cluster.get().target().ideal().disk(), context);
+        metric.set(ConfigServerMetrics.CLUSTER_LOAD_PEAK_CPU.baseName(), cluster.get().target().peak().cpu(), context);
+        metric.set(ConfigServerMetrics.CLUSTER_LOAD_PEAK_MEMORY.baseName(), cluster.get().target().peak().memory(), context);
+        metric.set(ConfigServerMetrics.CLUSTER_LOAD_PEAK_DISK.baseName(), cluster.get().target().peak().disk(), context);
     }
 
     private void updateZoneMetrics() {
@@ -169,8 +171,6 @@ public class MetricsReporter extends NodeRepositoryMaintainer {
      * NB: Keep this metric set in sync with internal configserver metric pre-aggregation
      */
     private void updateNodeMetrics(Node node, ServiceModel serviceModel) {
-        if (node.state() != State.active)
-            return;
         Metric.Context context;
         Optional<Allocation> allocation = node.allocation();
         if (allocation.isPresent()) {
@@ -235,8 +235,18 @@ public class MetricsReporter extends NodeRepositoryMaintainer {
                     long suspendedSeconds = info.suspendedSince()
                             .map(suspendedSince -> Duration.between(suspendedSince, clock().instant()).getSeconds())
                             .orElse(0L);
-                    metric.set(ConfigServerMetrics.SUSPENDED_SECONDS.baseName(), suspendedSeconds, context);
+                    metric.add(ConfigServerMetrics.SUSPENDED_SECONDS.baseName(), suspendedSeconds, context);
                 });
+        if (nodeRepository().zone().environment().isTest() &&
+                node.state() == State.active &&
+                node.type() == NodeType.tenant) {
+            node.history()
+                    .event(History.Event.Type.activated)
+                    .ifPresent(event -> {
+                        var activeSeconds = Duration.between(event.at(), clock().instant()).getSeconds();
+                        metric.add(ConfigServerMetrics.ACTIVE_SECONDS.baseName(), activeSeconds, context);
+                    });
+        }
 
         long numberOfServices;
         List<ServiceInstance> services = serviceModel.getServiceInstancesByHostName().get(hostname);
@@ -358,12 +368,12 @@ public class MetricsReporter extends NodeRepositoryMaintainer {
     private void updateContainerMetrics(NodeList nodes) {
         NodeResources totalCapacity = getCapacityTotal(nodes);
         metric.set(ConfigServerMetrics.HOSTED_VESPA_DOCKER_TOTAL_CAPACITY_CPU.baseName(), totalCapacity.vcpu(), null);
-        metric.set(ConfigServerMetrics.HOSTED_VESPA_DOCKER_TOTAL_CAPACITY_MEM.baseName(), totalCapacity.memoryGb(), null);
+        metric.set(ConfigServerMetrics.HOSTED_VESPA_DOCKER_TOTAL_CAPACITY_MEM.baseName(), totalCapacity.memoryGiB(), null);
         metric.set(ConfigServerMetrics.HOSTED_VESPA_DOCKER_TOTAL_CAPACITY_DISK.baseName(), totalCapacity.diskGb(), null);
 
         NodeResources totalFreeCapacity = getFreeCapacityTotal(nodes);
         metric.set(ConfigServerMetrics.HOSTED_VESPA_DOCKER_FREE_CAPACITY_CPU.baseName(), totalFreeCapacity.vcpu(), null);
-        metric.set(ConfigServerMetrics.HOSTED_VESPA_DOCKER_FREE_CAPACITY_MEM.baseName(), totalFreeCapacity.memoryGb(), null);
+        metric.set(ConfigServerMetrics.HOSTED_VESPA_DOCKER_FREE_CAPACITY_MEM.baseName(), totalFreeCapacity.memoryGiB(), null);
         metric.set(ConfigServerMetrics.HOSTED_VESPA_DOCKER_FREE_CAPACITY_DISK.baseName(), totalFreeCapacity.diskGb(), null);
     }
 
@@ -380,7 +390,7 @@ public class MetricsReporter extends NodeRepositoryMaintainer {
                             var context = getContext(dimensions(applicationId));
 
                             metric.set(ConfigServerMetrics.HOSTED_VESPA_DOCKER_ALLOCATED_CAPACITY_CPU.baseName(), allocatedCapacity.vcpu(), context);
-                            metric.set(ConfigServerMetrics.HOSTED_VESPA_DOCKER_ALLOCATED_CAPACITY_MEM.baseName(), allocatedCapacity.memoryGb(), context);
+                            metric.set(ConfigServerMetrics.HOSTED_VESPA_DOCKER_ALLOCATED_CAPACITY_MEM.baseName(), allocatedCapacity.memoryGiB(), context);
                             metric.set(ConfigServerMetrics.HOSTED_VESPA_DOCKER_ALLOCATED_CAPACITY_DISK.baseName(), allocatedCapacity.diskGb(), context);
                         }
                 );

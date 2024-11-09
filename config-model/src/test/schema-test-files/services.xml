@@ -166,6 +166,10 @@
         <min-threads>500</min-threads>
         <queue-size>0</queue-size>
       </threadpool>
+
+      <significance>
+        <model model-id="idf-wiki-simple-english" path="models/idf-simple-english-wiki.json.zst" />
+      </significance>
     </search>
 
     <processing>

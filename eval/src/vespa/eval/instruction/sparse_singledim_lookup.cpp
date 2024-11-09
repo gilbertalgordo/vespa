@@ -19,8 +19,8 @@ template <typename CT>
 double my_sparse_singledim_lookup_fallback(const Value::Index &idx, const CT *cells, string_id key) {
     size_t subspace = 0;
     const string_id *key_ref = &key;
-    auto view = idx.create_view(ConstArrayRef<size_t>{&subspace, 1});
-    view->lookup(ConstArrayRef<const string_id *>{&key_ref, 1});
+    auto view = idx.create_view(std::span<const size_t>{&subspace, 1});
+    view->lookup(std::span<const string_id* const>{&key_ref, 1});
     if (!view->next_result({}, subspace)) {
         return 0.0;
     }
@@ -37,7 +37,7 @@ double my_fast_sparse_singledim_lookup(const FastAddrMap *map, const CT *cells, 
 template <typename CT>
 void my_sparse_singledim_lookup_op(InterpretedFunction::State &state, uint64_t) {
     const auto &idx = state.peek(1).index();
-    const CT *cells = state.peek(1).cells().typify<CT>().cbegin();
+    const CT *cells = state.peek(1).cells().typify<CT>().data();
     int64_t number(state.peek(0).as_double());
     Handle handle = Handle::handle_from_number(number);
     double result = __builtin_expect(is_fast(idx), true)

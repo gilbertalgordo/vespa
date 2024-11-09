@@ -3,8 +3,8 @@ package com.yahoo.tensor.functions;
 
 import com.yahoo.tensor.TensorType;
 import com.yahoo.tensor.evaluation.Name;
+import com.yahoo.tensor.evaluation.TypeContext;
 
-import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 
@@ -17,36 +17,45 @@ import java.util.Objects;
 public class Expand<NAMETYPE extends Name> extends CompositeTensorFunction<NAMETYPE> {
 
     private final TensorFunction<NAMETYPE> argument;
-    private final String dimensionName;
+    private final String dimension;
 
     public Expand(TensorFunction<NAMETYPE> argument, String dimension) {
         this.argument = argument;
-        this.dimensionName = dimension;
+        this.dimension = dimension;
     }
 
     @Override
-    public List<TensorFunction<NAMETYPE>> arguments() { return Collections.singletonList(argument); }
+    public List<TensorFunction<NAMETYPE>> arguments() { return List.of(argument); }
 
     @Override
     public TensorFunction<NAMETYPE> withArguments(List<TensorFunction<NAMETYPE>> arguments) {
         if (arguments.size() != 1)
             throw new IllegalArgumentException("Expand must have 1 argument, got " + arguments.size());
-        return new Expand<>(arguments.get(0), dimensionName);
+        return new Expand<>(arguments.get(0), dimension);
     }
 
     @Override
     public PrimitiveTensorFunction<NAMETYPE> toPrimitive() {
-        TensorType type = new TensorType.Builder(TensorType.Value.INT8).indexed(dimensionName, 1).build();
+        return toPrimitive(dimension);
+    }
+
+    @Override
+    public final TensorType type(TypeContext<NAMETYPE> context) {
+        return toPrimitive(context.resolveBinding(dimension)).type(context);
+    }
+
+    private PrimitiveTensorFunction<NAMETYPE> toPrimitive(String dimension) {
+        TensorType type = new TensorType.Builder(TensorType.Value.INT8).indexed(dimension, 1).build();
         Generate<NAMETYPE> expansion = new Generate<>(type, ScalarFunctions.constant(1.0));
         return new Join<>(expansion, argument, ScalarFunctions.multiply());
     }
 
     @Override
     public String toString(ToStringContext<NAMETYPE> context) {
-        return "expand(" + argument.toString(context) + ", " + dimensionName + ")";
+        return "expand(" + argument.toString(context) + ", " + context.resolveBinding(dimension) + ")";
     }
 
     @Override
-    public int hashCode() { return Objects.hash("expand", argument, dimensionName); }
+    public int hashCode() { return Objects.hash("expand", argument, dimension); }
 
 }

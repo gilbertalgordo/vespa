@@ -4,14 +4,15 @@ package com.yahoo.vespa.config.server;
 import ai.vespa.http.DomainName;
 import ai.vespa.http.HttpURL;
 import ai.vespa.http.HttpURL.Query;
+import ai.vespa.http.HttpURL.Scheme;
 import com.yahoo.cloud.config.ConfigserverConfig;
+import com.yahoo.collections.Pair;
 import com.yahoo.component.Version;
 import com.yahoo.component.annotation.Inject;
 import com.yahoo.config.FileReference;
 import com.yahoo.config.application.api.ApplicationFile;
 import com.yahoo.config.application.api.ApplicationMetaData;
 import com.yahoo.config.application.api.DeployLogger;
-import com.yahoo.config.model.api.HostInfo;
 import com.yahoo.config.model.api.ServiceInfo;
 import com.yahoo.config.provision.ActivationContext;
 import com.yahoo.config.provision.ApplicationId;
@@ -42,6 +43,7 @@ import com.yahoo.path.Path;
 import com.yahoo.slime.Slime;
 import com.yahoo.transaction.NestedTransaction;
 import com.yahoo.transaction.Transaction;
+import com.yahoo.vespa.applicationmodel.HostName;
 import com.yahoo.vespa.applicationmodel.InfrastructureApplication;
 import com.yahoo.vespa.config.server.application.ActiveTokenFingerprints;
 import com.yahoo.vespa.config.server.application.ActiveTokenFingerprints.Token;
@@ -68,6 +70,7 @@ import com.yahoo.vespa.config.server.deploy.DeployHandlerLogger;
 import com.yahoo.vespa.config.server.deploy.Deployment;
 import com.yahoo.vespa.config.server.deploy.InfraDeployerProvider;
 import com.yahoo.vespa.config.server.filedistribution.FileDirectory;
+import com.yahoo.vespa.config.server.http.HttpErrorResponse;
 import com.yahoo.vespa.config.server.http.InternalServerException;
 import com.yahoo.vespa.config.server.http.LogRetriever;
 import com.yahoo.vespa.config.server.http.SecretStoreValidator;
@@ -99,6 +102,7 @@ import com.yahoo.vespa.defaults.Defaults;
 import com.yahoo.vespa.flags.FlagSource;
 import com.yahoo.vespa.flags.InMemoryFlagSource;
 import com.yahoo.vespa.orchestrator.Orchestrator;
+import com.yahoo.yolean.Exceptions;
 
 import java.io.File;
 import java.io.IOException;
@@ -109,15 +113,7 @@ import java.nio.file.attribute.BasicFileAttributes;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.Collection;
-import java.util.Comparator;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Optional;
-import java.util.OptionalLong;
-import java.util.Set;
+import java.util.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.UnaryOperator;
 import java.util.logging.Level;
@@ -191,7 +187,7 @@ public class ApplicationRepository implements com.yahoo.config.provision.Deploye
              Clock.systemUTC(),
              testerClient,
              metric,
-             new SecretStoreValidator(secretStore),
+             new SecretStoreValidator(),
              new DefaultClusterReindexingStatusClient(),
              new ActiveTokenFingerprintsClient(),
              flagSource);
@@ -242,7 +238,7 @@ public class ApplicationRepository implements com.yahoo.config.provision.Deploye
         private LogRetriever logRetriever = new LogRetriever();
         private TesterClient testerClient = new TesterClient();
         private Metric metric = new NullMetric();
-        private SecretStoreValidator secretStoreValidator = new SecretStoreValidator(new SecretStoreProvider().get());
+        private SecretStoreValidator secretStoreValidator = new SecretStoreValidator();
         private FlagSource flagSource = new InMemoryFlagSource();
         private ConfigConvergenceChecker configConvergenceChecker = new ConfigConvergenceChecker();
         private Map<String, List<Token>> activeTokens = Map.of();
@@ -583,7 +579,6 @@ public class ApplicationRepository implements com.yahoo.config.provision.Deploye
      */
     public boolean delete(ApplicationId applicationId) {
         Tenant tenant = getTenant(applicationId);
-        if (tenant == null) return false;
 
         TenantApplications tenantApplications = tenant.getApplicationRepo();
         NestedTransaction transaction = new NestedTransaction();
@@ -660,21 +655,25 @@ public class ApplicationRepository implements com.yahoo.config.provision.Deploye
         return fileDistributionStatus.status(getApplication(applicationId), timeout);
     }
 
-    public List<String> deleteUnusedFileDistributionReferences(FileDirectory fileDirectory, Duration keepFileReferencesDuration) {
+    public List<String> deleteUnusedFileDistributionReferences(FileDirectory fileDirectory) {
         Set<String> fileReferencesInUse = getFileReferencesInUse();
         log.log(Level.FINE, () -> "File references in use : " + fileReferencesInUse);
-        Instant instant = clock.instant().minus(keepFileReferencesDuration);
-        log.log(Level.FINE, () -> "Remove unused file references last modified before " + instant);
 
-        List<String> fileReferencesToDelete = sortedUnusedFileReferences(fileDirectory.getRoot(), fileReferencesInUse, instant);
-        // Do max 20 at a time
-        var toDelete = fileReferencesToDelete.subList(0, Math.min(fileReferencesToDelete.size(), 20));
-        if (toDelete.size() > 0) {
-            log.log(Level.FINE, () -> "Will delete file references not in use: " + toDelete);
-            toDelete.forEach(fileReference -> fileDirectory.delete(new FileReference(fileReference), this::isFileReferenceInUse));
-            log.log(Level.FINE, () -> "Deleted " + toDelete.size() + " file references not in use");
-        }
-        return toDelete;
+        List<String> toDelete = sortedUnusedFileReferences(fileDirectory.getRoot(), fileReferencesInUse);
+        log.log(Level.FINE, () -> "File references not in use: " + toDelete);
+        List<String> deleted = new ArrayList<>();
+        toDelete.forEach(fileReference -> {
+            if (fileDirectory.delete(new FileReference(fileReference), this::isFileReferenceInUse, this::isFileReferenceOld))
+                deleted.add(fileReference);
+        });
+        log.log(Level.FINE, () -> "Deleted " + deleted.size() + " file references not in use");
+        return deleted;
+    }
+
+    private boolean isFileReferenceOld(File file) {
+        var keepFileReferencesDuration = Duration.ofMinutes(configserverConfig.keepUnusedFileReferencesMinutes());
+        var instant = clock.instant().minus(keepFileReferencesDuration);
+        return isLastModifiedBefore(file, instant);
     }
 
     private boolean isFileReferenceInUse(FileReference fileReference) {
@@ -692,14 +691,15 @@ public class ApplicationRepository implements com.yahoo.config.provision.Deploye
         return fileReferencesInUse;
     }
 
-    private List<String> sortedUnusedFileReferences(File fileReferencesPath, Set<String> fileReferencesInUse, Instant instant) {
+    private List<String> sortedUnusedFileReferences(File fileReferencesPath, Set<String> fileReferencesInUse) {
         Set<String> fileReferencesOnDisk = getFileReferencesOnDisk(fileReferencesPath);
         log.log(Level.FINEST, () -> "File references on disk (in " + fileReferencesPath + "): " + fileReferencesOnDisk);
         return fileReferencesOnDisk
                 .stream()
                 .filter(fileReference -> ! fileReferencesInUse.contains(fileReference))
-                .filter(fileReference -> isLastModifiedBefore(new File(fileReferencesPath, fileReference), instant))
                 .sorted(Comparator.comparing(a -> lastModified(new File(fileReferencesPath, a))))
+                // Do max 20 at a time
+                .limit(20)
                 .toList();
     }
 
@@ -713,7 +713,10 @@ public class ApplicationRepository implements com.yahoo.config.provision.Deploye
     }
 
     public Tenant getTenant(ApplicationId applicationId) {
-        return tenantRepository.getTenant(applicationId.tenant());
+        var tenant = tenantRepository.getTenant(applicationId.tenant());
+        if (tenant == null) throw new NotFoundException("Tenant '" + applicationId.tenant() + "' not found");
+
+        return tenant;
     }
 
     Application getApplication(ApplicationId applicationId) {
@@ -722,8 +725,6 @@ public class ApplicationRepository implements com.yahoo.config.provision.Deploye
 
     private Application getApplication(ApplicationId applicationId, Optional<Version> version) {
         Tenant tenant = getTenant(applicationId);
-        if (tenant == null) throw new NotFoundException("Tenant '" + applicationId.tenant() + "' not found");
-
         Optional<ApplicationVersions> activeApplicationVersions = tenant.getSessionRepository().activeApplicationVersions(applicationId);
         if (activeApplicationVersions.isEmpty()) throw new NotFoundException("Unknown application id '" + applicationId + "'");
 
@@ -772,10 +773,7 @@ public class ApplicationRepository implements com.yahoo.config.provision.Deploye
     }
 
     public List<Version> getAllVersions(ApplicationId applicationId) {
-        Optional<ApplicationVersions> applicationSet = getActiveApplicationSet(applicationId);
-        return applicationSet.isEmpty()
-                ? List.of()
-                : applicationSet.get().versions(applicationId);
+        return getActiveApplicationVersions(applicationId).map(ApplicationVersions::versions).orElse(List.of());
     }
 
     public HttpResponse validateSecretStore(ApplicationId applicationId, SystemName systemName, Slime slime) {
@@ -809,9 +807,17 @@ public class ApplicationRepository implements com.yahoo.config.provision.Deploye
 
     // ---------------- Logs ----------------------------------------------------------------
 
-    public HttpResponse getLogs(ApplicationId applicationId, Optional<DomainName> hostname, String apiParams) {
-        String logServerURI = getLogServerURI(applicationId, hostname) + apiParams;
-        return logRetriever.getLogs(logServerURI, activationTime(applicationId));
+    public HttpResponse getLogs(ApplicationId applicationId, Optional<DomainName> hostname, Query apiParams) {
+        Exception exception = null;
+        for (var uri : getLogServerUris(applicationId, hostname)) {
+            try {
+                return logRetriever.getLogs(uri.withQuery(apiParams), activationTime(applicationId));
+            } catch (RuntimeException e) {
+                exception = e;
+                log.log(Level.INFO, e.getMessage());
+            }
+        }
+        return HttpErrorResponse.internalServerError(Exceptions.toMessageString(exception));
     }
 
     // ---------------- Methods to do call against tester containers in hosted ------------------------------
@@ -837,7 +843,11 @@ public class ApplicationRepository implements com.yahoo.config.provision.Deploye
     }
 
     private String getTesterHostname(ApplicationId applicationId) {
-        return getTesterServiceInfo(applicationId).getHostName();
+        String hostname = getTesterServiceInfo(applicationId).getHostName();
+        if (orchestrator.getNodeStatus(new HostName(hostname)).isSuspended())
+            throw new TesterSuspendedException("tester container is suspended");
+
+        return hostname;
     }
 
     private int getTesterPort(ApplicationId applicationId) {
@@ -853,6 +863,12 @@ public class ApplicationRepository implements com.yahoo.config.provision.Deploye
                 .filter(service -> CONTAINER.serviceName.equals(service.getServiceType()))
                 .findFirst()
                 .orElseThrow(() -> new InternalServerException("Could not find any tester container for tester app " + applicationId.toFullString()));
+    }
+
+    public static class TesterSuspendedException extends RuntimeException {
+        public TesterSuspendedException(String message) {
+            super(message);
+        }
     }
 
     // ---------------- Session operations ----------------------------------------------------------------
@@ -887,31 +903,15 @@ public class ApplicationRepository implements com.yahoo.config.provision.Deploye
      * @return the active session, or null if there is no active session for the given application id.
      */
     public Optional<Session> getActiveSession(ApplicationId applicationId) {
-        return getActiveRemoteSession(applicationId);
-    }
-
-    /**
-     * Gets the active Session for the given application id.
-     *
-     * @return the active session, or null if there is no active session for the given application id.
-     */
-    public Optional<Session> getActiveRemoteSession(ApplicationId applicationId) {
-        Tenant tenant = getTenant(applicationId);
-        if (tenant == null) throw new IllegalArgumentException("Could not find any tenant for '" + applicationId + "'");
-        return getActiveSession(tenant, applicationId);
+        return getActiveSession(getTenant(applicationId), applicationId);
     }
 
     public long getSessionIdForApplication(ApplicationId applicationId) {
         Tenant tenant = getTenant(applicationId);
-        if (tenant == null) throw new NotFoundException("Tenant '" + applicationId.tenant() + "' not found");
-        return getSessionIdForApplication(tenant, applicationId);
-    }
-
-    private long getSessionIdForApplication(Tenant tenant, ApplicationId applicationId) {
-        TenantApplications applicationRepo = tenant.getApplicationRepo();
-        if (! applicationRepo.exists(applicationId))
+        if (! tenant.getApplicationRepo().exists(applicationId))
             throw new NotFoundException("Unknown application id '" + applicationId + "'");
-        return applicationRepo.requireActiveSessionOf(applicationId);
+
+        return requireActiveSession(tenant, applicationId).getSessionId();
     }
 
     public void validateThatSessionIsNotActive(Tenant tenant, long sessionId) {
@@ -932,7 +932,7 @@ public class ApplicationRepository implements com.yahoo.config.provision.Deploye
                                           DeployLogger deployLogger) {
         Tenant tenant = getTenant(applicationId);
         SessionRepository sessionRepository = tenant.getSessionRepository();
-        Session fromSession = getExistingSession(tenant, applicationId);
+        Session fromSession = requireActiveSession(tenant, applicationId);
         return sessionRepository.createSessionFromExisting(fromSession, internalRedeploy, timeoutBudget, deployLogger).getSessionId();
     }
 
@@ -954,18 +954,9 @@ public class ApplicationRepository implements com.yahoo.config.provision.Deploye
         return session.getSessionId();
     }
 
-    public void deleteExpiredLocalSessions() {
-        for (Tenant tenant : tenantRepository.getAllTenants()) {
-            tenant.getSessionRepository().deleteExpiredSessions(session -> sessionIsActiveForItsApplication(tenant, session));
-        }
-    }
-
-    public int deleteExpiredRemoteSessions(Clock clock) {
-        return tenantRepository.getAllTenants()
-                .stream()
-                .map(tenant -> tenant.getSessionRepository().deleteExpiredRemoteSessions(clock, session -> sessionIsActiveForItsApplication(tenant, session)))
-                .mapToInt(i -> i)
-                .sum();
+    public void deleteExpiredSessions() {
+        tenantRepository.getAllTenants()
+                .forEach(tenant -> tenant.getSessionRepository().deleteExpiredRemoteAndLocalSessions(session -> sessionIsActiveForItsApplication(tenant, session)));
     }
 
     private boolean sessionIsActiveForItsApplication(Tenant tenant, Session session) {
@@ -1026,11 +1017,7 @@ public class ApplicationRepository implements com.yahoo.config.provision.Deploye
     }
 
     private ApplicationCuratorDatabase requireDatabase(ApplicationId id) {
-        Tenant tenant = getTenant(id);
-        if (tenant == null)
-            throw new NotFoundException("Tenant '" + id.tenant().value() + "' not found");
-
-        return tenant.getApplicationRepo().database();
+        return getTenant(id).getApplicationRepo().database();
     }
 
     public ApplicationReindexing getReindexing(ApplicationId id) {
@@ -1039,11 +1026,7 @@ public class ApplicationRepository implements com.yahoo.config.provision.Deploye
     }
 
     public void modifyReindexing(ApplicationId id, UnaryOperator<ApplicationReindexing> modifications) {
-        Tenant tenant = getTenant(id);
-        if (tenant == null)
-            throw new NotFoundException("Tenant '" + id.tenant().value() + "' not found");
-
-        tenant.getApplicationRepo().database().modifyReindexing(id, ApplicationReindexing.empty(), modifications);
+        getTenant(id).getApplicationRepo().database().modifyReindexing(id, ApplicationReindexing.empty(), modifications);
     }
 
     public PendingRestarts getPendingRestarts(ApplicationId id) {
@@ -1091,7 +1074,7 @@ public class ApplicationRepository implements com.yahoo.config.provision.Deploye
         return session;
     }
 
-    public Optional<ApplicationVersions> getActiveApplicationSet(ApplicationId appId) {
+    public Optional<ApplicationVersions> getActiveApplicationVersions(ApplicationId appId) {
         return getTenant(appId).getSessionRepository().activeApplicationVersions(appId);
     }
 
@@ -1118,10 +1101,9 @@ public class ApplicationRepository implements com.yahoo.config.provision.Deploye
         }
     }
 
-    // TODO: Merge this and getActiveSession(), they are almost identical
-    private Session getExistingSession(Tenant tenant, ApplicationId applicationId) {
-        TenantApplications applicationRepo = tenant.getApplicationRepo();
-        return getRemoteSession(tenant, applicationRepo.requireActiveSessionOf(applicationId));
+    private Session requireActiveSession(Tenant tenant, ApplicationId applicationId) {
+        return getActiveSession(tenant, applicationId)
+                .orElseThrow(() -> new IllegalArgumentException("Application '" + applicationId + "' has no active session."));
     }
 
     public Optional<Session> getActiveSession(Tenant tenant, ApplicationId applicationId) {
@@ -1136,7 +1118,7 @@ public class ApplicationRepository implements com.yahoo.config.provision.Deploye
 
     public double getQuotaUsageRate(ApplicationId applicationId) {
         var application = getApplication(applicationId);
-        return application.getModel().provisioned().all().values().stream()
+        return application.getModel().provisioned().capacities().values().stream()
                 .map(Capacity::maxResources)// TODO: This may be unspecified -> 0
                 .mapToDouble(resources -> resources.nodes() * resources.nodeResources().cost())
                 .sum();
@@ -1173,33 +1155,41 @@ public class ApplicationRepository implements com.yahoo.config.provision.Deploye
         }
     }
 
-    private String getLogServerURI(ApplicationId applicationId, Optional<DomainName> hostname) {
+    private List<HttpURL> getLogServerUris(ApplicationId applicationId, Optional<DomainName> hostname) {
         // Allow to get logs from a given hostname if the application is under the hosted-vespa tenant.
         // We make no validation that the hostname is actually allocated to the given application since
-        // most applications under hosted-vespa are not known to the model and it's OK for a user to get
+        // most applications under hosted-vespa are not known to the model, and it's OK for a user to get
         // logs for any host if they are authorized for the hosted-vespa tenant.
         if (hostname.isPresent() && HOSTED_VESPA_TENANT.equals(applicationId.tenant())) {
             int port = List.of(InfrastructureApplication.CONFIG_SERVER.id(), InfrastructureApplication.CONTROLLER.id()).contains(applicationId) ? 19071 : 8080;
-            return "http://" + hostname.get().value() + ":" + port + "/logs";
+            return List.of(HttpURL.create(Scheme.http, hostname.get(), port).withPath(HttpURL.Path.parse("logs")));
         }
 
-        Application application = getApplication(applicationId);
-        Collection<HostInfo> hostInfos = application.getModel().getHosts();
+        ApplicationVersions applicationVersions = getActiveApplicationVersions(applicationId)
+                .orElseThrow(() -> new NotFoundException("Unable to get logs for for " + applicationId + " (application not found)"));
+        List<Pair<String, Integer>> hostInfo = logserverHostInfo(applicationVersions);
+        return hostInfo.stream()
+                .map(h -> HttpURL.create(Scheme.http, DomainName.of(h.getFirst()), h.getSecond(), HttpURL.Path.parse("logs")))
+                .toList();
+    }
 
-        HostInfo logServerHostInfo = hostInfos.stream()
-                .filter(host -> host.getServices().stream()
+    // Returns a list with hostname and port pairs for logserver container for all models/versions
+    private List<Pair<String, Integer>> logserverHostInfo(ApplicationVersions applicationVersions) {
+        return applicationVersions.applications().stream()
+                .peek(app -> log.log(Level.FINE, "Finding logserver host and port for version " + app.getVespaVersion()))
+                .map(Application::getModel)
+                .flatMap(model -> model.getHosts().stream())
+                .filter(hostInfo -> hostInfo.getServices().stream()
                         .anyMatch(serviceInfo -> serviceInfo.getServiceType().equalsIgnoreCase("logserver")))
-                .findFirst().orElseThrow(() -> new IllegalArgumentException("Could not find host info for logserver"));
-
-        ServiceInfo logService = logServerHostInfo.getServices().stream()
-                                                  .filter(service -> LOGSERVER_CONTAINER.serviceName.equals(service.getServiceType()))
-                                                  .findFirst()
-                                                  .or(() -> logServerHostInfo.getServices().stream()
-                                                                             .filter(service -> CONTAINER.serviceName.equals(service.getServiceType()))
-                                                                             .findFirst())
-                                                  .orElseThrow(() -> new IllegalArgumentException("No container running on logserver host"));
-        int port = servicePort(logService);
-        return "http://" + logServerHostInfo.getHostname() + ":" + port + "/logs";
+                .map(hostInfo -> hostInfo.getServices().stream()
+                        .filter(service -> LOGSERVER_CONTAINER.serviceName.equals(service.getServiceType()))
+                        .findFirst()
+                        .or(() -> hostInfo.getServices().stream()
+                                .filter(service -> CONTAINER.serviceName.equals(service.getServiceType()))
+                                .findFirst())
+                        .orElseThrow(() -> new IllegalArgumentException("No container running on logserver host")))
+                .map(s -> new Pair<>(s.getHostName(), servicePort(s)))
+                .toList();
     }
 
     private int servicePort(ServiceInfo serviceInfo) {

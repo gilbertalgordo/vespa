@@ -8,7 +8,6 @@
 #include <vespa/document/update/documentupdate.h>
 #include <vespa/document/update/fieldpathupdates.h>
 #include <vespa/documentapi/documentapi.h>
-#include <vespa/vespalib/test/insertion_operators.h>
 #include <vespa/vespalib/util/featureset.h>
 #include <array>
 
@@ -20,17 +19,16 @@ namespace documentapi {
 
 // This is not version-dependent
 TEST(MessagesTest, concrete_types_have_expected_sizes) {
-    EXPECT_EQ(sizeof(GetDocumentMessage),    280u);
+    EXPECT_EQ(sizeof(GetDocumentMessage),    152u + 2 *sizeof(std::string));
     EXPECT_EQ(sizeof(GetDocumentReply),      128u);
-    EXPECT_EQ(sizeof(vespalib::string),      64u);
-    EXPECT_EQ(sizeof(TestAndSetCondition),   sizeof(vespalib::string));
+    EXPECT_EQ(sizeof(TestAndSetCondition),   sizeof(std::string) + sizeof(uint64_t));
     EXPECT_EQ(sizeof(DocumentMessage),       112u);
     EXPECT_EQ(sizeof(TestAndSetMessage),     sizeof(TestAndSetCondition) + sizeof(DocumentMessage));
-    EXPECT_EQ(sizeof(PutDocumentMessage),    sizeof(TestAndSetMessage) + 32);
+    EXPECT_EQ(sizeof(PutDocumentMessage),    sizeof(TestAndSetMessage) + 40);
     EXPECT_EQ(sizeof(WriteDocumentReply),    112u);
     EXPECT_EQ(sizeof(UpdateDocumentReply),   120u);
-    EXPECT_EQ(sizeof(UpdateDocumentMessage), sizeof(TestAndSetMessage) + 32);
-    EXPECT_EQ(sizeof(RemoveDocumentMessage), sizeof(TestAndSetMessage) + 104);
+    EXPECT_EQ(sizeof(UpdateDocumentMessage), sizeof(TestAndSetMessage) + 40);
+    EXPECT_EQ(sizeof(RemoveDocumentMessage), sizeof(TestAndSetMessage) + 48 + sizeof(std::string));
     EXPECT_EQ(sizeof(RemoveDocumentReply),   120u);
 }
 
@@ -42,6 +40,14 @@ struct Messages80Test : MessageFixture {
     }
 
     void try_visitor_reply(const std::string& filename, uint32_t type);
+
+    void check_update_create_flag(uint32_t lang, const std::string& name, bool expected_create, bool expected_cached) {
+        auto obj = deserialize(name, DocumentProtocol::MESSAGE_UPDATEDOCUMENT, lang);
+        ASSERT_TRUE(obj);
+        auto& msg = dynamic_cast<UpdateDocumentMessage&>(*obj);
+        EXPECT_EQ(msg.has_cached_create_if_missing(), expected_cached);
+        EXPECT_EQ(msg.create_if_missing(), expected_create);
+    };
 };
 
 namespace {
@@ -56,6 +62,12 @@ namespace {
 document::Document::SP
 createDoc(const DocumentTypeRepo& repo, const string& type_name, const string& id) {
     return std::make_shared<document::Document>(repo, *repo.getDocumentType(type_name), document::DocumentId(id));
+}
+
+std::vector<std::pair<std::string, TestAndSetCondition>> tas_conditions() {
+    return {{"cond-only",   TestAndSetCondition("There's just one condition")},
+            {"ts-only",     TestAndSetCondition(0x1badcafef000000dULL)},
+            {"cond-and-ts", TestAndSetCondition(0x1badcafef000000dULL, "There's just one condition")}};
 }
 
 }
@@ -112,6 +124,7 @@ TEST_F(Messages80Test, put_document_message) {
 
     msg.setTimestamp(666);
     msg.setCondition(TestAndSetCondition("There's just one condition"));
+    msg.set_persisted_timestamp(0x1badcafef000000dULL);
 
     serialize("PutDocumentMessage", msg);
 
@@ -125,6 +138,7 @@ TEST_F(Messages80Test, put_document_message) {
         EXPECT_GT(deserializedMsg.getApproxSize(), 0u);
         EXPECT_EQ(deserializedMsg.getCondition().getSelection(), msg.getCondition().getSelection());
         EXPECT_FALSE(deserializedMsg.get_create_if_non_existent());
+        EXPECT_EQ(deserializedMsg.persisted_timestamp(), 0x1badcafef000000dULL);
     }
 
     //-------------------------------------------------------------------------
@@ -137,6 +151,23 @@ TEST_F(Messages80Test, put_document_message) {
         ASSERT_TRUE(obj);
         auto& decoded = dynamic_cast<PutDocumentMessage&>(*obj);
         EXPECT_TRUE(decoded.get_create_if_non_existent());
+    }
+}
+
+TEST_F(Messages80Test, tas_conditions_can_have_selection_and_or_timestamp) {
+    auto doc = createDoc(type_repo(), "testdoc", "id:ns:testdoc::");
+    // We assume TaS codec is the same across message types, so use Put as a proxy for all TaS-support types.
+    for (const auto& [tas_type, tas_cond] : tas_conditions()) {
+        PutDocumentMessage msg(doc);
+        msg.setCondition(tas_cond);
+        std::string msg_and_cond_name = "PutDocumentMessage-" + tas_type;
+        serialize(msg_and_cond_name, msg);
+        for (auto lang : languages()) {
+            auto obj = deserialize(msg_and_cond_name, DocumentProtocol::MESSAGE_PUTDOCUMENT, lang);
+            ASSERT_TRUE(obj);
+            auto& decoded = dynamic_cast<PutDocumentMessage&>(*obj);
+            EXPECT_EQ(decoded.getCondition(), msg.getCondition());
+        }
     }
 }
 
@@ -176,8 +207,50 @@ TEST_F(Messages80Test, update_document_message) {
         EXPECT_EQ(decoded.getOldTimestamp(), msg.getOldTimestamp());
         EXPECT_EQ(decoded.getNewTimestamp(), msg.getNewTimestamp());
         EXPECT_GT(decoded.getApproxSize(), 0u); // Actual value depends on protobuf size
-        EXPECT_EQ(decoded.getCondition().getSelection(), msg.getCondition().getSelection());
+        EXPECT_EQ(decoded.getCondition(), msg.getCondition());
     }
+}
+
+TEST_F(Messages80Test, update_create_if_missing_flag_can_be_read_from_legacy_update_propagation) {
+    // Legacy binary files were created _prior_ to the create_if_missing flag being
+    // written as part of the serialization process.
+    for (auto lang : languages()) {
+        check_update_create_flag(lang, "UpdateDocumentMessage-legacy-no-create-if-missing",   false, false);
+        check_update_create_flag(lang, "UpdateDocumentMessage-legacy-with-create-if-missing", true,  false);
+    }
+}
+
+TEST_F(Messages80Test, update_create_if_missing_flag_is_propagated) {
+    const DocumentTypeRepo& repo = type_repo();
+    const document::DocumentType& docType = *repo.getDocumentType("testdoc");
+
+    auto make_update_msg = [&](bool create_if_missing, bool cache_flag) {
+        auto doc_update = std::make_shared<document::DocumentUpdate>(repo, docType, document::DocumentId("id:ns:testdoc::"));
+        doc_update->addFieldPathUpdate(std::make_unique<document::RemoveFieldPathUpdate>("intfield", "testdoc.intfield > 0"));
+        doc_update->setCreateIfNonExistent(create_if_missing);
+        auto msg = std::make_shared<UpdateDocumentMessage>(std::move(doc_update));
+        msg->setOldTimestamp(666u);
+        msg->setNewTimestamp(777u);
+        msg->setCondition(TestAndSetCondition("There's just one condition"));
+        if (cache_flag) {
+            msg->set_cached_create_if_missing(create_if_missing);
+        }
+        return msg;
+    };
+
+    serialize("UpdateDocumentMessage-no-create-if-missing",   *make_update_msg(false, true));
+    serialize("UpdateDocumentMessage-with-create-if-missing", *make_update_msg(true,  true));
+
+    for (auto lang : languages()) {
+        check_update_create_flag(lang, "UpdateDocumentMessage-no-create-if-missing",   false, true);
+        check_update_create_flag(lang, "UpdateDocumentMessage-with-create-if-missing", true,  true);
+    }
+    // The Java protocol implementation always serializes with a cached create-flag,
+    // but the C++ side does it conditionally. So these files are only checked for C++.
+    serialize("UpdateDocumentMessage-no-create-if-missing-uncached",   *make_update_msg(false, false));
+    serialize("UpdateDocumentMessage-with-create-if-missing-uncached", *make_update_msg(true,  false));
+    check_update_create_flag(LANG_CPP, "UpdateDocumentMessage-no-create-if-missing-uncached",   false, false);
+    check_update_create_flag(LANG_CPP, "UpdateDocumentMessage-with-create-if-missing-uncached", true,  false);
 }
 
 TEST_F(Messages80Test, update_document_reply) {
@@ -199,6 +272,7 @@ TEST_F(Messages80Test, update_document_reply) {
 TEST_F(Messages80Test, remove_document_message) {
     RemoveDocumentMessage msg(document::DocumentId("id:ns:testdoc::"));
     msg.setCondition(TestAndSetCondition("There's just one condition"));
+    msg.set_persisted_timestamp(0x1badcafef000000dULL);
 
     serialize("RemoveDocumentMessage", msg);
 
@@ -207,7 +281,8 @@ TEST_F(Messages80Test, remove_document_message) {
         ASSERT_TRUE(obj);
         auto& ref = dynamic_cast<RemoveDocumentMessage &>(*obj);
         EXPECT_EQ(ref.getDocumentId().toString(), "id:ns:testdoc::");
-        EXPECT_EQ(ref.getCondition().getSelection(), msg.getCondition().getSelection());
+        EXPECT_EQ(ref.getCondition(), msg.getCondition());
+        EXPECT_EQ(ref.persisted_timestamp(), 0x1badcafef000000dULL);
     }
 }
 

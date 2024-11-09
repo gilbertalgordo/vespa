@@ -1,9 +1,11 @@
 // Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include "nodetype.h"
-#include <vespa/vespalib/util/exceptions.h>
 #include <vespa/vespalib/stllike/asciistream.h>
+#include <vespa/vespalib/util/exceptions.h>
 #include <cassert>
+#include <ostream>
+#include <string>
 
 namespace storage::lib {
 
@@ -14,7 +16,7 @@ const NodeType NodeType::STORAGE("storage", NodeType::Type::STORAGE);
 const NodeType NodeType::DISTRIBUTOR("distributor", NodeType::Type::DISTRIBUTOR);
 
 const NodeType&
-NodeType::get(vespalib::stringref serialized)
+NodeType::get(std::string_view serialized)
 {
     if (serialized == STORAGE._name) {
         return STORAGE;
@@ -23,7 +25,7 @@ NodeType::get(vespalib::stringref serialized)
         return DISTRIBUTOR;
     }
     throw vespalib::IllegalArgumentException(
-            "Unknown node type " + serialized + " given.", VESPA_STRLOC);
+            "Unknown node type " + std::string(serialized) + " given.", VESPA_STRLOC);
 }
 
 const NodeType&
@@ -40,7 +42,7 @@ NodeType::get(Type type) noexcept
     abort();
 }
 
-NodeType::NodeType(vespalib::stringref name, Type type) noexcept
+NodeType::NodeType(std::string_view name, Type type) noexcept
     : _type(type), _name(name)
 {
 }

@@ -26,6 +26,7 @@ public:
     ZcPosOccRandRead();
     ~ZcPosOccRandRead();
 
+    using DictionaryLookupResult = index::DictionaryLookupResult;
     using PostingListCounts = index::PostingListCounts;
     using PostingListHandle = index::PostingListHandle;
 
@@ -34,22 +35,21 @@ public:
      * handle must exceed lifetime of iterator.
      */
     std::unique_ptr<queryeval::SearchIterator>
-    createIterator(const PostingListCounts &counts, const PostingListHandle &handle,
-                   const fef::TermFieldMatchDataArray &matchData, bool usebitVector) const override;
+    createIterator(const DictionaryLookupResult& lookup_result, const PostingListHandle& handle,
+                   const fef::TermFieldMatchDataArray &matchData) const override;
 
     /**
      * Read (possibly partial) posting list into handle.
      */
-    void readPostingList(const PostingListCounts &counts, uint32_t firstSegment,
-                         uint32_t numSegments, PostingListHandle &handle) override;
+    PostingListHandle read_posting_list(const DictionaryLookupResult& lookup_result) override;
 
-    bool open(const vespalib::string &name, const TuneFileRandRead &tuneFileRead) override;
+    bool open(const std::string &name, const TuneFileRandRead &tuneFileRead) override;
     bool close() override;
     template <typename DecodeContext>
-    void readHeader(const vespalib::string &identifier);
+    void readHeader(const std::string &identifier);
     virtual void readHeader();
-    static const vespalib::string &getIdentifier();
-    static const vespalib::string &getSubIdentifier();
+    static const std::string &getIdentifier();
+    static const std::string &getSubIdentifier();
     const index::FieldLengthInfo &get_field_length_info() const override;
 };
 
@@ -61,8 +61,8 @@ public:
 
     void readHeader() override;
 
-    static const vespalib::string &getIdentifier();
-    static const vespalib::string &getSubIdentifier();
+    static const std::string &getIdentifier();
+    static const std::string &getSubIdentifier();
 };
 
 

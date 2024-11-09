@@ -1,6 +1,7 @@
 // Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.indexinglanguage.expressions;
 
+import com.yahoo.document.ArrayDataType;
 import com.yahoo.document.DataType;
 import com.yahoo.document.datatypes.BoolFieldValue;
 
@@ -19,19 +20,29 @@ public class LiteralBoolExpression extends Expression {
     }
 
     @Override
-    protected void doExecute(ExecutionContext context) {
-        context.setValue(new BoolFieldValue(value));
+    public DataType setInputType(DataType inputType, VerificationContext context) {
+        super.setInputType(inputType, context);
+        return DataType.BOOL;
+    }
+
+    @Override
+    public DataType setOutputType(DataType outputType, VerificationContext context) {
+        super.setOutputType(DataType.BOOL, outputType, null, context);
+        return AnyDataType.instance;
     }
 
     @Override
     protected void doVerify(VerificationContext context) {
-        context.setValueType(createdOutputType());
+        context.setCurrentType(createdOutputType());
     }
 
     @Override
-    public DataType createdOutputType() {
-        return DataType.BOOL;
+    protected void doExecute(ExecutionContext context) {
+        context.setCurrentValue(new BoolFieldValue(value));
     }
+
+    @Override
+    public DataType createdOutputType() { return DataType.BOOL; }
 
     @Override
     public String toString() {

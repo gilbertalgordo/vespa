@@ -2,8 +2,9 @@
 
 #pragma once
 
-#include <vespa/vespalib/stllike/string.h>
+#include <cstring>
 #include <ostream>
+#include <string>
 
 namespace vespalib {
 
@@ -20,12 +21,10 @@ struct Memory
     Memory(const char *str) noexcept : data(str), size(strlen(str)) {}
     Memory(const std::string &str) noexcept
         : data(str.data()), size(str.size()) {}
-    Memory(const vespalib::string &str) noexcept
-        : data(str.data()), size(str.size()) {}
-    Memory(vespalib::stringref str_ref) noexcept
+    Memory(std::string_view str_ref) noexcept
         : data(str_ref.data()), size(str_ref.size()) {}
-    vespalib::string make_string() const;
-    vespalib::stringref make_stringref() const { return stringref(data, size); }
+    std::string make_string() const;
+    std::string_view make_stringview() const noexcept { return {data, size}; }
     bool operator == (const Memory &rhs) const noexcept {
         if (size != rhs.size) {
             return false;

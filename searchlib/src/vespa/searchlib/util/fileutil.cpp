@@ -1,6 +1,7 @@
 // Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
 #include "fileutil.hpp"
+#include "disk_space_calculator.h"
 #include "filesizecalculator.h"
 #include <vespa/vespalib/util/exceptions.h>
 #include <vespa/vespalib/util/guard.h>
@@ -21,7 +22,7 @@ using vespalib::getLastErrorString;
 
 namespace search::fileutil {
 
-LoadedMmap::LoadedMmap(const vespalib::string &fileName)
+LoadedMmap::LoadedMmap(const std::string &fileName)
     : LoadedBuffer(nullptr, 0),
       _mapBuffer(nullptr),
       _mapSize(0)
@@ -33,6 +34,8 @@ LoadedMmap::LoadedMmap(const vespalib::string &fileName)
         if (res == 0) {
             uint64_t fileSize = stbuf.st_size;
             size_t sz = fileSize;
+            DiskSpaceCalculator disk_space_calculator;
+            _size_on_disk = disk_space_calculator(fileSize);
             if (sz) {
                 void *tmpBuffer = mmap(nullptr, sz, PROT_READ, MAP_PRIVATE, fd.fd(), 0);
                 if (tmpBuffer != MAP_FAILED) {
@@ -83,7 +86,7 @@ LoadedMmap::~LoadedMmap() {
 namespace search {
 
 std::unique_ptr<FastOS_FileInterface>
-FileUtil::openFile(const vespalib::string &fileName)
+FileUtil::openFile(const std::string &fileName)
 {
     auto file = std::make_unique<Fast_BufferedFile>();
     file->EnableDirectIO();
@@ -98,7 +101,7 @@ using fileutil::LoadedBuffer;
 using fileutil::LoadedMmap;
 
 LoadedBuffer::UP
-FileUtil::loadFile(const vespalib::string &fileName)
+FileUtil::loadFile(const std::string &fileName)
 {
     auto data = std::make_unique<LoadedMmap>(fileName);
     FastOS_File file(fileName.c_str());

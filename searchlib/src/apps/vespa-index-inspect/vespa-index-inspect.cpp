@@ -131,7 +131,7 @@ usageHeader()
 class FieldOptions
 {
 public:
-    std::vector<vespalib::string> _fields;
+    std::vector<std::string> _fields;
     std::vector<uint32_t> _ids;
 
     FieldOptions()
@@ -141,7 +141,7 @@ public:
     }
     ~FieldOptions();
 
-    void addField(const vespalib::string &field) { _fields.push_back(field); }
+    void addField(const std::string &field) { _fields.push_back(field); }
     bool empty() const { return _ids.empty(); }
     void validateFields(const Schema &schema);
 };
@@ -176,9 +176,9 @@ public:
 
 class ShowPostingListSubApp : public SubApp
 {
-    vespalib::string _indexDir;
+    std::string _indexDir;
     FieldOptions _fieldOptions;
-    vespalib::string _word;
+    std::string _word;
     bool _verbose;
     bool _readmmap;
     bool _directio;
@@ -364,14 +364,13 @@ bool
 ShowPostingListSubApp::readWordList(const SchemaUtil::IndexIterator &index)
 {
     std::vector<std::string> &words = _wordsv[index.getIndex()];
-    WordNumMapping &wm = _wmv[index.getIndex()];
 
     search::TuneFileSeqRead tuneFileRead;
     PageDict4FileSeqRead wr;
-    vespalib::string fieldDir = _indexDir + "/" + index.getName();
+    std::string fieldDir = _indexDir + "/" + index.getName();
     if (!wr.open(fieldDir + "/dictionary", tuneFileRead))
         return false;
-    vespalib::string word;
+    std::string word;
     PostingListCounts counts;
     uint64_t wordNum = noWordNum();
     wr.readWord(word, wordNum, counts);
@@ -381,7 +380,6 @@ ShowPostingListSubApp::readWordList(const SchemaUtil::IndexIterator &index)
         words.push_back(word);
         wr.readWord(word, wordNum, counts);
     }
-    wm.setup(words.size() - 1);
     if (!wr.close())
         return false;
     return true;
@@ -420,7 +418,7 @@ ShowPostingListSubApp::readPostings(const SchemaUtil::IndexIterator &index,
 {
     FieldReader r;
     std::unique_ptr<PostingListFileRandRead> postingfile(new Zc4PosOccRandRead);
-    vespalib::string mangledName = _indexDir + "/" + index.getName() +
+    std::string mangledName = _indexDir + "/" + index.getName() +
                               "/";
     search::TuneFileSeqRead tuneFileRead;
     r.setup(_wmv[index.getIndex()], _dm);
@@ -514,8 +512,8 @@ ShowPostingListSubApp::showPostingList()
     Schema schema;
     uint32_t numFields = 1;
     std::string schemaName = _indexDir + "/schema.txt";
-    std::vector<vespalib::string> fieldNames;
-    vespalib::string shortName;
+    std::vector<std::string> fieldNames;
+    std::string shortName;
     if (!schema.loadFromFile(schemaName)) {
         LOG(error,
             "Could not load schema from %s", schemaName.c_str());
@@ -564,27 +562,20 @@ ShowPostingListSubApp::showPostingList()
             offsetAndCounts._counts._bitLength,
             offsetAndCounts._counts._numDocs);
     }
-    using Counts = PostingListCounts;
     using Handle = PostingListHandle;
-    using CH = std::pair<Counts, Handle>;
+    using CH = std::pair<DictionaryLookupResult, Handle>;
     using CHAP = std::unique_ptr<CH>;
     CHAP handle(new CH);
-    handle->first = offsetAndCounts._counts;
-    handle->second._bitOffset = offsetAndCounts._offset;
-    handle->second._bitLength = handle->first._bitLength;
-    const uint32_t first_segment = 0;
-    const uint32_t num_segments = 0;    // means all segments
-    handle->second._file = postingfile.get();
-    handle->second._file->readPostingList(handle->first,
-                                       first_segment,
-                                       num_segments,
-                                       handle->second);
+    handle->first.wordNum = wordNum;
+    handle->first.counts = offsetAndCounts._counts;
+    handle->first.bitOffset = offsetAndCounts._offset;
+    handle->second = postingfile->read_posting_list(handle->first);
     std::vector<TermFieldMatchData> tfmdv(numFields);
     TermFieldMatchDataArray tfmda;
     for (auto& tfmd : tfmdv) {
         tfmda.add(&tfmd);
     }
-    auto sb = handle->second.createIterator(handle->first, tfmda);
+    auto sb = postingfile->createIterator(handle->first, handle->second, tfmda);
     sb->initFullRange();
     uint32_t docId = 0;
     bool first = true;
@@ -773,7 +764,7 @@ DumpWordsSubApp::dumpWords()
     }
 
     SchemaUtil::IndexIterator index(schema, _fieldOptions._ids[0]);
-    vespalib::string fieldDir = _indexDir + "/" + index.getName();
+    std::string fieldDir = _indexDir + "/" + index.getName();
     PageDict4FileSeqRead wordList;
     std::string wordListName = fieldDir + "/dictionary";
     search::TuneFileSeqRead tuneFileRead;
@@ -782,7 +773,7 @@ DumpWordsSubApp::dumpWords()
         std::_Exit(1);
     }
     uint64_t wordNum = 0;
-    vespalib::string word;
+    std::string word;
     PostingListCounts counts;
     for (;;) {
         wordList.readWord(word, wordNum, counts);

@@ -176,7 +176,7 @@ func testDocumentDecoder(t *testing.T, jsonLike string) {
 	if len(docs) != len(result) {
 		t.Errorf("len(result) = %d, want %d", len(result), len(docs))
 	}
-	for i := 0; i < len(docs); i++ {
+	for i := range len(docs) {
 		got := result[i]
 		want := docs[i]
 		if !got.Equal(want) {
@@ -206,7 +206,7 @@ func TestDocumentDecoderInvalid(t *testing.T) {
 		t.Errorf("unexpected error: %s", err)
 	}
 	_, err = dec.Decode()
-	wantErr := "invalid operation at byte offset 110: json: invalid character '\\n' within string (expecting non-control character)"
+	wantErr := "invalid operation at byte offset 110: jsontext: invalid character '\\n' within string (expecting non-control character)"
 	if err.Error() != wantErr {
 		t.Errorf("want error %q, got %q", wantErr, err.Error())
 	}

@@ -2,7 +2,7 @@
 
 #pragma once
 
-#include <vespa/vespalib/stllike/string.h>
+#include <string>
 
 namespace search::docsummary {
 
@@ -12,7 +12,7 @@ namespace search::docsummary {
  */
 struct JuniperDFWExplicitItemData
 {
-    vespalib::stringref _index;
+    std::string_view _index;
     int32_t _weight;
 
     JuniperDFWExplicitItemData()

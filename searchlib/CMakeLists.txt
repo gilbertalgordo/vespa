@@ -4,11 +4,11 @@ vespa_define_module(
     vespalog
     vespalib
     vespaeval
-    fnet
-    configdefinitions
-    metrics
-    document
-    config_cloudconfig
+    vespa_fnet
+    vespa_configdefinitions
+    vespa_metrics
+    vespa_document
+    vespa_config
 
     EXTERNAL_DEPENDS
     ${VESPA_GLIBC_RT_LIB}
@@ -60,6 +60,7 @@ vespa_define_module(
     src/apps/vespa-attribute-inspect
     src/apps/vespa-fileheader-inspect
     src/apps/vespa-index-inspect
+    src/apps/vespa-query-analyzer
     src/apps/vespa-ranking-expression-analyzer
 
     TESTS
@@ -120,6 +121,8 @@ vespa_define_module(
     src/tests/diskindex/fieldwriter
     src/tests/diskindex/fusion
     src/tests/diskindex/pagedict4
+    src/tests/diskindex/posting_list_cache
+    src/tests/diskindex/zc
     src/tests/docstore/chunk
     src/tests/docstore/document_store
     src/tests/docstore/document_store_visitor
@@ -140,6 +143,7 @@ vespa_define_module(
     src/tests/features/element_completeness
     src/tests/features/element_similarity_feature
     src/tests/features/euclidean_distance
+    src/tests/features/first_phase_rank
     src/tests/features/imported_dot_product
     src/tests/features/internal_max_reduce_prod_join_feature
     src/tests/features/item_raw_score
@@ -197,6 +201,7 @@ vespa_define_module(
     src/tests/queryeval/blueprint
     src/tests/queryeval/dot_product
     src/tests/queryeval/equiv
+    src/tests/queryeval/exact_nearest_neighbor
     src/tests/queryeval/fake_searchable
     src/tests/queryeval/filter_search
     src/tests/queryeval/flow
@@ -206,7 +211,6 @@ vespa_define_module(
     src/tests/queryeval/matching_elements_search
     src/tests/queryeval/monitoring_search_iterator
     src/tests/queryeval/multibitvectoriterator
-    src/tests/queryeval/nearest_neighbor
     src/tests/queryeval/or_speed
     src/tests/queryeval/parallel_weak_and
     src/tests/queryeval/predicate

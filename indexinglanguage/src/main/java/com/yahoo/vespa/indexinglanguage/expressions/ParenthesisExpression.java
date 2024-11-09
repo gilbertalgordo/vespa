@@ -20,13 +20,23 @@ public class ParenthesisExpression extends CompositeExpression {
         this.innerExp = innerExp;
     }
 
-    public Expression getInnerExpression() {
-        return innerExp;
-    }
+    public Expression getInnerExpression() { return innerExp; }
 
     @Override
     public ParenthesisExpression convertChildren(ExpressionConverter converter) {
         return new ParenthesisExpression(converter.convert(innerExp));
+    }
+
+    @Override
+    public DataType setInputType(DataType inputType, VerificationContext context) {
+        super.setInputType(inputType, context);
+        return innerExp.setInputType(inputType, context);
+    }
+
+    @Override
+    public DataType setOutputType(DataType outputType, VerificationContext context) {
+        super.setOutputType(outputType, context);
+        return innerExp.setInputType(outputType, context);
     }
 
     @Override
@@ -35,13 +45,13 @@ public class ParenthesisExpression extends CompositeExpression {
     }
 
     @Override
-    protected void doExecute(ExecutionContext context) {
-        innerExp.execute(context);
+    protected void doVerify(VerificationContext context) {
+        innerExp.verify(context);
     }
 
     @Override
-    protected void doVerify(VerificationContext context) {
-        innerExp.verify(context);
+    protected void doExecute(ExecutionContext context) {
+        innerExp.execute(context);
     }
 
     @Override

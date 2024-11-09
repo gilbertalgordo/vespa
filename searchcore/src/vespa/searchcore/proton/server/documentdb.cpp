@@ -137,9 +137,9 @@ DocumentDB::masterExecute(FunctionType &&function) {
 }
 
 DocumentDB::SP
-DocumentDB::create(const vespalib::string &baseDir,
+DocumentDB::create(const std::string &baseDir,
                    DocumentDBConfig::SP currentSnapshot,
-                   const vespalib::string &tlsSpec,
+                   const std::string &tlsSpec,
                    matching::QueryLimiter &queryLimiter,
                    const DocTypeName &docTypeName,
                    document::BucketSpace bucketSpace,
@@ -152,17 +152,19 @@ DocumentDB::create(const vespalib::string &baseDir,
                    std::shared_ptr<search::attribute::Interlock> attribute_interlock,
                    ConfigStore::UP config_store,
                    InitializeThreads initializeThreads,
-                   const vespalib::HwInfo &hwInfo)
+                   const vespalib::HwInfo &hwInfo,
+                   std::shared_ptr<search::diskindex::IPostingListCache> posting_list_cache)
 {
     return DocumentDB::SP(
             new DocumentDB(baseDir, std::move(currentSnapshot), tlsSpec, queryLimiter, docTypeName, bucketSpace,
                            protonCfg, owner, shared_service, tlsWriterFactory,
                            metricsWireService, fileHeaderContext, std::move(attribute_interlock),
-                           std::move(config_store), std::move(initializeThreads), hwInfo));
+                           std::move(config_store), std::move(initializeThreads), hwInfo, std::move(posting_list_cache)));
 }
-DocumentDB::DocumentDB(const vespalib::string &baseDir,
+
+DocumentDB::DocumentDB(const std::string &baseDir,
                        DocumentDBConfig::SP configSnapshot,
-                       const vespalib::string &tlsSpec,
+                       const std::string &tlsSpec,
                        matching::QueryLimiter &queryLimiter,
                        const DocTypeName &docTypeName,
                        document::BucketSpace bucketSpace,
@@ -175,7 +177,8 @@ DocumentDB::DocumentDB(const vespalib::string &baseDir,
                        std::shared_ptr<search::attribute::Interlock> attribute_interlock,
                        ConfigStore::UP config_store,
                        InitializeThreads initializeThreads,
-                       const vespalib::HwInfo &hwInfo)
+                       const vespalib::HwInfo &hwInfo,
+                       std::shared_ptr<search::diskindex::IPostingListCache> posting_list_cache)
     : DocumentDBConfigOwner(),
       IReplayConfig(),
       IFeedHandlerOwner(),
@@ -219,7 +222,7 @@ DocumentDB::DocumentDB(const vespalib::string &baseDir,
       _subDBs(*this, *this, *_feedHandler, _docTypeName,
               _writeService, shared_service.shared(), fileHeaderContext, std::move(attribute_interlock),
               metricsWireService, getMetrics(), queryLimiter, shared_service.nowRef(),
-              _configMutex, _baseDir, hwInfo),
+              _configMutex, _baseDir, hwInfo, posting_list_cache),
       _maintenanceController(shared_service.transport(), _writeService.master(), _refCount, _docTypeName),
       _jobTrackers(),
       _calc(),
@@ -431,7 +434,6 @@ DocumentDB::applyConfig(DocumentDBConfig::SP configSnapshot, SerialNum serialNum
 
     auto start_time = vespalib::steady_clock::now();
     DocumentDBConfig::ComparisonResult cmpres;
-    Schema::SP oldSchema;
     {
         lock_guard guard(_configMutex);
         assert(_activeConfigSnapshot.get());
@@ -513,7 +515,7 @@ DocumentDB::applyConfig(DocumentDBConfig::SP configSnapshot, SerialNum serialNum
     auto end_time = vespalib::steady_clock::now();
     auto state_string = DDBState::getStateString(_state.getState());
     auto config_state_string = DDBState::getConfigStateString(_state.getConfigState());
-    vespalib::string saved_string(save_config ? "yes" : "no");
+    std::string saved_string(save_config ? "yes" : "no");
     LOG(info, "DocumentDB(%s): Applied config, state=%s, config_state=%s, saved=%s, serialNum=%" PRIu64 ", %.3fs of %.3fs in write thread",
         _docTypeName.toString().c_str(),
         state_string.c_str(),
@@ -566,8 +568,11 @@ DocumentDB::close()
 
     // The attributes in the ready sub db is also the total set of attributes.
     DocumentDBTaggedMetrics &metrics = getMetrics();
-    _metricsWireService.cleanAttributes(metrics.ready.attributes);
-    _metricsWireService.cleanAttributes(metrics.notReady.attributes);
+    _metricsWireService.set_attributes(metrics.ready.attributes, {});
+    _metricsWireService.set_attributes(metrics.notReady.attributes, {});
+
+    // Tear down index metrics
+    _metricsWireService.set_index_fields(metrics.ready.index, {});
 
     masterExecute([this] () {
         closeSubDBs();
@@ -859,8 +864,8 @@ DocumentDB::reportStatus() const
     StatusReport::Params params("documentdb:" + _docTypeName.toString());
     const DDBState::State rawState = _state.getState();
     {
-        const vespalib::string state(DDBState::getStateString(rawState));
-        const vespalib::string configState(DDBState::getConfigStateString(_state.getConfigState()));
+        const std::string state(DDBState::getStateString(rawState));
+        const std::string configState(DDBState::getConfigStateString(_state.getConfigState()));
         params.internalState(state).internalConfigState(configState);
     }
 
@@ -869,7 +874,7 @@ DocumentDB::reportStatus() const
                 message("DocumentDB initializing components"));
     } else if (_feedHandler->isDoingReplay()) {
         float progress = _feedHandler->getReplayProgress() * 100.0f;
-        vespalib::string msg = vespalib::make_string("DocumentDB replay transaction log on startup (%u%% done)",
+        std::string msg = vespalib::make_string("DocumentDB replay transaction log on startup (%u%% done)",
                 static_cast<uint32_t>(progress));
         return StatusReport::create(params.state(StatusReport::PARTIAL).progress(progress).message(msg));
     } else if (rawState == DDBState::State::APPLY_LIVE_CONFIG) {
@@ -879,7 +884,7 @@ DocumentDB::reportStatus() const
                rawState == DDBState::State::REDO_REPROCESS)
     {
         float progress = _subDBs.getReprocessingProgress() * 100.0f;
-        vespalib::string msg = make_string("DocumentDB reprocess on startup (%u%% done)",
+        std::string msg = make_string("DocumentDB reprocess on startup (%u%% done)",
                                            static_cast<uint32_t>(progress));
         return StatusReport::create(params.state(StatusReport::PARTIAL).progress(progress).message(msg));
     } else if (_state.getDelayedConfig()) {
@@ -1028,7 +1033,7 @@ namespace {
 void
 notifyBucketsChanged(const documentmetastore::IBucketHandler &metaStore,
                      IBucketModifiedHandler &handler,
-                     const vespalib::string &name)
+                     const std::string &name)
 {
     bucketdb::Guard guard = metaStore.getBucketDB().takeGuard();
     document::BucketId::List buckets = guard->getBuckets();
@@ -1091,7 +1096,7 @@ DocumentDB::waitForOnlineState()
     _state.waitForOnlineState();
 }
 
-vespalib::string
+std::string
 DocumentDB::getName() const
 {
     return _docTypeName.getName();

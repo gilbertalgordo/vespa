@@ -103,7 +103,7 @@ public class CapacityCheckerTester {
                         child.type = NodeType.tenant;
                         NodeResources cnr = childResources.get(j % childResources.size());
                         child.minCpuCores = cnr.vcpu();
-                        child.minMainMemoryAvailableGb = cnr.memoryGb();
+                        child.minMainMemoryAvailableGb = cnr.memoryGiB();
                         child.minDiskAvailableGb = cnr.diskGb();
                         child.fastDisk = true;
                         child.ipAddresses = List.of();

@@ -139,7 +139,7 @@ public class FleetController implements NodeListener, SlobrokListener, SystemSta
     public static FleetController create(FleetControllerOptions options, MetricReporter metricReporter) throws Exception {
         var context = new FleetControllerContextImpl(options);
         var timer = new RealTimer();
-        var metricUpdater = new MetricUpdater(metricReporter, options.fleetControllerIndex(), options.clusterName());
+        var metricUpdater = new MetricUpdater(metricReporter, timer, options.fleetControllerIndex(), options.clusterName());
         var log = new EventLog(timer, metricUpdater);
         var cluster = new ContentCluster(options);
         var stateGatherer = new NodeStateGatherer(timer, timer, log);
@@ -347,10 +347,11 @@ public class FleetController implements NodeListener, SlobrokListener, SystemSta
         verifyInControllerThread();
         ClusterState baselineState = stateBundle.getBaselineClusterState();
         newStates.add(stateBundle);
-        metricUpdater.updateClusterStateMetrics(cluster, baselineState,
-                ResourceUsageStats.calculateFrom(cluster.getNodeInfos(), options.clusterFeedBlockLimit(), stateBundle.getFeedBlock()));
-        lastMetricUpdateCycleCount = cycleCount;
         systemStateBroadcaster.handleNewClusterStates(stateBundle);
+        metricUpdater.updateClusterStateMetrics(cluster, baselineState,
+                ResourceUsageStats.calculateFrom(cluster.getNodeInfos(), options.clusterFeedBlockLimit(), stateBundle.getFeedBlock()),
+                systemStateBroadcaster.getLastStateBroadcastTimePoint());
+        lastMetricUpdateCycleCount = cycleCount;
         // Iff master, always store new version in ZooKeeper _before_ publishing to any
         // nodes so that a cluster controller crash after publishing but before a successful
         // ZK store will not risk reusing the same version number.
@@ -365,11 +366,19 @@ public class FleetController implements NodeListener, SlobrokListener, SystemSta
 
     private boolean maybePublishOldMetrics() {
         verifyInControllerThread();
-        if (isMaster() && cycleCount > 300 + lastMetricUpdateCycleCount) {
-            ClusterStateBundle stateBundle = stateVersionTracker.getVersionedClusterStateBundle();
-            ClusterState baselineState = stateBundle.getBaselineClusterState();
-            metricUpdater.updateClusterStateMetrics(cluster, baselineState,
-                    ResourceUsageStats.calculateFrom(cluster.getNodeInfos(), options.clusterFeedBlockLimit(), stateBundle.getFeedBlock()));
+        if (cycleCount > 300 + lastMetricUpdateCycleCount) {
+            if (isMaster()) {
+                updateMasterClusterSyncMetrics();
+                ClusterStateBundle stateBundle = stateVersionTracker.getVersionedClusterStateBundle();
+                ClusterState baselineState = stateBundle.getBaselineClusterState();
+                metricUpdater.updateClusterStateMetrics(cluster, baselineState,
+                        ResourceUsageStats.calculateFrom(cluster.getNodeInfos(), options.clusterFeedBlockLimit(), stateBundle.getFeedBlock()),
+                        systemStateBroadcaster.getLastStateBroadcastTimePoint());
+            } else {
+                // If we're not the master we don't have any authoritative information about
+                // how out of sync the cluster nodes are, so reset the metric.
+                metricUpdater.updateClusterBucketsOutOfSyncRatio(0);
+            }
             lastMetricUpdateCycleCount = cycleCount;
             return true;
         } else {
@@ -563,6 +572,14 @@ public class FleetController implements NodeListener, SlobrokListener, SystemSta
         }
     }
 
+    private void updateMasterClusterSyncMetrics() {
+        var stats = stateVersionTracker.getAggregatedClusterStats().getAggregatedStats();
+        if (stats.hasUpdatesFromAllDistributors()) {
+            GlobalBucketSyncStatsCalculator.clusterBucketsOutOfSyncRatio(stats.getGlobalStats())
+                    .ifPresent(metricUpdater::updateClusterBucketsOutOfSyncRatio);
+        }
+    }
+
     private boolean updateMasterElectionState() {
         try {
             return masterElectionHandler.watchMasterElection(database, databaseContext);
@@ -689,6 +706,7 @@ public class FleetController implements NodeListener, SlobrokListener, SystemSta
         context.cluster = cluster;
         context.currentConsolidatedState = consolidatedClusterState();
         context.publishedClusterStateBundle = stateVersionTracker.getVersionedClusterStateBundle();
+        context.aggregatedClusterStats = stateVersionTracker.getAggregatedClusterStats().getAggregatedStats();
         context.masterInfo = new MasterInterface() {
             @Override public boolean isMaster() { return isMaster; }
             @Override public Integer getMaster() { return masterElectionHandler.getMaster(); }
@@ -832,6 +850,10 @@ public class FleetController implements NodeListener, SlobrokListener, SystemSta
         return timeNowMs >= firstAllowedStateBroadcast || cluster.allStatesReported();
     }
 
+    private DistributionConfigBundle distributionConfigIfEnabledOrNull() {
+        return options.includeDistributionConfigInClusterStateBundles() ? options.distributionConfig() : null;
+    }
+
     private boolean recomputeClusterStateIfRequired() {
         boolean stateWasChanged = false;
         if (mustRecomputeCandidateClusterState()) {
@@ -842,6 +864,7 @@ public class FleetController implements NodeListener, SlobrokListener, SystemSta
             final ClusterStateBundle candidateBundle = ClusterStateBundle.builder(candidate)
                     .bucketSpaces(configuredBucketSpaces)
                     .stateDeriver(createBucketSpaceStateDeriver())
+                    .distributionConfig(distributionConfigIfEnabledOrNull())
                     .deferredActivation(options.enableTwoPhaseClusterStateActivation())
                     .feedBlock(createResourceExhaustionCalculator()
                             .inferContentClusterFeedBlockOrNull(cluster))

@@ -54,7 +54,7 @@ Config get_predicate_with_arity(uint32_t arity)
 }
 
 std::shared_ptr<AttributeVector>
-make_attribute(vespalib::stringref name, const Config& cfg, bool setup)
+make_attribute(std::string_view name, const Config& cfg, bool setup)
 {
     auto attribute = AttributeFactory::createAttribute(name, cfg);
     if (attribute && setup) {
@@ -89,7 +89,7 @@ make_sample_predicate_attribute()
 }
 
 void
-corrupt_file_header(const vespalib::string &name)
+corrupt_file_header(const std::string &name)
 {
     vespalib::FileHeader h(FileSettings::DIRECTIO_ALIGNMENT);
     FastOS_File f;
@@ -138,11 +138,13 @@ TEST_F(PredicateAttributeTest, save_and_load_predicate_attribute)
     std::filesystem::path file_name(tmp_dir);
     file_name.append(attr_name);
     attr->save(file_name.native());
+    EXPECT_NE(0, attr->size_on_disk());
     auto attr2 = make_attribute(file_name.native(), attr->getConfig(), false);
     EXPECT_FALSE(attr2->isLoaded());
     EXPECT_TRUE(attr2->load());
     EXPECT_TRUE(attr2->isLoaded());
     EXPECT_EQ(11, attr2->getCommittedDocIdLimit());
+    EXPECT_EQ(attr->size_on_disk(), attr2->size_on_disk());
 }
 
 TEST_F(PredicateAttributeTest, buffer_size_mismatch_is_fatal_during_load)

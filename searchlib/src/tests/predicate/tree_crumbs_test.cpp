@@ -1,11 +1,8 @@
 // Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 // Unit tests for TreeCrumbs.
 
-#include <vespa/log/log.h>
-LOG_SETUP("TreeCrumbs_test");
-
 #include <vespa/searchlib/predicate/tree_crumbs.h>
-#include <vespa/vespalib/testkit/testapp.h>
+#include <vespa/vespalib/testkit/test_kit.h>
 
 using namespace search::predicate;
 
@@ -60,5 +57,3 @@ TEST("require that crumbs can set custom initial char") {
 }
 
 }  // namespace
-
-TEST_MAIN() { TEST_RUN_ALL(); }

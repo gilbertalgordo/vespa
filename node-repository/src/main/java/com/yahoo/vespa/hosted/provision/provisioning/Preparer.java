@@ -167,7 +167,6 @@ public class Preparer {
             if (parentLockOrNull != null) {
                 List<Node> exclusiveParents = allocation.parentsRequiredToBeExclusive();
                 nodeRepository.nodes().setExclusiveToApplicationId(exclusiveParents, parentLockOrNull, application);
-                hostProvisioner.ifPresent(provisioner -> provisioner.updateAllocation(exclusiveParents, application));
             }
             acceptedNodes = allocation.finalNodes();
             nodeRepository.nodes().reserve(allocation.reservableNodes());
@@ -189,7 +188,7 @@ public class Preparer {
                                              Supplier<Integer> nextIndex, LockedNodeList allNodes) {
         validateAccount(requested.cloudAccount(), application, allNodes);
         NodeAllocation allocation = new NodeAllocation(allNodes, application, cluster, requested, nextIndex, nodeRepository);
-        IP.Allocation.Context allocationContext = IP.Allocation.Context.from(nodeRepository.zone().cloud().name(),
+        IP.Allocation.Context allocationContext = IP.Allocation.Context.from(nodeRepository.zone().cloud(),
                                                                              requested.cloudAccount().isExclave(nodeRepository.zone()),
                                                                              nodeRepository.nameResolver());
         NodePrioritizer prioritizer = new NodePrioritizer(allNodes,
@@ -202,7 +201,7 @@ public class Preparer {
                                                           nodeRepository.nodes(),
                                                           nodeRepository.resourcesCalculator(),
                                                           nodeRepository.spareCount(),
-                                                          nodeRepository.exclusiveAllocation(cluster));
+                                                          nodeRepository.exclusivity().allocation(cluster));
         allocation.offer(prioritizer.collect());
         if (requested.type() == NodeType.tenant && !requested.canFail() && allocation.changes()) {
             // This should not happen and indicates a bug in the allocation code because boostrap redeployment
@@ -237,11 +236,11 @@ public class Preparer {
 
     private HostSharing hostSharing(ClusterSpec cluster, NodeType hostType) {
         if ( hostType.isSharable())
-            return nodeRepository.exclusiveProvisioning(cluster) ? HostSharing.provision :
-                   nodeRepository.exclusiveAllocation(cluster) ? HostSharing.exclusive :
-                   HostSharing.any;
+            return nodeRepository.exclusivity().provisioning(cluster) ? HostSharing.provision :
+                   nodeRepository.exclusivity().allocation(cluster) ? HostSharing.exclusive :
+                   HostSharing.shared;
         else
-            return HostSharing.any;
+            return HostSharing.shared;
     }
 
 }

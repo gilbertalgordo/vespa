@@ -19,7 +19,7 @@
 #include <vespa/document/fieldvalue/intfieldvalue.h>
 #include <vespa/document/fieldvalue/stringfieldvalue.h>
 #include <vespa/vespalib/data/databuffer.h>
-#include <vespa/vespalib/testkit/testapp.h>
+#include <vespa/vespalib/testkit/test_kit.h>
 #include <vespa/vespalib/util/compress.h>
 #include <vespa/vespalib/util/memory.h>
 #include <vespa/vespalib/stllike/asciistream.h>
@@ -107,13 +107,13 @@ public:
     }
     IAttributeFileWriter &udatWriter() override { return _udatWriter; }
 
-    bool setup_writer(const vespalib::string& file_suffix,
-                      const vespalib::string& desc) override {
+    bool setup_writer(const std::string& file_suffix,
+                      const std::string& desc) override {
         (void) file_suffix;
         (void) desc;
         abort();
     }
-    IAttributeFileWriter& get_writer(const vespalib::string& file_suffix) override {
+    IAttributeFileWriter& get_writer(const std::string& file_suffix) override {
         (void) file_suffix;
         abort();
     }
@@ -121,6 +121,8 @@ public:
     bool bufEqual(const Buffer &lhs, const Buffer &rhs) const;
  
     bool operator==(const MemAttr &rhs) const;
+
+    uint64_t size_on_disk() const noexcept override { return 0; }
 };
 
 MemAttr::MemAttr() = default;
@@ -144,8 +146,8 @@ private:
     template <typename VectorType, typename BufferType>
     void compare(VectorType &a, VectorType &b);
 
-    void buildTermQuery(std::vector<char> & buffer, const vespalib::string & index,
-                        const vespalib::string & term, bool prefix);
+    void buildTermQuery(std::vector<char> & buffer, const std::string & index,
+                        const std::string & term, bool prefix);
 
     template <typename V, typename T>
     SearchContextPtr getSearch(const V & vec, const T & term, bool prefix);
@@ -157,21 +159,21 @@ private:
     void saveMemDuringCompaction(AttributeVector &v);
     void checkMem(AttributeVector &v, const MemAttr &e);
     MemAttr::SP saveBoth(AttributePtr v);
-    AttributePtr make(Config cfg, const vespalib::string &pref, bool fastSearch = false);
-    void load(AttributePtr v, const vespalib::string &name);
+    AttributePtr make(Config cfg, const std::string &pref, bool fastSearch = false);
+    void load(AttributePtr v, const std::string &name);
 
     template <typename VectorType, typename BufferType>
-    AttributePtr checkLoad(Config cfg, const vespalib::string &name, AttributePtr ev);
+    AttributePtr checkLoad(Config cfg, const std::string &name, AttributePtr ev);
 
     template <typename VectorType, typename BufferType>
     void testReload(AttributePtr v0, AttributePtr v1, AttributePtr v2,
                     MemAttr::SP mv0, MemAttr::SP mv1, MemAttr::SP mv2,
                     MemAttr::SP emv0, MemAttr::SP emv1, MemAttr::SP emv2,
-                    Config cfg, const vespalib::string &pref, bool fastSearch, search::DictionaryConfig dictionary_config);
+                    Config cfg, const std::string &pref, bool fastSearch, search::DictionaryConfig dictionary_config);
 
 public:
     template <typename VectorType, typename BufferType>
-    void test(BasicType bt, CollectionType ct, const vespalib::string &pref);
+    void test(BasicType bt, CollectionType ct, const std::string &pref);
 
 };
 
@@ -454,8 +456,8 @@ EnumeratedSaveTest::asFloat(AttributePtr &v)
 
 void
 EnumeratedSaveTest::buildTermQuery(std::vector<char> &buffer,
-                                   const vespalib::string &index,
-                                   const vespalib::string &term,
+                                   const std::string &index,
+                                   const std::string &term,
                                    bool prefix)
 {
     uint32_t indexLen = index.size();
@@ -484,7 +486,7 @@ EnumeratedSaveTest::getSearch(const V &vec, const T &term, bool prefix)
     buildTermQuery(query, vec.getName(), ss.str(), prefix);
 
     return (static_cast<const AttributeVector &>(vec)).
-        getSearch(vespalib::stringref(query.data(), query.size()),
+        getSearch(std::string_view(query.data(), query.size()),
                   SearchContextParams());
 }
 
@@ -507,7 +509,7 @@ template <>
 SearchContextPtr
 EnumeratedSaveTest::getSearch<StringAttribute>(const StringAttribute &v)
 {
-    return getSearch<StringAttribute, const vespalib::string &>
+    return getSearch<StringAttribute, const std::string &>
         (v, "foo", false);
 }
 
@@ -550,15 +552,18 @@ EnumeratedSaveTest::checkMem(AttributeVector &v, const MemAttr &e)
         search::index::DummyFileHeaderContext fileHeaderContext;
         EXPECT_TRUE(v.save(ms, "convert"));
         EXPECT_TRUE(ms.writeToFile(tune, fileHeaderContext));
+        EXPECT_NOT_EQUAL(0u, ms.size_on_disk());
         auto cfg = v.getConfig();
         cfg.set_dictionary_config(search::DictionaryConfig(search::DictionaryConfig::Type::BTREE));
         auto v2 = AttributeFactory::createAttribute("convert", cfg);
         EXPECT_TRUE(v2->load());
+        EXPECT_NOT_EQUAL(0u, v2->size_on_disk());
         MemAttr m2;
         EXPECT_TRUE(v2->save(m2, v.getBaseFileName()));
         ASSERT_TRUE(m2 == e);
         auto v3 = AttributeFactory::createAttribute("convert", v.getConfig());
         EXPECT_TRUE(v3->load());
+        EXPECT_NOT_EQUAL(0u, v3->size_on_disk());
     }
 }
 
@@ -567,9 +572,11 @@ MemAttr::SP
 EnumeratedSaveTest::saveBoth(AttributePtr v)
 {
     EXPECT_TRUE(v->save());
-    vespalib::string basename = v->getBaseFileName();
+    EXPECT_NOT_EQUAL(0u, v->size_on_disk());
+    std::string basename = v->getBaseFileName();
     AttributePtr v2 = make(v->getConfig(), basename, true);
     EXPECT_TRUE(v2->load());
+    EXPECT_EQUAL(v->size_on_disk(), v2->size_on_disk());
     EXPECT_TRUE(v2->save(basename + "_e"));
 
     search::AttributeMemorySaveTarget ms;
@@ -583,7 +590,7 @@ EnumeratedSaveTest::saveBoth(AttributePtr v)
 
 
 EnumeratedSaveTest::AttributePtr
-EnumeratedSaveTest::make(Config cfg, const vespalib::string &pref, bool fastSearch)
+EnumeratedSaveTest::make(Config cfg, const std::string &pref, bool fastSearch)
 {
     cfg.setFastSearch(fastSearch);
     AttributePtr v = AttributeFactory::createAttribute(pref, cfg);
@@ -592,19 +599,21 @@ EnumeratedSaveTest::make(Config cfg, const vespalib::string &pref, bool fastSear
 
 
 void
-EnumeratedSaveTest::load(AttributePtr v, const vespalib::string &name)
+EnumeratedSaveTest::load(AttributePtr v, const std::string &name)
 {
     v->setBaseFileName(name);
     EXPECT_TRUE(v->load());
+    EXPECT_NOT_EQUAL(0u, v->size_on_disk());
 }
 
 template <typename VectorType, typename BufferType>
 EnumeratedSaveTest::AttributePtr
-EnumeratedSaveTest::checkLoad(Config cfg, const vespalib::string &name,
+EnumeratedSaveTest::checkLoad(Config cfg, const std::string &name,
                               AttributePtr ev)
 {
     AttributePtr v = AttributeFactory::createAttribute(name, cfg);
     EXPECT_TRUE(v->load());
+    EXPECT_NOT_EQUAL(0u, v->size_on_disk());
     compare<VectorType, BufferType>(as<VectorType>(v), as<VectorType>(ev));
     return v;
 }
@@ -622,7 +631,7 @@ EnumeratedSaveTest::testReload(AttributePtr v0,
                                MemAttr::SP emv1,
                                MemAttr::SP emv2,
                                Config cfg,
-                               const vespalib::string &pref,
+                               const std::string &pref,
                                bool fastSearch,
                                search::DictionaryConfig dictionary_config)
 {
@@ -665,7 +674,7 @@ EnumeratedSaveTest::testReload(AttributePtr v0,
 
     TermFieldMatchData md;
     SearchContextPtr sc = getSearch<VectorType>(as<VectorType>(v));
-    sc->fetchPostings(search::queryeval::ExecuteInfo::TRUE);
+    sc->fetchPostings(search::queryeval::ExecuteInfo::FULL, true);
     SearchBasePtr sb = sc->createIterator(&md, true);
     sb->initFullRange();
     sb->seek(1u);
@@ -690,7 +699,7 @@ EnumeratedSaveTest::testReload(AttributePtr v0,
 template <typename VectorType, typename BufferType>
 void
 EnumeratedSaveTest::test(BasicType bt, CollectionType ct,
-                         const vespalib::string &pref)
+                         const std::string &pref)
 {
     Config cfg(bt, ct);
     AttributePtr v0 = AttributeFactory::createAttribute(pref + "0", cfg);
@@ -902,7 +911,7 @@ TEST_F("Test enumerated save with weighted set value double",
 TEST_F("Test enumerated save with single value string", EnumeratedSaveTest)
 {
     f.template test<StringAttribute,
-        vespalib::string>(BasicType::STRING,
+        std::string>(BasicType::STRING,
                           CollectionType::SINGLE,
                           "str_sv");
 }
@@ -910,7 +919,7 @@ TEST_F("Test enumerated save with single value string", EnumeratedSaveTest)
 TEST_F("Test enumerated save with array value string", EnumeratedSaveTest)
 {
     f.template test<StringAttribute,
-        vespalib::string>(BasicType::STRING,
+        std::string>(BasicType::STRING,
                           CollectionType::ARRAY,
                           "str_a");
 }

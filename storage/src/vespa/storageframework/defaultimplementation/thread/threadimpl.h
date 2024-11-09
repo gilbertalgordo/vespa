@@ -51,7 +51,7 @@ class ThreadImpl final : public Thread
     void run();
 
 public:
-    ThreadImpl(ThreadPoolImpl&, Runnable&, vespalib::stringref id, vespalib::duration waitTime,
+    ThreadImpl(ThreadPoolImpl&, Runnable&, std::string_view id, vespalib::duration waitTime,
                vespalib::duration maxProcessTime, int ticksBeforeWait,
                std::optional<vespalib::CpuUsage::Category> cpu_category);
     ~ThreadImpl() override;
@@ -61,7 +61,7 @@ public:
     void interrupt() override;
     void join() override;
 
-    vespalib::string get_live_thread_stack_trace() const override;
+    std::string get_live_thread_stack_trace() const override;
 
     void registerTick(CycleType, vespalib::steady_time) override;
     void registerTick(CycleType cycleType) override;

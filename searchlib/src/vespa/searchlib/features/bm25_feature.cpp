@@ -8,6 +8,7 @@
 #include <vespa/searchlib/fef/objectstore.h>
 #include <vespa/searchlib/fef/properties.h>
 #include <vespa/vespalib/util/stash.h>
+#include <algorithm>
 #include <cmath>
 #include <stdexcept>
 
@@ -18,6 +19,7 @@ namespace search::features {
 
 using fef::AnyWrapper;
 using fef::Blueprint;
+using fef::DocumentFrequency;
 using fef::FeatureExecutor;
 using fef::FeatureNameBuilder;
 using fef::FieldInfo;
@@ -36,8 +38,11 @@ get_inverse_document_frequency(const ITermFieldData& term_field,
                                const ITermData& term)
 
 {
-    double fallback = Bm25Executor::calculate_inverse_document_frequency(term_field.get_matching_doc_count(),
-                                                                         term_field.get_total_doc_count());
+    auto doc_freq = util::lookup_document_frequency(env, term);
+    if (doc_freq.has_value()) {
+        return Bm25Executor::calculate_inverse_document_frequency(doc_freq.value());
+    }
+    double fallback = Bm25Executor::calculate_inverse_document_frequency(term_field.get_doc_freq());
     return util::lookupSignificance(env, term, fallback);
 }
 
@@ -68,10 +73,13 @@ Bm25Executor::Bm25Executor(const fef::FieldInfo& field,
 }
 
 double
-Bm25Executor::calculate_inverse_document_frequency(uint32_t matching_doc_count, uint32_t total_doc_count)
+Bm25Executor::calculate_inverse_document_frequency(DocumentFrequency doc_freq) noexcept
 {
-    return std::log(1 + (static_cast<double>(total_doc_count - matching_doc_count + 0.5) /
-                         static_cast<double>(matching_doc_count + 0.5)));
+    double frequency = doc_freq.frequency;
+    double count = doc_freq.count;
+    count = std::max(1.0, count);
+    frequency = std::min(std::max(1.0, frequency), count);
+    return std::log(1 + ((count - frequency + 0.5) / (frequency + 0.5)));
 }
 
 void
@@ -101,9 +109,9 @@ Bm25Executor::execute(uint32_t doc_id)
 }
 
 Trinary
-Bm25Blueprint::lookup_param(const fef::Properties& props, const vespalib::string& param, double& result) const
+Bm25Blueprint::lookup_param(const fef::Properties& props, const std::string& param, double& result) const
 {
-    vespalib::string key = getBaseName() + "(" + _field->name() + ")." + param;
+    std::string key = getBaseName() + "(" + _field->name() + ")." + param;
     auto value = props.lookup(key);
     if (value.found()) {
         try {
@@ -119,7 +127,7 @@ Bm25Blueprint::lookup_param(const fef::Properties& props, const vespalib::string
 }
 
 Trinary
-Bm25Blueprint::lookup_param(const fef::Properties& props, const vespalib::string& param, std::optional<double>& result) const
+Bm25Blueprint::lookup_param(const fef::Properties& props, const std::string& param, std::optional<double>& result) const
 {
     double tmp_result;
     auto lres = lookup_param(props, param, tmp_result);
@@ -182,8 +190,8 @@ Bm25Blueprint::setup(const fef::IIndexEnvironment& env, const fef::ParameterList
 
 namespace {
 
-vespalib::string
-make_avg_field_length_key(const vespalib::string& base_name, const vespalib::string& field_name)
+std::string
+make_avg_field_length_key(const std::string& base_name, const std::string& field_name)
 {
     return base_name + ".afl." + field_name;
 }
@@ -193,7 +201,7 @@ make_avg_field_length_key(const vespalib::string& base_name, const vespalib::str
 void
 Bm25Blueprint::prepareSharedState(const fef::IQueryEnvironment& env, fef::IObjectStore& store) const
 {
-    vespalib::string key = make_avg_field_length_key(getBaseName(), _field->name());
+    std::string key = make_avg_field_length_key(getBaseName(), _field->name());
     if (store.get(key) == nullptr) {
         double avg_field_length = _avg_field_length.value_or(env.get_average_field_length(_field->name()));
         store.add(key, std::make_unique<AnyWrapper<double>>(avg_field_length));

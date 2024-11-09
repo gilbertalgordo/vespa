@@ -1,5 +1,5 @@
 // Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
-#include <vespa/vespalib/testkit/testapp.h>
+#include <vespa/vespalib/testkit/test_kit.h>
 #include <vespa/messagebus/messagebus.h>
 #include <vespa/messagebus/testlib/slobrok.h>
 #include <vespa/messagebus/testlib/testserver.h>
@@ -14,8 +14,6 @@ LOG_SETUP("messageordering_test");
 
 using namespace mbus;
 using namespace std::chrono_literals;
-
-TEST_SETUP(Test);
 
 RoutingSpec
 getRouting()
@@ -47,7 +45,7 @@ public:
 
         std::lock_guard guard(_mon);
 
-        vespalib::string expected(vespalib::make_string("%d", _messageCounter));
+        std::string expected(vespalib::make_string("%d", _messageCounter));
         LOG(debug, "Got message %p with %s, expecting %s",
             msg.get(),
             simpleMsg.getValue().c_str(),
@@ -112,7 +110,7 @@ VerifyReplyReceptor::handleReply(Reply::UP reply)
         }
         LOG(warning, "%s", ss.str().c_str());
     } else {
-        vespalib::string expected(vespalib::make_string("%d", _replyCount));
+        std::string expected(vespalib::make_string("%d", _replyCount));
         auto & simpleReply(dynamic_cast<SimpleReply&>(*reply));
         if (simpleReply.getValue() != expected) {
             std::stringstream ss;
@@ -138,10 +136,7 @@ VerifyReplyReceptor::waitUntilDone(int waitForCount) const
     }
 }
 
-int
-Test::Main()
-{
-    TEST_INIT("messageordering_test");
+TEST("messageordering_test") {
 
     Slobrok     slobrok;
     TestServer  srcNet(Identity("test/src"), getRouting(), slobrok);
@@ -167,7 +162,7 @@ Test::Main()
     // send messages on client
     const int messageCount = 5000;
     for (int i = 0; i < messageCount; ++i) {
-        vespalib::string str(vespalib::make_string("%d", i));
+        std::string str(vespalib::make_string("%d", i));
         //std::this_thread::sleep_for(1ms);
         auto msg = std::make_unique<SimpleMessage>(str, true, commonMessageId);
         msg->getTrace().setLevel(9);
@@ -178,6 +173,6 @@ Test::Main()
     src.waitUntilDone(messageCount);
 
     ASSERT_EQUAL(std::string(), src.getFailure());
-
-    TEST_DONE();
 }
+
+TEST_MAIN() { TEST_RUN_ALL(); }

@@ -12,7 +12,6 @@ import com.yahoo.search.result.ErrorMessage;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -46,7 +45,7 @@ public class SearchClusterTest {
         List<AtomicInteger> pingCounts;
 
         State(String clusterId, int nodesPergroup, String ... nodeNames) {
-            this(clusterId, nodesPergroup, Arrays.asList(nodeNames));
+            this(clusterId, nodesPergroup, List.of(nodeNames));
         }
 
         State(String clusterId, int nodesPerGroup, List<String> nodeNames) {
@@ -201,8 +200,6 @@ public class SearchClusterTest {
     @Test
     void requireThatVipStatusIsDefaultDownWithLocalDispatch() {
         try (State test = new State("cluster.1", 1, HostName.getLocalhost(), "b")) {
-            assertTrue(test.searchCluster.localCorpusDispatchTarget().isPresent());
-
             assertFalse(test.vipStatus.isInRotation());
             test.waitOneFullPingRound();
             assertTrue(test.vipStatus.isInRotation());
@@ -212,8 +209,6 @@ public class SearchClusterTest {
     @Test
     void requireThatVipStatusStaysUpWithLocalDispatchAndClusterSize1() {
         try (State test = new State("cluster.1", 1, HostName.getLocalhost())) {
-            assertTrue(test.searchCluster.localCorpusDispatchTarget().isPresent());
-
             assertFalse(test.vipStatus.isInRotation());
             test.waitOneFullPingRound();
             assertTrue(test.vipStatus.isInRotation());
@@ -226,8 +221,6 @@ public class SearchClusterTest {
     @Test
     void requireThatVipStatusIsDefaultDownWithLocalDispatchAndClusterSize2() {
         try (State test = new State("cluster.1", 1, HostName.getLocalhost(), "otherhost")) {
-            assertTrue(test.searchCluster.localCorpusDispatchTarget().isPresent());
-
             assertFalse(test.vipStatus.isInRotation());
             test.waitOneFullPingRound();
             assertTrue(test.vipStatus.isInRotation());

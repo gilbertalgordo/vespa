@@ -12,10 +12,10 @@ namespace search::fef {
 
 namespace {
 
-vespalib::string extract_data(vespalib::Input &input) {
-    vespalib::string result;
+std::string extract_data(vespalib::Input &input) {
+    std::string result;
     for (auto chunk = input.obtain(); chunk.size > 0; chunk = input.obtain()) {
-        result.append(vespalib::stringref(chunk.data, chunk.size));
+        result.append(std::string_view(chunk.data, chunk.size));
         input.evict(chunk.size);
     }
     return result;
@@ -28,14 +28,14 @@ RankingExpressions::RankingExpressions(RankingExpressions &&rhs) noexcept = defa
 RankingExpressions::~RankingExpressions() = default;
 
 RankingExpressions &
-RankingExpressions::add(const vespalib::string &name, const vespalib::string &path)
+RankingExpressions::add(const std::string &name, const std::string &path)
 {
     _expressions.insert_or_assign(name, path);
     return *this;
 }
 
-vespalib::string
-RankingExpressions::loadExpression(const vespalib::string &name) const
+std::string
+RankingExpressions::loadExpression(const std::string &name) const
 {
     auto pos = _expressions.find(name);
     if (pos == _expressions.end()) {
@@ -48,7 +48,7 @@ RankingExpressions::loadExpression(const vespalib::string &name) const
         LOG(warning, "rankexpression: %s -> could not read file: %s", name.c_str(), path.c_str());
         return {};
     }
-    if (ends_with(path, ".lz4")) {
+    if (path.ends_with(".lz4")) {
         size_t buffer_size = 64_Ki;
         vespalib::Lz4InputDecoder lz4_decoder(file, buffer_size);
         auto result = extract_data(lz4_decoder);

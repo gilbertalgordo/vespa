@@ -8,6 +8,7 @@
 #include <vespa/vespalib/util/exceptions.h>
 #include <vespa/vespalib/stllike/asciistream.h>
 #include <sstream>
+#include <string>
 
 #include <vespa/log/log.h>
 LOG_SETUP(".vdslib.nodestate");
@@ -35,7 +36,7 @@ NodeState::NodeState()
 }
 
 NodeState::NodeState(const NodeType& type, const State& state,
-                     vespalib::stringref description, double capacity)
+                     std::string_view description, double capacity)
     : _type(&type),
       _state(nullptr),
       _description(description),
@@ -50,7 +51,7 @@ NodeState::NodeState(const NodeType& type, const State& state,
     }
 }
 
-NodeState::NodeState(vespalib::stringref serialized, const NodeType* type)
+NodeState::NodeState(std::string_view serialized, const NodeType* type)
     : _type(type),
       _state(&State::UP),
       _description(),
@@ -65,10 +66,10 @@ NodeState::NodeState(vespalib::stringref serialized, const NodeType* type)
     for (auto token : st) {
         std::string::size_type index = token.find(':');
         if (index == std::string::npos) {
-            throw IllegalArgumentException("Token " + token + " does not contain ':': " + serialized, VESPA_STRLOC);
+            throw IllegalArgumentException("Token " + std::string(token) + " does not contain ':': " + std::string(serialized), VESPA_STRLOC);
         }
-        std::string key = token.substr(0, index);
-        std::string value = token.substr(index + 1);
+        std::string_view key = token.substr(0, index);
+        std::string_view value = token.substr(index + 1);
         if (!key.empty()) switch (key[0]) {
             case 'b':
                 if (_type != nullptr && *type != NodeType::STORAGE) break;
@@ -76,7 +77,7 @@ NodeState::NodeState(vespalib::stringref serialized, const NodeType* type)
                 try {
                     setMinUsedBits(boost::lexical_cast<uint32_t>(value));
                 } catch (...) {
-                    throw IllegalArgumentException("Illegal used bits '" + value + "'. Used bits must be a positive"
+                    throw IllegalArgumentException("Illegal used bits '" + std::string(value) + "'. Used bits must be a positive"
                                                    " integer ", VESPA_STRLOC);
                 }
                 continue;
@@ -90,7 +91,7 @@ NodeState::NodeState(vespalib::stringref serialized, const NodeType* type)
                 try {
                     setCapacity(boost::lexical_cast<double>(value));
                 } catch (...) {
-                    throw IllegalArgumentException("Illegal capacity '" + value + "'. Capacity must be a positive"
+                    throw IllegalArgumentException("Illegal capacity '" + std::string(value) + "'. Capacity must be a positive"
                                                    " floating point number", VESPA_STRLOC);
                 }
                 continue;
@@ -99,7 +100,7 @@ NodeState::NodeState(vespalib::stringref serialized, const NodeType* type)
                 try {
                     setInitProgress(boost::lexical_cast<double>(value));
                 } catch (...) {
-                    throw IllegalArgumentException("Illegal init progress '" + value + "'. Init progress must be a"
+                    throw IllegalArgumentException("Illegal init progress '" + std::string(value) + "'. Init progress must be a"
                                                    " floating point number from 0.0 to 1.0", VESPA_STRLOC);
                 }
                 continue;
@@ -108,7 +109,7 @@ NodeState::NodeState(vespalib::stringref serialized, const NodeType* type)
                 try {
                     setStartTimestamp(boost::lexical_cast<uint64_t>(value));
                 } catch (...) {
-                    throw IllegalArgumentException("Illegal start timestamp '" + value + "'. Start timestamp must be"
+                    throw IllegalArgumentException("Illegal start timestamp '" + std::string(value) + "'. Start timestamp must be"
                                                    " 0 or positive long.", VESPA_STRLOC);
                 }
                 continue;
@@ -121,7 +122,7 @@ NodeState::NodeState(vespalib::stringref serialized, const NodeType* type)
         }
         LOG(debug, "Unknown key %s in nodestate. Ignoring it, assuming it's a "
                    "new feature from a newer version than ourself: %s",
-            key.c_str(), vespalib::string(serialized).c_str());
+            std::string(key).c_str(), std::string(serialized).c_str());
     }
 }
 
@@ -148,7 +149,7 @@ namespace {
 }
 
 void
-NodeState::serialize(vespalib::asciistream & out, vespalib::stringref prefix,
+NodeState::serialize(vespalib::asciistream & out, std::string_view prefix,
                      bool includeDescription) const
 {
     SeparatorPrinter sep;
@@ -240,7 +241,7 @@ NodeState::print(std::ostream& out, bool verbose, const std::string& indent) con
     if (!verbose) {
         vespalib::asciistream tmp;
         serialize(tmp);
-        out << tmp.str();
+        out << tmp.view();
         return;
     }
     _state->print(out, verbose, indent);

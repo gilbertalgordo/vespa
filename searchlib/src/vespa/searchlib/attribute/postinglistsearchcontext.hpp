@@ -20,9 +20,9 @@ namespace search::attribute {
 
 template <typename DataT>
 PostingListSearchContextT<DataT>::
-PostingListSearchContextT(const IEnumStoreDictionary& dictionary, uint32_t docIdLimit, uint64_t numValues, bool hasWeight,
+PostingListSearchContextT(const IEnumStoreDictionary& dictionary, uint32_t docIdLimit, uint64_t numValues,
                           const PostingStore& posting_store, bool useBitVector, const ISearchContext &searchContext)
-    : PostingListSearchContext(dictionary, dictionary.get_has_btree_dictionary(), docIdLimit, numValues, hasWeight, useBitVector, searchContext),
+    : PostingListSearchContext(dictionary, dictionary.get_has_btree_dictionary(), docIdLimit, numValues, useBitVector, searchContext),
       _posting_store(posting_store),
       _merger(docIdLimit)
 {
@@ -137,7 +137,7 @@ PostingListSearchContextT<DataT>::fillBitVector(const ExecuteInfo & exec_info)
 
 template <typename DataT>
 void
-PostingListSearchContextT<DataT>::fetchPostings(const ExecuteInfo & exec_info)
+PostingListSearchContextT<DataT>::fetchPostings(const ExecuteInfo & exec_info, bool strict)
 {
     // The following constant is derived after running parts of
     // the range search performance test with 10M documents on an Apple M1 Pro with 32 GB memory.
@@ -168,10 +168,11 @@ PostingListSearchContextT<DataT>::fetchPostings(const ExecuteInfo & exec_info)
     // The threshold for when to use array merging is therefore 0.0025 (0.08 / 32).
     constexpr float threshold_for_using_array = 0.0025;
     if (!_merger.merge_done() && _uniqueValues >= 2u && this->_dictionary.get_has_btree_dictionary()) {
-        if (exec_info.is_strict() || use_posting_lists_when_non_strict(exec_info)) {
+        if (strict || use_posting_lists_when_non_strict(exec_info)) {
             size_t sum = estimated_hits_in_range();
+            bool force_array = merged_array_has_weight && _preserve_weight && !_useBitVector;
             //TODO Honour soft_doom and forward it to merge code
-            if (sum < (_docIdLimit * threshold_for_using_array)) {
+            if (sum < (_docIdLimit * threshold_for_using_array) || force_array) {
                 _merger.reserveArray(_uniqueValues, sum);
                 fillArray();
             } else {
@@ -216,12 +217,12 @@ createPostingIterator(fef::TermFieldMatchData *matchData, bool strict)
             assert(_merger.hasArray());
             using DocIt = ArrayIterator<Posting>;
             DocIt postings;
-            vespalib::ConstArrayRef<Posting> array = _merger.getArray();
+            std::span<const Posting> array = _merger.getArray();
             postings.set(&array[0], &array[array.size()]);
             if (_posting_store.isFilter()) {
                 return std::make_unique<FilterAttributePostingListIteratorT<DocIt>>(_baseSearchCtx, matchData, postings);
             } else {
-                return std::make_unique<AttributePostingListIteratorT<DocIt>>(_baseSearchCtx, _hasWeight, matchData, postings);
+                return std::make_unique<AttributePostingListIteratorT<DocIt>>(_baseSearchCtx, matchData, postings);
             }
         }
         if (_merger.hasArray()) {
@@ -248,7 +249,7 @@ createPostingIterator(fef::TermFieldMatchData *matchData, bool strict)
             if (_posting_store.isFilter()) {
                 return std::make_unique<FilterAttributePostingListIteratorT<DocIt>>(_baseSearchCtx, matchData, postings);
             } else {
-                return std::make_unique<AttributePostingListIteratorT<DocIt>>(_baseSearchCtx, _hasWeight, matchData, postings);
+                return std::make_unique<AttributePostingListIteratorT<DocIt>>(_baseSearchCtx, matchData, postings);
             }
         }
         typename PostingStore::BTreeType::FrozenView frozen(_frozenRoot, _posting_store.getAllocator());
@@ -257,7 +258,7 @@ createPostingIterator(fef::TermFieldMatchData *matchData, bool strict)
         if (_posting_store.isFilter()) {
             return std::make_unique<FilterAttributePostingListIteratorT<DocIt>>(_baseSearchCtx, matchData, frozen.getRoot(), frozen.getAllocator());
         } else {
-            return std::make_unique<AttributePostingListIteratorT<DocIt>> (_baseSearchCtx, _hasWeight, matchData, frozen.getRoot(), frozen.getAllocator());
+            return std::make_unique<AttributePostingListIteratorT<DocIt>> (_baseSearchCtx, matchData, frozen.getRoot(), frozen.getAllocator());
         }
     }
     // returning nullptr will trigger fallback to filter iterator
@@ -347,9 +348,9 @@ PostingListSearchContextT<DataT>::applyRangeLimit(long rangeLimit)
 template <typename DataT>
 PostingListFoldedSearchContextT<DataT>::
 PostingListFoldedSearchContextT(const IEnumStoreDictionary& dictionary, uint32_t docIdLimit, uint64_t numValues,
-                                bool hasWeight, const PostingStore& posting_store,
+                                const PostingStore& posting_store,
                                 bool useBitVector, const ISearchContext &searchContext)
-    : Parent(dictionary, docIdLimit, numValues, hasWeight, posting_store, useBitVector, searchContext),
+    : Parent(dictionary, docIdLimit, numValues, posting_store, useBitVector, searchContext),
       _resume_scan_itr(),
       _posting_indexes()
 {
@@ -444,11 +445,11 @@ StringPostingSearchContext(BaseSC&& base_sc, bool useBitVector, const AttrT &toB
             auto comp = _enumStore.make_folded_comparator_prefix(this->queryTerm()->getTerm());
             this->lookupRange(comp, comp);
         } else if (this->isRegex()) {
-            vespalib::string prefix(RegexpUtil::get_prefix(this->queryTerm()->getTerm()));
+            std::string prefix(RegexpUtil::get_prefix(this->queryTerm()->getTerm()));
             auto comp = _enumStore.make_folded_comparator_prefix(prefix.c_str());
             this->lookupRange(comp, comp);
         } else if (this->isFuzzy()) {
-            vespalib::string prefix(this->getFuzzyMatcher().getPrefix());
+            std::string prefix(this->getFuzzyMatcher().getPrefix());
             auto comp = _enumStore.make_folded_comparator_prefix(prefix.c_str());
             this->lookupRange(comp, comp);
         } else {

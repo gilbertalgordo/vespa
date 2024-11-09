@@ -28,10 +28,10 @@ public class Base64DecodeTestCase {
     @Test
     public void requireThatInputIsDecoded() {
         ExecutionContext ctx = new ExecutionContext(new SimpleTestAdapter());
-        ctx.setValue(new StringFieldValue("zcIoHQ"));
+        ctx.setCurrentValue(new StringFieldValue("zcIoHQ"));
         new Base64DecodeExpression().execute(ctx);
 
-        FieldValue val = ctx.getValue();
+        FieldValue val = ctx.getCurrentValue();
         assertTrue(val instanceof LongFieldValue);
         assertEquals(489210573L, ((LongFieldValue)val).getLong());
     }
@@ -66,7 +66,7 @@ public class Base64DecodeTestCase {
     public void requireThatExpressionCanBeVerified() {
         Expression exp = new Base64DecodeExpression();
         assertVerify(DataType.STRING, exp, DataType.LONG);
-        assertVerifyThrows(null, exp, "Expected string input, but no input is specified");
-        assertVerifyThrows(DataType.LONG, exp, "Expected string input, got long");
+        assertVerifyThrows("Invalid expression 'base64decode': Expected string input, but no input is specified", null, exp);
+        assertVerifyThrows("Invalid expression 'base64decode': Expected string input, got long", DataType.LONG, exp);
     }
 }

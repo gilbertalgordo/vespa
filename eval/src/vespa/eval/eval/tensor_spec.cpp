@@ -3,7 +3,6 @@
 #include "tensor_spec.h"
 #include "array_array_map.h"
 #include "function.h"
-#include "interpreted_function.h"
 #include "value.h"
 #include "value_codec.h"
 #include "value_type.h"
@@ -14,12 +13,13 @@
 #include <vespa/eval/eval/test/reference_evaluation.h>
 #include <vespa/vespalib/data/slime/slime.h>
 #include <ostream>
+#include <ranges>
 
 namespace vespalib::eval {
 
 namespace {
 
-vespalib::string number_to_expr(double value) { 
+std::string number_to_expr(double value) { 
     if (std::isfinite(value)) {
         return make_string("%g", value);
     } else if (std::isnan(value)) {
@@ -49,9 +49,9 @@ TensorSpec::Address extract_address(const slime::Inspector &address) {
     return extractor.address;
 }
 
-vespalib::string addr_to_compact_string(const TensorSpec::Address &addr) {
+std::string addr_to_compact_string(const TensorSpec::Address &addr) {
     size_t n = 0;
-    vespalib::string str("[");
+    std::string str("[");
     for (const auto &[dim, label]: addr) {
         if (n++) {
             str.append(",");
@@ -66,21 +66,21 @@ vespalib::string addr_to_compact_string(const TensorSpec::Address &addr) {
     return str;
 }
 
-vespalib::string value_to_verbose_string(const TensorSpec::Value &value) {
+std::string value_to_verbose_string(const TensorSpec::Value &value) {
     return make_string("%g (%a)", value.value, value.value);
 }
 
 struct DiffTable {
     struct Entry {
-        vespalib::string tag;
-        vespalib::string lhs;
-        vespalib::string rhs;
+        std::string tag;
+        std::string lhs;
+        std::string rhs;
         bool is_separator() const {
             return (tag.empty() && lhs.empty() && rhs.empty());
         }
         static Entry separator() { return {"","",""}; }
-        static Entry header(const vespalib::string &lhs_desc,
-                            const vespalib::string &rhs_desc)
+        static Entry header(const std::string &lhs_desc,
+                            const std::string &rhs_desc)
         {
             return {"", lhs_desc, rhs_desc};
         }
@@ -112,14 +112,14 @@ struct DiffTable {
         size_t tag_len;
         size_t lhs_len;
         size_t rhs_len;
-        vespalib::string str;
+        std::string str;
         Result(size_t tag_len_in, size_t lhs_len_in, size_t rhs_len_in)
           : tag_len(tag_len_in + 1), lhs_len(lhs_len_in + 1), rhs_len(rhs_len_in + 1),
             str() {}
-        void add(const vespalib::string &stuff) {
+        void add(const std::string &stuff) {
             str.append(stuff);
         }
-        void add(const vespalib::string &stuff, size_t width, char pad = ' ') {
+        void add(const std::string &stuff, size_t width, char pad = ' ') {
             int n = (width - stuff.size());
             for (int i = 0; i < n; ++i) {
                 str.push_back(pad);
@@ -156,7 +156,7 @@ struct DiffTable {
         rhs_len = std::max(rhs_len, entry.rhs.size());
         entries.push_back(entry);
     }
-    vespalib::string to_string() {
+    std::string to_string() {
         Result res(tag_len, lhs_len, rhs_len);
         for (const auto &entry: entries) {
             res.add(entry);
@@ -176,8 +176,8 @@ struct NormalizeTensorSpec {
         size_t dense_size = type.dense_subspace_size();
         size_t num_mapped_dims = type.count_mapped_dimensions();
         size_t max_subspaces = std::max(spec.cells().size() / dense_size, size_t(1));
-        ArrayArrayMap<vespalib::stringref,T> map(num_mapped_dims, dense_size, max_subspaces);
-        std::vector<vespalib::stringref> sparse_key;
+        ArrayArrayMap<std::string_view,T> map(num_mapped_dims, dense_size, max_subspaces);
+        std::vector<std::string_view> sparse_key;
         for (const auto &entry: spec.cells()) {
             sparse_key.clear();
             size_t dense_key = 0;
@@ -196,12 +196,12 @@ struct NormalizeTensorSpec {
             }
             REQUIRE(binding == entry.first.end());
             REQUIRE(dense_key < map.values_per_entry());
-            auto [tag, ignore] = map.lookup_or_add_entry(ConstArrayRef<vespalib::stringref>(sparse_key));
+            auto [tag, ignore] = map.lookup_or_add_entry(std::span<const std::string_view>(sparse_key));
             map.get_values(tag)[dense_key] = entry.second;
         }
         // if spec is missing the required dense space, add it here:
         if ((map.keys_per_entry() == 0) && (map.size() == 0)) {
-            map.add_entry(ConstArrayRef<vespalib::stringref>());
+            map.add_entry(std::span<const std::string_view>());
         }
         TensorSpec result(type.to_spec());
         map.each_entry([&](const auto &keys, const auto &values)
@@ -210,20 +210,17 @@ struct NormalizeTensorSpec {
                            TensorSpec::Address address;
                            for (const auto &dim : type.dimensions()) {
                                if (dim.is_mapped()) {
-                                   address.emplace(dim.name, *sparse_addr_iter++);
+                                   address.emplace(dim.name, std::string(*sparse_addr_iter++));
                                }
                            }
                            REQUIRE(sparse_addr_iter == keys.end());
                            for (size_t i = 0; i < values.size(); ++i) {
                                size_t dense_key = i;
-                               for (auto dim = type.dimensions().rbegin();
-                                    dim != type.dimensions().rend();
-                                    ++dim)
-                               {
-                                   if (dim->is_indexed()) {
-                                       size_t label = dense_key % dim->size;
-                                       address.emplace(dim->name, label).first->second = TensorSpec::Label(label);
-                                       dense_key /= dim->size;
+                               for (const auto & dim : std::ranges::reverse_view(type.dimensions())) {
+                                   if (dim.is_indexed()) {
+                                       size_t label = dense_key % dim.size;
+                                       address.emplace(dim.name, label).first->second = TensorSpec::Label(label);
+                                       dense_key /= dim.size;
                                    }
                                }
                                result.add(address, values[i]);
@@ -236,15 +233,15 @@ struct NormalizeTensorSpec {
 } // namespace vespalib::eval::<unnamed>
 
 
-TensorSpec::TensorSpec(const vespalib::string &type_spec)
-    : _type(type_spec),
+TensorSpec::TensorSpec(std::string type_spec) noexcept
+    : _type(std::move(type_spec)),
       _cells()
 { }
 
 TensorSpec::TensorSpec(const TensorSpec &) = default;
 TensorSpec & TensorSpec::operator = (const TensorSpec &) = default;
 
-TensorSpec::~TensorSpec() { }
+TensorSpec::~TensorSpec() = default;
 
 double
 TensorSpec::as_double() const
@@ -268,10 +265,10 @@ TensorSpec::add(Address address, double value) {
     return *this;
 }
 
-vespalib::string
+std::string
 TensorSpec::to_string() const
 {
-    vespalib::string out = make_string("spec(%s) {\n", _type.c_str());
+    std::string out = make_string("spec(%s) {\n", _type.c_str());
     for (const auto &cell: _cells) {
         out.append(make_string("  %s: %g\n", addr_to_compact_string(cell.first).c_str(), cell.second.value));
     }
@@ -298,13 +295,13 @@ TensorSpec::to_slime(slime::Cursor &tensor) const
     }
 }
 
-vespalib::string
+std::string
 TensorSpec::to_expr() const
 {
     if (_type == "double") {
         return number_to_expr(as_double());
     }
-    vespalib::string out = _type;
+    std::string out = _type;
     out.append(":{");
     CommaTracker cell_list;
     for (const auto &cell: _cells) {
@@ -335,7 +332,7 @@ TensorSpec::from_value(const eval::Value &value)
 }
 
 TensorSpec
-TensorSpec::from_expr(const vespalib::string &expr)
+TensorSpec::from_expr(const std::string &expr)
 {
     auto fun = Function::parse(expr);
     if (!fun->has_error() && (fun->num_params() == 0)) {
@@ -373,9 +370,9 @@ TensorSpec::normalize() const
     }
 }
 
-vespalib::string
-TensorSpec::diff(const TensorSpec &lhs, const vespalib::string &lhs_desc,
-                 const TensorSpec &rhs, const vespalib::string &rhs_desc)
+std::string
+TensorSpec::diff(const TensorSpec &lhs, const std::string &lhs_desc,
+                 const TensorSpec &rhs, const std::string &rhs_desc)
 {
     using Entry = DiffTable::Entry;
     DiffTable table;

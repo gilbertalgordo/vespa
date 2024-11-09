@@ -9,6 +9,7 @@ import com.yahoo.document.GlobalId;
 import com.yahoo.prelude.fastsearch.FastHit;
 import com.yahoo.prelude.fastsearch.GroupingListHit;
 import com.yahoo.prelude.query.NullItem;
+import com.yahoo.processing.IllegalInputException;
 import com.yahoo.search.Query;
 import com.yahoo.search.Result;
 import com.yahoo.search.Searcher;
@@ -35,7 +36,6 @@ import com.yahoo.searchlib.expression.StringResultNode;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.LinkedList;
@@ -123,7 +123,7 @@ public class GroupingExecutorTestCase {
         try {
             execute("each(output(strlen(customer)))");
             fail();
-        } catch (UnsupportedOperationException e) {
+        } catch (IllegalInputException e) {
 
         }
     }
@@ -180,13 +180,13 @@ public class GroupingExecutorTestCase {
                 .addChild(new com.yahoo.searchlib.aggregation.Group().setId(new StringResultNode("common")).addAggregationResult(new MinAggregationResult().setMin(new IntegerResultNode(6)).setTag(3)))
         );
         Execution exec = newExecution(new GroupingExecutor(),
-                new ResultProvider(Arrays.asList(
+                new ResultProvider(List.of(
                         new GroupingListHit(List.of(grpA), null, query),
                         new GroupingListHit(List.of(grpB), null, query))));
         Group grp = req.getResultGroup(exec.search(query));
         assertEquals(1, grp.size());
         Hit hit = grp.get(0);
-        assertTrue(hit instanceof GroupList);
+        assertInstanceOf(GroupList.class, hit);
         GroupList lst = (GroupList) hit;
         assertEquals(3, lst.size());
         assertNotNull(hit = lst.get("group:string:uniqueA"));
@@ -213,13 +213,13 @@ public class GroupingExecutorTestCase {
                 .addChild(new com.yahoo.searchlib.aggregation.Group().setId(new StringResultNode("unexpected")).addAggregationResult(new MaxAggregationResult().setMax(new IntegerResultNode(96)).setTag(3)))
         );
         Execution exec = newExecution(new GroupingExecutor(),
-                new ResultProvider(Arrays.asList(
+                new ResultProvider(List.of(
                         new GroupingListHit(List.of(grpExpected), null, query),
                         new GroupingListHit(List.of(grpUnexpected), null, query))));
         Group grp = req.getResultGroup(exec.search(query));
         assertEquals(1, grp.size());
         Hit hit = grp.get(0);
-        assertTrue(hit instanceof GroupList);
+        assertInstanceOf(GroupList.class, hit);
         GroupList lst = (GroupList) hit;
         assertEquals(1, lst.size());
         assertNotNull(hit = lst.get("group:string:expected"));
@@ -244,7 +244,7 @@ public class GroupingExecutorTestCase {
                         .addAggregationResult(new HitsAggregationResult(1, "bar").addHit(new com.yahoo.searchlib.aggregation.FS4Hit()))
                 ));
         Execution exec = newExecution(new GroupingExecutor(),
-                new ResultProvider(Arrays.asList(
+                new ResultProvider(List.of(
                         new GroupingListHit(List.of(grp0), null, query),
                         new GroupingListHit(List.of(grp1), null, query))),
                 new FillRequestThrower());
@@ -284,7 +284,7 @@ public class GroupingExecutorTestCase {
                                 new HitsAggregationResult(1, "bar")
                                         .addHit(new com.yahoo.searchlib.aggregation.FS4Hit()))));
         Execution exec = newExecution(new GroupingExecutor(),
-                new ResultProvider(Arrays.asList(
+                new ResultProvider(List.of(
                         new GroupingListHit(List.of(grp0), null, query),
                         new GroupingListHit(List.of(grp1), null, query))),
                 new FillErrorProvider());
@@ -310,7 +310,7 @@ public class GroupingExecutorTestCase {
                         .addAggregationResult(new CountAggregationResult(2))
                         .addOrderBy(new AggregationRefNode(0), true)));
         Result res = newExecution(new GroupingExecutor(),
-                new ResultProvider(Arrays.asList(
+                new ResultProvider(List.of(
                         new GroupingListHit(List.of(grp), null, query),
                         new GroupingListHit(List.of(grp), null, query)))).search(query);
 
@@ -339,7 +339,7 @@ public class GroupingExecutorTestCase {
         ErrorProvider err = new ErrorProvider(1);
         Execution exec = newExecution(new GroupingExecutor(),
                 err,
-                new ResultProvider(Arrays.asList(
+                new ResultProvider(List.of(
                         new GroupingListHit(List.of(grp0), null, query),
                         new GroupingListHit(List.of(grp1), null, query))));
         Result res = exec.search(query);
@@ -350,7 +350,7 @@ public class GroupingExecutorTestCase {
         err = new ErrorProvider(0);
         exec = newExecution(new GroupingExecutor(),
                 err,
-                new ResultProvider(Arrays.asList(
+                new ResultProvider(List.of(
                         new GroupingListHit(List.of(grp0), null, query),
                         new GroupingListHit(List.of(grp1), null, query))));
         res = exec.search(query);
@@ -389,9 +389,9 @@ public class GroupingExecutorTestCase {
                 ));
         SummaryMapper sm = new SummaryMapper();
         Execution exec = newExecution(new GroupingExecutor(),
-                new ResultProvider(Arrays.asList(
-                        new GroupingListHit(Arrays.asList(pass0A, pass0B), null, query),
-                        new GroupingListHit(Arrays.asList(pass1A, pass1B), null, query))),
+                new ResultProvider(List.of(
+                        new GroupingListHit(List.of(pass0A, pass0B), null, query),
+                        new GroupingListHit(List.of(pass1A, pass1B), null, query))),
                 sm);
         exec.fill(exec.search(query), "default");
         assertEquals(2, sm.hitsBySummary.size());
@@ -400,7 +400,7 @@ public class GroupingExecutorTestCase {
         assertNotNull(lst);
         assertEquals(1, lst.size());
         Hit hit = lst.get(0);
-        assertTrue(hit instanceof FastHit);
+        assertInstanceOf(FastHit.class, hit);
         assertEquals(1, ((FastHit) hit).getPartId());
         assertEquals(gid1, ((FastHit) hit).getGlobalId());
 
@@ -408,7 +408,7 @@ public class GroupingExecutorTestCase {
         assertNotNull(lst);
         assertEquals(1, lst.size());
         hit = lst.get(0);
-        assertTrue(hit instanceof FastHit);
+        assertInstanceOf(FastHit.class, hit);
         assertEquals(4, ((FastHit) hit).getPartId());
         assertEquals(gid2, ((FastHit) hit).getGlobalId());
     }
@@ -433,14 +433,14 @@ public class GroupingExecutorTestCase {
                                 new HitsAggregationResult(1, ExpressionConverter.DEFAULT_SUMMARY_NAME)
                                         .addHit(new com.yahoo.searchlib.aggregation.FS4Hit()))));
         Execution exec = newExecution(new GroupingExecutor(),
-                new ResultProvider(Arrays.asList(
+                new ResultProvider(List.of(
                         new GroupingListHit(List.of(pass0), null, query),
                         new GroupingListHit(List.of(pass1), null, query))));
         Result res = exec.search(query);
         exec.fill(res);
 
         Hit hit = ((HitList) ((Group) ((GroupList) req.getResultGroup(res).get(0)).get(0)).get(0)).get(0);
-        assertTrue(hit instanceof FastHit);
+        assertInstanceOf(FastHit.class, hit);
         assertTrue(hit.isFilled(null));
     }
 
@@ -468,7 +468,7 @@ public class GroupingExecutorTestCase {
 
         QueryMapper qm = new QueryMapper();
         Execution exec = newExecution(new GroupingExecutor(),
-                new ResultProvider(Arrays.asList(pass0, pass1)),
+                new ResultProvider(List.of(pass0, pass1)),
                 qm);
         exec.fill(exec.search(queryA));
         assertEquals(1, qm.hitsByQuery.size());
@@ -578,7 +578,7 @@ public class GroupingExecutorTestCase {
         Group group = request.getResultGroup(result);
         assertEquals(1, group.size());
         Hit hit = group.get(0);
-        assertTrue(hit instanceof GroupList);
+        assertInstanceOf(GroupList.class, hit);
         GroupList list = (GroupList) hit;
 
         assertEquals(4, list.size());
@@ -607,7 +607,7 @@ public class GroupingExecutorTestCase {
     }
 
     private static Execution newExecution(Searcher... searchers) {
-        return new Execution(new SearchChain(new ComponentId("foo"), Arrays.asList(searchers)),
+        return new Execution(new SearchChain(new ComponentId("foo"), List.of(searchers)),
                              Execution.Context.createContextStub());
     }
 

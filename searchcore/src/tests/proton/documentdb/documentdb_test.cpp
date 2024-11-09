@@ -8,8 +8,8 @@
 #include <vespa/searchcore/proton/flushengine/shrink_lid_space_flush_target.h>
 #include <vespa/searchcore/proton/flushengine/threadedflushtarget.h>
 #include <vespa/searchcore/proton/matching/querylimiter.h>
+#include <vespa/searchcore/proton/metrics/dummy_wire_service.h>
 #include <vespa/searchcore/proton/metrics/job_tracked_flush_target.h>
-#include <vespa/searchcore/proton/metrics/metricswireservice.h>
 #include <vespa/searchcore/proton/reference/i_document_db_reference.h>
 #include <vespa/searchcore/proton/reference/i_document_db_reference_registry.h>
 #include <vespa/searchcore/proton/server/bootstrapconfig.h>
@@ -20,6 +20,7 @@
 #include <vespa/searchcore/proton/server/fileconfigmanager.h>
 #include <vespa/searchcore/proton/server/memoryconfigstore.h>
 #include <vespa/searchcore/proton/test/mock_shared_threading_service.h>
+#include <vespa/searchcore/proton/test/port_numbers.h>
 #include <vespa/searchcorespi/index/indexflushtarget.h>
 #include <vespa/config-bucketspaces.h>
 #include <vespa/config/subscription/sourcespec.h>
@@ -33,9 +34,11 @@
 #include <vespa/searchlib/index/dummyfileheadercontext.h>
 #include <vespa/searchlib/transactionlog/translogserver.h>
 #include <vespa/vespalib/data/slime/slime.h>
+#include <vespa/vespalib/gtest/gtest.h>
+#include <vespa/vespalib/net/socket_spec.h>
 #include <vespa/vespalib/stllike/asciistream.h>
-#include <vespa/vespalib/testkit/test_kit.h>
 #include <vespa/vespalib/util/size_literals.h>
+#include <vespa/vespalib/testkit/test_path.h>
 #include <filesystem>
 #include <iostream>
 
@@ -60,6 +63,11 @@ using vespalib::HwInfo;
 using vespalib::Slime;
 
 namespace {
+constexpr int tls_port = proton::test::port_numbers::documentdb_tls_port;
+
+std::string tls_port_spec() {
+    return vespalib::SocketSpec::from_host_port("localhost", tls_port).spec();
+}
 
 void
 cleanup_dirs(bool file_config)
@@ -71,7 +79,7 @@ cleanup_dirs(bool file_config)
     }
 }
 
-vespalib::string
+std::string
 config_subdir(SerialNum serialNum)
 {
     vespalib::asciistream os;
@@ -133,7 +141,7 @@ Fixture::Fixture(bool file_config)
       _hwInfo(),
       _db(),
       _fileHeaderContext(),
-      _tls(_shared_service.transport(), "tmp", 9014, ".", _fileHeaderContext),
+      _tls(_shared_service.transport(), "tmp", tls_port, ".", _fileHeaderContext),
       _queryLimiter()
 {
     auto documenttypesConfig = std::make_shared<DocumenttypesConfig>();
@@ -143,19 +151,20 @@ Fixture::Fixture(bool file_config)
     config::DirSpec spec(TEST_PATH("cfg"));
     DocumentDBConfigHelper mgr(spec, "typea");
     auto b = std::make_shared<BootstrapConfig>(1, documenttypesConfig, repo,
-                              std::make_shared<ProtonConfig>(),
-                              std::make_shared<FiledistributorrpcConfig>(),
-                              std::make_shared<BucketspacesConfig>(),
-                              tuneFileDocumentDB, HwInfo());
+                                               std::make_shared<ProtonConfig>(),
+                                               std::make_shared<FiledistributorrpcConfig>(),
+                                               std::make_shared<BucketspacesConfig>(),
+                                               tuneFileDocumentDB, HwInfo());
     mgr.forwardConfig(b);
     mgr.nextGeneration(_shared_service.transport(), 0ms);
-    _db = DocumentDB::create(".", mgr.getConfig(), "tcp/localhost:9014", _queryLimiter, DocTypeName("typea"),
+    _db = DocumentDB::create(".", mgr.getConfig(), tls_port_spec(), _queryLimiter, DocTypeName("typea"),
                              makeBucketSpace(),
                              *b->getProtonConfigSP(), _myDBOwner, _shared_service, _tls, _dummy,
                              _fileHeaderContext,
                              std::make_shared<search::attribute::Interlock>(),
                              make_config_store(),
-                             std::make_shared<vespalib::ThreadStackExecutor>(16), _hwInfo);
+                             std::make_shared<vespalib::ThreadStackExecutor>(16), _hwInfo,
+                             std::shared_ptr<search::diskindex::IPostingListCache>());
     _db->start();
     _db->waitForOnlineState();
 }
@@ -189,7 +198,35 @@ extractRealFlushTarget(const IFlushTarget *target)
     return nullptr;
 }
 
-TEST_F("requireThatIndexFlushTargetIsUsed", Fixture) {
+}
+
+class DocumentDBTest : public ::testing::Test {
+protected:
+    DocumentDBTest();
+    ~DocumentDBTest() override;
+    static void SetUpTestSuite();
+    static void TearDownTestSuite();
+};
+
+DocumentDBTest::DocumentDBTest() = default;
+DocumentDBTest::~DocumentDBTest() = default;
+
+void
+DocumentDBTest::SetUpTestSuite()
+{
+    cleanup_dirs(true);
+    DummyFileHeaderContext::setCreator("documentdb_test");
+}
+
+void
+DocumentDBTest::TearDownTestSuite()
+{
+    cleanup_dirs(true);
+}
+
+TEST_F(DocumentDBTest, requireThatIndexFlushTargetIsUsed)
+{
+    Fixture f;
     auto targets = f._db->getFlushTargets();
     ASSERT_TRUE(!targets.empty());
     const IndexFlushTarget *index = nullptr;
@@ -205,6 +242,8 @@ TEST_F("requireThatIndexFlushTargetIsUsed", Fixture) {
     ASSERT_TRUE(index);
 }
 
+namespace {
+
 template <typename Target>
 size_t getNumTargets(const std::vector<IFlushTarget::SP> & targets)
 {
@@ -219,89 +258,105 @@ size_t getNumTargets(const std::vector<IFlushTarget::SP> & targets)
     return retval;
 }
 
-TEST_F("requireThatFlushTargetsAreNamedBySubDocumentDB", Fixture) {
+}
+
+TEST_F(DocumentDBTest, requireThatFlushTargetsAreNamedBySubDocumentDB)
+{
+    Fixture f;
     auto targets = f._db->getFlushTargets();
     ASSERT_TRUE(!targets.empty());
     for (const IFlushTarget::SP & target : f._db->getFlushTargets()) {
-        vespalib::string name = target->getName();
+        std::string name = target->getName();
         EXPECT_TRUE((name.find("0.ready.") == 0) ||
                     (name.find("1.removed.") == 0) ||
                     (name.find("2.notready.") == 0));
     }
 }
 
-TEST_F("requireThatAttributeFlushTargetsAreUsed", Fixture) {
+TEST_F(DocumentDBTest, requireThatAttributeFlushTargetsAreUsed)
+{
+    Fixture f;
     auto targets = f._db->getFlushTargets();
     ASSERT_TRUE(!targets.empty());
     size_t numAttrs = getNumTargets<FlushableAttribute>(targets);
     // attr1 defined in attributes.cfg
-    EXPECT_EQUAL(1u, numAttrs);
+    EXPECT_EQ(1u, numAttrs);
 }
 
-TEST_F("requireThatDocumentMetaStoreFlushTargetIsUsed", Fixture) {
+TEST_F(DocumentDBTest, requireThatDocumentMetaStoreFlushTargetIsUsed)
+{
+    Fixture f;
     auto targets = f._db->getFlushTargets();
     ASSERT_TRUE(!targets.empty());
     size_t numMetaStores = getNumTargets<DocumentMetaStoreFlushTarget>(targets);
-    EXPECT_EQUAL(3u, numMetaStores);
+    EXPECT_EQ(3u, numMetaStores);
 }
 
-TEST_F("requireThatSummaryFlushTargetsIsUsed", Fixture) {
+TEST_F(DocumentDBTest, requireThatSummaryFlushTargetsIsUsed)
+{
+    Fixture f;
     auto targets = f._db->getFlushTargets();
     ASSERT_TRUE(!targets.empty());
     size_t num = getNumTargets<SummaryFlushTarget>(targets);
-    EXPECT_EQUAL(3u, num);
+    EXPECT_EQ(3u, num);
 }
 
-TEST_F("require that shrink lid space flush targets are created", Fixture) {
+TEST_F(DocumentDBTest, require_that_shrink_lid_space_flush_targets_are_created)
+{
+    Fixture f;
     auto targets = f._db->getFlushTargets();
     ASSERT_TRUE(!targets.empty());
     size_t num = getNumTargets<ShrinkLidSpaceFlushTarget>(targets);
     // 1x attribute, 3x document meta store, 3x document store
-    EXPECT_EQUAL(1u + 3u + 3u, num);
+    EXPECT_EQ(1u + 3u + 3u, num);
 }
 
-TEST_F("requireThatCorrectStatusIsReported", Fixture) {
-    StatusReport::UP report(f._db->reportStatus());
-    EXPECT_EQUAL("documentdb:typea", report->getComponent());
-    EXPECT_EQUAL(StatusReport::UPOK, report->getState());
-    EXPECT_EQUAL("", report->getMessage());
-}
-
-TEST_F("requireThatStateIsReported", Fixture)
+TEST_F(DocumentDBTest, requireThatCorrectStatusIsReported)
 {
+    Fixture f;
+    StatusReport::UP report(f._db->reportStatus());
+    EXPECT_EQ("documentdb:typea", report->getComponent());
+    EXPECT_EQ(StatusReport::UPOK, report->getState());
+    EXPECT_EQ("", report->getMessage());
+}
+
+TEST_F(DocumentDBTest, requireThatStateIsReported)
+{
+    Fixture f;
     Slime slime;
     SlimeInserter inserter(slime);
     DocumentDBExplorer(f._db).get_state(inserter, false);
 
-    EXPECT_EQUAL(
-            "{\n"
-            "    \"documentType\": \"typea\",\n"
-            "    \"status\": {\n"
-            "        \"state\": \"ONLINE\",\n"
-            "        \"configState\": \"OK\"\n"
-            "    },\n"
-            "    \"documents\": {\n"
-            "        \"active\": 0,\n"
-            "        \"ready\": 0,\n"
-            "        \"total\": 0,\n"
-            "        \"removed\": 0\n"
-            "    }\n"
-            "}\n",
-            slime.toString());
+    EXPECT_EQ(
+        "{\n"
+        "    \"documentType\": \"typea\",\n"
+        "    \"status\": {\n"
+        "        \"state\": \"ONLINE\",\n"
+        "        \"configState\": \"OK\"\n"
+        "    },\n"
+        "    \"documents\": {\n"
+        "        \"active\": 0,\n"
+        "        \"ready\": 0,\n"
+        "        \"total\": 0,\n"
+        "        \"removed\": 0\n"
+        "    }\n"
+        "}\n",
+        slime.toString());
 }
 
-TEST_F("require that document db registers reference", Fixture)
+TEST_F(DocumentDBTest, require_that_document_db_registers_reference)
 {
+    Fixture f;
     auto &registry = f._myDBOwner._registry;
     auto reference = registry->get("typea");
     EXPECT_TRUE(reference);
     auto attr = reference->getAttribute("attr1");
     EXPECT_TRUE(attr);
     auto attrReadGuard = attr->makeReadGuard(false);
-    EXPECT_EQUAL(search::attribute::BasicType::INT32, attrReadGuard->attribute()->getBasicType());
+    EXPECT_EQ(search::attribute::BasicType::INT32, attrReadGuard->attribute()->getBasicType());
 }
 
-TEST("require that normal restart works")
+TEST_F(DocumentDBTest, require_that_normal_restart_works)
 {
     {
         Fixture f(true);
@@ -312,7 +367,7 @@ TEST("require that normal restart works")
     }
 }
 
-TEST("require that resume after interrupted save config works")
+TEST_F(DocumentDBTest, require_that_resume_after_interrupted_save_config_works)
 {
     SerialNum serialNum = 0;
     {
@@ -342,11 +397,4 @@ TEST("require that resume after interrupted save config works")
     }
 }
 
-}  // namespace
-
-TEST_MAIN() {
-    cleanup_dirs(true);
-    DummyFileHeaderContext::setCreator("documentdb_test");
-    TEST_RUN_ALL();
-    cleanup_dirs(true);
-}
+GTEST_MAIN_RUN_ALL_TESTS()

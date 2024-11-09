@@ -12,12 +12,13 @@ namespace search::streaming {
 class SameElementQueryNode : public MultiTerm
 {
 public:
-    SameElementQueryNode(std::unique_ptr<QueryNodeResultBase> result_base, const string& index, uint32_t num_terms) noexcept;
+    SameElementQueryNode(std::unique_ptr<QueryNodeResultBase> result_base, string index, uint32_t num_terms) noexcept;
     ~SameElementQueryNode() override;
     bool evaluate() const override;
     const HitList & evaluateHits(HitList & hl) const override;
     void unpack_match_data(uint32_t docid, const fef::ITermData& td, fef::MatchData& match_data, const fef::IIndexEnvironment& index_env) override;
     bool multi_index_terms() const noexcept override;
+    bool is_same_element_query_node() const noexcept override;
 };
 
 }

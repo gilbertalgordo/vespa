@@ -81,7 +81,7 @@ private:
             assert(!_insideWord);
             _ss << "]";
         }
-        void startWord(vespalib::stringref word) override {
+        void startWord(std::string_view word) override {
             assert(!_insideWord);
             if (!_firstWord)
                 _ss << ",";
@@ -235,7 +235,7 @@ assertPostingList(std::vector<uint32_t> &exp, PostingIteratorType itr)
 
 template <bool interleaved_features>
 typename FieldIndex<interleaved_features>::PostingList::Iterator
-find_in_field_index(const vespalib::stringref word,
+find_in_field_index(const std::string_view word,
                     uint32_t field_id,
                     const FieldIndexCollection& fic)
 {
@@ -247,7 +247,7 @@ find_in_field_index(const vespalib::stringref word,
 
 template <bool interleaved_features>
 typename FieldIndex<interleaved_features>::PostingList::ConstIterator
-find_frozen_in_field_index(const vespalib::stringref word,
+find_frozen_in_field_index(const std::string_view word,
                            uint32_t field_id,
                            const FieldIndexCollection& fic)
 {
@@ -264,15 +264,15 @@ namespace {
  * that we get correct posting lists from real memory field index.
  */
 class MockFieldIndex {
-    std::map<std::pair<vespalib::string, uint32_t>, std::set<uint32_t>> _dict;
-    vespalib::string _word;
+    std::map<std::pair<std::string, uint32_t>, std::set<uint32_t>> _dict;
+    std::string _word;
     uint32_t _fieldId;
 
 public:
     MockFieldIndex();
     ~MockFieldIndex();
     void
-    setNextWord(const vespalib::string &word) {
+    setNextWord(const std::string &word) {
         _word = word;
     }
 
@@ -288,7 +288,7 @@ public:
         _dict[std::make_pair(_word, _fieldId)].erase(docId);
     }
 
-    std::vector<uint32_t> find(const vespalib::string &word, uint32_t fieldId) {
+    std::vector<uint32_t> find(const std::string &word, uint32_t fieldId) {
         std::vector<uint32_t> res;
         for (auto docId : _dict[std::make_pair(word, fieldId)] ) {
             res.push_back(docId);
@@ -319,7 +319,7 @@ MockFieldIndex::~MockFieldIndex() = default;
  * needs.
  */
 class MockWordStoreScan {
-    std::unordered_set<vespalib::string, vespalib::hash<vespalib::string>> _words;
+    std::unordered_set<std::string, vespalib::hash<std::string>> _words;
 
 public:
     MockWordStoreScan()
@@ -327,7 +327,7 @@ public:
     { }
     ~MockWordStoreScan();
 
-    const vespalib::string &setWord(const vespalib::string &word) {
+    const std::string &setWord(const std::string &word) {
         return *_words.insert(word).first;
     }
 };
@@ -358,8 +358,8 @@ public:
     }
     ~MyInserter();
 
-    void setNextWord(const vespalib::string &word) {
-        const vespalib::string &w = _wordStoreScan.setWord(word);
+    void setNextWord(const std::string &word) {
+        const std::string &w = _wordStoreScan.setWord(word);
         _inserter->setNextWord(w);
         _mock.setNextWord(w);
     }
@@ -383,7 +383,7 @@ public:
         _mock.remove(docId);
     }
 
-    bool assertPosting(const vespalib::string &word,
+    bool assertPosting(const std::string &word,
                        uint32_t fieldId) {
         std::vector<uint32_t> exp = _mock.find(word, fieldId);
         auto itr = find_in_field_index<false>(word, fieldId, _fieldIndexes);
@@ -437,7 +437,7 @@ myremove(uint32_t docId, DocumentInverter &inv)
 class MyDrainRemoves : IFieldIndexRemoveListener {
     FieldIndexRemover &_remover;
 public:
-    void remove(const vespalib::stringref, uint32_t) override { }
+    void remove(const std::string_view, uint32_t) override { }
 
     MyDrainRemoves(FieldIndexCollection &fieldIndexes, uint32_t fieldId)
         : _remover(fieldIndexes.getFieldIndex(fieldId)->getDocumentRemover())
@@ -543,7 +543,7 @@ struct FieldIndexTest : public ::testing::Test {
     {
     }
     ~FieldIndexTest() override;
-    SearchIterator::UP search(const vespalib::stringref word,
+    SearchIterator::UP search(const std::string_view word,
                               const SimpleMatchData& match_data) {
         return make_search_iterator<FieldIndexType::has_interleaved_features>(idx.find(word), idx.getFeatureStore(), 0, match_data.array);
     }
@@ -737,7 +737,7 @@ struct FieldIndexCollectionTest : public ::testing::Test {
     ~FieldIndexCollectionTest() override;
 
     [[nodiscard]]NormalFieldIndex::PostingList::Iterator
-    find(const vespalib::stringref word, uint32_t field_id) const {
+    find(const std::string_view word, uint32_t field_id) const {
         return find_in_field_index<false>(word, field_id, fic);
     }
 };
@@ -951,14 +951,14 @@ public:
           _inv(_inv_context)
     {
     }
-    [[nodiscard]] NormalFieldIndex::PostingList::Iterator find(const vespalib::stringref word, uint32_t field_id) const {
+    [[nodiscard]] NormalFieldIndex::PostingList::Iterator find(const std::string_view word, uint32_t field_id) const {
         return find_in_field_index<false>(word, field_id, _fic);
     }
-    [[nodiscard]] NormalFieldIndex::PostingList::ConstIterator findFrozen(const vespalib::stringref word, uint32_t field_id) const {
+    [[nodiscard]] NormalFieldIndex::PostingList::ConstIterator findFrozen(const std::string_view word, uint32_t field_id) const {
         return find_frozen_in_field_index<false>(word, field_id, _fic);
     }
     [[nodiscard]] SearchIterator::UP
-    search(const vespalib::stringref word, uint32_t field_id,const SimpleMatchData& match_data) const {
+    search(const std::string_view word, uint32_t field_id,const SimpleMatchData& match_data) const {
         return make_search_iterator<false>(findFrozen(word, field_id), featureStoreRef(_fic, field_id),
                                            field_id, match_data.array);
     }
@@ -1289,7 +1289,7 @@ TEST_F(CjkInverterTest, require_that_cjk_indexing_is_working)
 }
 
 void
-insertAndAssertTuple(const vespalib::string &word, uint32_t fieldId, uint32_t docId,
+insertAndAssertTuple(const std::string &word, uint32_t fieldId, uint32_t docId,
                      FieldIndexCollection &dict)
 {
     EntryRef wordRef = WrapInserter(dict, fieldId).rewind().word(word).
@@ -1320,9 +1320,9 @@ struct RemoverTest : public FieldIndexCollectionTest {
           _pushThreads(SequencedTaskExecutor::create(push_executor, 2))
     {
     }
-    void assertPostingLists(const vespalib::string &e1,
-                            const vespalib::string &e2,
-                            const vespalib::string &e3) {
+    void assertPostingLists(const std::string &e1,
+                            const std::string &e2,
+                            const std::string &e3) {
         EXPECT_TRUE(assertPostingList(e1, find("a", 1)));
         EXPECT_TRUE(assertPostingList(e2, find("a", 2)));
         EXPECT_TRUE(assertPostingList(e3, find("b", 1)));

@@ -151,25 +151,10 @@ RPCNetwork::flushTargetPool()
     _targetPool->flushTargets(true);
 }
 
-namespace {
-
-[[nodiscard]] vespalib::Version derive_supported_protocol_version() {
-    // TODO remove this hilariously leaky abstraction once protobuf protocol is the default :D
-    // Disallow-version MUST be lower than that used as a protocol lower bound in documentprotocol.cpp
-    // and the exact same as that used in Java for the same purposes. Or else!
-    const char* maybe_env_val = getenv("VESPA_MBUS_DOCUMENTAPI_USE_PROTOBUF");
-    if (maybe_env_val && (("true"sv == maybe_env_val) || ("yes"sv == maybe_env_val))) {
-        return {8, 310}; // _Allows_ new protobuf protocol
-    }
-    return {8, 309}; // _Disallows_ new protobuf protocol
-}
-
-}
-
 const vespalib::Version &
 RPCNetwork::getVersion() const
 {
-    static vespalib::Version reported_version = derive_supported_protocol_version();
+    static vespalib::Version reported_version(8, 310); // _Allows_ new protobuf protocol
     return reported_version;
 }
 
@@ -241,7 +226,7 @@ RPCNetwork::waitUntilReady(duration timeout) const
         LOG(error, "failed to get config for slobroks in %2.2f seconds", vespalib::to_s(timeout));
     } else if (! _mirror->ready()) {
         auto brokers = brokerList.logString();
-        LOG(error, "mirror (of %s) failed to become ready in %2.2f seconds", brokers.c_str(), vespalib::to_s(timeout));
+        LOG(warning, "mirror (of %s) failed to become ready in %2.2f seconds", brokers.c_str(), vespalib::to_s(timeout));
     }
     return false;
 }
@@ -352,7 +337,7 @@ emit_recipient_endpoint(vespalib::asciistream& stream, const RoutingNode& recipi
 
 }
 
-vespalib::string
+std::string
 RPCNetwork::buildRecipientListString(const SendContext& ctx) {
     vespalib::asciistream s;
     bool first = true;

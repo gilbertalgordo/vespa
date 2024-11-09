@@ -18,7 +18,7 @@ class IBmDistribution;
  */
 class SpiBmFeedHandler : public IBmFeedHandler
 {
-    vespalib::string                                _name;
+    std::string                                _name;
     std::vector<storage::spi::PersistenceProvider*> _providers;
     const document::FieldSetRepo&                   _field_set_repo;
     std::atomic<uint32_t>                            _errors;
@@ -32,10 +32,10 @@ public:
     void put(const document::Bucket& bucket, std::unique_ptr<document::Document> document, uint64_t timestamp, PendingTracker& tracker) override;
     void update(const document::Bucket& bucket, std::unique_ptr<document::DocumentUpdate> document_update, uint64_t timestamp, PendingTracker& tracker) override;
     void remove(const document::Bucket& bucket, const document::DocumentId& document_id,  uint64_t timestamp, PendingTracker& tracker) override;
-    void get(const document::Bucket& bucket, vespalib::stringref field_set_string, const document::DocumentId& document_id, PendingTracker& tracker) override;
+    void get(const document::Bucket& bucket, std::string_view field_set_string, const document::DocumentId& document_id, PendingTracker& tracker) override;
     void attach_bucket_info_queue(PendingTracker &tracker) override;
     uint32_t get_error_count() const override;
-    const vespalib::string &get_name() const override;
+    const std::string &get_name() const override;
     bool manages_timestamp() const override;
 };
 

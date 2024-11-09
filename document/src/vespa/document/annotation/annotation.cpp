@@ -5,6 +5,7 @@
 #include <vespa/document/fieldvalue/fieldvalue.h>
 #include <vespa/document/util/bytebuffer.h>
 #include <vespa/vespalib/stllike/asciistream.h>
+#include <ostream>
 
 namespace document {
 
@@ -14,7 +15,7 @@ std::ostream & operator << (std::ostream & os, const Annotation &annotation) {
 
 Annotation::~Annotation() = default;
 
-vespalib::string
+std::string
 Annotation::toString() const {
     vespalib::asciistream os;
     os << "Annotation(" << *_type;

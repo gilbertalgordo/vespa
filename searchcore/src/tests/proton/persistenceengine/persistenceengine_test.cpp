@@ -17,8 +17,9 @@
 #include <vespa/searchcore/proton/test/disk_mem_usage_notifier.h>
 #include <vespa/vdslib/distribution/distribution.h>
 #include <vespa/vdslib/state/clusterstate.h>
-#include <vespa/vespalib/testkit/testapp.h>
 #include <set>
+#include <vespa/vespalib/testkit/test_kit.h>
+#include <vespa/vespalib/testkit/test_master.hpp>
 
 using document::BucketId;
 using document::BucketSpace;
@@ -53,7 +54,7 @@ using namespace proton;
 using namespace vespalib;
 
 DocumentType
-createDocType(const vespalib::string &name, int32_t id)
+createDocType(const std::string &name, int32_t id)
 {
     return DocumentType(name, id);
 }
@@ -137,7 +138,7 @@ struct MyDocumentRetriever : DocumentRetrieverBaseForTest {
         return Document::UP();
     }
 
-    CachedSelect::SP parseSelect(const vespalib::string &) const override {
+    CachedSelect::SP parseSelect(const std::string &) const override {
         return CachedSelect::SP();
     }
 };
@@ -223,7 +224,7 @@ struct MyHandler : public IPersistenceHandler, IBucketFreezer {
 
     void handleRemoveByGid(FeedToken token, const Bucket& bucket,
                            Timestamp timestamp,
-                           vespalib::stringref, const GlobalId&) override {
+                           std::string_view, const GlobalId&) override {
         bool wasFound = existingTimestamp > 0;
         token->setResult(std::make_unique<RemoveResult>(wasFound), wasFound);
         handle(token, bucket, timestamp, DocumentId());
@@ -385,7 +386,7 @@ class SimplePersistenceEngineOwner : public IPersistenceEngineOwner
 struct SimpleResourceWriteFilter : public IResourceWriteFilter
 {
     bool _acceptWriteOperation;
-    vespalib::string _message;
+    std::string _message;
     SimpleResourceWriteFilter()
         : _acceptWriteOperation(true),
           _message()
@@ -748,7 +749,7 @@ TEST_F("require that destroyIterator prevents iteration", SimpleFixture) {
     IterateResult it_result = f.engine.iterate(create_result.getIteratorId(), max_size);
     EXPECT_TRUE(it_result.hasError());
     EXPECT_EQUAL(Result::ErrorType::PERMANENT_ERROR, it_result.getErrorCode());
-    string msg_prefix = "Unknown iterator with id";
+    std::string msg_prefix = "Unknown iterator with id";
     EXPECT_EQUAL(msg_prefix, it_result.getErrorMessage().substr(0, msg_prefix.size()));
 }
 

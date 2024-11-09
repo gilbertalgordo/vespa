@@ -83,7 +83,7 @@ FieldIndex<interleaved_features>::~FieldIndex()
 
 template <bool interleaved_features>
 typename FieldIndex<interleaved_features>::PostingList::Iterator
-FieldIndex<interleaved_features>::find(const vespalib::stringref word) const
+FieldIndex<interleaved_features>::find(const std::string_view word) const
 {
     DictionaryTree::Iterator itr = _dict.find(WordKey(EntryRef()), KeyComp(_wordStore, word));
     if (itr.valid()) {
@@ -94,7 +94,7 @@ FieldIndex<interleaved_features>::find(const vespalib::stringref word) const
 
 template <bool interleaved_features>
 typename FieldIndex<interleaved_features>::PostingList::ConstIterator
-FieldIndex<interleaved_features>::findFrozen(const vespalib::stringref word) const
+FieldIndex<interleaved_features>::findFrozen(const std::string_view word) const
 {
     auto itr = _dict.getFrozenView().find(WordKey(EntryRef()), KeyComp(_wordStore, word));
     if (itr.valid()) {
@@ -154,7 +154,7 @@ template <bool interleaved_features>
 void
 FieldIndex<interleaved_features>::dump(search::index::FieldIndexBuilder & indexBuilder)
 {
-    vespalib::stringref word;
+    std::string_view word;
     FeatureStore::DecodeContextCooked decoder(nullptr);
     DocIdAndFeatures features;
     vespalib::Array<uint32_t> wordMap(_numUniqueWords + 1, 0);
@@ -213,8 +213,19 @@ FieldIndex<interleaved_features>::getMemoryUsage() const
 }
 
 template <bool interleaved_features>
+void
+FieldIndex<interleaved_features>::commit()
+{
+    _remover.flush();
+    freeze();
+    assign_generation();
+    incGeneration();
+    reclaim_memory();
+}
+
+template <bool interleaved_features>
 queryeval::SearchIterator::UP
-FieldIndex<interleaved_features>::make_search_iterator(const vespalib::string& term,
+FieldIndex<interleaved_features>::make_search_iterator(const std::string& term,
                                                        uint32_t field_id,
                                                        fef::TermFieldMatchDataArray match_data) const
 {
@@ -234,7 +245,7 @@ private:
     PostingListIteratorType _posting_itr;
     const FeatureStore& _feature_store;
     const uint32_t _field_id;
-    const vespalib::string _query_term;
+    const std::string _query_term;
     const bool _use_bit_vector;
 
 public:
@@ -243,12 +254,12 @@ public:
                         const FeatureStore& feature_store,
                         const queryeval::FieldSpec& field,
                         uint32_t field_id,
-                        const vespalib::string& query_term,
+                        const std::string& query_term,
                         bool use_bit_vector)
         : SimpleLeafBlueprint(field),
           _guard(),
           _field(field),
-          _posting_itr(posting_itr),
+          _posting_itr(std::move(posting_itr)),
           _feature_store(feature_store),
           _field_id(field_id),
           _query_term(query_term),
@@ -261,10 +272,10 @@ public:
 
     queryeval::FlowStats calculate_flow_stats(uint32_t docid_limit) const override {
         double rel_est = abs_to_rel_est(_posting_itr.size(), docid_limit);
-        return {rel_est, btree_cost(), btree_strict_cost(rel_est)};
+        return {rel_est, btree_cost(rel_est), btree_strict_cost(rel_est)};
     }
     
-    SearchIterator::UP createLeafSearch(const TermFieldMatchDataArray& tfmda, bool) const override {
+    SearchIterator::UP createLeafSearch(const TermFieldMatchDataArray& tfmda) const override {
         auto result = make_search_iterator<interleaved_features>(_posting_itr, _feature_store, _field_id, tfmda);
         if (_use_bit_vector) {
             LOG(debug, "Return BooleanMatchIteratorWrapper: field_id(%u), doc_count(%zu)",
@@ -276,7 +287,7 @@ public:
         return result;
     }
 
-    SearchIterator::UP createFilterSearch(bool, FilterConstraint) const override {
+    SearchIterator::UP createFilterSearch(FilterConstraint) const override {
         auto wrapper = std::make_unique<queryeval::FilterWrapper>(getState().numFields());
         auto & tfmda = wrapper->tfmda();
         wrapper->wrap(make_search_iterator<interleaved_features>(_posting_itr, _feature_store, _field_id, tfmda));
@@ -294,7 +305,7 @@ public:
 
 template <bool interleaved_features>
 std::unique_ptr<queryeval::SimpleLeafBlueprint>
-FieldIndex<interleaved_features>::make_term_blueprint(const vespalib::string& term,
+FieldIndex<interleaved_features>::make_term_blueprint(const std::string& term,
                                                       const queryeval::FieldSpec& field,
                                                       uint32_t field_id)
 {
@@ -302,7 +313,7 @@ FieldIndex<interleaved_features>::make_term_blueprint(const vespalib::string& te
     auto posting_itr = findFrozen(term);
     bool use_bit_vector = field.isFilter();
     return std::make_unique<MemoryTermBlueprint<interleaved_features>>
-            (std::move(guard), posting_itr, getFeatureStore(), field, field_id, term, use_bit_vector);
+            (std::move(guard), std::move(posting_itr), getFeatureStore(), field, field_id, term, use_bit_vector);
 }
 
 template class FieldIndex<false>;

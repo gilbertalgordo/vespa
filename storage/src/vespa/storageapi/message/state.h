@@ -9,12 +9,6 @@
 
 namespace storage::api {
 
-/**
- * @class GetNodeStateCommand
- * @ingroup message
- *
- * @brief Command for setting node state. No payload
- */
 class GetNodeStateCommand : public StorageCommand {
     lib::NodeState::UP _expectedState;
 
@@ -27,12 +21,6 @@ public:
     DECLARE_STORAGECOMMAND(GetNodeStateCommand, onGetNodeState)
 };
 
-/**
- * @class GetNodeStateReply
- * @ingroup message
- *
- * @brief Reply to GetNodeStateCommand
- */
 class GetNodeStateReply : public StorageReply {
     lib::NodeState::UP _state;
     std::string _nodeInfo;
@@ -53,41 +41,38 @@ public:
 };
 
 /**
- * @class SetSystemStateCommand
- * @ingroup message
- *
- * @brief Command for telling a node about the system state - state of each node
- *  in the system and state of the system (all ok, no merging, block
- *  put/get/remove etx)
+ * Command for telling a node about the cluster state - state of each node
+ * in the cluster and state of the cluster itself (all ok, no merging, block
+ * put/get/remove etx)
  */
 class SetSystemStateCommand : public StorageCommand {
-    lib::ClusterStateBundle _state;
+    std::shared_ptr<const lib::ClusterStateBundle> _state;
 
 public:
+    explicit SetSystemStateCommand(std::shared_ptr<const lib::ClusterStateBundle> state);
     explicit SetSystemStateCommand(const lib::ClusterStateBundle &state);
     explicit SetSystemStateCommand(const lib::ClusterState &state);
-    const lib::ClusterState& getSystemState() const { return *_state.getBaselineClusterState(); }
-    const lib::ClusterStateBundle& getClusterStateBundle() const { return _state; }
+    ~SetSystemStateCommand() override;
+
+    [[nodiscard]] const lib::ClusterState& getSystemState() const { return *_state->getBaselineClusterState(); }
+    [[nodiscard]] const lib::ClusterStateBundle& getClusterStateBundle() const { return *_state; }
+    [[nodiscard]] std::shared_ptr<const lib::ClusterStateBundle> cluster_state_bundle_ptr() const noexcept {
+        return _state;
+    }
     void print(std::ostream& out, bool verbose, const std::string& indent) const override;
 
     DECLARE_STORAGECOMMAND(SetSystemStateCommand, onSetSystemState)
 };
 
-/**
- * @class SetSystemStateReply
- * @ingroup message
- *
- * @brief Reply received after a SetSystemStateCommand.
- */
 class SetSystemStateReply : public StorageReply {
-    lib::ClusterStateBundle _state;
+    std::shared_ptr<const lib::ClusterStateBundle> _state;
 
 public:
     explicit SetSystemStateReply(const SetSystemStateCommand& cmd);
 
     // Not serialized. Available locally
-    const lib::ClusterState& getSystemState() const { return *_state.getBaselineClusterState(); }
-    const lib::ClusterStateBundle& getClusterStateBundle() const { return _state; }
+    const lib::ClusterState& getSystemState() const { return *_state->getBaselineClusterState(); }
+    const lib::ClusterStateBundle& getClusterStateBundle() const { return *_state; }
     void print(std::ostream& out, bool verbose, const std::string& indent) const override;
 
     DECLARE_STORAGEREPLY(SetSystemStateReply, onSetSystemStateReply)

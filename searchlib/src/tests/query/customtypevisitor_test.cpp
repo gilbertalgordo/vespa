@@ -5,7 +5,7 @@
 #include <vespa/searchlib/query/tree/intermediatenodes.h>
 #include <vespa/searchlib/query/tree/string_term_vector.h>
 #include <vespa/searchlib/query/tree/termnodes.h>
-#include <vespa/vespalib/testkit/testapp.h>
+#include <vespa/vespalib/testkit/test_kit.h>
 
 #include <vespa/log/log.h>
 LOG_SETUP("customtypevisitor_test");
@@ -37,7 +37,7 @@ struct MyRangeTerm : InitTerm<RangeTerm> {};
 struct MyStringTerm : InitTerm<StringTerm>  {};
 struct MySubstrTerm : InitTerm<SubstringTerm>  {};
 struct MySuffixTerm : InitTerm<SuffixTerm>  {};
-struct MyFuzzyTerm : FuzzyTerm { MyFuzzyTerm(): FuzzyTerm("term", "view", 0, Weight(0), 2, 0) {} };
+struct MyFuzzyTerm : FuzzyTerm { MyFuzzyTerm(): FuzzyTerm("term", "view", 0, Weight(0), 2, 0, false) {} };
 struct MyWeakAnd : WeakAnd { MyWeakAnd() : WeakAnd(1234, "view") {} };
 struct MyWeightedSetTerm : WeightedSetTerm { MyWeightedSetTerm() : WeightedSetTerm(0, "view", 0, Weight(42)) {} };
 struct MyDotProduct : DotProduct { MyDotProduct() : DotProduct(0, "view", 0, Weight(42)) {} };

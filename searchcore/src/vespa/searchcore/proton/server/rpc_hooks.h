@@ -4,8 +4,8 @@
 
 #include <vespa/slobrok/sbregister.h>
 #include <vespa/vespalib/util/executor.h>
-#include <vespa/vespalib/stllike/string.h>
 #include <vespa/searchlib/engine/proto_rpc_adapter.h>
+#include <string>
 
 class FNET_Transport;
 
@@ -37,12 +37,12 @@ public:
     struct Params {
         Proton           &proton;
         config::ConfigUri slobrok_config;
-        vespalib::string  identity;
+        std::string  identity;
         uint32_t          rtcPort;
         uint32_t          numTranportThreads;
 
         Params(Proton &parent, uint32_t port, const config::ConfigUri & configUri,
-               vespalib::stringref slobrokId, uint32_t numTransportThreads);
+               std::string_view slobrokId, uint32_t numTransportThreads);
         ~Params();
     };
     RPCHooksBase(const RPCHooksBase &) = delete;
@@ -55,7 +55,6 @@ public:
 
     void rpc_GetState(FRT_RPCRequest *req);
     void rpc_GetProtonStatus(FRT_RPCRequest *req);
-    void rpc_die(FRT_RPCRequest *req);
     void rpc_triggerFlush(FRT_RPCRequest *req);
     void rpc_prepareRestart(FRT_RPCRequest *req);
 protected:

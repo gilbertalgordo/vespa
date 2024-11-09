@@ -60,7 +60,7 @@ QueryNode::Build(const QueryNode * parent, const QueryNodeResultFactory & factor
                 nqn->distance(queryRep.getNearDistance());
             }
             if (type == ParseItem::ITEM_WEAK_AND) {
-                qn->setIndex(queryRep.getIndexName());
+                qn->setIndex(queryRep.index_as_string());
             }
             for (size_t i=0; i < arity; i++) {
                 queryRep.next();
@@ -81,7 +81,7 @@ QueryNode::Build(const QueryNode * parent, const QueryNodeResultFactory & factor
         break;
     case ParseItem::ITEM_GEO_LOCATION_TERM:
         // just keep the string representation here; parsed in vsm::GeoPosFieldSearcher
-        qn = std::make_unique<QueryTerm>(factory.create(), queryRep.getTerm(), queryRep.getIndexName(),
+        qn = std::make_unique<QueryTerm>(factory.create(), queryRep.getTerm(), queryRep.index_as_string(),
                                          TermType::GEO_LOCATION, Normalizing::NONE);
         break;
     case ParseItem::ITEM_NEAREST_NEIGHBOR:
@@ -98,7 +98,7 @@ QueryNode::Build(const QueryNode * parent, const QueryNodeResultFactory & factor
     case ParseItem::ITEM_PURE_WEIGHTED_LONG:
     case ParseItem::ITEM_FUZZY:
     {
-        vespalib::string index = queryRep.getIndexName();
+        std::string index(queryRep.index_as_view());
         if (index.empty()) {
             if ((type == ParseItem::ITEM_PURE_WEIGHTED_STRING) || (type == ParseItem::ITEM_PURE_WEIGHTED_LONG)) {
                 index = parent->getIndex();
@@ -113,7 +113,7 @@ QueryNode::Build(const QueryNode * parent, const QueryNodeResultFactory & factor
         QueryTerm::string ssTerm;
         if (type == ParseItem::ITEM_PURE_WEIGHTED_LONG) {
             char buf[24];
-            auto res = std::to_chars(buf, buf + sizeof(buf), queryRep.getIntergerTerm(), 10);
+            auto res = std::to_chars(buf, buf + sizeof(buf), queryRep.getIntegerTerm(), 10);
             ssTerm.assign(buf, res.ptr - buf);
         } else {
             ssTerm = queryRep.getTerm();
@@ -130,7 +130,8 @@ QueryNode::Build(const QueryNode * parent, const QueryNodeResultFactory & factor
                 qt = std::make_unique<RegexpTerm>(factory.create(), ssTerm, ssIndex, TermType::REGEXP, normalize_mode);
             } else if (sTerm == TermType::FUZZYTERM) {
                 qt = std::make_unique<FuzzyTerm>(factory.create(), ssTerm, ssIndex, TermType::FUZZYTERM, normalize_mode,
-                                                 queryRep.getFuzzyMaxEditDistance(), queryRep.getFuzzyPrefixLength());
+                                                 queryRep.fuzzy_max_edit_distance(), queryRep.fuzzy_prefix_lock_length(),
+                                                 queryRep.has_prefix_match_semantics());
             } else [[likely]] {
                 qt = std::make_unique<QueryTerm>(factory.create(), ssTerm, ssIndex, sTerm, normalize_mode);
             }
@@ -172,11 +173,11 @@ QueryNode::Build(const QueryNode * parent, const QueryNodeResultFactory & factor
     }
     break;
     case ParseItem::ITEM_STRING_IN:
-        qn = std::make_unique<InTerm>(factory.create(), queryRep.getIndexName(), queryRep.get_terms(),
-                                      factory.normalizing_mode(queryRep.getIndexName()));
+        qn = std::make_unique<InTerm>(factory.create(), queryRep.index_as_string(), queryRep.get_terms(),
+                                      factory.normalizing_mode(queryRep.index_as_view()));
         break;
     case ParseItem::ITEM_NUMERIC_IN:
-        qn = std::make_unique<InTerm>(factory.create(), queryRep.getIndexName(), queryRep.get_terms(), Normalizing::NONE);
+        qn = std::make_unique<InTerm>(factory.create(), queryRep.index_as_string(), queryRep.get_terms(), Normalizing::NONE);
         break;
     case ParseItem::ITEM_DOT_PRODUCT:
         qn = build_dot_product_term(factory, queryRep);
@@ -211,8 +212,8 @@ const HitList & QueryNode::evaluateHits(HitList & hl) const
 std::unique_ptr<QueryNode>
 QueryNode::build_nearest_neighbor_query_node(const QueryNodeResultFactory& factory, SimpleQueryStackDumpIterator& query_rep)
 {
-    vespalib::stringref query_tensor_name = query_rep.getTerm();
-    vespalib::stringref field_name = query_rep.getIndexName();
+    std::string_view query_tensor_name = query_rep.getTerm();
+    std::string field_name = query_rep.index_as_string();
     int32_t unique_id = query_rep.getUniqueId();
     auto weight = query_rep.GetWeight();
     uint32_t target_hits = query_rep.getTargetHits();
@@ -225,7 +226,7 @@ void
 QueryNode::populate_multi_term(Normalizing string_normalize_mode, MultiTerm& mt, SimpleQueryStackDumpIterator& queryRep)
 {
     char buf[24];
-    vespalib::string subterm;
+    std::string subterm;
     auto arity = queryRep.getArity();
     for (size_t i = 0; i < arity && queryRep.next(); i++) {
         std::unique_ptr<QueryTerm> term;
@@ -236,7 +237,7 @@ QueryNode::populate_multi_term(Normalizing string_normalize_mode, MultiTerm& mt,
             break;
         case ParseItem::ITEM_PURE_WEIGHTED_LONG:
         {
-            auto res = std::to_chars(buf, buf + sizeof(buf), queryRep.getIntergerTerm(), 10);
+            auto res = std::to_chars(buf, buf + sizeof(buf), queryRep.getIntegerTerm(), 10);
             subterm.assign(buf, res.ptr - buf);
             term = std::make_unique<QueryTerm>(std::unique_ptr<QueryNodeResultBase>(), subterm, "",
                                                QueryTermSimple::Type::WORD, Normalizing::NONE);
@@ -256,7 +257,7 @@ QueryNode::populate_multi_term(Normalizing string_normalize_mode, MultiTerm& mt,
 std::unique_ptr<QueryNode>
 QueryNode::build_dot_product_term(const QueryNodeResultFactory& factory, SimpleQueryStackDumpIterator& queryRep)
 {
-    auto dp = std::make_unique<DotProductTerm>(factory.create(), queryRep.getIndexName(), queryRep.getArity());
+    auto dp = std::make_unique<DotProductTerm>(factory.create(), queryRep.index_as_string(), queryRep.getArity());
     dp->setWeight(queryRep.GetWeight());
     dp->setUniqueId(queryRep.getUniqueId());
     populate_multi_term(factory.normalizing_mode(dp->index()), *dp, queryRep);
@@ -266,7 +267,7 @@ QueryNode::build_dot_product_term(const QueryNodeResultFactory& factory, SimpleQ
 std::unique_ptr<QueryNode>
 QueryNode::build_wand_term(const QueryNodeResultFactory& factory, SimpleQueryStackDumpIterator& queryRep)
 {
-    auto wand = std::make_unique<WandTerm>(factory.create(), queryRep.getIndexName(), queryRep.getArity());
+    auto wand = std::make_unique<WandTerm>(factory.create(), queryRep.index_as_string(), queryRep.getArity());
     wand->setWeight(queryRep.GetWeight());
     wand->setUniqueId(queryRep.getUniqueId());
     wand->set_score_threshold(queryRep.getScoreThreshold());
@@ -277,7 +278,7 @@ QueryNode::build_wand_term(const QueryNodeResultFactory& factory, SimpleQuerySta
 std::unique_ptr<QueryNode>
 QueryNode::build_weighted_set_term(const QueryNodeResultFactory& factory, SimpleQueryStackDumpIterator& queryRep)
 {
-    auto ws = std::make_unique<WeightedSetTerm>(factory.create(), queryRep.getIndexName(), queryRep.getArity());
+    auto ws = std::make_unique<WeightedSetTerm>(factory.create(), queryRep.index_as_string(), queryRep.getArity());
     ws->setWeight(queryRep.GetWeight());
     ws->setUniqueId(queryRep.getUniqueId());
     populate_multi_term(factory.normalizing_mode(ws->index()), *ws, queryRep);
@@ -287,7 +288,7 @@ QueryNode::build_weighted_set_term(const QueryNodeResultFactory& factory, Simple
 std::unique_ptr<QueryNode>
 QueryNode::build_phrase_term(const QueryNodeResultFactory& factory, SimpleQueryStackDumpIterator& queryRep)
 {
-    vespalib::string index = queryRep.getIndexName();
+    std::string index(queryRep.index_as_view());
     if (index.empty()) {
         index = SimpleQueryStackDumpIterator::DEFAULT_INDEX;
     }
@@ -298,10 +299,8 @@ QueryNode::build_phrase_term(const QueryNodeResultFactory& factory, SimpleQueryS
     for (size_t i = 0; i < arity; ++i) {
         queryRep.next();
         auto qn = Build(phrase.get(), factory, queryRep, false);
-        auto qtp = dynamic_cast<QueryTerm*>(qn.get());
-        assert(qtp != nullptr);
-        qn.release();
-        std::unique_ptr<QueryTerm> qt(qtp);
+        std::unique_ptr<QueryTerm> qt(dynamic_cast<QueryTerm*>(qn.release()));
+        assert(qt);
         phrase->add_term(std::move(qt));
     }
     return phrase;
@@ -325,10 +324,8 @@ QueryNode::build_equiv_term(const QueryNodeResultFactory& factory, SimpleQuerySt
             }
             continue;
         }
-        auto qtp = dynamic_cast<QueryTerm*>(qn.get());
-        assert(qtp != nullptr);
-        qn.release();
-        std::unique_ptr<QueryTerm> qt(qtp);
+        std::unique_ptr<QueryTerm> qt(dynamic_cast<QueryTerm*>(qn.release()));
+        assert(qt);
         eqn->add_term(std::move(qt));
     }
     return eqn;
@@ -337,17 +334,15 @@ QueryNode::build_equiv_term(const QueryNodeResultFactory& factory, SimpleQuerySt
 std::unique_ptr<QueryNode>
 QueryNode::build_same_element_term(const QueryNodeResultFactory& factory, SimpleQueryStackDumpIterator& queryRep)
 {
-    auto sen = std::make_unique<SameElementQueryNode>(factory.create(), queryRep.getIndexName(), queryRep.getArity());
+    auto sen = std::make_unique<SameElementQueryNode>(factory.create(), queryRep.index_as_string(), queryRep.getArity());
     auto arity = queryRep.getArity();
     sen->setWeight(queryRep.GetWeight());
     sen->setUniqueId(queryRep.getUniqueId());
     for (size_t i = 0; i < arity; ++i) {
         queryRep.next();
         auto qn = Build(sen.get(), factory, queryRep, false);
-        auto qtp = dynamic_cast<QueryTerm*>(qn.get());
-        assert(qtp != nullptr);
-        qn.release();
-        std::unique_ptr<QueryTerm> qt(qtp);
+        std::unique_ptr<QueryTerm> qt(dynamic_cast<QueryTerm*>(qn.release()));
+        assert(qt);
         sen->add_term(std::move(qt));
     }
     return sen;

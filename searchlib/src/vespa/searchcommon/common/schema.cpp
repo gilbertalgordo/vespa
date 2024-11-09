@@ -19,7 +19,7 @@ namespace {
 template <typename T>
 void
 writeFields(vespalib::asciistream & os,
-            vespalib::stringref prefix,
+            std::string_view prefix,
             const std::vector<T> & fields)
 {
     os << prefix << "[" << fields.size() << "]\n";
@@ -30,10 +30,10 @@ writeFields(vespalib::asciistream & os,
 
 void
 writeFieldSets(vespalib::asciistream &os,
-               const vespalib::string &name,
+               const std::string &name,
                const std::vector<Schema::FieldSet> &fss)
 {
-    vespalib::string prefix(name);
+    std::string prefix(name);
     prefix += "[";
     os << prefix << fss.size() << "]\n";
     for (size_t i = 0; i < fss.size(); ++i) {
@@ -42,22 +42,22 @@ writeFieldSets(vespalib::asciistream &os,
         vespalib::asciistream tmp;
         tmp << prefix << i << "].field[";
         for (size_t j = 0; j < fss[i].getFields().size(); ++j) {
-            os << tmp.str() << j << "].name " << fss[i].getFields()[j] << "\n";
+            os << tmp.view() << j << "].name " << fss[i].getFields()[j] << "\n";
         }
     }
 }
 
 struct FieldName {
-    vespalib::string name;
+    std::string name;
     explicit FieldName(const config::StringVector & lines)
-        : name(ConfigParser::parse<vespalib::string>("name", lines))
+        : name(ConfigParser::parse<std::string>("name", lines))
     {
     }
 };
 
 template <typename T>
 uint32_t
-getFieldId(vespalib::stringref name, const T &map) noexcept
+getFieldId(std::string_view name, const T &map) noexcept
 {
     auto it = map.find(name);
     return (it != map.end()) ? it->second : Schema::UNKNOWN_FIELD_ID;
@@ -69,17 +69,17 @@ namespace search::index {
 
 const uint32_t Schema::UNKNOWN_FIELD_ID(std::numeric_limits<uint32_t>::max());
 
-Schema::Field::Field(vespalib::stringref n, DataType dt) noexcept
+Schema::Field::Field(std::string_view n, DataType dt) noexcept
     : Field(n, dt, schema::CollectionType::SINGLE, "")
 {
 }
 
-Schema::Field::Field(vespalib::stringref n, DataType dt, CollectionType ct) noexcept
+Schema::Field::Field(std::string_view n, DataType dt, CollectionType ct) noexcept
     : Field(n, dt, ct, "")
 {
 }
 
-Schema::Field::Field(vespalib::stringref n, DataType dt, CollectionType ct, vespalib::stringref tensor_spec) noexcept
+Schema::Field::Field(std::string_view n, DataType dt, CollectionType ct, std::string_view tensor_spec) noexcept
     : _name(n),
       _dataType(dt),
       _collectionType(ct),
@@ -89,9 +89,9 @@ Schema::Field::Field(vespalib::stringref n, DataType dt, CollectionType ct, vesp
 
 // XXX: Resource leak if exception is thrown.
 Schema::Field::Field(const config::StringVector & lines)
-    : _name(ConfigParser::parse<vespalib::string>("name", lines)),
-      _dataType(schema::dataTypeFromName(ConfigParser::parse<vespalib::string>("datatype", lines))),
-      _collectionType(schema::collectionTypeFromName(ConfigParser::parse<vespalib::string>("collectiontype", lines)))
+    : _name(ConfigParser::parse<std::string>("name", lines)),
+      _dataType(schema::dataTypeFromName(ConfigParser::parse<std::string>("datatype", lines))),
+      _collectionType(schema::collectionTypeFromName(ConfigParser::parse<std::string>("collectiontype", lines)))
 {
 }
 
@@ -103,7 +103,7 @@ Schema::Field & Schema::Field::operator = (Field &&) noexcept = default;
 Schema::Field::~Field() = default;
 
 void
-Schema::Field::write(vespalib::asciistream & os, vespalib::stringref prefix) const
+Schema::Field::write(vespalib::asciistream & os, std::string_view prefix) const
 {
     os << prefix << "name " << _name << "\n";
     os << prefix << "datatype " << getTypeName(_dataType) << "\n";
@@ -125,14 +125,14 @@ Schema::Field::operator!=(const Field &rhs) const noexcept
     return !((*this) == rhs);
 }
 
-Schema::IndexField::IndexField(vespalib::stringref name, DataType dt) noexcept
+Schema::IndexField::IndexField(std::string_view name, DataType dt) noexcept
     : Field(name, dt),
       _avgElemLen(512),
       _interleaved_features(false)
 {
 }
 
-Schema::IndexField::IndexField(vespalib::stringref name, DataType dt,
+Schema::IndexField::IndexField(std::string_view name, DataType dt,
                                CollectionType ct) noexcept
     : Field(name, dt, ct),
       _avgElemLen(512),
@@ -153,7 +153,7 @@ Schema::IndexField::IndexField(IndexField &&) noexcept = default;
 Schema::IndexField & Schema::IndexField::operator = (IndexField &&) noexcept = default;
 
 void
-Schema::IndexField::write(vespalib::asciistream & os, vespalib::stringref prefix) const
+Schema::IndexField::write(vespalib::asciistream & os, std::string_view prefix) const
 {
     Field::write(os, prefix);
     os << prefix << "averageelementlen " << static_cast<int32_t>(_avgElemLen) << "\n";
@@ -182,7 +182,7 @@ Schema::IndexField::operator!=(const IndexField &rhs) const noexcept
 }
 
 Schema::FieldSet::FieldSet(const config::StringVector & lines) :
-    _name(ConfigParser::parse<vespalib::string>("name", lines)),
+    _name(ConfigParser::parse<std::string>("name", lines)),
     _fields()
 {
     auto fn = ConfigParser::parseArray<std::vector<FieldName>>("field", lines);
@@ -230,7 +230,7 @@ Schema & Schema::operator=(Schema && rhs) noexcept = default;
 Schema::~Schema() = default;
 
 bool
-Schema::loadFromFile(const vespalib::string & fileName)
+Schema::loadFromFile(const std::string & fileName)
 {
     std::ifstream file(fileName.c_str());
     if (!file) {
@@ -264,7 +264,7 @@ Schema::loadFromFile(const vespalib::string & fileName)
 }
 
 bool
-Schema::saveToFile(const vespalib::string & fileName) const
+Schema::saveToFile(const std::string & fileName) const
 {
     vespalib::asciistream os;
     writeToStream(os, true);
@@ -273,7 +273,7 @@ Schema::saveToFile(const vespalib::string & fileName) const
         LOG(warning, "Could not open output file '%s' as part of saveToFile()", fileName.c_str());
         return false;
     }
-    file << os.str();
+    file << os.view();
     file.close();
     if (file.fail()) {
         LOG(warning,
@@ -295,7 +295,7 @@ Schema::saveToFile(const vespalib::string & fileName) const
     return true;
 }
 
-vespalib::string
+std::string
 Schema::toString() const
 {
     vespalib::asciistream os;
@@ -306,7 +306,7 @@ Schema::toString() const
 namespace {
 Schema::IndexField
 cloneIndexField(const Schema::IndexField &field,
-                const vespalib::string &suffix)
+                const std::string &suffix)
 {
     return Schema::IndexField(field.getName() + suffix,
                               field.getDataType(),
@@ -364,31 +364,31 @@ Schema::addFieldSet(const FieldSet &fieldSet)
 }
 
 uint32_t
-Schema::getIndexFieldId(vespalib::stringref name) const noexcept
+Schema::getIndexFieldId(std::string_view name) const noexcept
 {
     return getFieldId(name, _indexIds);
 }
 
 uint32_t
-Schema::getAttributeFieldId(vespalib::stringref name) const noexcept
+Schema::getAttributeFieldId(std::string_view name) const noexcept
 {
     return getFieldId(name, _attributeIds);
 }
 
 uint32_t
-Schema::getFieldSetId(vespalib::stringref name) const noexcept
+Schema::getFieldSetId(std::string_view name) const noexcept
 {
     return getFieldId(name, _fieldSetIds);
 }
 
 bool
-Schema::isIndexField(vespalib::stringref name) const noexcept
+Schema::isIndexField(std::string_view name) const noexcept
 {
     return _indexIds.find(name) != _indexIds.end();
 }
 
 bool
-Schema::isAttributeField(vespalib::stringref name) const noexcept
+Schema::isAttributeField(std::string_view name) const noexcept
 {
     return _attributeIds.find(name) != _attributeIds.end();
 }
@@ -449,7 +449,7 @@ template <>
 bool IntersectHelper::is_matching(const Schema::FieldSet &f1, const Schema::FieldSet &f2) {
     if (f1.getFields() != f2.getFields())
         return false;
-    for (const vespalib::string & field : f1.getFields()) {
+    for (const std::string & field : f1.getFields()) {
         if (schema->getIndexFieldId(field) == Schema::UNKNOWN_FIELD_ID) {
             return false;
         }

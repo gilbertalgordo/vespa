@@ -6,7 +6,7 @@
  *
  * @brief String tokenizer with a C++ approach.
  *
- * Uses vespalib::string and common C++ functions. Gives a simple interface
+ * Uses std::string and common C++ functions. Gives a simple interface
  * to a string tokenizer, not necessarily the most efficient one.
  *
  * @class vespalib::StringTokenizer
@@ -14,14 +14,14 @@
 
 #pragma once
 
+#include <string>
 #include <vector>
-#include <vespa/vespalib/stllike/string.h>
 
 namespace vespalib {
 
 class StringTokenizer {
 public:
-    using Token = vespalib::stringref;
+    using Token = std::string_view;
     using TokenList = std::vector<Token>;
     using Iterator = TokenList::const_iterator;
 
@@ -41,15 +41,15 @@ public:
      * @param separators The characters to be used as token separators
      * @param strip      Characters to be stripped from both ends of each token
      **/
-    explicit StringTokenizer(vespalib::stringref source)
+    explicit StringTokenizer(std::string_view source)
         : StringTokenizer(source, ",")
     {}
-    StringTokenizer(vespalib::stringref source, vespalib::stringref separators)
+    StringTokenizer(std::string_view source, std::string_view separators)
         : StringTokenizer(source, separators, " \t\f\r\n")
     {}
-    StringTokenizer(vespalib::stringref source,
-                    vespalib::stringref separators,
-                    vespalib::stringref strip);
+    StringTokenizer(std::string_view source,
+                    std::string_view separators,
+                    std::string_view strip);
     StringTokenizer(StringTokenizer &&) noexcept = default;
     StringTokenizer & operator=(StringTokenizer &&) noexcept = default;
     ~StringTokenizer();

@@ -87,7 +87,7 @@ public:
     virtual bool add(int64_t, int32_t = 1) { return false; }
     virtual bool add(double, int32_t = 1) { return false; }
     virtual bool add(const char *, int32_t = 1) { return false; }
-    virtual bool add(vespalib::ConstArrayRef<char>, int32_t = 1) { return false; }
+    virtual bool add(std::span<const char>, int32_t = 1) { return false; }
     virtual bool add(const vespalib::eval::Value&, int32_t = 1) { return false; }
 
     virtual ~IExtendAttribute() = default;
@@ -102,8 +102,8 @@ protected:
     using CollectionType = search::attribute::CollectionType;
     using BasicType = search::attribute::BasicType;
     using QueryTermSimpleUP = std::unique_ptr<QueryTermSimple>;
-    using QueryPacketT = vespalib::stringref;
-    using stringref = vespalib::stringref;
+    using QueryPacketT = std::string_view;
+    using string_view = std::string_view;
     using ValueModifier = attribute::ValueModifier;
     using EnumModifier = attribute::EnumModifier;
 public:
@@ -123,7 +123,7 @@ protected:
     void updateStatistics(uint64_t numValues, uint64_t numUniqueValue, uint64_t allocated,
                           uint64_t used, uint64_t dead, uint64_t onHold);
 
-    AttributeVector(vespalib::stringref baseFileName, const Config & c);
+    AttributeVector(std::string_view baseFileName, const Config & c);
 
     void checkSetMaxValueCount(int index) {
         if (index > _highestValueCount.load(std::memory_order_relaxed)) {
@@ -284,10 +284,10 @@ public:
     const Config &getConfig() const noexcept { return *_config; }
     void update_config(const Config& cfg);
     const attribute::BaseName & getBaseFileName() const { return _baseFileName; }
-    void setBaseFileName(vespalib::stringref name) { _baseFileName = name; }
+    void setBaseFileName(std::string_view name) { _baseFileName = name; }
     bool isUpdateableInMemoryOnly() const { return _isUpdateableInMemoryOnly; }
 
-    const vespalib::string & getName() const override final { return _baseFileName.getAttributeName(); }
+    const std::string & getName() const override final { return _baseFileName.getAttributeName(); }
 
     bool hasEnum() const override final;
     uint32_t getMaxValueCount() const override;
@@ -319,15 +319,15 @@ public:
     /**
      * Saves this attribute vector to named file(s)
      */
-    bool save(vespalib::stringref fileName);
+    bool save(std::string_view fileName);
 
     /** Saves this attribute vector to file(s) **/
     bool save();
 
     /** Saves this attribute vector using the given saveTarget and fileName **/
-    bool save(IAttributeSaveTarget & saveTarget, vespalib::stringref fileName);
+    bool save(IAttributeSaveTarget & saveTarget, std::string_view fileName);
 
-    attribute::AttributeHeader createAttributeHeader(vespalib::stringref fileName) const;
+    attribute::AttributeHeader createAttributeHeader(std::string_view fileName) const;
 
     /** Returns whether this attribute has load data files on disk **/
     bool hasLoadData() const;
@@ -357,7 +357,7 @@ public:
     virtual uint32_t get(DocId doc, largeint_t *v, uint32_t sz) const override = 0;
     virtual uint32_t get(DocId doc, double *v, uint32_t sz) const override = 0;
 
-    virtual uint32_t get(DocId doc, vespalib::string *v, uint32_t sz) const = 0;
+    virtual uint32_t get(DocId doc, std::string *v, uint32_t sz) const = 0;
 
 
     // Implements IAttributeVector
@@ -430,12 +430,14 @@ private:
     bool                                  _isUpdateableInMemoryOnly;
     vespalib::steady_time                 _nextStatUpdateTime;
     std::shared_ptr<vespalib::alloc::MemoryAllocator> _memory_allocator;
+    std::atomic<uint64_t>                 _size_on_disk;
 
     /// Clean up [0, firstUsed>
     virtual void reclaim_memory(generation_t oldest_used_gen);
     virtual void before_inc_generation(generation_t current_gen);
     virtual void onUpdateStat() = 0;
     friend class AttributeTest;
+
 public:
     ////// Locking strategy interface.
     /**
@@ -486,9 +488,9 @@ public:
         return _interlock;
     }
 
-    std::unique_ptr<AttributeSaver> initSave(vespalib::stringref fileName);
+    std::unique_ptr<AttributeSaver> initSave(std::string_view fileName);
 
-    virtual std::unique_ptr<AttributeSaver> onInitSave(vespalib::stringref fileName);
+    virtual std::unique_ptr<AttributeSaver> onInitSave(std::string_view fileName);
     virtual uint64_t getEstimatedSaveByteSize() const;
 
     static bool isEnumerated(const vespalib::GenericHeader &header);
@@ -497,6 +499,10 @@ public:
     bool commitIfChangeVectorTooLarge();
 
     void drain_hold(uint64_t hold_limit);
+
+    void set_size_on_disk(uint64_t value) noexcept {_size_on_disk.store(value, std::memory_order_release); }
+    void set_size_on_disk(const IAttributeSaveTarget& target);
+    uint64_t size_on_disk() const noexcept { return _size_on_disk.load(std::memory_order_acquire); }
 };
 
 }

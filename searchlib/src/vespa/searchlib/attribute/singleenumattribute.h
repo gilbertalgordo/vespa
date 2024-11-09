@@ -101,7 +101,7 @@ protected:
     bool onAddDoc(DocId doc) override;
 
 public:
-    SingleValueEnumAttribute(const vespalib::string & baseFileName, const AttributeVector::Config & cfg);
+    SingleValueEnumAttribute(const std::string & baseFileName, const AttributeVector::Config & cfg);
     ~SingleValueEnumAttribute();
 
     bool addDoc(DocId & doc) override;
@@ -128,7 +128,7 @@ public:
 
     void clearDocs(DocId lidLow, DocId lidLimit, bool in_shrink_lid_space) override;
     void onShrinkLidSpace() override;
-    std::unique_ptr<AttributeSaver> onInitSave(vespalib::stringref fileName) override;
+    std::unique_ptr<AttributeSaver> onInitSave(std::string_view fileName) override;
     void onAddDocs(DocId lidLimit) override;
 };
 

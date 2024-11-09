@@ -22,7 +22,7 @@ namespace search::bmcluster {
 
 DocumentApiMessageBusBmFeedHandler::DocumentApiMessageBusBmFeedHandler(BmMessageBus &message_bus, const IBmDistribution& distribution)
     : IBmFeedHandler(),
-      _name(vespalib::string("DocumentApiMessageBusBmFeedHandler(distributor)")),
+      _name(std::string("DocumentApiMessageBusBmFeedHandler(distributor)")),
       _message_bus(message_bus),
       _routes(distribution.get_num_nodes(), true),
       _no_route_error_count(0u),
@@ -66,7 +66,7 @@ DocumentApiMessageBusBmFeedHandler::remove(const document::Bucket& bucket, const
 }
 
 void
-DocumentApiMessageBusBmFeedHandler::get(const document::Bucket& bucket, vespalib::stringref field_set_string, const document::DocumentId& document_id, PendingTracker& tracker)
+DocumentApiMessageBusBmFeedHandler::get(const document::Bucket& bucket, std::string_view field_set_string, const document::DocumentId& document_id, PendingTracker& tracker)
 {
     auto msg = std::make_unique<documentapi::GetDocumentMessage>(document_id, field_set_string);
     send_msg(bucket, std::move(msg), tracker);
@@ -83,7 +83,7 @@ DocumentApiMessageBusBmFeedHandler::get_error_count() const
     return _message_bus.get_error_count() + _no_route_error_count;
 }
 
-const vespalib::string&
+const std::string&
 DocumentApiMessageBusBmFeedHandler::get_name() const
 {
     return _name;

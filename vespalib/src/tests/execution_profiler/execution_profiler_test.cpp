@@ -59,7 +59,7 @@ bool find_path(const Inspector &self, PathPos pos, PathPos end, bool first = fal
     return false;
 }
 
-bool find_path(const Slime &slime, const std::vector<std::pair<vespalib::string,int64_t>> &path) {
+bool find_path(const Slime &slime, const std::vector<std::pair<std::string,int64_t>> &path) {
     return find_path(slime.get(), path.begin(), path.end(), true);
 }
 
@@ -196,7 +196,7 @@ TEST(ExecutionProfilerTest, with_name_mapping) {
         fox(profiler);
     }
     Slime slime;
-    profiler.report(slime.setObject(), [](const vespalib::string &name)noexcept->vespalib::string {
+    profiler.report(slime.setObject(), [](const std::string &name)noexcept->std::string {
                                            if ((name == "foo") || (name == "bar")) {
                                                return "magic";
                                            }
@@ -228,7 +228,7 @@ TEST(ExecutionProfilerTest, flat_profiling_does_not_report_tasks_with_count_0) {
     EXPECT_EQ(slime["profiler"].asString().make_string(), "flat");
     EXPECT_EQ(slime["topn"].asLong(), 2);
     EXPECT_EQ(slime["roots"].entries(), 1);
-    EXPECT_EQ(slime["roots"][0]["name"].asString().make_stringref(), "baz");
+    EXPECT_EQ(slime["roots"][0]["name"].asString().make_stringview(), "baz");
     EXPECT_EQ(slime["roots"][0]["count"].asLong(), 1);
 }
 

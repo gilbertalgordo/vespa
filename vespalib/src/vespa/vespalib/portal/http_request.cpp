@@ -3,21 +3,22 @@
 #include "http_request.h"
 
 #include <algorithm>
+#include <cctype>
 #include <vector>
 
 namespace vespalib::portal {
 
 namespace {
 
-void strip_cr(vespalib::string &str) {
+void strip_cr(std::string &str) {
     if (!str.empty() && str[str.size() - 1] == '\r') {
         str.resize(str.size() - 1);
     }
 }
 
-std::vector<vespalib::string> split(vespalib::stringref str, char sep) {
-    vespalib::string token;
-    std::vector<vespalib::string> list;
+std::vector<std::string> split(std::string_view str, char sep) {
+    std::string token;
+    std::vector<std::string> list;
     for (char c: str) {
         if (c != sep) {
             token.push_back(c);
@@ -45,7 +46,7 @@ int decode_hex_digit(char c) {
     return -1;
 }
 
-int decode_hex_num(vespalib::stringref src, size_t idx) {
+int decode_hex_num(std::string_view src, size_t idx) {
     if (src.size() < (idx + 2)) {
         return -1;
     }
@@ -57,8 +58,8 @@ int decode_hex_num(vespalib::stringref src, size_t idx) {
     return ((a << 4) | b);
 }
 
-vespalib::string dequote(vespalib::stringref src) {
-    vespalib::string dst;
+std::string dequote(std::string_view src) {
+    std::string dst;
     for (size_t idx = 0; idx < src.size(); ++idx) {
         char c = src[idx];
         if (c == '+') {
@@ -90,7 +91,7 @@ HttpRequest::set_error()
 }
 
 void
-HttpRequest::handle_request_line(const vespalib::string &line)
+HttpRequest::handle_request_line(const std::string &line)
 {
     auto parts = split(line, ' ');
     if (parts.size() != 3) {
@@ -100,14 +101,14 @@ HttpRequest::handle_request_line(const vespalib::string &line)
     _uri = parts[1];
     _version = parts[2];
     size_t query_sep = _uri.find("?");
-    if (query_sep == vespalib::string::npos) {
+    if (query_sep == std::string::npos) {
         _path = dequote(_uri);
     } else {
         _path = dequote(_uri.substr(0, query_sep));
         auto query = split(_uri.substr(query_sep + 1), '&');
         for (const auto &param: query) {
             size_t value_sep = param.find("=");
-            if (value_sep == vespalib::string::npos) {
+            if (value_sep == std::string::npos) {
                 _params[dequote(param)] = "";
             } else {
                 auto key = param.substr(0, value_sep);
@@ -119,7 +120,7 @@ HttpRequest::handle_request_line(const vespalib::string &line)
 }
 
 void
-HttpRequest::handle_header_line(const vespalib::string &line)
+HttpRequest::handle_header_line(const std::string &line)
 {
     if (line.empty()) {
         return set_done();
@@ -129,26 +130,26 @@ HttpRequest::handle_header_line(const vespalib::string &line)
     bool continuation = (line[0] == ' ') || (line[0] == '\t');
     if (!continuation) {
         pos = line.find(":");
-        if (pos == vespalib::string::npos) {
+        if (pos == std::string::npos) {
             return set_error(); // missing header: value separator
         } else {
             _header_name.assign(line, 0, pos++);
             std::transform(_header_name.begin(), _header_name.end(),
-                           _header_name.begin(), ::tolower);
+                           _header_name.begin(), [](unsigned char c) { return std::tolower(c); });
         }
     }
     if (_header_name.empty()) {
         return set_error(); // missing header name
     }
-    while ((pos < end) && (isspace(line[pos]))) {
+    while ((pos < end) && (std::isspace(static_cast<unsigned char>(line[pos])))) {
         ++pos; // strip leading whitespace
     }
-    while ((pos < end) && (isspace(line[end - 1]))) {
+    while ((pos < end) && (std::isspace(static_cast<unsigned char>(line[end - 1])))) {
         --end; // strip trailing whitespace
     }
-    auto header_insert_result = _headers.insert(std::make_pair(_header_name, vespalib::string()));
+    auto header_insert_result = _headers.insert(std::make_pair(_header_name, std::string()));
     bool header_found = !header_insert_result.second;
-    vespalib::string &header_value = header_insert_result.first->second;
+    std::string &header_value = header_insert_result.first->second;
     if (header_found) {
         if (continuation) {
             header_value.push_back(' ');
@@ -160,7 +161,7 @@ HttpRequest::handle_header_line(const vespalib::string &line)
 }
 
 void
-HttpRequest::handle_line(const vespalib::string &line)
+HttpRequest::handle_line(const std::string &line)
 {
     if (_first) {
         handle_request_line(line);
@@ -205,7 +206,7 @@ HttpRequest::handle_data(const char *buf, size_t len)
 }
 
 void
-HttpRequest::resolve_host(const vespalib::string &my_host)
+HttpRequest::resolve_host(const std::string &my_host)
 {
     _host = get_header("host");
     if (_host.empty()) {
@@ -213,8 +214,8 @@ HttpRequest::resolve_host(const vespalib::string &my_host)
     }
 }
 
-const vespalib::string &
-HttpRequest::get_header(const vespalib::string &name) const
+const std::string &
+HttpRequest::get_header(const std::string &name) const
 {
     auto pos = _headers.find(name);
     if (pos == _headers.end()) {
@@ -224,13 +225,13 @@ HttpRequest::get_header(const vespalib::string &name) const
 }
 
 bool
-HttpRequest::has_param(const vespalib::string &name) const
+HttpRequest::has_param(const std::string &name) const
 {
     return (_params.find(name) != _params.end());
 }
 
-const vespalib::string &
-HttpRequest::get_param(const vespalib::string &name) const
+const std::string &
+HttpRequest::get_param(const std::string &name) const
 {
     auto pos = _params.find(name);
     if (pos == _params.end()) {

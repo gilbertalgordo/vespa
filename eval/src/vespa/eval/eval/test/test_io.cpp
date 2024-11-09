@@ -5,9 +5,9 @@
 #include <vespa/vespalib/data/slime/slime.h>
 #include <vespa/vespalib/data/slime/json_format.h>
 #include <vespa/vespalib/util/size_literals.h>
+#include <cctype>
 #include <filesystem>
 #include <unistd.h>
-#include <assert.h>
 
 using vespalib::Memory;
 using vespalib::WritableMemory;
@@ -32,7 +32,9 @@ StdIn::obtain()
         WritableMemory buf = _input.reserve(CHUNK_SIZE);
         ssize_t res = read(STDIN_FILENO, buf.data, buf.size);
         _eof = (res == 0);
-        assert(res >= 0); // fail on stdio read errors
+        if (res < 0) {
+            throw Broken();
+        }
         _input.commit(res);
     }
     return _input.obtain();
@@ -59,8 +61,12 @@ StdOut::commit(size_t bytes)
     _output.commit(bytes);
     Memory buf = _output.obtain();
     ssize_t res = write(STDOUT_FILENO, buf.data, buf.size);
-    assert(res == ssize_t(buf.size)); // fail on stdout write failures
-    _output.evict(res);
+    if (res > 0) {
+        _output.evict(res);
+    }
+    if (res != ssize_t(buf.size)) {
+        throw Broken();
+    }
     return *this;
 }
 
@@ -86,7 +92,7 @@ ServerCmd::maybe_exit()
 }
 
 void
-ServerCmd::dump_string(const char *prefix, const vespalib::string &str)
+ServerCmd::dump_string(const char *prefix, const std::string &str)
 {
     fprintf(stderr, "%s%s: '%s'\n", prefix, _basename.c_str(), str.c_str());
 }
@@ -100,7 +106,7 @@ ServerCmd::dump_message(const char *prefix, const Slime &slime)
     fprintf(stderr, "%s%s: %s", prefix, _basename.c_str(), str.c_str());
 }
 
-ServerCmd::ServerCmd(vespalib::string cmd)
+ServerCmd::ServerCmd(std::string cmd)
   : _child(cmd),
     _basename(fs::path(cmd).filename()),
     _closed(false),
@@ -109,7 +115,7 @@ ServerCmd::ServerCmd(vespalib::string cmd)
 {
 }
 
-ServerCmd::ServerCmd(vespalib::string cmd, capture_stderr_tag)
+ServerCmd::ServerCmd(std::string cmd, capture_stderr_tag)
   : _child(cmd, true),
     _basename(fs::path(cmd).filename()),
     _closed(false),
@@ -135,10 +141,10 @@ ServerCmd::invoke(const Slime &req)
     return reply;
 }
 
-vespalib::string
-ServerCmd::write_then_read_all(const vespalib::string &input)
+std::string
+ServerCmd::write_then_read_all(const std::string &input)
 {
-    vespalib::string result;
+    std::string result;
     dump_string("input --> ", input);
     memcpy(_child.reserve(input.size()).data, input.data(), input.size());
     _child.commit(input.size());
@@ -162,7 +168,7 @@ ServerCmd::shutdown()
 //-----------------------------------------------------------------------------
 
 bool
-LineReader::read_line(vespalib::string &line)
+LineReader::read_line(std::string &line)
 {
     line.clear();
     for (auto mem = _input.obtain(); mem.size > 0; mem = _input.obtain()) {
@@ -184,7 +190,7 @@ LineReader::read_line(vespalib::string &line)
 bool look_for_eof(Input &input) {
     for (auto mem = input.obtain(); mem.size > 0; mem = input.obtain()) {
         for (size_t i = 0; i < mem.size; ++i) {
-            if (!isspace(mem.data[i])) {
+            if (!std::isspace(static_cast<unsigned char>(mem.data[i]))) {
                 input.evict(i);
                 return false;
             }

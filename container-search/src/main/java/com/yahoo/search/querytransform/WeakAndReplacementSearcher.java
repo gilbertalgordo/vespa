@@ -12,6 +12,7 @@ import com.yahoo.search.Searcher;
 import com.yahoo.search.searchchain.Execution;
 import com.yahoo.search.yql.MinimalQueryInserter;
 import com.yahoo.yolean.chain.After;
+import com.yahoo.yolean.chain.Provides;
 
 /**
  * Recursively replaces all instances of OrItems with WeakAndItems if the query property weakand.replace is true.
@@ -19,10 +20,12 @@ import com.yahoo.yolean.chain.After;
  *
  * @author karowan
  */
+@Provides(WeakAndReplacementSearcher.REPLACE_OR_WITH_WEAKAND)
 @After(MinimalQueryInserter.EXTERNAL_YQL)
 public class WeakAndReplacementSearcher extends Searcher {
+    public static final String REPLACE_OR_WITH_WEAKAND = "replace-or-with-weakand";
     static final CompoundName WEAKAND_REPLACE = CompoundName.from("weakAnd.replace");
-    static final CompoundName WAND_HITS = CompoundName.from("wand.hits");
+    public static final CompoundName WAND_HITS = CompoundName.from("wand.hits");
 
     @Override public Result search(Query query, Execution execution) {
         if (!query.properties().getBoolean(WEAKAND_REPLACE)) {
@@ -38,7 +41,9 @@ public class WeakAndReplacementSearcher extends Searcher {
      */
     private void replaceOrItems(Query query) {
         Item root = query.getModel().getQueryTree().getRoot();
-        int hits = query.properties().getInteger(WAND_HITS, WeakAndItem.defaultN);
+        int hits = query.getHits();
+        Integer wandHits = query.properties().getInteger(WAND_HITS);
+        if (wandHits != null) hits = wandHits;
         query.getModel().getQueryTree().setRoot(replaceOrItems(root, hits));
         if (root != query.getModel().getQueryTree().getRoot())
             query.trace("Replaced OR by WeakAnd", true, 2);

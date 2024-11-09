@@ -1,6 +1,5 @@
 // Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 #include "mysearch.h"
-#include <vespa/vespalib/testkit/testapp.h>
 #include <vespa/searchlib/queryeval/flow.h>
 #include <vespa/searchlib/queryeval/blueprint.h>
 #include <vespa/searchlib/queryeval/intermediate_blueprints.h>
@@ -8,16 +7,16 @@
 #include <vespa/vespalib/objects/visit.h>
 #include <vespa/vespalib/data/slime/slime.h>
 #include <algorithm>
+#include <vespa/vespalib/testkit/test_kit.h>
+#include <vespa/vespalib/testkit/test_master.hpp>
 
 #include <vespa/log/log.h>
 LOG_SETUP("blueprint_test");
 
 using namespace search::queryeval;
-using namespace search::fef;
+using MatchData = search::fef::MatchData;
 
 namespace {
-
-auto opts = Blueprint::Options::all();
 
 //-----------------------------------------------------------------------------
 
@@ -41,23 +40,16 @@ public:
         return mixChildrenFields();
     }
 
-    void sort(Children &children, bool, bool) const override {
+    void sort(Children &children, InFlow) const override {
         std::sort(children.begin(), children.end(), TieredGreaterEstimate());
     }
 
-    bool inheritStrict(size_t i) const override {
-        (void) i;
-        return true;
-    }
-
     SearchIterator::UP
-    createIntermediateSearch(MultiSearch::Children subSearches,
-                             bool strict, MatchData &md) const override
-    {
-        return std::make_unique<MySearch>("or", std::move(subSearches), &md, strict);
+    createIntermediateSearch(MultiSearch::Children subSearches, MatchData &md) const override {
+        return std::make_unique<MySearch>("or", std::move(subSearches), &md, strict());
     }
-    SearchIteratorUP createFilterSearch(bool strict, FilterConstraint constraint) const override {
-        return create_default_filter(strict, constraint);
+    SearchIteratorUP createFilterSearch(FilterConstraint constraint) const override {
+        return create_default_filter(constraint);
     }
     static MyOr& create() { return *(new MyOr()); }
     MyOr& add(Blueprint *n) { addChild(UP(n)); return *this; }
@@ -70,10 +62,8 @@ class OtherOr : public OrBlueprint
 private:
 public:
     SearchIterator::UP
-    createIntermediateSearch(MultiSearch::Children subSearches,
-                             bool strict, MatchData &md) const override
-    {
-        return std::make_unique<MySearch>("or", std::move(subSearches), &md, strict);
+    createIntermediateSearch(MultiSearch::Children subSearches, MatchData &md) const override {
+        return std::make_unique<MySearch>("or", std::move(subSearches), &md, strict());
     }
 
     static OtherOr& create() { return *(new OtherOr()); }
@@ -95,15 +85,9 @@ public:
         return {};
     }
 
-    bool inheritStrict(size_t i) const override {
-        return (i == 0);
-    }
-
     SearchIterator::UP
-    createIntermediateSearch(MultiSearch::Children subSearches,
-                             bool strict, MatchData &md) const override
-    {
-        return std::make_unique<MySearch>("and", std::move(subSearches), &md, strict);
+    createIntermediateSearch(MultiSearch::Children subSearches, MatchData &md) const override {
+        return std::make_unique<MySearch>("and", std::move(subSearches), &md, strict());
     }
 
     static MyAnd& create() { return *(new MyAnd()); }
@@ -117,10 +101,8 @@ class OtherAnd : public AndBlueprint
 private:
 public:
     SearchIterator::UP
-    createIntermediateSearch(MultiSearch::Children subSearches,
-                             bool strict, MatchData &md) const override
-    {
-        return std::make_unique<MySearch>("and", std::move(subSearches), &md, strict);
+    createIntermediateSearch(MultiSearch::Children subSearches, MatchData &md) const override {
+        return std::make_unique<MySearch>("and", std::move(subSearches), &md, strict());
     }
 
     static OtherAnd& create() { return *(new OtherAnd()); }
@@ -132,10 +114,8 @@ class OtherAndNot : public AndNotBlueprint
 {
 public:
     SearchIterator::UP
-    createIntermediateSearch(MultiSearch::Children subSearches,
-                             bool strict, MatchData &md) const override
-    {
-        return std::make_unique<MySearch>("andnot", std::move(subSearches), &md, strict);
+    createIntermediateSearch(MultiSearch::Children subSearches, MatchData &md) const override {
+        return std::make_unique<MySearch>("andnot", std::move(subSearches), &md, strict());
     }
 
     static OtherAndNot& create() { return *(new OtherAndNot()); }
@@ -153,11 +133,11 @@ struct MyTerm : SimpleLeafBlueprint {
     FlowStats calculate_flow_stats(uint32_t docid_limit) const override {
         return default_flow_stats(docid_limit, getState().estimate().estHits, 0);
     }
-    SearchIterator::UP createLeafSearch(const search::fef::TermFieldMatchDataArray &, bool) const override {
+    SearchIterator::UP createLeafSearch(const search::fef::TermFieldMatchDataArray &) const override {
         return {};
     }
-    SearchIteratorUP createFilterSearch(bool strict, FilterConstraint constraint) const override {
-        return create_default_filter(strict, constraint);
+    SearchIteratorUP createFilterSearch(FilterConstraint constraint) const override {
+        return create_default_filter(constraint);
     }
 };
 
@@ -187,8 +167,9 @@ public:
 SearchIterator::UP
 Fixture::create(const Blueprint &blueprint)
 {
-    const_cast<Blueprint &>(blueprint).fetchPostings(ExecuteInfo::TRUE);
-    SearchIterator::UP search = blueprint.createSearch(*_md, true);
+    const_cast<Blueprint &>(blueprint).null_plan(true, 1000);
+    const_cast<Blueprint &>(blueprint).fetchPostings(ExecuteInfo::FULL);
+    SearchIterator::UP search = blueprint.createSearch(*_md);
     MySearch::verifyAndInfer(search.get(), *_md);
     return search;
 }
@@ -453,7 +434,7 @@ TEST_F("testChildAndNotCollapsing", Fixture)
                               );
     TEST_DO(f.check_not_equal(*sorted, *unsorted));
     unsorted->setDocIdLimit(1000);
-    unsorted = Blueprint::optimize_and_sort(std::move(unsorted), true, opts);
+    unsorted = Blueprint::optimize_and_sort(std::move(unsorted));
     TEST_DO(f.check_equal(*sorted, *unsorted));
 }
 
@@ -493,7 +474,7 @@ TEST_F("testChildAndCollapsing", Fixture)
 
     TEST_DO(f.check_not_equal(*sorted, *unsorted));
     unsorted->setDocIdLimit(1000);
-    unsorted = Blueprint::optimize_and_sort(std::move(unsorted), true, opts);
+    unsorted = Blueprint::optimize_and_sort(std::move(unsorted));
     TEST_DO(f.check_equal(*sorted, *unsorted));
 }
 
@@ -534,7 +515,7 @@ TEST_F("testChildOrCollapsing", Fixture)
     unsorted->setDocIdLimit(1000);
     // we sort non-strict here since a strict OR does not have a
     // deterministic sort order.
-    unsorted = Blueprint::optimize_and_sort(std::move(unsorted), false, opts);
+    unsorted = Blueprint::optimize_and_sort(std::move(unsorted), false);
     TEST_DO(f.check_equal(*sorted, *unsorted));
 }
 
@@ -578,7 +559,7 @@ TEST_F("testChildSorting", Fixture)
 
     TEST_DO(f.check_not_equal(*sorted, *unsorted));
     unsorted->setDocIdLimit(1000);
-    unsorted = Blueprint::optimize_and_sort(std::move(unsorted), true, opts);
+    unsorted = Blueprint::optimize_and_sort(std::move(unsorted));
     TEST_DO(f.check_equal(*sorted, *unsorted));
 }
 
@@ -644,7 +625,7 @@ TEST("testBlueprintMakeNew")
     EXPECT_EQUAL(2u, orig->getState().numFields());
 }
 
-vespalib::string
+std::string
 getExpectedBlueprint()
 {
     return "(anonymous namespace)::MyOr {\n"
@@ -668,6 +649,8 @@ getExpectedBlueprint()
            "    strict_cost: 0\n"
            "    sourceId: 4294967295\n"
            "    docid_limit: 0\n"
+           "    id: 0\n"
+           "    strict: false\n"
            "    children: std::vector {\n"
            "        [0]: (anonymous namespace)::MyTerm {\n"
            "            isTermLike: true\n"
@@ -690,12 +673,14 @@ getExpectedBlueprint()
            "            strict_cost: 0\n"
            "            sourceId: 4294967295\n"
            "            docid_limit: 0\n"
+           "            id: 0\n"
+           "            strict: false\n"
            "        }\n"
            "    }\n"
            "}\n";
 }
 
-vespalib::string
+std::string
 getExpectedSlimeBlueprint() {
     return "{"
            "    '[type]': '(anonymous namespace)::MyOr',"
@@ -722,6 +707,8 @@ getExpectedSlimeBlueprint() {
            "    strict_cost: 0.0,"
            "    sourceId: 4294967295,"
            "    docid_limit: 0,"
+           "    id: 0,"
+           "    strict: false,"
            "    children: {"
            "        '[type]': 'std::vector',"
            "        '[0]': {"
@@ -748,7 +735,9 @@ getExpectedSlimeBlueprint() {
            "            cost: 0.0,"
            "            strict_cost: 0.0,"
            "            sourceId: 4294967295,"
-           "            docid_limit: 0"
+           "            docid_limit: 0,"
+           "            id: 0,"
+           "            strict: false"
            "        }"
            "    }"
            "}";
@@ -802,6 +791,84 @@ TEST("Control object sizes") {
     EXPECT_EQUAL(32u, sizeof(Blueprint::State));
     EXPECT_EQUAL(56u, sizeof(Blueprint));
     EXPECT_EQUAL(88u, sizeof(LeafBlueprint));
+}
+
+Blueprint::Options make_opts(bool sort_by_cost, bool allow_force_strict, bool keep_order) {
+    return Blueprint::Options().sort_by_cost(sort_by_cost).allow_force_strict(allow_force_strict).keep_order(keep_order);
+}
+
+void check_opts(bool sort_by_cost, bool allow_force_strict, bool keep_order) {
+    EXPECT_EQUAL(Blueprint::opt_sort_by_cost(), sort_by_cost);
+    EXPECT_EQUAL(Blueprint::opt_allow_force_strict(), allow_force_strict);
+    EXPECT_EQUAL(Blueprint::opt_keep_order(), keep_order);
+}
+
+TEST("Options binding and nesting") {
+    check_opts(false, false, false);
+    {
+        auto opts_guard1 = Blueprint::bind_opts(make_opts(true, true, false));
+        check_opts(true, true, false);
+        {
+            auto opts_guard2 = Blueprint::bind_opts(make_opts(false, false, true));
+            check_opts(false, false, true);
+        }
+        check_opts(true, true, false);
+    }
+    check_opts(false, false, false);
+}
+
+TEST("self strict resolving during sort") {
+    uint32_t docs = 1000;
+    uint32_t hits = 250;
+    auto leaf = std::unique_ptr<Blueprint>(MyLeafSpec(hits).create());
+    leaf->setDocIdLimit(docs);
+    leaf->update_flow_stats(docs);
+    EXPECT_EQUAL(leaf->estimate(), 0.25);
+    EXPECT_EQUAL(leaf->cost(), 1.0);
+    EXPECT_EQUAL(leaf->strict_cost(), 0.25);
+    EXPECT_EQUAL(leaf->strict(), false); // starting value
+    { // do not allow force strict
+        auto guard = Blueprint::bind_opts(make_opts(true, false, false));
+        leaf->sort(true);
+        EXPECT_EQUAL(leaf->strict(), true);
+        leaf->sort(false);
+        EXPECT_EQUAL(leaf->strict(), false);
+    }
+    { // allow force strict
+        auto guard = Blueprint::bind_opts(make_opts(true, true, false));
+        leaf->sort(true);
+        EXPECT_EQUAL(leaf->strict(), true);
+        leaf->sort(false);
+        EXPECT_EQUAL(leaf->strict(), true);
+        leaf->sort(0.30);
+        EXPECT_EQUAL(leaf->strict(), true);
+        leaf->sort(0.20);
+        EXPECT_EQUAL(leaf->strict(), false);
+    }
+}
+
+void check_ids(Blueprint &bp, const std::vector<uint32_t> &expect) {
+    std::vector<uint32_t> actual;
+    bp.each_node_post_order([&](auto &node){ actual.push_back(node.id()); });
+    ASSERT_EQUAL(actual.size(), expect.size());
+    for (size_t i = 0; i < actual.size(); ++i) {
+        EXPECT_EQUAL(actual[i], expect[i]);
+    }
+}
+
+TEST("blueprint node enumeration") {
+    auto a = std::make_unique<AndBlueprint>();
+    a->addChild(std::make_unique<MyLeaf>());
+    a->addChild(std::make_unique<MyLeaf>());
+    auto b = std::make_unique<AndBlueprint>();
+    b->addChild(std::make_unique<MyLeaf>());
+    b->addChild(std::make_unique<MyLeaf>());
+    auto root = std::make_unique<OrBlueprint>();
+    root->addChild(std::move(a));
+    root->addChild(std::move(b));
+    TEST_DO(check_ids(*root, {0,0,0,0,0,0,0}));
+    root->enumerate(1);
+    TEST_DO(check_ids(*root, {3,4,2,6,7,5,1}));
 }
 
 TEST_MAIN() {

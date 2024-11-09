@@ -38,9 +38,12 @@ public abstract class Maintainer implements Runnable {
     private final boolean ignoreCollision;
     private final Clock clock;
     private final double successFactorBaseline;
+    private final boolean acquireLock;
 
+    @SuppressWarnings("this-escape")
     public Maintainer(String name, Duration interval, Clock clock, JobControl jobControl,
-                      JobMetrics jobMetrics, List<String> clusterHostnames, boolean ignoreCollision, double successFactorBaseline) {
+                      JobMetrics jobMetrics, List<String> clusterHostnames, boolean ignoreCollision,
+                      double successFactorBaseline, boolean acquireLock) {
         this.name = name;
         this.interval = requireInterval(interval);
         this.jobControl = Objects.requireNonNull(jobControl);
@@ -48,20 +51,25 @@ public abstract class Maintainer implements Runnable {
         this.ignoreCollision = ignoreCollision;
         this.clock = clock;
         this.successFactorBaseline = successFactorBaseline;
+        this.acquireLock = acquireLock;
         Duration initialDelay = staggeredDelay(interval, HostName.getLocalhost(), clusterHostnames)
                                 .plus(Duration.ofSeconds(30)); // Let the system stabilize before maintenance
         service = new ScheduledThreadPoolExecutor(1, r -> new Thread(r, name() + "-worker"));
         service.scheduleAtFixedRate(this, initialDelay.toMillis(), interval.toMillis(), TimeUnit.MILLISECONDS);
         jobControl.started(name(), this);
+        if (ignoreCollision && !acquireLock) {
+            throw new IllegalArgumentException("ignoreCollision=" + ignoreCollision + ", but collisions cannot happen when acquireLock=" + acquireLock);
+        }
     }
 
     public Maintainer(String name, Duration interval, Clock clock, JobControl jobControl,
                       JobMetrics jobMetrics, List<String> clusterHostnames, boolean ignoreCollision) {
-        this(name, interval, clock, jobControl, jobMetrics, clusterHostnames, ignoreCollision, 1.0);
+        this(name, interval, clock, jobControl, jobMetrics, clusterHostnames, ignoreCollision, 1.0, true);
     }
+
     @Override
     public void run() {
-        lockAndMaintain(false);
+        doMaintain(false);
     }
 
     /** Starts shutdown of this, typically by shutting down executors. {@link #awaitShutdown()} waits for shutdown to complete. */
@@ -109,32 +117,35 @@ public abstract class Maintainer implements Runnable {
     /** Convenience methods to convert attempts and failures into a success factor deviation from the baseline, and return   */
     protected final double asSuccessFactorDeviation(int attempts, int failures) {
         double factor = attempts == 0 ? 1.0 : 1 - (double) failures / attempts;
-        return new BigDecimal(factor - successFactorBaseline).setScale(2, RoundingMode.HALF_UP).doubleValue();
+        return new BigDecimal(factor - successFactorBaseline).setScale(5, RoundingMode.HALF_UP).doubleValue();
     }
 
     /** Returns the interval at which this job is set to run */
     protected Duration interval() { return interval; }
 
-    /** Run this while holding the job lock */
-    public final void lockAndMaintain(boolean force) {
+    /** Run this while holding the job lock, as necessary */
+    public final void doMaintain(boolean force) {
         if (!force && !jobControl.isActive(name())) return;
         log.log(Level.FINE, () -> "Running " + this.getClass().getSimpleName());
 
         double successFactorDeviation = -1;
         long startTime = clock.millis();
-        try (var lock = jobControl.lockJob(name())) {
-            successFactorDeviation = maintain();
-        }
-        catch (UncheckedTimeoutException e) {
-            if (ignoreCollision)
-                successFactorDeviation = 0;
-            else
-                log.log(Level.WARNING, this + " collided with another run. Will retry in " + interval);
-        }
-        catch (Throwable e) {
+        try {
+            if (acquireLock) {
+                try (var lock = jobControl.lockJob(name())) {
+                    successFactorDeviation = maintain();
+                } catch (UncheckedTimeoutException e) {
+                    if (ignoreCollision)
+                        successFactorDeviation = 0;
+                    else
+                        log.log(Level.WARNING, this + " collided with another run. Will retry in " + interval);
+                }
+            } else {
+                successFactorDeviation = maintain();
+            }
+        }  catch (Throwable e) {
             log.log(Level.WARNING, this + " failed. Will retry in " + interval, e);
-        }
-        finally {
+        } finally {
             long endTime = clock.millis();
             jobMetrics.completed(name(), successFactorDeviation, endTime - startTime);
         }

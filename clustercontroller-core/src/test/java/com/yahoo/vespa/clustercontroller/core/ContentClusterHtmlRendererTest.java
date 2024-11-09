@@ -11,7 +11,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
-import java.util.Collections;
 import java.util.Map;
 import java.util.TreeMap;
 
@@ -31,8 +30,9 @@ public class ContentClusterHtmlRendererTest {
         ClusterStateBundle stateBundle = ClusterStateBundle.ofBaselineOnly(
                 AnnotatedClusterState.withoutAnnotations(
                         ClusterState.stateFromString("version:34633 bits:24 distributor:211 storage:211")));
-        var metricUpdater = new MetricUpdater(new NoMetricReporter(), 0, clusterName);
-        EventLog eventLog = new EventLog(new FakeTimer(), metricUpdater);
+        var timer = new FakeTimer();
+        var metricUpdater = new MetricUpdater(new NoMetricReporter(), timer, 0, clusterName);
+        EventLog eventLog = new EventLog(timer, metricUpdater);
         VdsClusterHtmlRenderer.Table table = renderer.createNewClusterHtmlTable(clusterName, slobrokGeneration);
         ContentCluster contentCluster = mock(ContentCluster.class);
 
@@ -53,7 +53,7 @@ public class ContentClusterHtmlRendererTest {
                 statsAggregator,
                 1.0,
                 10,
-                Collections.emptyMap(),
+                Map.of(),
                 eventLog,
                 "pathPrefix",
                 "name");

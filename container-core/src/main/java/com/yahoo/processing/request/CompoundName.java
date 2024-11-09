@@ -8,6 +8,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 import static com.yahoo.text.Lowercase.toLowerCase;
 
@@ -74,41 +75,52 @@ public final class CompoundName {
      * @param compounds the compounds of this name
      */
     private CompoundName(String name, String [] compounds, boolean useCache) {
-        if (name == null) throw new NullPointerException("Name can not be null");
-
-        this.name = name;
+        this.name = Objects.requireNonNull(name, "Name can not be null");
         this.lowerCasedName = toLowerCase(name);
-        if (compounds.length == 1 && compounds[0].isEmpty()) {
-            this.compounds = List.of();
-            this.hashCode = 0;
-            rest = this;
-            first = this;
+        if (compounds.length == 1) {
+            if (compounds[0].isEmpty()) {
+                this.compounds = List.of();
+                this.hashCode = 0;
+                rest = first = this;
+                return;
+            }
+            this.compounds = new ImmutableArrayList(compounds);
+            this.hashCode = this.compounds.hashCode();
+            rest = first = empty;
             return;
+        }
+        CompoundName[] children = new CompoundName[compounds.length];
+        for (int i = 0; i + 1 < children.length; i++) {
+            int start = 0, end = i == 0 ? -1 : children[0].name.length();
+            for (int j = 0; j + i < children.length; j++) {
+                end += compounds[j + i].length() + 1;
+                if (end == start) throw new IllegalArgumentException("'" + name + "' is not a legal compound name. " +
+                                                                     "Consecutive, leading or trailing dots are not allowed.");
+                String subName = this.name.substring(start, end);
+                CompoundName cached = cache.get(subName);
+                children[j] = cached != null ? cached
+                                             : new CompoundName(subName,
+                                                                this.lowerCasedName.substring(start, end),
+                                                                Arrays.copyOfRange(compounds, j, j + i + 1),
+                                                                i == 0 ? empty : children[j + 1],
+                                                                i == 0 ? empty : children[j]);
+                if (useCache && cached == null) cache.put(subName, children[j]);
+                start += compounds[j].length() + 1;
+            }
         }
         this.compounds = new ImmutableArrayList(compounds);
         this.hashCode = this.compounds.hashCode();
+        this.rest = children[1];
+        this.first = children[0];
+    }
 
-        if (compounds.length > 1) {
-            String restName = name.substring(compounds[0].length()+1);
-            if (useCache) {
-                rest = cache.computeIfAbsent(restName, (key) -> new CompoundName(key, Arrays.copyOfRange(compounds, 1, compounds.length), useCache));
-            } else {
-                rest = new CompoundName(restName, Arrays.copyOfRange(compounds, 1, compounds.length), useCache);
-            }
-        } else {
-            rest = empty;
-        }
-
-        if (compounds.length > 1) {
-            String firstName = name.substring(0, name.length() - (compounds[compounds.length-1].length()+1));
-            if (useCache) {
-                first = cache.computeIfAbsent(firstName, (key) -> new CompoundName(key, Arrays.copyOfRange(compounds, 0, compounds.length-1), useCache));
-            } else {
-                first = new CompoundName(firstName, Arrays.copyOfRange(compounds, 0, compounds.length-1), useCache);
-            }
-        } else {
-            first = empty;
-        }
+    private CompoundName(String name, String lowerCasedName, String[] compounds, CompoundName rest, CompoundName first) {
+        this.name = name;
+        this.lowerCasedName = lowerCasedName;
+        this.compounds = new ImmutableArrayList(compounds);
+        this.hashCode = this.compounds.hashCode();
+        this.rest = rest;
+        this.first = first;
     }
 
     private static List<String> parse(String s) {
@@ -173,7 +185,7 @@ public final class CompoundName {
         if (isEmpty()) return fromComponents(nameParts);
 
         List<String> newCompounds = new ArrayList<>(nameParts.length + compounds.size());
-        newCompounds.addAll(Arrays.asList(nameParts));
+        newCompounds.addAll(List.of(nameParts));
         newCompounds.addAll(this.compounds);
         return new CompoundName(newCompounds);
     }
@@ -204,7 +216,7 @@ public final class CompoundName {
             throw new IllegalArgumentException("Asked for the first " + n + " components but '" +
                                                this + "' only have " + compounds.size() + " components.");
         if (compounds.size() == n) return this;
-        if (compounds.size() == 0) return empty;
+        if (compounds.isEmpty()) return empty;
         if (compounds.size() - 1 == n) return first;
         return first.first(n);
     }
@@ -316,13 +328,13 @@ public final class CompoundName {
         for (String compound : compounds) all += compound.length();
         StringBuilder b = new StringBuilder(all);
         for (String compound : compounds) b.append(compound).append(".");
-        return b.length()==0 ? "" : b.substring(0, b.length()-1);
+        return b.isEmpty() ? "" : b.substring(0, b.length()-1);
     }
 
     /**
      *  Creates a CompoundName from a string, possibly reusing from cache.
      *  Prefer over constructing on the fly.
-     **/
+     */
     public static CompoundName from(String name) {
         CompoundName found = cache.get(name);
         if (found != null) return found;

@@ -16,7 +16,6 @@ vespa_add_library(searchlib_features OBJECT
     distance_calculator_bundle.cpp
     distancefeature.cpp
     distancetopathfeature.cpp
-    documenttestutils.cpp
     dotproductfeature.cpp
     element_completeness_feature.cpp
     element_similarity_feature.cpp
@@ -26,6 +25,8 @@ vespa_add_library(searchlib_features OBJECT
     fieldmatchfeature.cpp
     fieldtermmatchfeature.cpp
     firstphasefeature.cpp
+    first_phase_rank_feature.cpp
+    first_phase_rank_lookup.cpp
     flow_completeness_feature.cpp
     foreachfeature.cpp
     freshnessfeature.cpp
@@ -57,6 +58,7 @@ vespa_add_library(searchlib_features OBJECT
     rankingexpressionfeature.cpp
     raw_score_feature.cpp
     reverseproximityfeature.cpp
+    second_phase_feature.cpp
     setup.cpp
     subqueries_feature.cpp
     tensor_attribute_executor.cpp

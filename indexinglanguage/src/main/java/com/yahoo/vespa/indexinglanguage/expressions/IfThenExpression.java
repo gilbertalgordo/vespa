@@ -67,6 +67,28 @@ public final class IfThenExpression extends CompositeExpression {
     }
 
     @Override
+    public DataType setInputType(DataType inputType, VerificationContext context) {
+        super.setInputType(inputType, context);
+        left.setInputType(inputType, context);
+        right.setInputType(inputType, context);
+        var trueOutputType = ifTrue.setInputType(inputType, context);
+        var falseOutputType = ifFalse.setInputType(inputType, context);
+        DataType output = mostGeneralOf(trueOutputType, falseOutputType);
+        return output != null ? output : getOutputType(context);
+    }
+
+    @Override
+    public DataType setOutputType(DataType outputType, VerificationContext context) {
+        super.setOutputType(outputType, context);
+        left.setOutputType(AnyDataType.instance, context);
+        right.setOutputType(AnyDataType.instance, context);
+        var trueInputType = ifTrue.setOutputType(outputType, context);
+        var falseInputType = ifFalse.setOutputType(outputType, context);
+        DataType input = leastGeneralOf(trueInputType, falseInputType);
+        return input != null ? input : getInputType(context);
+    }
+
+    @Override
     public void setStatementOutput(DocumentType documentType, Field field) {
         left.setStatementOutput(documentType, field);
         right.setStatementOutput(documentType, field);
@@ -85,36 +107,34 @@ public final class IfThenExpression extends CompositeExpression {
     public Expression getIfFalseExpression() { return ifFalse; }
 
     @Override
+    protected void doVerify(VerificationContext context) {
+        DataType input = context.getCurrentType();
+        context.setCurrentType(input).verify(left);
+        context.setCurrentType(input).verify(right);
+        var trueValue = context.setCurrentType(input).verify(ifTrue);
+        var falseValue = context.setCurrentType(input).verify(ifFalse);
+        context.setCurrentType(mostGeneralOf(trueValue.getCurrentType(), falseValue.getCurrentType()));
+    }
+
+    @Override
     protected void doExecute(ExecutionContext context) {
-        FieldValue input = context.getValue();
-        FieldValue leftValue = context.setValue(input).execute(left).getValue();
+        FieldValue input = context.getCurrentValue();
+        FieldValue leftValue = context.setCurrentValue(input).execute(left).getCurrentValue();
         if (leftValue == null) {
-            context.setValue(null);
+            context.setCurrentValue(null);
             return;
         }
-        FieldValue rightValue = context.setValue(input).execute(right).getValue();
+        FieldValue rightValue = context.setCurrentValue(input).execute(right).getCurrentValue();
         if (rightValue == null) {
-            context.setValue(null);
+            context.setCurrentValue(null);
             return;
         }
-        context.setValue(input);
+        context.setCurrentValue(input);
         if (isTrue(leftValue, comparator, rightValue)) {
             ifTrue.execute(context);
         } else if (ifFalse != null) {
             ifFalse.execute(context);
         }
-    }
-
-    @Override
-    protected void doVerify(VerificationContext context) {
-        DataType input = context.getValueType();
-        context.setValueType(input).execute(left);
-        context.setValueType(input).execute(right);
-        var trueValue = context.setValueType(input).execute(ifTrue);
-        var falseValue = context.setValueType(input).execute(ifFalse);
-        var valueType = trueValue.getValueType().isAssignableFrom(falseValue.getValueType()) ?
-                        trueValue.getValueType() : falseValue.getValueType();
-        context.setValueType(valueType);
     }
 
     @Override
@@ -160,24 +180,12 @@ public final class IfThenExpression extends CompositeExpression {
 
     @Override
     public boolean equals(Object obj) {
-        if (!(obj instanceof IfThenExpression exp)) {
-            return false;
-        }
-        if (!left.equals(exp.left)) {
-            return false;
-        }
-        if (!comparator.equals(exp.comparator)) {
-            return false;
-        }
-        if (!right.equals(exp.right)) {
-            return false;
-        }
-        if (!ifTrue.equals(exp.ifTrue)) {
-            return false;
-        }
-        if (!equals(ifFalse, exp.ifFalse)) {
-            return false;
-        }
+        if ( ! (obj instanceof IfThenExpression exp)) return false;
+        if ( ! left.equals(exp.left)) return false;
+        if ( ! comparator.equals(exp.comparator)) return false;
+        if ( ! right.equals(exp.right)) return false;
+        if ( ! ifTrue.equals(exp.ifTrue)) return false;
+        if ( ! equals(ifFalse, exp.ifFalse)) return false;
         return true;
     }
 
@@ -204,16 +212,16 @@ public final class IfThenExpression extends CompositeExpression {
         return prev;
     }
 
-    private static boolean isTrue(FieldValue lhs, Comparator cmp, FieldValue rhs) {
+    private static boolean isTrue(FieldValue left, Comparator comparator, FieldValue right) {
         int res;
-        if (lhs instanceof NumericFieldValue && rhs instanceof NumericFieldValue) {
-            BigDecimal lhsVal = ArithmeticExpression.asBigDecimal((NumericFieldValue)lhs);
-            BigDecimal rhsVal = ArithmeticExpression.asBigDecimal((NumericFieldValue)rhs);
+        if (left instanceof NumericFieldValue && right instanceof NumericFieldValue) {
+            BigDecimal lhsVal = ArithmeticExpression.asBigDecimal((NumericFieldValue)left);
+            BigDecimal rhsVal = ArithmeticExpression.asBigDecimal((NumericFieldValue)right);
             res = lhsVal.compareTo(rhsVal);
         } else {
-            res = lhs.compareTo(rhs);
+            res = left.compareTo(right);
         }
-        return switch (cmp) {
+        return switch (comparator) {
             case EQ -> res == 0;
             case NE -> res != 0;
             case GT -> res > 0;

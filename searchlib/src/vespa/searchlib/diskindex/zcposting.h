@@ -37,13 +37,13 @@ public:
     using PostingListParams = index::PostingListParams;
 
     void readDocIdAndFeatures(DocIdAndFeatures &features) override;
-    void readCounts(const PostingListCounts &counts) override; // Fill in for next word
-    bool open(const vespalib::string &name, const TuneFileSeqRead &tuneFileRead) override;
+    void read_word_and_counts(const std::string& word, const PostingListCounts &counts) override; // Fill in for next word
+    bool open(const std::string &name, const TuneFileSeqRead &tuneFileRead) override;
     bool close() override;
     void getParams(PostingListParams &params) override;
     void getFeatureParams(PostingListParams &params) override;
     void readHeader();
-    static const vespalib::string &getIdentifier(bool dynamic_k);
+    static const std::string &getIdentifier(bool dynamic_k);
 };
 
 
@@ -75,7 +75,7 @@ public:
     void writeDocIdAndFeatures(const DocIdAndFeatures &features) override;
     void flushWord() override;
 
-    bool open(const vespalib::string &name,
+    bool open(const std::string &name,
               const TuneFileSeqWrite &tuneFileWrite,
               const search::common::FileHeaderContext &fileHeaderContext) override;
 

@@ -20,7 +20,6 @@ import com.yahoo.document.MapDataType;
 import com.yahoo.document.PositionDataType;
 import com.yahoo.document.StructDataType;
 import com.yahoo.document.TensorDataType;
-import com.yahoo.document.TestAndSetCondition;
 import com.yahoo.document.WeightedSetDataType;
 import com.yahoo.document.datatypes.Array;
 import com.yahoo.document.datatypes.BoolFieldValue;
@@ -32,7 +31,6 @@ import com.yahoo.document.datatypes.StringFieldValue;
 import com.yahoo.document.datatypes.Struct;
 import com.yahoo.document.datatypes.TensorFieldValue;
 import com.yahoo.document.datatypes.WeightedSet;
-import com.yahoo.document.fieldpathupdate.FieldPathUpdate;
 import com.yahoo.document.internal.GeoPosType;
 import com.yahoo.document.json.readers.DocumentParseInfo;
 import com.yahoo.document.json.readers.VespaJsonDocumentReader;
@@ -64,7 +62,6 @@ import org.junit.Test;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Base64;
 import java.util.Collections;
@@ -178,6 +175,8 @@ public class JsonReaderTestCase {
                     new TensorDataType(new TensorType.Builder().indexed("x", 2).indexed("y", 3).build())));
             x.addField(new Field("dense_int8_tensor",
                     new TensorDataType(TensorType.fromSpec("tensor<int8>(x[2],y[3])"))));
+            x.addField(new Field("dense_float_tensor",
+                    new TensorDataType(TensorType.fromSpec("tensor<float>(y[3])"))));
             x.addField(new Field("dense_unbound_tensor",
                     new TensorDataType(new TensorType.Builder().indexed("x").indexed("y").build())));
             x.addField(new Field("mixed_tensor",
@@ -1783,7 +1782,7 @@ public class JsonReaderTestCase {
                               "remove": "id:unittest:smoke::whee",
                               "what is love": "baby, do not hurt me... much
                             }
-                          ]""";
+                          ]"""; // "
 
         new JsonReader(types, jsonToInputStream(jsonData), parserFactory).next();
     }
@@ -1935,7 +1934,7 @@ public class JsonReaderTestCase {
 
     @Test
     public void testParsingOfSparseTensorWithCells() {
-        Tensor tensor = assertSparseTensorField("{{x:a,y:b}:2.0,{x:c,y:b}:3.0}}",
+        Tensor tensor = assertSparseTensorField("{{x:a,y:b}:2.0,{x:c,y:b}:3.0}",
                                 createPutWithSparseTensor("""
                                                           {
                                                             "type": "tensor(x{},y{})",
@@ -1950,7 +1949,7 @@ public class JsonReaderTestCase {
 
     @Test
     public void testParsingOfDenseTensorWithCells() {
-        Tensor tensor = assertTensorField("{{x:0,y:0}:2.0,{x:1,y:0}:3.0}}",
+        Tensor tensor = assertTensorField("{{x:0,y:0}:2.0,{x:1,y:0}:3.0}",
                                           createPutWithTensor("""
                                                               {
                                                                 "cells": [
@@ -1999,6 +1998,30 @@ public class JsonReaderTestCase {
                                                                 "values": "020304050607"
                                                               }""", "dense_int8_tensor"), "dense_int8_tensor");
         assertTrue(tensor instanceof IndexedTensor); // this matters for performance
+        tensor = assertTensorField(expected,
+                                   createPutWithTensor("""
+                                                       "020304050607"
+                                                       """, "dense_int8_tensor"), "dense_int8_tensor");
+        assertTrue(tensor instanceof IndexedTensor); // this matters for performance
+        builder = Tensor.Builder.of(TensorType.fromSpec("tensor<float>(y[3])"));
+        builder.cell().label("y", 0).value(42.0);
+        builder.cell().label("y", 1).value(-0.125);
+        builder.cell().label("y", 2).value(Double.POSITIVE_INFINITY);
+        expected = builder.build();
+        tensor = assertTensorField(expected,
+                                   createPutWithTensor("""
+                                                       "42280000be0000007f800000"
+                                                       """, "dense_float_tensor"), "dense_float_tensor");
+        try {
+            assertTensorField(expected,
+                              createPutWithTensor("""
+                                                  ""
+                                                  """, "dense_int8_tensor"), "dense_int8_tensor");
+        }
+        catch (IllegalArgumentException e) {
+            assertTrue(Exceptions.toMessageString(e).contains(
+                               "Bad string input for tensor with type tensor<int8>(x[2],y[3])"));
+        }
     }
 
     @Test
@@ -2021,6 +2044,13 @@ public class JsonReaderTestCase {
                            """;
         var put = createPutWithTensor(inputJson(mixedJson), "mixed_bfloat16_tensor");
         Tensor tensor = assertTensorField(expected, put, "mixed_bfloat16_tensor");
+        mixedJson = """
+                           {
+                             "blocks":{"foo":"400040404080", "bar":"40A040C040E0"}
+                           }
+                    """;
+        put = createPutWithTensor(inputJson(mixedJson), "mixed_bfloat16_tensor");
+        tensor = assertTensorField(expected, put, "mixed_bfloat16_tensor");
     }
 
     /** Tests parsing of various tensor values set at the root, i.e. no 'cells', 'blocks' or 'values' */
@@ -2153,7 +2183,7 @@ public class JsonReaderTestCase {
 
     @Test
     public void testAssignUpdateOfTensorWithCells() {
-        assertTensorAssignUpdateSparseField("{{x:a,y:b}:2.0,{x:c,y:b}:3.0}}",
+        assertTensorAssignUpdateSparseField("{{x:a,y:b}:2.0,{x:c,y:b}:3.0}",
                                             createAssignUpdateWithSparseTensor("""
                                                                                {
                                                                                 "cells": [
@@ -2638,7 +2668,7 @@ public class JsonReaderTestCase {
     @Test
     public void require_that_parser_propagates_datatype_parser_errors_predicate() {
         assertParserErrorMatches(
-                "Error in document 'id:unittest:testpredicate::0' - could not parse field 'boolean' of type 'predicate': " +
+                "In document 'id:unittest:testpredicate::0': Could not parse field 'boolean' of type predicate: " +
                 "line 1:10 no viable alternative at character '>'",
                 """
                 [
@@ -2655,7 +2685,7 @@ public class JsonReaderTestCase {
     @Test
     public void require_that_parser_propagates_datatype_parser_errors_string_as_int() {
         assertParserErrorMatches(
-                "Error in document 'id:unittest:testint::0' - could not parse field 'integerfield' of type 'int': " +
+                "In document 'id:unittest:testint::0': Could not parse field 'integerfield' of type int: " +
                 "For input string: \" 1\"",
                 """
                 [
@@ -2672,7 +2702,7 @@ public class JsonReaderTestCase {
     @Test
     public void require_that_parser_propagates_datatype_parser_errors_overflowing_int() {
         assertParserErrorMatches(
-                "Error in document 'id:unittest:testint::0' - could not parse field 'integerfield' of type 'int': " +
+                "In document 'id:unittest:testint::0': Could not parse field 'integerfield' of type int: " +
                 "For input string: \"281474976710656\"",
                 """
                 [
@@ -2916,7 +2946,7 @@ public class JsonReaderTestCase {
             new JsonReader(types, jsonToInputStream(jsonData), parserFactory).next();
             fail();
         } catch (JsonReaderException e) {
-            assertEquals(expectedError, e.getMessage());
+            assertEquals(expectedError, Exceptions.toMessageString(e));
         }
     }
 
@@ -2925,7 +2955,7 @@ public class JsonReaderTestCase {
             createPutWithTensor(inputJson(tensor), name);
             fail("Expected exception");
         } catch (IllegalArgumentException e) {
-            assertTrue(e.getMessage().contains(msg));
+            assertTrue(Exceptions.toMessageString(e).contains(msg));
         }
     }
 

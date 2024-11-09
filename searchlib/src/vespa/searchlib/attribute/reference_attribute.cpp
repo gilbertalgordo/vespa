@@ -30,7 +30,7 @@ using vespalib::datastore::CompactionSpec;
 
 namespace {
 
-const vespalib::string uniqueValueCountTag = "uniqueValueCount";
+const std::string uniqueValueCountTag = "uniqueValueCount";
 
 uint64_t
 extractUniqueValueCount(const vespalib::GenericHeader &header)
@@ -40,11 +40,11 @@ extractUniqueValueCount(const vespalib::GenericHeader &header)
 
 }
 
-ReferenceAttribute::ReferenceAttribute(const vespalib::stringref baseFileName)
+ReferenceAttribute::ReferenceAttribute(const std::string_view baseFileName)
     : ReferenceAttribute(baseFileName, Config(BasicType::REFERENCE))
 {}
 
-ReferenceAttribute::ReferenceAttribute(const vespalib::stringref baseFileName, const Config & cfg)
+ReferenceAttribute::ReferenceAttribute(const std::string_view baseFileName, const Config & cfg)
     : NotImplementedAttribute(baseFileName, cfg),
       _store(get_memory_allocator()),
       _indices(cfg.getGrowStrategy(), getGenerationHolder(), get_initial_alloc()),
@@ -213,7 +213,7 @@ ReferenceAttribute::onUpdateStat()
 }
 
 std::unique_ptr<AttributeSaver>
-ReferenceAttribute::onInitSave(vespalib::stringref fileName)
+ReferenceAttribute::onInitSave(std::string_view fileName)
 {
     vespalib::GenerationHandler::Guard guard(this->getGenerationHandler().takeGuard());
     return std::make_unique<ReferenceAttributeSaver>
@@ -240,7 +240,7 @@ ReferenceAttribute::onLoad(vespalib::Executor *)
     const GenericHeader &header = udatBuffer->getHeader();
     uint32_t uniqueValueCount = extractUniqueValueCount(header);
     assert(uniqueValueCount * sizeof(GlobalId) == udatBuffer->size());
-    vespalib::ConstArrayRef<GlobalId> uniques(static_cast<const GlobalId *>(udatBuffer->buffer()), uniqueValueCount);
+    std::span<const GlobalId> uniques(static_cast<const GlobalId *>(udatBuffer->buffer()), uniqueValueCount);
 
     auto builder = _store.getBuilder(uniqueValueCount);
     for (const auto &value : uniques) {
@@ -257,6 +257,7 @@ ReferenceAttribute::onLoad(vespalib::Executor *)
     builder.makeDictionary();
     setNumDocs(numDocs);
     setCommittedDocIdLimit(numDocs);
+    set_size_on_disk(attrReader.size_on_disk() + udatBuffer->size_on_disk());
     buildReverseMapping();
     incGeneration();
     return true;
@@ -313,7 +314,7 @@ ReferenceAttribute::compact_worst_values(const CompactionStrategy& compaction_st
     CompactionSpec compaction_spec(true, true);
     auto remapper(_store.compact_worst(compaction_spec, compaction_strategy));
     if (remapper) {
-        remapper->remap(vespalib::ArrayRef<AtomicEntryRef>(&_indices[0], _indices.size()));
+        remapper->remap(std::span<AtomicEntryRef>(&_indices[0], _indices.size()));
         remapper->done();
     }
 }

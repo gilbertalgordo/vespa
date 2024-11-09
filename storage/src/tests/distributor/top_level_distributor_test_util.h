@@ -3,6 +3,7 @@
 
 #include "distributor_message_sender_stub.h"
 #include <tests/common/dummystoragelink.h>
+#include <tests/common/storage_config_set.h>
 #include <tests/common/testhelper.h>
 #include <tests/common/teststorageapp.h>
 #include <vespa/storage/common/hostreporter/hostinfo.h>
@@ -130,17 +131,18 @@ public:
 
     // Invokes full cluster state transition pipeline rather than directly applying
     // the state and just pretending everything has been completed.
-    void receive_set_system_state_command(const vespalib::string& state_str);
+    void receive_set_system_state_command(const std::string& state_str);
     bool handle_top_level_message(const std::shared_ptr<api::StorageMessage>& msg);
 
     void trigger_distribution_change(std::shared_ptr<lib::Distribution> distr);
+    void enable_next_distribution_if_changed();
 
     const lib::ClusterStateBundle& current_cluster_state_bundle() const;
 
     static std::vector<document::BucketSpace> bucket_spaces();
 
 protected:
-    vdstestlib::DirConfig _config;
+    std::unique_ptr<StorageConfigSet> _config;
     std::unique_ptr<TestDistributorApp> _node;
     std::unique_ptr<framework::TickingThreadPool> _thread_pool;
     std::unique_ptr<DistributorStripePool> _stripe_pool;
@@ -166,7 +168,7 @@ protected:
     MessageSenderImpl _message_sender;
     uint32_t _num_distributor_stripes;
 
-    void enable_distributor_cluster_state(vespalib::stringref state, bool has_bucket_ownership_transfer = false);
+    void enable_distributor_cluster_state(std::string_view state, bool has_bucket_ownership_transfer = false);
     void enable_distributor_cluster_state(const lib::ClusterStateBundle& state);
 };
 

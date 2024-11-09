@@ -24,6 +24,7 @@ class AnyWrapper : public Anything
 public:
     explicit AnyWrapper(T value) : _value(std::move(value)) { }
     const T & getValue() const { return _value; }
+    T& getValue() { return _value; }
     static const T & getValue(const Anything & any) { return static_cast<const AnyWrapper &>(any).getValue(); }
 private:
     T _value;
@@ -36,8 +37,9 @@ class IObjectStore
 {
 public:
     virtual ~IObjectStore() = default;
-    virtual void add(const vespalib::string & key, Anything::UP value) = 0;
-    virtual const Anything * get(const vespalib::string & key) const = 0;
+    virtual void add(const std::string & key, Anything::UP value) = 0;
+    virtual const Anything * get(const std::string & key) const = 0;
+    virtual Anything* get_mutable(const std::string& key) = 0;
 };
 
 /**
@@ -48,10 +50,11 @@ class ObjectStore : public IObjectStore
 public:
     ObjectStore();
     ~ObjectStore() override;
-    void add(const vespalib::string & key, Anything::UP value) override;
-    const Anything * get(const vespalib::string & key) const override;
+    void add(const std::string & key, Anything::UP value) override;
+    const Anything * get(const std::string & key) const override;
+    Anything* get_mutable(const std::string & key) override;
 private:
-    using ObjectMap = vespalib::hash_map<vespalib::string, Anything *>;
+    using ObjectMap = vespalib::hash_map<std::string, Anything *>;
     ObjectMap _objectMap;
 };
 

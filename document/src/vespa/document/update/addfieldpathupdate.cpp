@@ -17,8 +17,8 @@ namespace document {
 using namespace fieldvalue;
 using vespalib::make_string;
 
-AddFieldPathUpdate::AddFieldPathUpdate(const DataType& type, stringref fieldPath,
-                                       stringref whereClause, std::unique_ptr<ArrayFieldValue> values)
+AddFieldPathUpdate::AddFieldPathUpdate(const DataType& type, string_view fieldPath,
+                                       string_view whereClause, std::unique_ptr<ArrayFieldValue> values)
     : FieldPathUpdate(Add, fieldPath, whereClause),
       _values(std::move(values))
 {
@@ -53,7 +53,7 @@ AddIteratorHandler::doModify(FieldValue &fv) {
             cf.add(_values[i]);
         }
     } else {
-        vespalib::string err = make_string("Unable to add a value to a \"%s\" field value.", fv.className());
+        std::string err = make_string("Unable to add a value to a \"%s\" field value.", fv.className());
         throw vespalib::IllegalArgumentException(err, VESPA_STRLOC);
     }
     return ModificationStatus::MODIFIED;

@@ -29,7 +29,7 @@ public:
     using Distribution = RedundancyGroupDistribution ;
 
 private:
-    vespalib::string           _name;
+    std::string           _name;
     uint16_t                   _index;
     uint32_t                   _distributionHash;
     Distribution               _distributionSpec;
@@ -48,19 +48,19 @@ private:
     void getConfigHash(vespalib::asciistream & out) const;
 
 public:
-        // Create leaf node
-    Group(uint16_t index, vespalib::stringref name) noexcept;
-        // Create branch node
-    Group(uint16_t index, vespalib::stringref name,
+    // Create leaf node
+    Group(uint16_t index, std::string_view name) noexcept;
+    // Create branch node
+    Group(uint16_t index, std::string_view name,
           const Distribution&, uint16_t redundancy);
-    virtual ~Group();
+    ~Group() override;
 
-    bool isLeafGroup() const noexcept { return ! _nodes.empty(); }
+    [[nodiscard]] bool isLeafGroup() const noexcept { return ! _nodes.empty(); }
     bool operator==(const Group& other) const noexcept;
     void print(std::ostream& out, bool verbose, const std::string& indent) const override;
 
     vespalib::Double getCapacity() const noexcept { return _capacity; }
-    const vespalib::string & getName() const noexcept { return _name; }
+    const std::string & getName() const noexcept { return _name; }
     uint16_t getIndex() const noexcept { return _index; }
     std::map<uint16_t, Group*>& getSubGroups() { return _subGroups; }
     const std::map<uint16_t, Group*>& getSubGroups() const noexcept { return _subGroups; }
@@ -92,7 +92,7 @@ public:
      * that is critical for distribution. Use to match up two different group
      * instances in order to verify if they would generate the same distribution
      */
-    vespalib::string getDistributionConfigHash() const;
+    std::string getDistributionConfigHash() const;
 };
 
 }

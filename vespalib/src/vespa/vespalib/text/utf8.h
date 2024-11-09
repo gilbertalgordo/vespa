@@ -3,7 +3,8 @@
 
 #pragma once
 
-#include <vespa/vespalib/stllike/string.h>
+#include <cstdint>
+#include <string>
 
 namespace vespalib {
 
@@ -28,7 +29,7 @@ public:
     };
 
     /**
-     * Filter a string (std::string or vespalib::string)
+     * Filter a string (std::string or std::string)
      * and replace any invalid UTF8 sequences with the
      * standard replacement char U+FFFD; note that any
      * UTF-8 encoded surrogates are also considered invalid.
@@ -170,7 +171,7 @@ protected:
  * @brief Reader class that wraps a block of data to get UTF-8 characters from
  **/
 class Utf8Reader
-    : public Utf8, private stringref
+    : public Utf8, private std::string_view
 {
 private:
     size_type _pos;
@@ -182,8 +183,8 @@ public:
      * Construct a reader for the given block of data
      * @param input data to read UTF-8 from (can be read-only)
      **/
-    Utf8Reader(stringref input) noexcept
-        : stringref(input), _pos(0)
+    Utf8Reader(std::string_view input) noexcept
+        : std::string_view(input), _pos(0)
     {}
 
     /**
@@ -192,7 +193,7 @@ public:
      * @param sz size of the block in bytes
      **/
     Utf8Reader(const char *start, size_t sz) noexcept
-        : stringref(start, sz), _pos(0)
+        : std::string_view(start, sz), _pos(0)
     {}
 
     /**
@@ -335,7 +336,7 @@ class Utf8Writer : public Utf8
 public:
     /**
      * construct a writer appending to the given string
-     * @param target a reference to a vespalib::string
+     * @param target a reference to a std::string
      * that the writer will append to.  Must be writable
      * and must be kept alive while the writer is active.
      **/

@@ -3,7 +3,7 @@
 
 #include "node.h"
 #include <vespa/searchlib/query/weight.h>
-#include <vespa/vespalib/stllike/string.h>
+#include <string>
 
 namespace search::query {
 
@@ -13,37 +13,41 @@ namespace search::query {
  */
 class Term
 {
-    vespalib::string _view;
+    std::string _view;
     int32_t          _id;
     Weight           _weight;
     bool             _ranked;
     bool             _position_data;
+    bool             _prefix_match;
 
 public:
     virtual ~Term() = 0;
 
-    void setView(const vespalib::string & view) { _view = view; }
+    void setView(std::string view) { _view = std::move(view); }
     void setRanked(bool ranked) noexcept { _ranked = ranked; }
     void setPositionData(bool position_data) noexcept { _position_data = position_data; }
+    // Used for fuzzy prefix matching. Not to be confused with distinct Prefix query term type
+    void set_prefix_match(bool prefix_match) noexcept { _prefix_match = prefix_match; }
 
     void setStateFrom(const Term& other);
 
-    const vespalib::string & getView() const noexcept { return _view; }
+    const std::string & getView() const noexcept { return _view; }
     Weight getWeight() const noexcept { return _weight; }
     int32_t getId() const noexcept { return _id; }
-    bool isRanked() const noexcept { return _ranked; }
-    bool usePositionData() const noexcept { return _position_data; }
+    [[nodiscard]] bool isRanked() const noexcept { return _ranked; }
+    [[nodiscard]] bool usePositionData() const noexcept { return _position_data; }
+    [[nodiscard]] bool prefix_match() const noexcept { return _prefix_match; }
 
-    static bool isPossibleRangeTerm(vespalib::stringref term) noexcept {
+    static bool isPossibleRangeTerm(std::string_view term) noexcept {
         return (term[0] == '[' || term[0] == '<' || term[0] == '>');
     }
 protected:
-    Term(vespalib::stringref view, int32_t id, Weight weight);
+    Term(const std::string & view, int32_t id, Weight weight);
 };
 
 class TermNode : public Node, public Term {
 protected:
-    TermNode(vespalib::stringref view, int32_t id, Weight weight) : Term(view, id, weight) {}
+    TermNode(const std::string & view, int32_t id, Weight weight) : Term(view, id, weight) {}
 };
 /**
  * Generic functionality for most of Term's derived classes.
@@ -59,12 +63,12 @@ public:
     const T &getTerm() const { return _term; }
 
 protected:
-    TermBase(T term, vespalib::stringref view, int32_t id, Weight weight);
+    TermBase(T term, const std::string & view, int32_t id, Weight weight);
 };
 
 
 template <typename T>
-TermBase<T>::TermBase(T term, vespalib::stringref view, int32_t id, Weight weight)
+TermBase<T>::TermBase(T term, const std::string & view, int32_t id, Weight weight)
     : TermNode(view, id, weight),
        _term(std::move(term))
 {}

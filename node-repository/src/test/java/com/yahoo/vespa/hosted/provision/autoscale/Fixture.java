@@ -11,6 +11,7 @@ import com.yahoo.config.provision.Environment;
 import com.yahoo.config.provision.Flavor;
 import com.yahoo.config.provision.NodeResources;
 import com.yahoo.config.provision.RegionName;
+import com.yahoo.config.provision.SharedHosts;
 import com.yahoo.config.provision.SystemName;
 import com.yahoo.config.provision.Zone;
 import com.yahoo.vespa.flags.InMemoryFlagSource;
@@ -283,7 +284,7 @@ public class Fixture {
             return this;
         }
 
-        public Fixture.Builder hostSharingFlag() {
+        public Fixture.Builder hostSharing() {
             var resources = new HostResources(8.0, 32.0, 100.0, 10.0, "fast", "local", null, 6, "x86_64");
             flagSource.withJacksonFlag(PermanentFlags.SHARED_HOST.id(), new SharedHost(List.of(resources)), SharedHost.class);
             return this;

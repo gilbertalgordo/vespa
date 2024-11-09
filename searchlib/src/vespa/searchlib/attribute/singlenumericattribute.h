@@ -41,8 +41,8 @@ protected:
     }
 
 public:
-    explicit SingleValueNumericAttribute(const vespalib::string & baseFileName);  // Only for testing
-    SingleValueNumericAttribute(const vespalib::string & baseFileName, const AttributeVector::Config & c);
+    explicit SingleValueNumericAttribute(const std::string & baseFileName);  // Only for testing
+    SingleValueNumericAttribute(const std::string & baseFileName, const AttributeVector::Config & c);
 
     ~SingleValueNumericAttribute() override;
 
@@ -121,7 +121,7 @@ public:
 
     void clearDocs(DocId lidLow, DocId lidLimit, bool in_shrink_lid_space) override;
     void onShrinkLidSpace() override;
-    std::unique_ptr<AttributeSaver> onInitSave(vespalib::stringref fileName) override;
+    std::unique_ptr<AttributeSaver> onInitSave(std::string_view fileName) override;
 };
 
 }

@@ -4,7 +4,7 @@ LOG_SETUP("document_reprocessing_handler_test");
 
 #include <vespa/searchcore/proton/reprocessing/document_reprocessing_handler.h>
 #include <vespa/searchlib/test/doc_builder.h>
-#include <vespa/vespalib/testkit/testapp.h>
+#include <vespa/vespalib/testkit/test_kit.h>
 
 using namespace document;
 using namespace proton;
@@ -27,7 +27,7 @@ struct MyProcessor : public ReprocessingType
 using MyReader = MyProcessor<IReprocessingReader>;
 using MyRewriter = MyProcessor<IReprocessingRewriter>;
 
-const vespalib::string DOC_ID = "id:test:searchdocument::0";
+const std::string DOC_ID = "id:test:searchdocument::0";
 
 struct FixtureBase
 {

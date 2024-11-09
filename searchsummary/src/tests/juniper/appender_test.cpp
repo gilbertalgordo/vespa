@@ -1,11 +1,11 @@
 // Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
-#include <vespa/vespalib/testkit/testapp.h>
+#include <vespa/vespalib/testkit/test_kit.h>
 
 #define _NEED_SUMMARY_CONFIG_IMPL
 #include <vespa/juniper/SummaryConfig.h>
 #include <vespa/juniper/juniperdebug.h>
 #include <vespa/juniper/appender.h>
-#include <vespa/vespalib/stllike/string.h>
+#include <string>
 #include <vector>
 
 using namespace juniper;
@@ -24,10 +24,10 @@ struct FixtureBase
           _appender(&_cfg)
     {
     }
-    void assertString(const vespalib::string &input, const vespalib::string &output) {
+    void assertString(const std::string &input, const std::string &output) {
         std::vector<char> buf;
         _appender.append(buf, input.c_str(), input.size());
-        EXPECT_EQUAL(output, vespalib::string(&buf[0], buf.size()));
+        EXPECT_EQUAL(output, std::string(&buf[0], buf.size()));
     }
 };
 

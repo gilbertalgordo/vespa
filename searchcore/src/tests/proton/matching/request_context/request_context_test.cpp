@@ -27,10 +27,10 @@ using namespace search::fef::indexproperties;
 
 class MyAttributeContext : public search::attribute::IAttributeContext {
 public:
-    const IAttributeVector* getAttribute(const vespalib::string&) const override { abort(); }
-    const IAttributeVector* getAttributeStableEnum(const vespalib::string&) const override { abort(); }
+    const IAttributeVector* getAttribute(std::string_view) const override { abort(); }
+    const IAttributeVector* getAttributeStableEnum(std::string_view) const override { abort(); }
     void getAttributeList(std::vector<const IAttributeVector*>&) const override { abort(); }
-    void asyncForAttribute(const vespalib::string&, std::unique_ptr<IAttributeFunctor>) const override { abort(); }
+    void asyncForAttribute(std::string_view, std::unique_ptr<IAttributeFunctor>) const override { abort(); }
 };
 
 class RequestContextTest : public ::testing::Test {
@@ -44,10 +44,10 @@ private:
     RequestContext               _request_ctx;
     Value::UP                    _query_tensor;
 
-    void insert_tensor_in_properties(const vespalib::string& tensor_name, const Value& tensor_value) {
+    void insert_tensor_in_properties(const std::string& tensor_name, const Value& tensor_value) {
         vespalib::nbostream stream;
         encode_value(tensor_value, stream);
-        _query_env.getProperties().add(tensor_name, vespalib::stringref(stream.data(), stream.size()));
+        _query_env.getProperties().add(tensor_name, std::string_view(stream.data(), stream.size()));
     }
 
 public:
@@ -69,7 +69,7 @@ public:
     TensorSpec expected_query_tensor() const {
         return spec_from_value(*_query_tensor);
     }
-    const Value* get_query_tensor(const vespalib::string& tensor_name) const {
+    const Value* get_query_tensor(const std::string& tensor_name) const {
         return _request_ctx.get_query_tensor(tensor_name);
     }
 };

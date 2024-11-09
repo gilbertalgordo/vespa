@@ -23,9 +23,12 @@ class XmlOutputStream;
 class XmlAttribute;
 }
 
+namespace storage::lib {
+struct BucketSpaceDistributionConfigs;
+}
+
 namespace storage::distributor {
 
-struct BucketSpaceDistributionConfigs;
 class BucketSpaceDistributionContext;
 class ClusterStateBundleActivationListener;
 class DistributorInterface;
@@ -53,15 +56,15 @@ public:
     bool onActivateClusterStateVersion(const std::shared_ptr<api::ActivateClusterStateVersionCommand>& cmd) override;
     bool onRequestBucketInfoReply(const std::shared_ptr<api::RequestBucketInfoReply> & repl) override;
 
-    vespalib::string getReportContentType(const framework::HttpUrlPath&) const override;
+    std::string getReportContentType(const framework::HttpUrlPath&) const override;
     bool reportStatus(std::ostream&, const framework::HttpUrlPath&) const override;
 
     void resend_delayed_messages();
-    void storage_distribution_changed(const BucketSpaceDistributionConfigs& configs);
+    void storage_distribution_changed(const lib::BucketSpaceDistributionConfigs& configs);
     void bootstrap_distribution_config(std::shared_ptr<const lib::Distribution>);
-    void propagate_distribution_config(const BucketSpaceDistributionConfigs& configs);
+    void propagate_distribution_config(const lib::BucketSpaceDistributionConfigs& configs);
 
-    vespalib::string report_xml_status(vespalib::xml::XmlOutputStream& xos, const framework::HttpUrlPath&) const;
+    std::string report_xml_status(vespalib::xml::XmlOutputStream& xos, const framework::HttpUrlPath&) const;
 
     void print(std::ostream& out, bool verbose, const std::string& indent) const;
 
@@ -90,6 +93,10 @@ private:
     void activate_pending_cluster_state(StripeAccessGuard& guard);
     void ensure_transition_timer_started();
     void complete_transition_timer();
+
+    void storage_distribution_changed_impl(StripeAccessGuard& guard,
+                                           const lib::BucketSpaceDistributionConfigs& configs,
+                                           bool inhibit_request_sending);
 
     void remove_superfluous_buckets(StripeAccessGuard& guard,
                                     const lib::ClusterStateBundle& new_state,

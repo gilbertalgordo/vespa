@@ -1,6 +1,6 @@
 # Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 find_package(ICU 60.0 REQUIRED COMPONENTS uc i18n)
-vespa_add_library(searchlib
+vespa_add_library(vespa_searchlib
     SOURCES
     $<TARGET_OBJECTS:searchlib_aggregation>
     $<TARGET_OBJECTS:searchlib_attribute>
@@ -39,7 +39,9 @@ vespa_add_library(searchlib
     vespalib
     ICU::i18n
     ICU::uc
+    protobuf::libprotobuf
+    EXTERNAL_DEPENDS
     ${VESPA_ATOMIC_LIB}
 )
 
-vespa_add_target_package_dependency(searchlib Protobuf)
+vespa_add_target_package_dependency(vespa_searchlib Protobuf)

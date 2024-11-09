@@ -1,9 +1,10 @@
 // Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
-#include <vespa/vespalib/testkit/test_kit.h>
 #include "rfc_sha1.h"
+#include <vespa/vespalib/testkit/test_kit.h>
+#include <vespa/vespalib/testkit/test_master.hpp>
 #include <vespa/vespalib/util/sha1.h>
-#include <vespa/vespalib/stllike/string.h>
+#include <string>
 
 using namespace vespalib;
 
@@ -14,12 +15,12 @@ struct Digest {
             buf[i] = ((rand() >> 12) & 0xff);
         }
     }
-    vespalib::string as_string() const {
+    std::string as_string() const {
         const char *sym = "0123456789ABCDEF";
-        vespalib::string res;
+        std::string res;
         for (size_t i = 0; i < 20; ++i) {
-            res.append(sym[(buf[i] >> 4) & 0xf]);
-            res.append(sym[buf[i] & 0xf]);
+            res += sym[(buf[i] >> 4) & 0xf];
+            res += sym[buf[i] & 0xf];
         }
         return ("0x" + res);
     }

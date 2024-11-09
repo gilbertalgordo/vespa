@@ -48,14 +48,14 @@ public:
     ~HttpConnection();
     void handle_event(bool read, bool write) override;
     State get_state() const { return _state; }
-    void resolve_host(const vespalib::string &my_host) { _request.resolve_host(my_host); }
+    void resolve_host(const std::string &my_host) { _request.resolve_host(my_host); }
     const HttpRequest &get_request() const { return _request; }
     // Precondition: handshake must have been completed
     const net::ConnectionAuthContext &auth_context() const noexcept { return *_auth_ctx; }
 
-    void respond_with_content(vespalib::stringref content_type,
-                              vespalib::stringref content);
-    void respond_with_error(int code, const vespalib::stringref msg);
+    void respond_with_content(std::string_view content_type,
+                              std::string_view content);
+    void respond_with_error(int code, const std::string_view msg);
 };
 
 } // namespace vespalib::portal

@@ -132,7 +132,7 @@ ImportedSearchContext::createIterator(fef::TermFieldMatchData* matchData, bool s
             DocIt postings;
             auto array = _merger.getArray();
             postings.set(&array[0], &array[array.size()]);
-            return std::make_unique<AttributePostingListIteratorT<DocIt>>(*this, true, matchData, postings);
+            return std::make_unique<AttributePostingListIteratorT<DocIt>>(*this, matchData, postings);
         }
     } else if (_merger.hasBitVector()) {
         return BitVectorIterator::create(_merger.getBitVector(), _merger.getDocIdLimit(), *matchData, strict);
@@ -305,10 +305,10 @@ ImportedSearchContext::considerAddSearchCacheEntry()
 }
 
 void
-ImportedSearchContext::fetchPostings(const queryeval::ExecuteInfo &execInfo) {
+ImportedSearchContext::fetchPostings(const queryeval::ExecuteInfo &execInfo, bool strict) {
     if (!_searchCacheLookup) {
-        _target_search_context->fetchPostings(execInfo);
-        if (!_merger.merge_done() && (execInfo.is_strict() || (_target_attribute.getIsFastSearch() && execInfo.hit_rate() > 0.01))) {
+        _target_search_context->fetchPostings(execInfo, strict);
+        if (!_merger.merge_done() && (strict || (_target_attribute.getIsFastSearch() && execInfo.hit_rate() > 0.01))) {
                 makeMergedPostings(_target_attribute.getIsFilter());
                 considerAddSearchCacheEntry();
         }
@@ -335,7 +335,7 @@ ImportedSearchContext::queryTerm() const {
     return _target_search_context->queryTerm();
 }
 
-const vespalib::string&
+const std::string&
 ImportedSearchContext::attributeName() const {
     return _imported_attribute.getName();
 }

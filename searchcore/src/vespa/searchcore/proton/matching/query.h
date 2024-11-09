@@ -26,7 +26,9 @@ private:
     using ExecuteInfo = search::queryeval::ExecuteInfo;
     using IRequestContext = search::queryeval::IRequestContext;
     using GeoLocationSpec = search::common::GeoLocationSpec;
+    using InFlow = search::queryeval::InFlow;
     search::query::Node::UP      _query_tree;
+    InFlow                       _in_flow = InFlow(true);
     Blueprint::UP                _blueprint;
     Blueprint::UP                _whiteListBlueprint;
     std::vector<GeoLocationSpec> _locations;
@@ -54,15 +56,15 @@ public:
      *
      * @return success(true)/failure(false)
      **/
-    bool buildTree(vespalib::stringref stack,
-                   const vespalib::string &location,
+    bool buildTree(std::string_view stack,
+                   const std::string &location,
                    const ViewResolver &resolver,
                    const search::fef::IIndexEnvironment &idxEnv)
     {
         return buildTree(stack, location, resolver, idxEnv, false);
     }
-    bool buildTree(vespalib::stringref stack,
-                   const vespalib::string &location,
+    bool buildTree(std::string_view stack,
+                   const std::string &location,
                    const ViewResolver &resolver,
                    const search::fef::IIndexEnvironment &idxEnv,
                    bool always_mark_phrase_expensive);
@@ -95,6 +97,8 @@ public:
                         ISearchContext &context,
                         search::fef::MatchDataLayout &mdl);
 
+    void enumerate_blueprint_nodes() noexcept;
+
     /**
      * Optimize the query to be executed. This function should be
      * called after the reserveHandles function and before the
@@ -103,8 +107,8 @@ public:
      * testing becomes harder. Not calling this function enables the
      * test to verify the original query without optimization.
      **/
-    void optimize(bool sort_by_cost);
-    void fetchPostings(const ExecuteInfo & executeInfo) ;
+    void optimize(InFlow in_flow, bool sort_by_cost);
+    void fetchPostings(const ExecuteInfo & executeInfo);
 
     void handle_global_filter(const IRequestContext & requestContext, uint32_t docid_limit,
                               double global_filter_lower_limit, double global_filter_upper_limit,
@@ -128,6 +132,7 @@ public:
                                      vespalib::ThreadBundle &thread_bundle, search::engine::Trace* trace);
 
     void freeze();
+    void set_matching_phase(search::queryeval::MatchingPhase matching_phase) const noexcept;
 
     /**
      * Create the actual search iterator tree used to find matches.

@@ -136,7 +136,7 @@ TEST_F(FieldPathUpdateTestCase, testRemoveField)
     auto doc = std::make_unique<Document>(*_repo, *_foobar_type, DocumentId("id:ns:foobar::things:thangs"));
     EXPECT_TRUE(doc->hasValue("strfoo") == false);
     doc->setValue("strfoo", StringFieldValue("cocacola"));
-    EXPECT_EQ(vespalib::string("cocacola"), doc->getValue("strfoo")->getAsString());
+    EXPECT_EQ(std::string("cocacola"), doc->getValue("strfoo")->getAsString());
     DocumentUpdate docUp(*_repo, *_foobar_type, DocumentId("id:ns:foobar::barbar:foofoo"));
     docUp.addFieldPathUpdate(std::make_unique<RemoveFieldPathUpdate>("strfoo"));
     docUp.applyTo(*doc);
@@ -162,8 +162,8 @@ TEST_F(FieldPathUpdateTestCase, testApplyRemoveMultiList)
     {
         std::unique_ptr<ArrayFieldValue> strArray = doc->getAs<ArrayFieldValue>(doc->getField("strarray"));
         ASSERT_EQ(std::size_t(2), strArray->size());
-        EXPECT_EQ(vespalib::string("crouching tiger, hidden field"), (*strArray)[0].getAsString());
-        EXPECT_EQ(vespalib::string("hello hello"), (*strArray)[1].getAsString());
+        EXPECT_EQ(std::string("crouching tiger, hidden field"), (*strArray)[0].getAsString());
+        EXPECT_EQ(std::string("hello hello"), (*strArray)[1].getAsString());
     }
 }
 
@@ -186,7 +186,7 @@ TEST_F(FieldPathUpdateTestCase, testApplyRemoveMultiList2)
     {
         std::unique_ptr<ArrayFieldValue> strArray = doc->getAs<ArrayFieldValue>(doc->getField("strarray"));
         ASSERT_EQ(std::size_t(1), strArray->size());
-        EXPECT_EQ(vespalib::string("hello hello"), (*strArray)[0].getAsString());
+        EXPECT_EQ(std::string("hello hello"), (*strArray)[0].getAsString());
     }
 }
 
@@ -203,7 +203,7 @@ TEST_F(FieldPathUpdateTestCase, testApplyRemoveEntireListField)
     }
     //doc->print(std::cerr, true, "");
     DocumentUpdate docUp(*_repo, *_foobar_type, DocumentId("id:ns:foobar::barbar:foofoo"));
-    docUp.addFieldPathUpdate(std::make_unique<RemoveFieldPathUpdate>("strarray", ""));
+    docUp.addFieldPathUpdate(std::make_unique<RemoveFieldPathUpdate>("strarray"));
     docUp.applyTo(*doc);
     EXPECT_TRUE(!doc->hasValue("strarray"));
 }
@@ -239,12 +239,12 @@ TEST_F(FieldPathUpdateTestCase, testApplyAssignSingle)
     docUp.addFieldPathUpdate(std::make_unique<AssignFieldPathUpdate>(*doc->getDataType(), "strfoo", std::string(), StringFieldValue::make("himert")));
     docUp.applyTo(*doc);
     EXPECT_TRUE(doc->hasValue("strfoo"));
-    EXPECT_EQ(vespalib::string("himert"), doc->getValue("strfoo")->getAsString());
+    EXPECT_EQ(std::string("himert"), doc->getValue("strfoo")->getAsString());
     // Test overwriting existing
     DocumentUpdate docUp2(*_repo, *_foobar_type, DocumentId("id:ns:foobar::barbar:foofoo"));
     docUp2.addFieldPathUpdate(std::make_unique<AssignFieldPathUpdate>(*doc->getDataType(), "strfoo", std::string(), StringFieldValue::make("wunderbaum")));
     docUp2.applyTo(*doc);
-    EXPECT_EQ(vespalib::string("wunderbaum"), doc->getValue("strfoo")->getAsString());
+    EXPECT_EQ(std::string("wunderbaum"), doc->getValue("strfoo")->getAsString());
 }
 
 TEST_F(FieldPathUpdateTestCase, testApplyAssignMath)
@@ -407,8 +407,8 @@ TEST_F(FieldPathUpdateTestCase, testApplyAssignMultiList)
     {
         std::unique_ptr<ArrayFieldValue> strArray = doc->getAs<ArrayFieldValue>(doc->getField("strarray"));
         ASSERT_EQ(std::size_t(2), strArray->size());
-        EXPECT_EQ(vespalib::string("assigned val 0"), (*strArray)[0].getAsString());
-        EXPECT_EQ(vespalib::string("assigned val 1"), (*strArray)[1].getAsString());
+        EXPECT_EQ(std::string("assigned val 0"), (*strArray)[0].getAsString());
+        EXPECT_EQ(std::string("assigned val 1"), (*strArray)[1].getAsString());
     }
 }
 
@@ -517,17 +517,17 @@ TEST_F(FieldPathUpdateTestCase, testAddAndAssignList)
     {
         std::unique_ptr<ArrayFieldValue> strArray = doc->getAs<ArrayFieldValue>(doc->getField("strarray"));
         ASSERT_EQ(std::size_t(3), strArray->size());
-        EXPECT_EQ(vespalib::string("hello hello"), (*strArray)[0].getAsString());
-        EXPECT_EQ(vespalib::string("assigned val 1"), (*strArray)[1].getAsString());
-        EXPECT_EQ(vespalib::string("new value"), (*strArray)[2].getAsString());
+        EXPECT_EQ(std::string("hello hello"), (*strArray)[0].getAsString());
+        EXPECT_EQ(std::string("assigned val 1"), (*strArray)[1].getAsString());
+        EXPECT_EQ(std::string("new value"), (*strArray)[2].getAsString());
     }
 }
 
 namespace {
 struct Keys {
-    vespalib::string key1;
-    vespalib::string key2;
-    vespalib::string key3;
+    std::string key1;
+    std::string key2;
+    std::string key3;
     Keys();
     ~Keys();
 };
@@ -828,7 +828,7 @@ TEST_F(FieldPathUpdateTestCase, testSerializeRemove)
 
     DocumentUpdate docUp(*_repo, *_foobar_type, DocumentId("id:ns:foobar::barbar:foofoo"));
 
-    docUp.addFieldPathUpdate(std::make_unique<RemoveFieldPathUpdate>("structmap{ribbit}", std::string()));
+    docUp.addFieldPathUpdate(std::make_unique<RemoveFieldPathUpdate>("structmap{ribbit}"));
 
     testSerialize(*_repo, docUp);
 }
@@ -937,8 +937,8 @@ TEST_F(FieldPathUpdateTestCase, update_can_have_removes_for_both_existent_and_no
     doc->setValue("structmap", mfv);
 
     DocumentUpdate update(*_repo, *_foobar_type, doc_id);
-    auto update1 = std::make_unique<RemoveFieldPathUpdate>("structmap{coolmovie}", "");
-    auto update2 = std::make_unique<RemoveFieldPathUpdate>("structmap{no such key}", "");
+    auto update1 = std::make_unique<RemoveFieldPathUpdate>("structmap{coolmovie}");
+    auto update2 = std::make_unique<RemoveFieldPathUpdate>("structmap{no such key}");
     update.addFieldPathUpdate(std::move(update1));
     update.addFieldPathUpdate(std::move(update2));
     update.applyTo(*doc);

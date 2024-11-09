@@ -34,6 +34,7 @@ import com.yahoo.vespa.model.test.utils.VespaModelCreatorWithMockPkg;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.xml.sax.SAXException;
+
 import java.io.File;
 import java.io.IOException;
 import java.io.StringReader;
@@ -262,9 +263,9 @@ public class VespaModelTestCase {
         assertEquals(1, admin.getConfigservers().size());
         Set<HostInfo> hosts = model.getHosts();
         assertEquals(1, hosts.size());
-        //logd, config proxy, sentinel, config server, slobrok, log server
+        // logd, config proxy, sentinel, config server, slobrok, logserver, logserver container
         HostInfo host = hosts.iterator().next();
-        assertEquals(7, host.getServices().size());
+        assertEquals(8, host.getServices().size());
         new LogdConfig((LogdConfig.Builder) model.getConfig(new LogdConfig.Builder(), "admin/model"));
 
     }
@@ -307,6 +308,30 @@ public class VespaModelTestCase {
         VespaModel model = new VespaModel(new NullConfigModelRegistry(), deployState);
         new Validation().validate(model, new ValidationParameters(), deployState);
         assertContainsWarning(logger.msgs, "Directory searchdefinitions/ should not be used for schemas, use schemas/ instead");
+    }
+
+    @Test
+    void testNoNodesCount() {
+         var services =
+                """
+                        <services version='1.0'>
+                          <container version='1.0' id='default'>
+                            <search/>
+                            <nodes>
+                              <resources disk="24Gb" />
+                            </nodes>
+                          </container>
+                        </services>""";
+
+        var app = new MockApplicationPackage.Builder().withServices(services).build();
+        var deployState = new DeployState.Builder()
+                .applicationPackage(app)
+                .properties(new TestProperties()
+                                    .setHostedVespa(true)
+                                    .setApplicationId(ApplicationId.from("foo", "bar", "default-t")))
+                .build();
+        var model = new TestDriver(true).buildModel(deployState);
+        assertEquals(1, model.getHosts().size()); // node count 1 if not specified
     }
 
     private void assertContainsWarning(List<Pair<Level,String>> msgs, String text) {

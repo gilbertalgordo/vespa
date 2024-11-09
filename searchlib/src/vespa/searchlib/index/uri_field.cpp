@@ -58,7 +58,7 @@ UriField::valid(const Schema &schema, const Schema::CollectionType & collectionT
 }
 
 void
-UriField::setup(const Schema &schema, const vespalib::string &field)
+UriField::setup(const Schema &schema, const std::string &field)
 {
     _all = schema.getIndexFieldId(field);
     _scheme = schema.getIndexFieldId(field + ".scheme");
@@ -71,10 +71,10 @@ UriField::setup(const Schema &schema, const vespalib::string &field)
 }
 
 bool
-UriField::mightBePartofUri(vespalib::stringref name) {
+UriField::mightBePartofUri(std::string_view name) {
     size_t dotPos = name.find('.');
-    if ((dotPos != 0) && (dotPos != vespalib::string::npos)) {
-        vespalib::stringref suffix = name.substr(dotPos + 1);
+    if ((dotPos != 0) && (dotPos != std::string::npos)) {
+        std::string_view suffix = name.substr(dotPos + 1);
         return ((suffix == "all") || (suffix == "scheme") || (suffix == "host") || (suffix == "port") ||
                 (suffix == "path") || (suffix == "query") || (suffix == "fragment") || (suffix == "hostname"));
     }

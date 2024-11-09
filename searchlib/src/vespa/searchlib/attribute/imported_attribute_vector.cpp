@@ -3,11 +3,12 @@
 #include "imported_attribute_vector.h"
 #include "imported_attribute_vector_read_guard.h"
 #include "imported_search_context.h"
+#include <vespa/vespalib/util/memoryusage.h>
 
 namespace search::attribute {
 
 ImportedAttributeVector::ImportedAttributeVector(
-            vespalib::stringref name,
+            std::string_view name,
             std::shared_ptr<ReferenceAttribute> reference_attribute,
             std::shared_ptr<IDocumentMetaStoreContext> document_meta_store,
             std::shared_ptr<ReadableAttributeVector> target_attribute,
@@ -23,7 +24,7 @@ ImportedAttributeVector::ImportedAttributeVector(
 {
 }
 
-ImportedAttributeVector::ImportedAttributeVector(vespalib::stringref name,
+ImportedAttributeVector::ImportedAttributeVector(std::string_view name,
                                                  std::shared_ptr<ReferenceAttribute> reference_attribute,
                                                  std::shared_ptr<IDocumentMetaStoreContext> document_meta_store,
                                                  std::shared_ptr<ReadableAttributeVector> target_attribute,
@@ -56,6 +57,17 @@ void ImportedAttributeVector::clearSearchCache() {
     if (_search_cache) {
         _search_cache->clear();
     }
+}
+
+vespalib::MemoryUsage
+ImportedAttributeVector::get_memory_usage() const
+{
+    constexpr auto self_memory_usage = sizeof(ImportedAttributeVector);
+    vespalib::MemoryUsage result(self_memory_usage, self_memory_usage, 0, 0);
+    if (_search_cache) {
+        result.merge(_search_cache->get_memory_usage());
+    }
+    return result;
 }
 
 }

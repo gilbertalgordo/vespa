@@ -9,19 +9,23 @@
 #include <vespa/searchcommon/attribute/status.h>
 #include <vespa/searchcore/proton/attribute/attribute_usage_filter.h>
 #include <vespa/searchcore/proton/attribute/i_attribute_manager.h>
+#include <vespa/searchcore/proton/attribute/imported_attributes_repo.h>
 #include <vespa/searchcore/proton/docsummary/isummarymanager.h>
 #include <vespa/searchcore/proton/matching/matching_stats.h>
 #include <vespa/searchcore/proton/metrics/documentdb_job_trackers.h>
 #include <vespa/searchcore/proton/metrics/executor_threading_service_stats.h>
 #include <vespa/searchlib/attribute/attributevector.h>
+#include <vespa/searchlib/attribute/imported_attribute_vector.h>
 #include <vespa/vespalib/stllike/cache_stats.h>
 #include <vespa/searchlib/util/searchable_stats.h>
 #include <vespa/vespalib/util/memoryusage.h>
+#include <vespa/vespalib/util/size_literals.h>
 
 #include <vespa/log/log.h>
 LOG_SETUP(".proton.server.documentdb_metrics_updater");
 
 using search::LidUsageStats;
+using search::attribute::ImportedAttributeVector;
 using vespalib::CacheStats;
 using vespalib::MemoryUsage;
 
@@ -75,6 +79,15 @@ updateIndexMetrics(DocumentDBTaggedMetrics &metrics, const search::SearchableSta
     updateDiskUsageMetric(indexMetrics.diskUsage, stats.sizeOnDisk(), totalStats);
     updateMemoryUsageMetrics(indexMetrics.memoryUsage, stats.memoryUsage(), totalStats);
     indexMetrics.docsInMemory.set(stats.docsInMemory());
+    auto& field_metrics = metrics.ready.index;
+    for (auto& field : stats.get_field_stats()) {
+        auto entry = field_metrics.get_field_metrics_entry(field.first);
+        if (entry) {
+            entry->memoryUsage.update(field.second.memory_usage());
+            entry->size_on_disk.set(field.second.size_on_disk());
+            entry->update_disk_io(field.second.cache_disk_io_stats());
+        }
+    }
 }
 
 struct TempAttributeMetric
@@ -90,7 +103,7 @@ struct TempAttributeMetric
 
 struct TempAttributeMetrics
 {
-    using AttrMap = std::map<vespalib::string, TempAttributeMetric>;
+    using AttrMap = std::map<std::string, TempAttributeMetric>;
     TempAttributeMetric total;
     AttrMap attrs;
 };
@@ -108,7 +121,7 @@ isNotReadySubDB(const IDocumentSubDB *subDb, const DocumentSubDBCollection &subD
 }
 
 void
-fillTempAttributeMetrics(TempAttributeMetrics &metrics, const vespalib::string &attrName,
+fillTempAttributeMetrics(TempAttributeMetrics &metrics, const std::string &attrName,
                          const MemoryUsage &memoryUsage, uint32_t bitVectors)
 {
     metrics.total.memoryUsage.merge(memoryUsage);
@@ -141,6 +154,18 @@ fillTempAttributeMetrics(TempAttributeMetrics &totalMetrics,
                     fillTempAttributeMetrics(*subMetrics, attr->getName(), memoryUsage, bitVectors);
                 }
             }
+            auto imported = attrMgr->getImportedAttributes();
+            if (imported != nullptr) {
+                std::vector<std::shared_ptr<ImportedAttributeVector>> i_list;
+                imported->getAll(i_list);
+                for (const auto& attr : i_list) {
+                    auto memory_usage = attr->get_memory_usage();
+                    fillTempAttributeMetrics(totalMetrics,  attr->getName(), memory_usage, 0);
+                    if (subMetrics != nullptr) {
+                        fillTempAttributeMetrics(*subMetrics,  attr->getName(), memory_usage, 0);
+                    }
+                }
+            }
         }
     }
 }
@@ -149,7 +174,7 @@ void
 updateAttributeMetrics(AttributeMetrics &metrics, const TempAttributeMetrics &tmpMetrics)
 {
     for (const auto &attr : tmpMetrics.attrs) {
-        auto entry = metrics.get(attr.first);
+        auto entry = metrics.get_field_metrics_entry(attr.first);
         if (entry) {
             entry->memoryUsage.update(attr.second.memoryUsage);
         }
@@ -199,33 +224,6 @@ updateDocumentsMetrics(DocumentDBTaggedMetrics &metrics, const DocumentSubDBColl
 }
 
 void
-updateDocumentStoreCacheHitRate(const CacheStats &current, const CacheStats &last,
-                                metrics::LongAverageMetric &cacheHitRate)
-{
-    if (current.lookups() < last.lookups() || current.hits < last.hits) {
-        LOG(warning, "Not adding document store cache hit rate metrics as values calculated "
-                     "are corrupt. current.lookups=%zu, last.lookups=%zu, current.hits=%zu, last.hits=%zu.",
-            current.lookups(), last.lookups(), current.hits, last.hits);
-    } else {
-        if ((current.lookups() - last.lookups()) > 0xffffffffull
-            || (current.hits - last.hits) > 0xffffffffull)
-        {
-            LOG(warning, "Document store cache hit rate metrics to add are suspiciously high."
-                         " lookups diff=%zu, hits diff=%zu.",
-                current.lookups() - last.lookups(), current.hits - last.hits);
-        }
-        cacheHitRate.addTotalValueWithCount(current.hits - last.hits, current.lookups() - last.lookups());
-    }
-}
-
-void
-updateCountMetric(uint64_t currVal, uint64_t lastVal, metrics::LongCountMetric &metric)
-{
-    uint64_t delta = (currVal >= lastVal) ? (currVal - lastVal) : 0;
-    metric.inc(delta);
-}
-
-void
 updateDocumentStoreMetrics(DocumentDBTaggedMetrics::SubDBMetrics::DocumentStoreMetrics &metrics,
                            const IDocumentSubDB *subDb,
                            CacheStats &lastCacheStats,
@@ -241,11 +239,7 @@ updateDocumentStoreMetrics(DocumentDBTaggedMetrics::SubDBMetrics::DocumentStoreM
 
     vespalib::CacheStats cacheStats = backingStore.getCacheStats();
     totalStats.memoryUsage.incAllocatedBytes(cacheStats.memory_used);
-    metrics.cache.memoryUsage.set(cacheStats.memory_used);
-    metrics.cache.elements.set(cacheStats.elements);
-    updateDocumentStoreCacheHitRate(cacheStats, lastCacheStats, metrics.cache.hitRate);
-    updateCountMetric(cacheStats.lookups(), lastCacheStats.lookups(), metrics.cache.lookups);
-    updateCountMetric(cacheStats.invalidations, lastCacheStats.invalidations, metrics.cache.invalidations);
+    metrics.cache.update_metrics(cacheStats, lastCacheStats);
     lastCacheStats = cacheStats;
 }
 

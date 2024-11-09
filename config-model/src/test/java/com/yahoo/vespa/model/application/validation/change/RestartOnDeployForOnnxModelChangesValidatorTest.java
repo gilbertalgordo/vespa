@@ -33,7 +33,7 @@ public class RestartOnDeployForOnnxModelChangesValidatorTest {
 
     // Must be so large that changing model set or options requires restart (due to using more memory than available),
     // but not so large that deployment will not work at all with one model
-    private static final long defaultCost = 723456789;
+    private static final long defaultCost = 635241309;
     private static final long defaultHash = 0;
 
 
@@ -47,19 +47,19 @@ public class RestartOnDeployForOnnxModelChangesValidatorTest {
 
     @Test
     void validate_changed_estimated_cost() {
-        VespaModel current = createModel(onnxModelCost(70000000, defaultHash));
-        VespaModel next = createModel(onnxModelCost(723456789, defaultHash));
+        VespaModel current = createModel(onnxModelCost(defaultCost, defaultHash));
+        VespaModel next = createModel(onnxModelCost(19 * defaultCost / 20, defaultHash));
         List<ConfigChangeAction> result = validateModel(current, next);
         assertEquals(1, result.size());
         assertTrue(result.get(0).validationId().isEmpty());
-        assertEquals("Onnx model 'https://data.vespa.oath.cloud/onnx_models/e5-base-v2/model.onnx' has changed (estimated cost), need to restart services in container cluster 'cluster1'", result.get(0).getMessage());
+        assertEquals("Onnx model 'https://data.vespa-cloud.com/onnx_models/e5-base-v2/model.onnx' has changed (estimated cost), need to restart services in container cluster 'cluster1'", result.get(0).getMessage());
     }
 
     @Test
     void validate_changed_estimated_cost_non_hosted() {
         boolean hosted = false;
-        VespaModel current = createModel(onnxModelCost(70000000, defaultHash), hosted);
-        VespaModel next = createModel(onnxModelCost(723456789, defaultHash), hosted);
+        VespaModel current = createModel(onnxModelCost(defaultCost, defaultHash), hosted);
+        VespaModel next = createModel(onnxModelCost(19 * defaultCost / 20, defaultHash), hosted);
         List<ConfigChangeAction> result = validateModel(current, next, hosted);
         assertEquals(0, result.size());
     }
@@ -70,7 +70,7 @@ public class RestartOnDeployForOnnxModelChangesValidatorTest {
         VespaModel next = createModel(onnxModelCost(defaultCost, 123));
         List<ConfigChangeAction> result = validateModel(current, next);
         assertEquals(1, result.size());
-        assertStartsWith("Onnx model 'https://data.vespa.oath.cloud/onnx_models/e5-base-v2/model.onnx' has changed (model hash)", result);
+        assertStartsWith("Onnx model 'https://data.vespa-cloud.com/onnx_models/e5-base-v2/model.onnx' has changed (model hash)", result);
     }
 
     @Test
@@ -79,7 +79,7 @@ public class RestartOnDeployForOnnxModelChangesValidatorTest {
         VespaModel next = createModel(onnxModelCost(), true, "sequential");
         List<ConfigChangeAction> result = validateModel(current, next);
         assertEquals(1, result.size());
-        assertStartsWith("Onnx model 'https://data.vespa.oath.cloud/onnx_models/e5-base-v2/model.onnx' has changed (model option(s))", result);
+        assertStartsWith("Onnx model 'https://data.vespa-cloud.com/onnx_models/e5-base-v2/model.onnx' has changed (model option(s))", result);
     }
 
     @Test
@@ -88,8 +88,8 @@ public class RestartOnDeployForOnnxModelChangesValidatorTest {
         VespaModel next = createModel(onnxModelCost(), true, "parallel", "e5-small-v2");
         List<ConfigChangeAction> result = validateModel(current, next);
         assertEquals(1, result.size());
-        assertStartsWith("Onnx model set has changed from [https://data.vespa.oath.cloud/onnx_models/e5-base-v2/model.onnx] " +
-                                 "to [https://data.vespa.oath.cloud/onnx_models/e5-small-v2/model.onnx",
+        assertStartsWith("Onnx model set has changed from [https://data.vespa-cloud.com/onnx_models/e5-base-v2/model.onnx] " +
+                                 "to [https://data.vespa-cloud.com/onnx_models/e5-small-v2/model.onnx",
                          result);
     }
 

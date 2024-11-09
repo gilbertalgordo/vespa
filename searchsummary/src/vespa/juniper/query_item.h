@@ -2,7 +2,7 @@
 
 #pragma once
 
-#include <vespa/vespalib/stllike/string.h>
+#include <string>
 
 namespace search::parseitem { enum class ItemCreator; }
 
@@ -16,7 +16,7 @@ using ItemCreator = search::parseitem::ItemCreator;
 class QueryItem {
 public:
     virtual ~QueryItem() = default;
-    virtual vespalib::stringref get_index() const = 0;
+    virtual std::string_view get_index() const = 0;
     virtual int get_weight() const = 0;
     virtual ItemCreator get_creator() const = 0;
 };

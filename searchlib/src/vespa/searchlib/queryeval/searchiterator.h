@@ -4,9 +4,10 @@
 
 #include "posting_info.h"
 #include "begin_and_end_id.h"
-#include <vespa/vespalib/stllike/string.h>
 #include <vespa/vespalib/util/trinary.h>
+#include <functional>
 #include <memory>
+#include <string>
 #include <vector>
 
 namespace vespalib { class ObjectVisitor; }
@@ -19,6 +20,8 @@ namespace search { class BitVector; }
 namespace search::attribute { class ISearchContext; }
 
 namespace search::queryeval {
+
+struct WeakAndSearch;
 
 /**
  * This is the abstract superclass of all search objects. Each search
@@ -288,7 +291,7 @@ public:
      *
      * @return structured human-readable representation of this object
      **/
-    vespalib::string asString() const;
+    std::string asString() const;
 
     /**
     * Create a slime representation of this object. This
@@ -307,7 +310,7 @@ public:
      *
      * @return fully qualified class name
      **/
-    virtual vespalib::string getClassName() const;
+    virtual std::string getClassName() const;
 
     /**
      * Visit each of the members of this object. This method should be
@@ -357,6 +360,8 @@ public:
      */
     virtual bool isMultiSearch() const { return false; }
 
+    virtual WeakAndSearch *as_weak_and() noexcept { return nullptr; }
+
     /**
      * This is used for adding an extra filter. If it is accepted it will return an empty UP.
      * If not you will get in in return. Currently it will only be accepted by a
@@ -378,16 +383,16 @@ public:
     // number of matches: (False <= Undefined <= True)
     virtual Trinary matches_any() const { return Trinary::Undefined; }
 
-    // Disclose children by giving out references to owning
-    // pointers. This allows re-wiring from the outside, which is
-    // needed for deep decoration used by match profiling. Only
-    // disclose children that are treated as generic SearchIterators.
-    virtual void disclose_children(std::vector<UP*> &dst);
+    // Transform all children using the given function. The number
+    // passed with the child to be transformed should match the index
+    // of the child in the originating blueprint. This is used for
+    // deep decoration when doing match profiling.
+    virtual void transform_children(std::function<SearchIterator::UP(SearchIterator::UP, size_t)> f);
 };
 
 }
 
-void visit(vespalib::ObjectVisitor &self, const vespalib::string &name,
+void visit(vespalib::ObjectVisitor &self, std::string_view name,
            const search::queryeval::SearchIterator &obj);
-void visit(vespalib::ObjectVisitor &self, const vespalib::string &name,
+void visit(vespalib::ObjectVisitor &self, std::string_view name,
            const search::queryeval::SearchIterator *obj);

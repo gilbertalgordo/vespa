@@ -18,6 +18,7 @@
 #include <vespa/searchlib/fef/test/plugin/setup.h>
 #include <vespa/searchlib/common/allocatedbitvector.h>
 #include <vespa/vespalib/data/slime/inserter.h>
+#include <vespa/vespalib/util/limited_thread_bundle_wrapper.h>
 #include <cinttypes>
 
 #include <vespa/log/log.h>
@@ -38,7 +39,8 @@ using search::fef::MatchData;
 using search::fef::RankSetup;
 using search::fef::indexproperties::hitcollector::HeapSize;
 using search::fef::indexproperties::hitcollector::ArraySize;
-using search::fef::indexproperties::hitcollector::RankScoreDropLimit;
+using search::fef::indexproperties::hitcollector::FirstPhaseRankScoreDropLimit;
+using search::fef::indexproperties::hitcollector::SecondPhaseRankScoreDropLimit;
 using search::queryeval::Blueprint;
 using search::queryeval::SearchIterator;
 using vespalib::Doom;
@@ -76,30 +78,14 @@ numThreads(size_t hits, size_t minHits) {
     return static_cast<size_t>(std::ceil(double(hits) / double(minHits)));
 }
 
-class LimitedThreadBundleWrapper final : public vespalib::ThreadBundle
-{
-public:
-    LimitedThreadBundleWrapper(vespalib::ThreadBundle &threadBundle, uint32_t maxThreads)
-        : _threadBundle(threadBundle),
-          _maxThreads(std::min(maxThreads, static_cast<uint32_t>(threadBundle.size())))
-    { }
-    size_t size() const override { return _maxThreads; }
-    void run(vespalib::Runnable* const* targets, size_t cnt) override {
-        _threadBundle.run(targets, cnt);
-    }
-private:
-    vespalib::ThreadBundle &_threadBundle;
-    const uint32_t          _maxThreads;
-};
-
 bool
 willNeedRanking(const SearchRequest & request, const GroupingContext & groupingContext,
-                search::feature_t rank_score_drop_limit)
+                std::optional<search::feature_t> first_phase_rank_score_drop_limit)
 {
     return (groupingContext.needRanking() || (request.maxhits != 0))
            && (request.sortSpec.empty() ||
-               (request.sortSpec.find("[rank]") != vespalib::string::npos) ||
-               !std::isnan(rank_score_drop_limit));
+               (request.sortSpec.find("[rank]") != std::string::npos) ||
+               first_phase_rank_score_drop_limit.has_value());
 }
 
 SearchReply::UP
@@ -269,7 +255,7 @@ Matcher::match(const SearchRequest &request, vespalib::ThreadBundle &threadBundl
             // These should have been moved instead.
             owned_objects.feature_overrides = std::make_unique<Properties>(*feature_overrides);
             feature_overrides = owned_objects.feature_overrides.get();
-            vespalib::stringref queryStack = request.getStackRef();
+            std::string_view queryStack = request.getStackRef();
             owned_objects.stackDump.assign(queryStack.begin(), queryStack.end());
         }
 
@@ -289,17 +275,19 @@ Matcher::match(const SearchRequest &request, vespalib::ThreadBundle &threadBundl
         const Properties & rankProperties = request.propertiesMap.rankProperties();
         uint32_t heapSize = HeapSize::lookup(rankProperties, _rankSetup->getHeapSize());
         uint32_t arraySize = ArraySize::lookup(rankProperties, _rankSetup->getArraySize());
-        search::feature_t rank_score_drop_limit = RankScoreDropLimit::lookup(rankProperties, _rankSetup->getRankScoreDropLimit());
+        auto first_phase_rank_score_drop_limit = FirstPhaseRankScoreDropLimit::lookup(rankProperties, _rankSetup->get_first_phase_rank_score_drop_limit());
+        auto second_phase_rank_score_drop_limit = SecondPhaseRankScoreDropLimit::lookup(rankProperties, _rankSetup->get_second_phase_rank_score_drop_limit());
 
-        MatchParams params(searchContext.getDocIdLimit(), heapSize, arraySize, rank_score_drop_limit,
+        MatchParams params(searchContext.getDocIdLimit(), heapSize, arraySize, first_phase_rank_score_drop_limit,
+                           second_phase_rank_score_drop_limit,
                            request.offset, request.maxhits, !_rankSetup->getSecondPhaseRank().empty(),
-                           willNeedRanking(request, groupingContext, rank_score_drop_limit));
+                           willNeedRanking(request, groupingContext, first_phase_rank_score_drop_limit));
 
         ResultProcessor rp(attrContext, metaStore, sessionMgr, groupingContext, sessionId,
                            request.sortSpec, params.offset, params.hits);
 
         size_t numThreadsPerSearch = computeNumThreadsPerSearch(mtf->estimate(), rankProperties);
-        LimitedThreadBundleWrapper limitedThreadBundle(threadBundle, numThreadsPerSearch);
+        vespalib::LimitedThreadBundleWrapper limitedThreadBundle(threadBundle, numThreadsPerSearch);
         MatchMaster master;
         uint32_t numParts = NumSearchPartitions::lookup(rankProperties, _rankSetup->getNumSearchPartitions());
         if (limitedThreadBundle.size() > 1) {

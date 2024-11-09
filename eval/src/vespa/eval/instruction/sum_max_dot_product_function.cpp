@@ -17,9 +17,9 @@ void my_sum_max_dot_product_op(InterpretedFunction::State &state, uint64_t dp_si
     auto document_cells = state.peek(0).cells().typify<float>();
     using dot_product = DotProduct<float,float>;
     if ((query_cells.size() > 0) && (document_cells.size() > 0)) {
-        for (const float *query = query_cells.begin(); query < query_cells.end(); query += dp_size) {
+        for (const float *query = query_cells.data(); query < query_cells.data() + query_cells.size(); query += dp_size) {
             float max_dp = aggr::Max<float>::null_value();
-            for (const float *document = document_cells.begin(); document < document_cells.end(); document += dp_size) {
+            for (const float *document = document_cells.data(); document < document_cells.data() + document_cells.size(); document += dp_size) {
                 max_dp = aggr::Max<float>::combine(max_dp, dot_product::apply(query, document, dp_size));
             }
             result += max_dp;
@@ -47,7 +47,7 @@ const Join *check_mul(const TensorFunction &expr) {
 }
 
 bool check_params(const ValueType &res_type, const ValueType &query, const ValueType &document,
-                  const vespalib::string &sum_dim, const vespalib::string &max_dim, const vespalib::string &dp_dim)
+                  const std::string &sum_dim, const std::string &max_dim, const std::string &dp_dim)
 {
     if (res_type.is_double() &&
         (query.dimensions().size() == 2) && (query.cell_type() == CellType::FLOAT) &&
@@ -70,7 +70,7 @@ bool check_params(const ValueType &res_type, const ValueType &query, const Value
     return false;
 }
 
-size_t get_dim_size(const ValueType &type, const vespalib::string &dim) {
+size_t get_dim_size(const ValueType &type, const std::string &dim) {
     size_t npos = ValueType::Dimension::npos;
     size_t idx = type.dimension_index(dim);
     assert(idx != npos);

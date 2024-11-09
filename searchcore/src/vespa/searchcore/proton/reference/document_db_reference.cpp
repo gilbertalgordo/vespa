@@ -25,7 +25,7 @@ DocumentDBReference::~DocumentDBReference()
 }
 
 std::shared_ptr<search::attribute::ReadableAttributeVector>
-DocumentDBReference::getAttribute(vespalib::stringref name)
+DocumentDBReference::getAttribute(std::string_view name)
 {
     search::AttributeGuard::UP guard = _attrMgr->getAttribute(name);
     if (guard && guard->valid()) {
@@ -52,7 +52,7 @@ DocumentDBReference::getGidToLidMapperFactory()
 }
 
 std::unique_ptr<GidToLidChangeRegistrator>
-DocumentDBReference::makeGidToLidChangeRegistrator(const vespalib::string &docTypeName)
+DocumentDBReference::makeGidToLidChangeRegistrator(const std::string &docTypeName)
 {
     return std::make_unique<GidToLidChangeRegistrator>(_gidToLidChangeHandler, docTypeName);
 }

@@ -27,7 +27,6 @@ import com.yahoo.search.searchchain.Execution;
 import com.yahoo.search.searchchain.PhaseNames;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 import java.util.logging.Logger;
 
@@ -150,7 +149,7 @@ public class UniqueGroupingSearcher extends Searcher {
                 case DESCENDING ->
                     // When we sort in descending order, the hit with the largest value should come first (and be surfaced).
                         orderingClause.add(new NegFunction(new MaxAggregator(new AttributeValue(fieldOrder.getFieldName()))));
-                default -> throw new UnsupportedOperationException("Can not handle sort order " + sortOrder + ".");
+                default -> throw new IllegalStateException("Can not handle sort order " + sortOrder + ".");
             }
         }
         return orderingClause;
@@ -171,7 +170,7 @@ public class UniqueGroupingSearcher extends Searcher {
                 case DESCENDING ->
                     // To sort descending, just take the negative. This is the most common case
                         new NegFunction(new AttributeValue(fieldOrder.getFieldName()));
-                default -> throw new UnsupportedOperationException("Can not handle sort order " + sortOrder + ".");
+                default -> throw new IllegalStateException("Can not handle sort order " + sortOrder + ".");
             };
         }
         return groupingClause;
@@ -188,7 +187,7 @@ public class UniqueGroupingSearcher extends Searcher {
     private static List<Hit> getRequestedHits(GroupList resultGroups, int offset, int hits) {
         List<Hit> receivedHits = getAllHitsFromGroupingResult(resultGroups);
         if (receivedHits.size() <= offset) {
-            return Collections.emptyList(); // There weren't any hits as far out as requested.
+            return List.of(); // There weren't any hits as far out as requested.
         }
         int lastRequestedHit = Math.min(offset + hits, receivedHits.size());
         return receivedHits.subList(offset, lastRequestedHit);

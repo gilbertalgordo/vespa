@@ -2,9 +2,11 @@
 #pragma once
 
 #include "attribute_metrics.h"
+#include "cache_metrics.h"
 #include "memory_usage_metrics.h"
 #include "executor_threading_service_metrics.h"
 #include "document_db_feeding_metrics.h"
+#include "index_metrics.h"
 #include <vespa/metrics/metricset.h>
 #include <vespa/metrics/valuemetric.h>
 #include <vespa/searchcore/proton/matching/matching_stats.h>
@@ -52,18 +54,6 @@ struct DocumentDBTaggedMetrics : metrics::MetricSet
 
         struct DocumentStoreMetrics : metrics::MetricSet
         {
-            struct CacheMetrics : metrics::MetricSet
-            {
-                metrics::LongValueMetric memoryUsage;
-                metrics::LongValueMetric elements;
-                metrics::LongAverageMetric hitRate;
-                metrics::LongCountMetric lookups;
-                metrics::LongCountMetric invalidations;
-
-                CacheMetrics(metrics::MetricSet *parent);
-                ~CacheMetrics() override;
-            };
-
             metrics::LongValueMetric diskUsage;
             metrics::LongValueMetric diskBloat;
             metrics::DoubleValueMetric maxBucketSpread;
@@ -77,8 +67,9 @@ struct DocumentDBTaggedMetrics : metrics::MetricSet
         LidSpaceMetrics lidSpace;
         DocumentStoreMetrics documentStore;
         proton::AttributeMetrics attributes;
+        proton::IndexMetrics index;
 
-        SubDBMetrics(const vespalib::string &name, metrics::MetricSet *parent);
+        SubDBMetrics(const std::string &name, metrics::MetricSet *parent);
         ~SubDBMetrics() override;
     };
 
@@ -128,7 +119,7 @@ struct DocumentDBTaggedMetrics : metrics::MetricSet
                 metrics::DoubleAverageMetric waitTime;
 
                 using UP = std::unique_ptr<DocIdPartition>;
-                DocIdPartition(const vespalib::string &name, metrics::MetricSet *parent);
+                DocIdPartition(const std::string &name, metrics::MetricSet *parent);
                 ~DocIdPartition() override;
                 void update(const matching::MatchingStats::Partition &stats);
             };
@@ -149,14 +140,14 @@ struct DocumentDBTaggedMetrics : metrics::MetricSet
             metrics::DoubleAverageMetric queryLatency;
             DocIdPartitions              partitions;
 
-            RankProfileMetrics(const vespalib::string &name,
+            RankProfileMetrics(const std::string &name,
                                size_t numDocIdPartitions,
                                metrics::MetricSet *parent);
             ~RankProfileMetrics() override;
             void update(const metrics::MetricLockGuard & guard, const matching::MatchingStats &stats);
 
         };
-        using  RankProfileMap = std::map<vespalib::string, RankProfileMetrics::UP>;
+        using  RankProfileMap = std::map<std::string, RankProfileMetrics::UP>;
         RankProfileMap rank_profiles;
 
         void update(const matching::MatchingStats &stats);
@@ -197,7 +188,7 @@ struct DocumentDBTaggedMetrics : metrics::MetricSet
     metrics::DoubleValueMetric heart_beat_age;
     size_t maxNumThreads;
 
-    DocumentDBTaggedMetrics(const vespalib::string &docTypeName, size_t maxNumThreads_);
+    DocumentDBTaggedMetrics(const std::string &docTypeName, size_t maxNumThreads_);
     ~DocumentDBTaggedMetrics() override;
 };
 

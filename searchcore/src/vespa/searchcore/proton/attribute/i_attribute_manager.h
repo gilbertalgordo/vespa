@@ -51,7 +51,7 @@ struct IAttributeManager : public search::IAttributeManager
      * Returns the flushed serial num for the given attribute.
      * Return 0 if attribute is not found.
      */
-    virtual search::SerialNum getFlushedSerialNum(const vespalib::string &name) const = 0;
+    virtual search::SerialNum getFlushedSerialNum(const std::string &name) const = 0;
 
     /**
      * Return the oldest flushed serial number among the underlying attribute vectors.
@@ -87,7 +87,7 @@ struct IAttributeManager : public search::IAttributeManager
      * attributes.  Lifetime should be guaranteed by syncing threads
      * at config changes.
      */
-    virtual search::AttributeVector *getWritableAttribute(const vespalib::string &name) const = 0;
+    virtual search::AttributeVector *getWritableAttribute(std::string_view name) const = 0;
 
     /*
      * Get pointers to all writable attributes.

@@ -34,7 +34,7 @@ bool MultiValueNumericAttribute<B, M>::findEnum(T value, EnumHandle & e) const
 
 template <typename B, typename M>
 MultiValueNumericAttribute<B, M>::
-MultiValueNumericAttribute(const vespalib::string & baseFileName, const AttributeVector::Config & c) :
+MultiValueNumericAttribute(const std::string & baseFileName, const AttributeVector::Config & c) :
     MultiValueAttribute<B, M>(baseFileName, c)
 {
 }
@@ -120,10 +120,11 @@ MultiValueNumericAttribute<B, M>::onLoadEnumerated(ReaderBase & attrReader)
 
     auto udatBuffer = attribute::LoadUtils::loadUDAT(*this);
     assert((udatBuffer->size() % sizeof(T)) == 0);
-    vespalib::ConstArrayRef<T> map(reinterpret_cast<const T *>(udatBuffer->buffer()), udatBuffer->size() / sizeof(T));
-    uint32_t maxvc = attribute::loadFromEnumeratedMultiValue(this->_mvMapping, attrReader, map, vespalib::ConstArrayRef<uint32_t>(), attribute::NoSaveLoadedEnum());
+    this->set_size_on_disk(attrReader.size_on_disk() + udatBuffer->size_on_disk());
+    std::span<const T> map(reinterpret_cast<const T *>(udatBuffer->buffer()), udatBuffer->size() / sizeof(T));
+    uint32_t maxvc = attribute::loadFromEnumeratedMultiValue(this->_mvMapping, attrReader, map, std::span<const uint32_t>(), attribute::NoSaveLoadedEnum());
     this->checkSetMaxValueCount(maxvc);
-    
+
     return true;
 }
 
@@ -150,6 +151,7 @@ MultiValueNumericAttribute<B, M>::onLoad(vespalib::Executor *)
     std::vector<MultiValueType> values;
     B::setNumDocs(numDocs);
     B::setCommittedDocIdLimit(numDocs);
+    this->set_size_on_disk(attrReader.size_on_disk());
     this->_mvMapping.reserve(numDocs+1);
     for (DocId doc = 0; doc < numDocs; ++doc) {
         const uint32_t valueCount(attrReader.getNextValueCount());
@@ -177,7 +179,7 @@ MultiValueNumericAttribute<B, M>::getSearch(QueryTermSimple::UP qTerm,
 
 template <typename B, typename M>
 std::unique_ptr<AttributeSaver>
-MultiValueNumericAttribute<B, M>::onInitSave(vespalib::stringref fileName)
+MultiValueNumericAttribute<B, M>::onInitSave(std::string_view fileName)
 {
     vespalib::GenerationHandler::Guard guard(this->getGenerationHandler().takeGuard());
     return std::make_unique<MultiValueNumericAttributeSaver<MultiValueType>>

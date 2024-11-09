@@ -23,8 +23,8 @@ public class DiversitySettingsValidator extends Processor {
         if (documentsOnly) return;
 
         for (RankProfile rankProfile : rankProfileRegistry.rankProfilesOf(schema)) {
-            if (rankProfile.getMatchPhaseSettings() != null && rankProfile.getMatchPhaseSettings().getDiversity() != null) {
-                validate(rankProfile, rankProfile.getMatchPhaseSettings().getDiversity());
+            if (rankProfile.getDiversity() != null) {
+                validate(rankProfile, rankProfile.getDiversity());
             }
         }
     }
@@ -32,6 +32,9 @@ public class DiversitySettingsValidator extends Processor {
         String attributeName = settings.getAttribute();
         new AttributeValidator(schema.getName(), rankProfile.name(),
                                schema.getAttribute(attributeName), attributeName).validate();
+        if ((rankProfile.getMatchPhase() == null) && (rankProfile.getSecondPhaseRanking() == null)) {
+            throw new IllegalArgumentException("In schema '" + schema.getName() + "', rank-profile '" + rankProfile.name() + "': 'diversity' requires either 'match-phase' or 'second-phase' to be specified.");
+        }
     }
 
     private static class AttributeValidator extends  MatchPhaseSettingsValidator.AttributeValidator {

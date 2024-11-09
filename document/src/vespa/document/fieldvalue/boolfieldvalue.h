@@ -37,9 +37,9 @@ public:
     int64_t getAsLong() const override;
     float getAsFloat() const override;
     double getAsDouble() const override;
-    vespalib::string getAsString() const override;
+    std::string getAsString() const override;
 
-    BoolFieldValue& operator=(vespalib::stringref) override;
+    BoolFieldValue& operator=(std::string_view) override;
     static std::unique_ptr<BoolFieldValue> make(bool value=false) { return std::make_unique<BoolFieldValue>(value); }
 };
 

@@ -5,7 +5,6 @@
 #include "pendingclusterstate.h"
 #include "top_level_bucket_db_updater.h"
 #include <vespa/document/bucket/fixed_bucket_spaces.h>
-#include <vespa/storage/common/global_bucket_space_distribution_converter.h>
 #include <vespa/storageframework/defaultimplementation/clock/realclock.h>
 #include <vespa/vdslib/distribution/distribution.h>
 #include <vespa/vespalib/util/xmlstream.hpp>
@@ -52,7 +51,7 @@ PendingClusterState::PendingClusterState(
       _node_features()
 {
     logConstructionInformation();
-    initializeBucketSpaceTransitions(false, outdatedNodesMap);
+    initializeBucketSpaceTransitions(false, outdatedNodesMap, false);
 }
 
 PendingClusterState::PendingClusterState(
@@ -60,7 +59,8 @@ PendingClusterState::PendingClusterState(
         const ClusterInformation::CSP& clusterInfo,
         DistributorMessageSender& sender,
         const BucketSpaceStateMap& bucket_space_states,
-        api::Timestamp creationTimestamp)
+        api::Timestamp creationTimestamp,
+        bool inhibit_request_sending)
     : _requestedNodes(clusterInfo->getStorageNodeCount()),
       _prevClusterStateBundle(clusterInfo->getClusterStateBundle()),
       _newClusterStateBundle(clusterInfo->getClusterStateBundle()),
@@ -76,13 +76,15 @@ PendingClusterState::PendingClusterState(
       _node_features()
 {
     logConstructionInformation();
-    initializeBucketSpaceTransitions(true, OutdatedNodesMap());
+    initializeBucketSpaceTransitions(true, OutdatedNodesMap(), inhibit_request_sending);
 }
 
 PendingClusterState::~PendingClusterState() = default;
 
 void
-PendingClusterState::initializeBucketSpaceTransitions(bool distributionChanged, const OutdatedNodesMap& outdatedNodesMap)
+PendingClusterState::initializeBucketSpaceTransitions(bool distributionChanged,
+                                                      const OutdatedNodesMap& outdatedNodesMap,
+                                                      bool inhibit_request_sending)
 {
     OutdatedNodes emptyOutdatedNodes;
     for (const auto &elem : _bucket_space_states) {
@@ -97,7 +99,7 @@ PendingClusterState::initializeBucketSpaceTransitions(bool distributionChanged, 
         }
         _pendingTransitions.emplace(elem.first, std::move(pendingTransition));
     }
-    if (shouldRequestBucketInfo()) {
+    if (!inhibit_request_sending && shouldRequestBucketInfo()) {
         requestNodes();
     }
 }
@@ -187,7 +189,7 @@ void
 PendingClusterState::requestNode(BucketSpaceAndNode bucketSpaceAndNode)
 {
     const auto &distribution = _bucket_space_states.get(bucketSpaceAndNode.bucketSpace).get_distribution();
-    vespalib::string distributionHash = distribution.getNodeGraph().getDistributionConfigHash();
+    std::string distributionHash = distribution.getNodeGraph().getDistributionConfigHash();
 
     LOG(debug,
         "Requesting bucket info for bucket space %" PRIu64 " node %d with cluster state '%s' and distribution hash '%s'",
@@ -334,6 +336,7 @@ PendingClusterState::update_node_supported_features_from_reply(uint16_t node, co
     dest_feat.two_phase_remove_location              = src_feat.two_phase_remove_location;
     dest_feat.no_implicit_indexing_of_active_buckets = src_feat.no_implicit_indexing_of_active_buckets;
     dest_feat.document_condition_probe               = src_feat.document_condition_probe;
+    dest_feat.timestamps_in_tas_conditions           = src_feat.timestamps_in_tas_conditions;
     // This will overwrite per bucket-space reply, but does not matter since it's independent of bucket space.
     _node_features.insert(std::make_pair(node, dest_feat));
 }

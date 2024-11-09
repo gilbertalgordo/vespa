@@ -14,6 +14,7 @@
 #include <vespa/storage/common/bucket_stripe_utils.h>
 #include <vespa/vdslib/distribution/distribution.h>
 #include <vespa/vespalib/text/stringtokenizer.h>
+#include <cctype>
 
 using document::test::makeBucketSpace;
 using document::test::makeDocumentBucket;
@@ -24,7 +25,7 @@ TopLevelDistributorTestUtil::TopLevelDistributorTestUtil()
     : _message_sender(_sender, _sender_down),
       _num_distributor_stripes(4)
 {
-    _config = getStandardConfig(false);
+    _config = StorageConfigSet::make_distributor_node_config();
 }
 
 TopLevelDistributorTestUtil::~TopLevelDistributorTestUtil() = default;
@@ -32,7 +33,7 @@ TopLevelDistributorTestUtil::~TopLevelDistributorTestUtil() = default;
 void
 TopLevelDistributorTestUtil::create_links()
 {
-    _node = std::make_unique<TestDistributorApp>(_config.getConfigId());
+    _node = std::make_unique<TestDistributorApp>(_config->config_uri());
     _thread_pool = framework::TickingThreadPool::createDefault("distributor", 100ms);
     _stripe_pool = DistributorStripePool::make_non_threaded_pool_for_testing();
     _distributor.reset(new TopLevelDistributor(
@@ -101,7 +102,7 @@ TopLevelDistributorTestUtil::stripe_index_of_bucket(const document::Bucket& buck
 }
 
 void
-TopLevelDistributorTestUtil::receive_set_system_state_command(const vespalib::string& state_str)
+TopLevelDistributorTestUtil::receive_set_system_state_command(const std::string& state_str)
 {
     auto state_cmd = std::make_shared<api::SetSystemStateCommand>(lib::ClusterState(state_str));
     handle_top_level_message(state_cmd); // TODO move semantics
@@ -123,7 +124,7 @@ TopLevelDistributorTestUtil::close()
     }
     _sender.clear();
     _node.reset();
-    _config = getStandardConfig(false);
+    _config = StorageConfigSet::make_distributor_node_config();
 }
 
 void
@@ -150,7 +151,7 @@ TopLevelDistributorTestUtil::add_nodes_to_stripe_bucket_db(const document::Bucke
         size_t flagsIdx = 3;
 
         // Meta info override? For simplicity, require both meta count and size
-        if (tok3.size() > 4 && (!tok3[3].empty() && isdigit(tok3[3][0]))) {
+        if (tok3.size() > 4 && (!tok3[3].empty() && std::isdigit(static_cast<unsigned char>(tok3[3][0])))) {
             info.setMetaCount(atoi(tok3[3].data()));
             info.setUsedFileSize(atoi(tok3[4].data()));
             flagsIdx = 5;
@@ -419,7 +420,7 @@ TopLevelDistributorTestUtil::all_distributor_stripes_are_in_recovery_mode() cons
 }
 
 void
-TopLevelDistributorTestUtil::enable_distributor_cluster_state(vespalib::stringref state,
+TopLevelDistributorTestUtil::enable_distributor_cluster_state(std::string_view state,
                                                               bool has_bucket_ownership_transfer)
 {
     bucket_db_updater().simulate_cluster_state_bundle_activation(
@@ -444,6 +445,12 @@ TopLevelDistributorTestUtil::trigger_distribution_change(std::shared_ptr<lib::Di
 {
     _node->getComponentRegister().setDistribution(std::move(distr));
     _distributor->storageDistributionChanged();
+    enable_next_distribution_if_changed();
+}
+
+void
+TopLevelDistributorTestUtil::enable_next_distribution_if_changed()
+{
     _distributor->enable_next_distribution_if_changed();
 }
 

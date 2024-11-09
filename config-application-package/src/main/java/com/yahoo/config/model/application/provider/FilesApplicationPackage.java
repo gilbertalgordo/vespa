@@ -11,7 +11,6 @@ import com.yahoo.config.application.api.ApplicationMetaData;
 import com.yahoo.config.application.api.ApplicationPackage;
 import com.yahoo.config.application.api.ComponentInfo;
 import com.yahoo.config.application.api.DeployLogger;
-import com.yahoo.config.application.api.DeploymentInstanceSpec;
 import com.yahoo.config.application.api.DeploymentSpec;
 import com.yahoo.config.application.api.UnparsedConfigDefinition;
 import com.yahoo.config.codegen.DefParser;
@@ -19,7 +18,6 @@ import com.yahoo.config.model.application.AbstractApplicationPackage;
 import com.yahoo.config.provision.ApplicationId;
 import com.yahoo.config.provision.ApplicationName;
 import com.yahoo.config.provision.InstanceName;
-import com.yahoo.config.provision.Tags;
 import com.yahoo.config.provision.TenantName;
 import com.yahoo.config.provision.Zone;
 import com.yahoo.io.HexDump;
@@ -52,10 +50,11 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.Reader;
 import java.io.StringReader;
+import java.nio.file.AccessDeniedException;
+import java.nio.file.DirectoryNotEmptyException;
 import java.nio.file.Files;
 import java.security.MessageDigest;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashSet;
@@ -71,6 +70,7 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 import static com.yahoo.text.Lowercase.toLowerCase;
+import static com.yahoo.yolean.Exceptions.uncheck;
 
 
 /**
@@ -135,14 +135,14 @@ public class FilesApplicationPackage extends AbstractApplicationPackage {
     }
 
     /** Creates package from a local directory, typically deploy app   */
-    public static FilesApplicationPackage fromFileWithDeployData(File appDir, DeployData deployData,
+    public static FilesApplicationPackage fromFileWithDeployData(File appDir,
+                                                                 DeployData deployData,
                                                                  boolean includeSourceFiles) {
         return new Builder(appDir).includeSourceFiles(includeSourceFiles).deployData(deployData).build();
     }
 
     private static ApplicationMetaData metaDataFromDeployData(File appDir, DeployData deployData) {
-        return new ApplicationMetaData(deployData.getDeployedFromDir(),
-                                       deployData.getDeployTimestamp(),
+        return new ApplicationMetaData(deployData.getDeployTimestamp(),
                                        deployData.isInternalRedeploy(),
                                        deployData.getApplicationId(),
                                        computeCheckSum(appDir),
@@ -435,11 +435,11 @@ public class FilesApplicationPackage extends AbstractApplicationPackage {
 
         File sdDir = applicationFile(appDir, SEARCH_DEFINITIONS_DIR.getRelative());
         if (sdDir.isDirectory())
-            schemaFiles.addAll(Arrays.asList(sdDir.listFiles((dir, name) -> validSchemaFilename(name))));
+            schemaFiles.addAll(List.of(sdDir.listFiles((dir, name) -> validSchemaFilename(name))));
 
         sdDir = applicationFile(appDir, SCHEMAS_DIR.getRelative());
         if (sdDir.isDirectory())
-            schemaFiles.addAll(Arrays.asList(sdDir.listFiles((dir, name) -> validSchemaFilename(name))));
+            schemaFiles.addAll(List.of(sdDir.listFiles((dir, name) -> validSchemaFilename(name))));
 
         return schemaFiles;
     }
@@ -485,8 +485,7 @@ public class FilesApplicationPackage extends AbstractApplicationPackage {
 
     private static ApplicationMetaData readMetaData(File appDir) {
         String originalAppDir = preprocessed.equals(appDir.getName()) ? appDir.getParentFile().getName() : appDir.getName();
-        ApplicationMetaData defaultMetaData = new ApplicationMetaData("n/a",
-                                                                      0L,
+        ApplicationMetaData defaultMetaData = new ApplicationMetaData(0L,
                                                                       false,
                                                                       ApplicationId.from(TenantName.defaultName(),
                                                                                          ApplicationName.from(originalAppDir),
@@ -599,9 +598,7 @@ public class FilesApplicationPackage extends AbstractApplicationPackage {
                                                     zone.environment(),
                                                     zone.region(),
                                                     zone.cloud().name(),
-                                                    getDeploymentSpec().instance(instance)
-                                                                       .map(DeploymentInstanceSpec::tags)
-                                                                       .orElse(Tags.empty()))
+                                                    getDeploymentSpec().tags(instance, zone.environment()))
                     .run();
 
             try (FileOutputStream outputStream = new FileOutputStream(destination)) {
@@ -614,24 +611,49 @@ public class FilesApplicationPackage extends AbstractApplicationPackage {
 
     @Override
     public ApplicationPackage preprocess(Zone zone, DeployLogger logger) throws IOException {
-        IOUtils.recursiveDeleteDir(preprocessedDir);
-        IOUtils.copyDirectory(appDir, preprocessedDir, -1,
-                              (__, name) -> ! List.of(preprocessed, SERVICES, HOSTS, CONFIG_DEFINITIONS_DIR).contains(name));
-        File servicesFile = validateServicesFile();
-        preprocessXML(applicationFile(preprocessedDir, SERVICES), servicesFile, zone);
-        preprocessXML(applicationFile(preprocessedDir, HOSTS), getHostsFile(), zone);
-        FilesApplicationPackage preprocessed = fromFile(preprocessedDir, includeSourceFiles);
-        preprocessed.copyUserDefsIntoApplication();
-        return preprocessed;
+        java.nio.file.Path tempDir = null;
+        try {
+            tempDir = Files.createTempDirectory(appDir.getParentFile().toPath(), "preprocess-tempdir");
+            preprocess(appDir, tempDir.toFile(), zone);
+            IOUtils.recursiveDeleteDir(preprocessedDir);
+            // Use 'move' to make sure we do this atomically, important to avoid writing only partial content e.g.
+            // when shutting down.
+            // Temp directory needs to be on the same file system as appDir for 'move' to work,
+            // if it fails (with DirectoryNotEmptyException (!)) we need to use 'copy' instead
+            // (this will always be the case for the application package for a standalone container).
+            Files.move(tempDir, preprocessedDir.toPath());
+            tempDir = null;
+        } catch (AccessDeniedException | DirectoryNotEmptyException e) {
+            preprocess(appDir, preprocessedDir, zone);
+        } finally {
+            if (tempDir != null)
+                IOUtils.recursiveDeleteDir(tempDir.toFile());
+        }
+        FilesApplicationPackage preprocessedApp = fromFile(preprocessedDir, includeSourceFiles);
+        preprocessedApp.copyUserDefsIntoApplication();
+        return preprocessedApp;
     }
 
-    private File validateServicesFile() throws IOException {
+    private void preprocess(File appDir, File dir, Zone zone) throws IOException {
+        validateServicesFile();
+        IOUtils.copyDirectory(appDir, dir, - 1,
+                              (__, name) -> ! List.of(preprocessed, SERVICES, HOSTS, CONFIG_DEFINITIONS_DIR).contains(name));
+        preprocessXML(applicationFile(dir, SERVICES), getServicesFile(), zone);
+        preprocessXML(applicationFile(dir, HOSTS), getHostsFile(), zone);
+    }
+
+    private void validateServicesFile() throws IOException {
         File servicesFile = getServicesFile();
         if ( ! servicesFile.exists())
-            throw new IllegalArgumentException(SERVICES + " does not exist in application package");
+            throw new IllegalArgumentException(SERVICES + " does not exist in application package. " +
+                                               "There are " + filesInApplicationPackage() + " files in the directory");
         if (IOUtils.readFile(servicesFile).isEmpty())
-            throw new IllegalArgumentException(SERVICES + " in application package is empty");
-        return servicesFile;
+            throw new IllegalArgumentException(SERVICES + " in application package is empty. " +
+                                               "There are " + filesInApplicationPackage() + " files in the directory");
+    }
+
+    private long filesInApplicationPackage() {
+        return uncheck(() -> { try (var files = Files.list(appDir.toPath())) { return files.count(); } });
     }
 
     private void copyUserDefsIntoApplication() {

@@ -13,13 +13,14 @@ vespa_add_executable(searchcore_matching_test_app TEST
     searchcore_grouping
     searchlib_test
 )
-vespa_add_test(NAME searchcore_matching_test_app COMMAND searchcore_matching_test_app)
+vespa_add_test(NAME searchcore_matching_test_app COMMAND searchcore_matching_test_app COST 100)
 vespa_add_executable(searchcore_sessionmanager_test_app TEST
     SOURCES
     sessionmanager_test.cpp
     DEPENDS
     searchcore_matching
     searchcore_grouping
+    GTest::gtest
 )
 vespa_add_test(NAME searchcore_sessionmanager_test_app COMMAND searchcore_sessionmanager_test_app)
 vespa_add_executable(searchcore_matching_stats_test_app TEST
@@ -27,6 +28,7 @@ vespa_add_executable(searchcore_matching_stats_test_app TEST
     matching_stats_test.cpp
     DEPENDS
     searchcore_matching
+    GTest::gtest
 )
 vespa_add_test(NAME searchcore_matching_stats_test_app COMMAND searchcore_matching_stats_test_app)
 vespa_add_executable(searchcore_query_test_app TEST
@@ -35,6 +37,7 @@ vespa_add_executable(searchcore_query_test_app TEST
     DEPENDS
     searchcore_server
     searchcore_matching
+    GTest::gtest
 )
 vespa_add_test(NAME searchcore_query_test_app COMMAND searchcore_query_test_app)
 vespa_add_executable(searchcore_termdataextractor_test_app TEST
@@ -49,6 +52,7 @@ vespa_add_executable(searchcore_resolveviewvisitor_test_app TEST
     resolveviewvisitor_test.cpp
     DEPENDS
     searchcore_matching
+    GTest::gtest
 )
 vespa_add_test(NAME searchcore_resolveviewvisitor_test_app COMMAND searchcore_resolveviewvisitor_test_app)
 vespa_add_executable(searchcore_querynodes_test_app TEST
@@ -56,5 +60,6 @@ vespa_add_executable(searchcore_querynodes_test_app TEST
     querynodes_test.cpp
     DEPENDS
     searchcore_matching
+    GTest::gtest
 )
 vespa_add_test(NAME searchcore_querynodes_test_app COMMAND searchcore_querynodes_test_app)

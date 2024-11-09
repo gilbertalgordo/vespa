@@ -1,13 +1,10 @@
 // Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 // Unit tests for memoryconfigstore.
 
-#include <vespa/log/log.h>
-LOG_SETUP("memoryconfigstore_test");
-
 #include <vespa/searchcommon/common/schema.h>
 #include <vespa/searchcore/proton/server/memoryconfigstore.h>
 #include <vespa/searchcore/proton/test/documentdb_config_builder.h>
-#include <vespa/vespalib/testkit/testapp.h>
+#include <vespa/vespalib/testkit/test_kit.h>
 
 using search::SerialNum;
 using search::index::Schema;
@@ -18,16 +15,16 @@ using namespace proton;
 namespace {
 
 DocumentDBConfig::SP
-getConfig(int64_t generation, const Schema::SP &schema)
+getConfig(int64_t generation, std::shared_ptr<const Schema> schema)
 {
-    return test::DocumentDBConfigBuilder(generation, schema, "client", "test").build();
+    return test::DocumentDBConfigBuilder(generation, std::move(schema), "client", "test").build();
 }
 
 
 DocumentDBConfig::SP
 getConfig(int64_t generation)
 {
-    return getConfig(generation, Schema::SP());
+    return getConfig(generation, {});
 }
 
 
@@ -106,5 +103,3 @@ TEST("require that MemoryConfigStores preserves state of "
 }
 
 }  // namespace
-
-TEST_MAIN() { TEST_RUN_ALL(); }

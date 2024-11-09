@@ -11,7 +11,7 @@
 #include <vespa/searchlib/util/rawbuf.h>
 #include <cassert>
 
-using vespalib::string;
+using std::string;
 using std::vector;
 using search::ParseItem;
 using search::RawBuf;
@@ -22,12 +22,12 @@ class QueryNodeConverter : public QueryVisitor {
     RawBuf _buf;
 
     void visitNodes(const vector<Node *> &nodes) {
-        for (size_t i = 0; i < nodes.size(); ++i) {
-            nodes[i]->accept(*this);
+        for (auto node : nodes) {
+            node->accept(*this);
         }
     }
 
-    void appendString(const string &s) {
+    void appendString(std::string_view s) {
         _buf.preAlloc(sizeof(uint32_t) + s.size());
         _buf.appendCompressedPositiveNumber(s.size());
         _buf.append(s.data(), s.size());
@@ -67,7 +67,7 @@ class QueryNodeConverter : public QueryVisitor {
         double nboVal = vespalib::nbo::n2h(i);
         _buf.append(&nboVal, sizeof(double));
     }
-    void append(const vespalib::string &s) { appendString(s); }
+    void append(const std::string &s) { appendString(s); }
     void append(uint64_t l) { appendLong(l); }
 
     template <typename V>
@@ -107,14 +107,14 @@ class QueryNodeConverter : public QueryVisitor {
         visitNodes(node.getChildren());
     }
 
-    void createIntermediate(const Intermediate &node, ParseItem::ItemType type, const vespalib::string & view) {
+    void createIntermediate(const Intermediate &node, ParseItem::ItemType type, const std::string & view) {
         append_type_and_features(type, 0);
         appendCompressedPositiveNumber(node.getChildren().size());
         appendString(view);
         visitNodes(node.getChildren());
     }
 
-    void createIntermediateX(const Intermediate &node, ParseItem::ItemType type, size_t target_num_hits, const vespalib::string & view) {
+    void createIntermediateX(const Intermediate &node, ParseItem::ItemType type, size_t target_num_hits, const std::string & view) {
         append_type_and_features(type, 0);
         appendCompressedPositiveNumber(node.getChildren().size());
         appendCompressedPositiveNumber(target_num_hits);
@@ -225,6 +225,9 @@ class QueryNodeConverter : public QueryVisitor {
         if (!node.usePositionData()) {
             flags |= ParseItem::IFLAG_NOPOSITIONDATA;
         }
+        if (node.prefix_match()) {
+            flags |= ParseItem::IFLAG_PREFIX_MATCH;
+        }
         if (flags != 0) {
             features |= ParseItem::IF_FLAGS;
         }
@@ -289,8 +292,8 @@ class QueryNodeConverter : public QueryVisitor {
 
     void visit(FuzzyTerm &node) override {
         createTerm(node, ParseItem::ITEM_FUZZY);
-        appendCompressedPositiveNumber(node.getMaxEditDistance());
-        appendCompressedPositiveNumber(node.getPrefixLength());
+        appendCompressedPositiveNumber(node.max_edit_distance());
+        appendCompressedPositiveNumber(node.prefix_lock_length());
     }
 
     void visit(NearestNeighborTerm &node) override {
@@ -334,7 +337,7 @@ template <typename T>
 void QueryNodeConverter::appendTerm(const TermBase<T> &node) {
     vespalib::asciistream ost;
     ost << node.getTerm();
-    appendString(ost.str());
+    appendString(ost.view());
 }
 template <>
 void QueryNodeConverter::appendTerm(const TermBase<string> &node) {

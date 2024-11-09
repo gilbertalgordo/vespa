@@ -38,6 +38,7 @@ import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 import static com.yahoo.container.jdisc.state.JsonUtil.sanitizeDouble;
+import static java.nio.charset.StandardCharsets.UTF_8;
 
 /**
  * A handler which returns state (health) information from this container instance: Status, metrics and vespa version.
@@ -123,6 +124,8 @@ public class StateHandler extends AbstractRequestHandler implements CapabilityRe
     private String resolveContentType(URI requestUri) {
         if (resolvePath(requestUri).equals(HISTOGRAMS_PATH)) {
             return "text/plain; charset=utf-8";
+        } else if (isPrometheusRequest(requestUri.getQuery())) {
+            return "text/plain; version=0.0.4";
         } else {
             return "application/json";
         }
@@ -135,9 +138,9 @@ public class StateHandler extends AbstractRequestHandler implements CapabilityRe
                 case "" -> ByteBuffer.wrap(apiLinks(requestUri));
                 case CONFIG_GENERATION_PATH -> ByteBuffer.wrap(toPrettyString(config));
                 case HISTOGRAMS_PATH -> ByteBuffer.wrap(buildHistogramsOutput());
-                case HEALTH_PATH, METRICS_PATH -> ByteBuffer.wrap(buildMetricOutput(suffix));
+                case HEALTH_PATH, METRICS_PATH -> ByteBuffer.wrap(buildMetricOutput(suffix, requestUri.getQuery()));
                 case VERSION_PATH -> ByteBuffer.wrap(buildVersionOutput());
-                default -> ByteBuffer.wrap(buildMetricOutput(suffix)); // XXX should possibly do something else here
+                default -> ByteBuffer.wrap(buildMetricOutput(suffix, requestUri.getQuery())); // XXX should possibly do something else here
             };
         } catch (JsonProcessingException e) {
             throw new RuntimeException("Bad JSON construction", e);
@@ -192,7 +195,9 @@ public class StateHandler extends AbstractRequestHandler implements CapabilityRe
                 .put("version", Vtag.currentVersion.toString()));
     }
 
-    private byte[] buildMetricOutput(String consumer) throws JsonProcessingException {
+    private byte[] buildMetricOutput(String consumer, String query) throws JsonProcessingException {
+        if (isPrometheusRequest(query))
+            return buildPrometheusForConsumer(consumer);
         return toPrettyString(buildJsonForConsumer(consumer));
     }
 
@@ -210,6 +215,49 @@ public class StateHandler extends AbstractRequestHandler implements CapabilityRe
         ret.set("status", jsonMapper.createObjectNode().put("code", getStatus().name()));
         ret.set(METRICS_PATH, buildJsonForSnapshot(consumer, getSnapshot()));
         return ret;
+    }
+
+    private byte[] buildPrometheusForConsumer(String consumer) {
+        var snapshot = getSnapshot();
+        if (snapshot == null)
+            return new byte[0];
+
+        var timestamp = snapshot.getToTime(TimeUnit.MILLISECONDS);
+        var builder = new StringBuilder();
+        builder.append("# NOTE: THIS API IS NOT INTENDED FOR PUBLIC USE\n");
+        var metrics = new ArrayList<PrometheusEntry>();
+
+        for (var tuple : collapseMetrics(snapshot, consumer)) {
+            var dims = toPrometheusDimensions(tuple.dim);
+            var metricName = prometheusSanitizedName(tuple.key) + "_";
+            if (tuple.val instanceof GaugeMetric gauge) {
+                metrics.add(new PrometheusEntry(metricName + "max", dims, gauge.getMax()));
+                metrics.add(new PrometheusEntry(metricName + "sum", dims, gauge.getSum()));
+                metrics.add(new PrometheusEntry(metricName + "count", dims, gauge.getCount()));
+                if (gauge.getPercentiles().isPresent()) {
+                    for (Tuple2<String, Double> prefixAndValue : gauge.getPercentiles().get()) {
+                        metrics.add(new PrometheusEntry(metricName + prefixAndValue.first + "percentile", dims, prefixAndValue.second));
+                    }
+                }
+            } else if (tuple.val instanceof CountMetric count) {
+                metrics.add(new PrometheusEntry(metricName + "count", dims, count.getCount()));
+            }
+        }
+        Collections.sort(metrics);
+        metrics.forEach(prometheusEntry -> prometheusEntry.appendPrometheusEntry(builder, timestamp));
+        return builder.toString().getBytes(UTF_8);
+    }
+
+    private String toPrometheusDimensions(MetricDimensions dimensions) {
+        if (dimensions == null || !dimensions.iterator().hasNext()) return "";
+        StringBuilder builder = new StringBuilder();
+        builder.append("{");
+        dimensions.forEach(entry -> {
+            var sanitized = prometheusSanitizedName(entry.getKey()) + "=\"" + escapedLabelValue(entry.getValue()) + "\",";
+            builder.append(sanitized);
+        });
+        builder.append("}");
+        return builder.toString();
     }
 
     private MetricSnapshot getSnapshot() {
@@ -322,6 +370,52 @@ public class StateHandler extends AbstractRequestHandler implements CapabilityRe
         return metrics;
     }
 
+    private boolean isPrometheusRequest(String query) {
+        if (query == null) return false;
+        return List.of(query.split("&")).contains("format=prometheus");
+    }
+
+    private String prometheusSanitizedName(String name) {
+        var stringBuilder = new StringBuilder();
+        for (char c : name.toCharArray()) {
+            if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')) {
+                stringBuilder.append(c);
+            } else {
+                stringBuilder.append("_");
+            }
+        }
+        return stringBuilder.toString();
+    }
+
+    private String sanitizeIfDouble(Number num) {
+        return num instanceof Double d ? prettyDouble(d) : num.toString();
+    }
+
+    private String escapedLabelValue(String labelValue) {
+        var builder = new StringBuilder();
+        for (int i = 0; i < labelValue.length(); i++) {
+            var c = labelValue.charAt(i);
+            switch (c) {
+                case '\n':
+                    builder.append("\\n");
+                    break;
+                case '\\':
+                case '"':
+                    builder.append("\\")
+                           .append(c);
+                    break;
+                default:
+                    builder.append(c);
+            }
+        }
+        return builder.toString();
+    }
+
+    private String prettyDouble(Double d) {
+        if (Double.isFinite(d) || d.isNaN()) return d.toString();
+        return d.equals(Double.NEGATIVE_INFINITY) ? "-Inf" : "Inf";
+    }
+
     private static byte[] toPrettyString(JsonNode resources) throws JsonProcessingException {
         return jsonMapper.writerWithDefaultPrettyPrinter()
                 .writeValueAsString(resources)
@@ -349,6 +443,31 @@ public class StateHandler extends AbstractRequestHandler implements CapabilityRe
             } else {
                 this.val.add(val);
             }
+        }
+    }
+
+    class PrometheusEntry implements Comparable<PrometheusEntry> {
+        final String metricName;
+        final String dimensions;
+        final Number value;
+
+        public PrometheusEntry(String metricName, String dimensions, Number value) {
+            this.metricName = metricName;
+            this.dimensions = dimensions;
+            this.value = value;
+        }
+
+        @Override
+        public int compareTo(PrometheusEntry o) {
+            int comparison = this.metricName.compareTo(o.metricName);
+            return comparison != 0 ? comparison : this.dimensions.compareTo(o.dimensions);
+        }
+
+        public void appendPrometheusEntry(StringBuilder builder, long timestamp) {
+            builder.append(metricName)
+                    .append(dimensions)
+                    .append(" ").append(sanitizeIfDouble(value)).append(" ")
+                    .append(timestamp).append("\n");
         }
     }
 

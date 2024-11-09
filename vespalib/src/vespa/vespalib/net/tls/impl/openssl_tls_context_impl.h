@@ -6,9 +6,8 @@
 #include <vespa/vespalib/net/tls/tls_context.h>
 #include <vespa/vespalib/net/tls/transport_security_options.h>
 #include <vespa/vespalib/net/tls/certificate_verification_callback.h>
-#include <vespa/vespalib/stllike/string.h>
-
 #include <chrono>
+#include <string>
 
 namespace vespalib::net::tls::impl {
 
@@ -32,9 +31,9 @@ public:
     AuthorizationMode authorization_mode() const noexcept override { return _authorization_mode; }
 private:
     // Note: single use per instance; does _not_ clear existing chain!
-    void add_certificate_authorities(stringref ca_pem);
-    void add_certificate_chain(stringref chain_pem);
-    void use_private_key(stringref key_pem);
+    void add_certificate_authorities(std::string_view ca_pem);
+    void add_certificate_chain(std::string_view chain_pem);
+    void use_private_key(std::string_view key_pem);
     void verify_private_key();
     // Enable use of ephemeral key exchange (ECDHE), allowing forward secrecy.
     void enable_ephemeral_key_exchange();
@@ -47,7 +46,7 @@ private:
     void disable_session_resumption();
     void enforce_peer_certificate_verification();
     void set_ssl_ctx_self_reference();
-    void set_accepted_cipher_suites(const std::vector<vespalib::string>& ciphers);
+    void set_accepted_cipher_suites(const std::vector<std::string>& ciphers);
 
     bool verify_trusted_certificate(::X509_STORE_CTX* store_ctx, OpenSslCryptoCodecImpl& codec_impl);
 

@@ -1,13 +1,5 @@
 // Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
-#include <fcntl.h>
-#include <cstdio>
-#include <unistd.h>
-#include <chrono>
-#include <cstdlib>
-#include <future>
-#include <vector>
-
 #include <vespa/eval/eval/typed_cells.h>
 #include <vespa/eval/eval/value_type.h>
 #include <vespa/searchlib/common/bitvector.h>
@@ -25,6 +17,9 @@
 #include <vespa/vespalib/util/lambdatask.h>
 #include <vespa/vespalib/util/size_literals.h>
 #include <vespa/vespalib/data/simple_buffer.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <future>
 
 #include <vespa/log/log.h>
 LOG_SETUP("stress_hnsw_mt");
@@ -61,7 +56,7 @@ public:
     }
 };
 
-using ConstVectorRef = vespalib::ConstArrayRef<float>;
+using ConstVectorRef = std::span<const float>;
 
 struct MallocPointVector {
     float v[NUM_DIMS];
@@ -116,20 +111,20 @@ public:
     }
     MyDocVectorStore& set(uint32_t docid, ConstVectorRef vec) {
         assert(docid < NUM_POSSIBLE_DOCS);
-        memcpy(&_vectors[docid], vec.cbegin(), sizeof(MallocPointVector));
+        memcpy(&_vectors[docid], vec.data(), sizeof(MallocPointVector));
         return *this;
     }
-    vespalib::eval::TypedCells get_vector(uint32_t docid, uint32_t subspace) const override {
+    vespalib::eval::TypedCells get_vector(uint32_t docid, uint32_t subspace) const noexcept override {
         assert(docid < NUM_POSSIBLE_DOCS);
         (void) subspace;
         ConstVectorRef ref(_vectors[docid]);
         return vespalib::eval::TypedCells(ref);
     }
-    VectorBundle get_vectors(uint32_t docid) const override {
+    VectorBundle get_vectors(uint32_t docid) const noexcept override {
         assert(docid < NUM_POSSIBLE_DOCS);
         ConstVectorRef ref(_vectors[docid]);
         assert(subspace_type.size() == ref.size());
-        return VectorBundle(ref.data(), 1, subspace_type);
+        return {ref.data(), 1, subspace_type};
     }
 };
 
@@ -143,7 +138,7 @@ private:
             read_vector_file(pv_storage);
         }
         size_t size() const { return NUM_POSSIBLE_V; }
-        vespalib::ConstArrayRef<float> operator[] (size_t i) {
+        std::span<const float> operator[] (size_t i) {
             return pv_storage[i];
         }
     } loaded_vectors;
@@ -257,7 +252,7 @@ public:
         loaded_vectors.load();
     }
 
-    ~Stressor() {}
+    ~Stressor() override;
 
     auto dff() {
         return search::tensor::make_distance_function_factory(
@@ -351,6 +346,9 @@ public:
         return buf.get().make_string();
     }
 };
+
+template <typename IndexType>
+Stressor<IndexType>::~Stressor() = default;
 
 using StressorTypes = ::testing::Types<HnswIndex<HnswIndexType::SINGLE>>;
 

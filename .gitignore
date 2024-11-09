@@ -20,13 +20,6 @@ lib*.so
 out/
 target/
 test-report.json
-/zorg.log
-*-PREINST.log
-*-PREINST/
-*-HEAD.log
-*-HEAD/
-*-YINST.log
-*-YINST/
 .mbuild.Makefile
 CMakeFiles
 CMakeCache.txt
@@ -40,6 +33,7 @@ Testing
 /.ninja_log
 /build.ninja
 /rules.ninja
+*_benchmark_app
 *_test_app
 /cmake-build-debug/
 /mvnw
@@ -53,3 +47,6 @@ install_manifest.txt
 /vespaConfigVersion.cmake
 *.cbp
 !/.copr/Makefile
+!/.buildkite/Makefile
+.vscode
+.metadata

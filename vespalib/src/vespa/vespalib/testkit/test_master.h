@@ -2,25 +2,21 @@
 
 #pragma once
 
-#include <string>
-#include <vector>
+#include <functional>
 #include <memory>
 #include <mutex>
+#include <string>
+#include <vector>
 
 namespace vespalib {
 
 class Barrier;
 
-#ifndef IAM_DOXYGEN
 /**
  * The master of testing.
  **/
 class TestMaster
 {
-private:
-    TestMaster(const TestMaster &);
-    TestMaster &operator=(const TestMaster &);
-
 public:
     struct Progress {
         size_t passCnt;
@@ -36,7 +32,7 @@ public:
         std::string file;
         uint32_t    line;
         std::string msg;
-        TraceItem(const std::string &file_in, uint32_t line_in, const std::string &msg_in);
+        TraceItem(std::string file_in, uint32_t line_in, std::string msg_in);
         TraceItem(TraceItem &&) noexcept;
         TraceItem & operator=(TraceItem &&) noexcept;
         TraceItem(const TraceItem &);
@@ -47,17 +43,17 @@ public:
 private:
     struct ThreadState {
         std::string            name;
-        bool                   unwind;
         size_t                 passCnt;
         size_t                 failCnt;
-        bool                   ignore;
         size_t                 preIgnoreFailCnt;
+        bool                   ignore;
+        bool                   unwind;
         std::vector<TraceItem> traceStack;
         Barrier               *barrier;
-        ThreadState(const std::string &n)
-            : name(n), unwind(false), passCnt(0),
-              failCnt(0), ignore(false), preIgnoreFailCnt(0), traceStack(),
-              barrier(0) {}
+        ~ThreadState();
+        ThreadState(std::string n);
+        ThreadState(ThreadState &&) noexcept = default;
+        ThreadState & operator=(ThreadState &&) noexcept = default;
     };
     static __thread ThreadState *_threadState;
 
@@ -66,18 +62,20 @@ private:
         size_t         failCnt;
         FILE          *lhsFile;
         FILE          *rhsFile;
-        SharedState() : passCnt(0), failCnt(0),
-                        lhsFile(0), rhsFile(0) {}
+        SharedState() noexcept
+            : passCnt(0), failCnt(0),
+              lhsFile(nullptr), rhsFile(nullptr)
+        {}
     };
 
-private:
-    std::mutex                                     _lock;
-    std::string                                    _name;
-    SharedState                                    _state;
+    std::mutex                                 _lock;
+    std::string                                _name;
+    SharedState                                _state;
     std::vector<std::unique_ptr<ThreadState> > _threadStorage;
     using lock_guard = std::lock_guard<std::mutex>;
 
 private:
+    TestMaster();
     ThreadState &threadState(const lock_guard &);
     ThreadState &threadState();
     void checkFailed(const lock_guard &,
@@ -90,10 +88,14 @@ private:
     void importThreads(const lock_guard &);
     bool reportConclusion(const lock_guard &);
 
-private:
-    TestMaster();
 
+    void report_compare(const char *file, uint32_t line, const char *aName, const char *bName, const char *opText, bool fatal,
+                        const std::function<void(std::ostream &)> & printLhs,
+                        const std::function<void(std::ostream &)> & printRhs);
 public:
+    ~TestMaster();
+    TestMaster(const TestMaster &) = delete;
+    TestMaster &operator=(const TestMaster &) = delete;
     void init(const char *name);
     std::string getName();
     void setThreadName(const char *name);
@@ -107,10 +109,10 @@ public:
     size_t getThreadFailCnt();
     Progress getProgress();
     void openDebugFiles(const std::string &lhsFile, const std::string &rhsFile);
+    void close_debug_files();
     void pushState(const char *file, uint32_t line, const char *msg);
     void popState();
-    bool check(bool rc, const char *file, uint32_t line,
-               const char *str, bool fatal);
+    bool check(bool rc, const char *file, uint32_t line, const char *str, bool fatal);
     template<class A, class B, class OP>
     bool compare(const char *file, uint32_t line,
                  const char *aName, const char *bName, const char *opText,
@@ -120,9 +122,5 @@ public:
     bool discardFailedChecks(size_t failCnt);
     bool fini();
 };
-#endif
 
 } // namespace vespalib
-
-#include "test_master.hpp"
-

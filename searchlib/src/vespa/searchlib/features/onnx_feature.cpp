@@ -11,6 +11,7 @@
 #include <vespa/vespalib/util/stringfmt.h>
 #include <vespa/vespalib/util/stash.h>
 #include <vespa/vespalib/util/issue.h>
+#include <cctype>
 
 #include <vespa/log/log.h>
 LOG_SETUP(".features.onnx_feature");
@@ -35,10 +36,10 @@ namespace search::features {
 
 namespace {
 
-vespalib::string normalize_name(const vespalib::string &name, const char *context) {
-    vespalib::string result;
-    for (char c: name) {
-        if (isalnum(c)) {
+std::string normalize_name(const std::string &name, const char *context) {
+    std::string result;
+    for (char c : name) {
+        if (std::isalnum(static_cast<unsigned char>(c))) {
             result.push_back(c);
         } else {
             result.push_back('_');
@@ -50,8 +51,8 @@ vespalib::string normalize_name(const vespalib::string &name, const char *contex
     return result;
 }
 
-vespalib::string my_dry_run(const Onnx &model, const Onnx::WireInfo &wire) {
-    vespalib::string error_msg;
+std::string my_dry_run(const Onnx &model, const Onnx::WireInfo &wire) {
+    std::string error_msg;
     try {
         Onnx::EvalContext context(model, wire);
         std::vector<Value::UP> inputs;
@@ -82,7 +83,7 @@ public:
     OnnxFeatureExecutor(const Onnx &model, const Onnx::WireInfo &wire_info)
         : _eval_context(model, wire_info) {}
     bool isPure() override { return true; }
-    void handle_bind_outputs(vespalib::ArrayRef<fef::NumberOrObject>) override {
+    void handle_bind_outputs(std::span<fef::NumberOrObject>) override {
         for (size_t i = 0; i < _eval_context.num_results(); ++i) {
             outputs().set_object(i, _eval_context.get_result(i));
         }
@@ -100,7 +101,7 @@ public:
     }
 };
 
-OnnxBlueprint::OnnxBlueprint(vespalib::stringref baseName)
+OnnxBlueprint::OnnxBlueprint(std::string_view baseName)
     : Blueprint(baseName),
       _cache_token(),
       _debug_model(),

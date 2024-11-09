@@ -54,6 +54,9 @@ DocumentApiConverter::toStorageAPI(documentapi::DocumentMessage& fromMsg)
         auto to = std::make_unique<api::UpdateCommand>(bucket, from.stealDocumentUpdate(), from.getNewTimestamp());
         to->setOldTimestamp(from.getOldTimestamp());
         to->setCondition(from.getCondition());
+        if (from.has_cached_create_if_missing()) {
+            to->set_cached_create_if_missing(from.create_if_missing());
+        }
         toMsg = std::move(to);
         break;
     }
@@ -217,6 +220,9 @@ DocumentApiConverter::toDocumentAPI(api::StorageCommand& fromMsg)
         to->setOldTimestamp(from.getOldTimestamp());
         to->setNewTimestamp(from.getTimestamp());
         to->setCondition(from.getCondition());
+        if (from.has_cached_create_if_missing()) {
+            to->set_cached_create_if_missing(from.create_if_missing());
+        }
         toMsg = std::move(to);
         break;
     }
@@ -236,7 +242,7 @@ DocumentApiConverter::toDocumentAPI(api::StorageCommand& fromMsg)
         for (uint32_t i = 0; i < from.getCompletedBucketsList().size(); ++i) {
             to->getFinishedBuckets().push_back(from.getCompletedBucketsList()[i].bucketId);
         }
-        to->setErrorMessage(from.getErrorCode().getMessage());
+        to->setErrorMessage(std::string(from.getErrorCode().getMessage()));
         toMsg = std::move(to);
         break;
     }

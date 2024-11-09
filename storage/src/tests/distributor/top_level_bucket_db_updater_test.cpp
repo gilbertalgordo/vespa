@@ -45,7 +45,7 @@ public:
 
     std::vector<document::BucketSpace> _bucket_spaces;
 
-    size_t message_count(size_t messagesPerBucketSpace) const {
+    size_t message_count(size_t messagesPerBucketSpace) const noexcept {
         return messagesPerBucketSpace * _bucket_spaces.size();
     }
 
@@ -189,7 +189,7 @@ public:
         sort_sent_messages_by_index(_sender, size_before_state);
     }
 
-    void set_cluster_state(const vespalib::string& state_str) {
+    void set_cluster_state(const std::string& state_str) {
         set_cluster_state(lib::ClusterState(state_str));
     }
 
@@ -220,7 +220,7 @@ public:
     }
 
     static api::StorageMessageAddress storage_address(uint16_t node) {
-        static vespalib::string _storage("storage");
+        static std::string _storage("storage");
         return api::StorageMessageAddress(&_storage, lib::NodeType::STORAGE, node);
     }
 
@@ -290,7 +290,7 @@ public:
     void initialize_nodes_and_buckets(uint32_t num_storage_nodes, uint32_t num_buckets) {
         ASSERT_NO_FATAL_FAILURE(set_storage_nodes(num_storage_nodes));
 
-        vespalib::string state(vespalib::make_string("distributor:1 storage:%d", num_storage_nodes));
+        std::string state(vespalib::make_string("distributor:1 storage:%d", num_storage_nodes));
         lib::ClusterState new_state(state);
 
         for (uint32_t i = 0; i < message_count(num_storage_nodes); ++i) {
@@ -361,7 +361,7 @@ public:
         {
             auto cluster_info = owner.create_cluster_info(old_cluster_state);
             state = PendingClusterState::createForDistributionChange(
-                    clock, cluster_info, sender, owner.bucket_space_states(), api::Timestamp(1));
+                    clock, cluster_info, sender, owner.bucket_space_states(), api::Timestamp(1), false);
         }
     };
 
@@ -407,10 +407,10 @@ public:
     std::vector<uint16_t> expand_node_vec(const std::vector<uint16_t>& nodes);
 
     void trigger_completed_but_not_yet_activated_transition(
-            vespalib::stringref initial_state_str,
+            std::string_view initial_state_str,
             uint32_t initial_buckets,
             uint32_t initial_expected_msgs,
-            vespalib::stringref pending_state_str,
+            std::string_view pending_state_str,
             uint32_t pending_buckets,
             uint32_t pending_expected_msgs);
 
@@ -474,6 +474,15 @@ public:
         }
         return total;
     }
+
+    void expect_and_answer_bucket_info_requests(uint32_t n_msgs, const lib::ClusterState& expected_state) {
+        ASSERT_EQ(_sender.commands().size(), message_count(n_msgs));
+        constexpr uint32_t n_buckets = 10;
+        ASSERT_NO_FATAL_FAILURE(complete_bucket_info_gathering(expected_state, message_count(n_msgs), n_buckets));
+        _sender.clear();
+    }
+
+    void verify_state_bundle_propagated_to_stripes(const lib::ClusterStateBundle& expected_bundle);
 
 };
 
@@ -594,10 +603,10 @@ TopLevelBucketDBUpdaterTest::get_node_list(const std::vector<uint16_t>& nodes)
 
 void
 TopLevelBucketDBUpdaterTest::trigger_completed_but_not_yet_activated_transition(
-        vespalib::stringref initial_state_str,
+        std::string_view initial_state_str,
         uint32_t initial_buckets,
         uint32_t initial_expected_msgs,
-        vespalib::stringref pending_state_str,
+        std::string_view pending_state_str,
         uint32_t pending_buckets,
         uint32_t pending_expected_msgs)
 {
@@ -616,8 +625,28 @@ TopLevelBucketDBUpdaterTest::trigger_completed_but_not_yet_activated_transition(
     _sender.clear();
 }
 
+void
+TopLevelBucketDBUpdaterTest::verify_state_bundle_propagated_to_stripes(const lib::ClusterStateBundle& expected_bundle)
+{
+    ASSERT_TRUE(expected_bundle.has_distribution_config());
+    const auto space = document::FixedBucketSpaces::default_space();
+    for (auto* s : distributor_stripes()) {
+        // We only sample the default space, but assume this generalizes to other spaces.
+        auto& repo = s->getBucketSpaceRepo().get(space);
+        // TODO refactor so that only state bundle (with config) is used internally rather than
+        //  separate (but intertwined) explicit pairs of state + config. This is not a small task...
+        EXPECT_FALSE(repo.has_pending_cluster_state()); // should have converged
+        EXPECT_EQ(repo.getClusterState(), *expected_bundle.getDerivedClusterState(space));
+        EXPECT_EQ(repo.getDistribution(), expected_bundle.distribution_config_bundle()->default_distribution());
+    }
+}
+
+// TODO all tests that change distribution config should be rewritten to do this via
+//  a cluster state bundle, but this cannot happen until the legacy behavior is no
+//  longer supported (>= Vespa 9).
+
 TEST_F(TopLevelBucketDBUpdaterTest, normal_usage) {
-    set_cluster_state(lib::ClusterState("distributor:2 .0.s:i .1.s:i storage:3")); // FIXME init mode why?
+    set_cluster_state(lib::ClusterState("distributor:2 storage:3"));
 
     ASSERT_EQ(message_count(3), _sender.commands().size());
 
@@ -625,21 +654,21 @@ TEST_F(TopLevelBucketDBUpdaterTest, normal_usage) {
     ASSERT_EQ(_component->getDistribution()->getNodeGraph().getDistributionConfigHash(),
               dynamic_cast<const RequestBucketInfoCommand&>(*_sender.command(0)).getDistributionHash());
 
-    ASSERT_NO_FATAL_FAILURE(fake_bucket_reply(lib::ClusterState("distributor:2 .0.s:i .1.s:i storage:3"), // FIXME init mode why?
+    ASSERT_NO_FATAL_FAILURE(fake_bucket_reply(lib::ClusterState("distributor:2 storage:3"),
                                               *_sender.command(0), 10));
 
     _sender.clear();
 
     // Optimization for not refetching unneeded data after cluster state
     // change is only implemented after completion of previous cluster state
-    set_cluster_state("distributor:2 .0.s:i storage:3"); // FIXME init mode why?
+    set_cluster_state("distributor:2 storage:3");
 
     ASSERT_EQ(message_count(3), _sender.commands().size());
     // Expect reply of first set SystemState request.
     ASSERT_EQ(size_t(1), _sender.replies().size());
 
     ASSERT_NO_FATAL_FAILURE(complete_bucket_info_gathering(
-            lib::ClusterState("distributor:2 .0.s:i .1.s:i storage:3"), // FIXME init mode why?
+            lib::ClusterState("distributor:2 storage:3"),
             message_count(3), 10));
     ASSERT_NO_FATAL_FAILURE(assert_correct_buckets(10, "distributor:2 storage:3"));
 }
@@ -648,9 +677,9 @@ TEST_F(TopLevelBucketDBUpdaterTest, distributor_change) {
     int num_buckets = 100;
 
     // First sends request
-    set_cluster_state("distributor:2 .0.s:i .1.s:i storage:3"); // FIXME init mode why?
+    set_cluster_state("distributor:2 storage:3");
     ASSERT_EQ(message_count(3), _sender.commands().size());
-    ASSERT_NO_FATAL_FAILURE(complete_bucket_info_gathering(lib::ClusterState("distributor:2 .0.s:i .1.s:i storage:3"), // FIXME init mode why?
+    ASSERT_NO_FATAL_FAILURE(complete_bucket_info_gathering(lib::ClusterState("distributor:2 storage:3"),
                                                            message_count(3), num_buckets));
     _sender.clear();
 
@@ -705,14 +734,14 @@ TEST_F(TopLevelBucketDBUpdaterTest, distributor_change_with_grouping) {
 }
 
 TEST_F(TopLevelBucketDBUpdaterTest, normal_usage_initializing) {
-    set_cluster_state("distributor:1 .0.s:i storage:1 .0.s:i"); // FIXME init mode why?
+    set_cluster_state("distributor:1 storage:1 .0.s:i");
 
     ASSERT_EQ(_bucket_spaces.size(), _sender.commands().size());
 
     // Not yet passing on system state.
     ASSERT_EQ(size_t(0), _sender_down.commands().size());
 
-    ASSERT_NO_FATAL_FAILURE(complete_bucket_info_gathering(lib::ClusterState("distributor:1 .0.s:i storage:1"), // FIXME init mode why?
+    ASSERT_NO_FATAL_FAILURE(complete_bucket_info_gathering(lib::ClusterState("distributor:1 storage:1"),
                                                            _bucket_spaces.size(), 10, 10));
 
     ASSERT_NO_FATAL_FAILURE(assert_correct_buckets(10, "distributor:1 storage:1"));
@@ -727,12 +756,12 @@ TEST_F(TopLevelBucketDBUpdaterTest, normal_usage_initializing) {
     _sender.clear();
     _sender_down.clear();
 
-    set_cluster_state("distributor:1 .0.s:i storage:1"); // FIXME init mode why?
+    set_cluster_state("distributor:1 storage:1");
 
     // Send a new request bucket info up.
     ASSERT_EQ(_bucket_spaces.size(), _sender.commands().size());
 
-    ASSERT_NO_FATAL_FAILURE(complete_bucket_info_gathering(lib::ClusterState("distributor:1 .0.s:i storage:1"), // FIXME init mode why?
+    ASSERT_NO_FATAL_FAILURE(complete_bucket_info_gathering(lib::ClusterState("distributor:1 storage:1"),
                                                            _bucket_spaces.size(), 20));
 
     // Pass on cluster state and recheck buckets now.
@@ -742,7 +771,7 @@ TEST_F(TopLevelBucketDBUpdaterTest, normal_usage_initializing) {
 }
 
 TEST_F(TopLevelBucketDBUpdaterTest, failed_request_bucket_info) {
-    set_cluster_state("distributor:1 .0.s:i storage:1"); // FIXME init mode why?
+    set_cluster_state("distributor:1 storage:1");
 
     // 2 messages sent up: 1 to the nodes, and one reply to the setsystemstate.
     ASSERT_EQ(_bucket_spaces.size(), _sender.commands().size());
@@ -1427,7 +1456,7 @@ TopLevelBucketDBUpdaterTest::get_sent_nodes_distribution_changed(const std::stri
     auto cluster_info = create_cluster_info(old_cluster_state);
     std::unique_ptr<PendingClusterState> state(
             PendingClusterState::createForDistributionChange(
-                    clock, cluster_info, sender, bucket_space_states(), api::Timestamp(1)));
+                    clock, cluster_info, sender, bucket_space_states(), api::Timestamp(1), false));
 
     sort_sent_messages_by_index(sender);
 
@@ -1722,7 +1751,7 @@ TopLevelBucketDBUpdaterTest::merge_bucket_lists(const std::string& existing_data
 }
 
 TEST_F(TopLevelBucketDBUpdaterTest, pending_cluster_state_merge) {
-    // Result is on the form: [bucket w/o count bits]:[node indexes]|..
+    // Result is on the form: [bucket w/o count bits]:[node indexes]|...
     // Input is on the form: [node]:[bucket w/o count bits]|...
 
     // Simple initializing case - ask all nodes for info
@@ -2495,10 +2524,12 @@ TEST_F(TopLevelBucketDBUpdaterTest, node_feature_sets_are_aggregated_from_nodes_
     auto stripes = distributor_stripes();
     for (auto* s : stripes) {
         for (uint16_t i : {0, 1, 2}) {
-            EXPECT_FALSE(s->node_supported_features_repo().node_supported_features(i).unordered_merge_chaining);
-            EXPECT_FALSE(s->node_supported_features_repo().node_supported_features(i).two_phase_remove_location);
-            EXPECT_FALSE(s->node_supported_features_repo().node_supported_features(i).no_implicit_indexing_of_active_buckets);
-            EXPECT_FALSE(s->node_supported_features_repo().node_supported_features(i).document_condition_probe);
+            const auto& node_features = s->node_supported_features_repo().node_supported_features(i);
+            EXPECT_FALSE(node_features.unordered_merge_chaining);
+            EXPECT_FALSE(node_features.two_phase_remove_location);
+            EXPECT_FALSE(node_features.no_implicit_indexing_of_active_buckets);
+            EXPECT_FALSE(node_features.document_condition_probe);
+            EXPECT_FALSE(node_features.timestamps_in_tas_conditions);
         }
     }
 
@@ -2513,6 +2544,7 @@ TEST_F(TopLevelBucketDBUpdaterTest, node_feature_sets_are_aggregated_from_nodes_
                 reply.supported_node_features().two_phase_remove_location = true;
                 reply.supported_node_features().no_implicit_indexing_of_active_buckets = true;
                 reply.supported_node_features().document_condition_probe = true;
+                reply.supported_node_features().timestamps_in_tas_conditions = true;
             }
         }));
     }
@@ -2523,16 +2555,16 @@ TEST_F(TopLevelBucketDBUpdaterTest, node_feature_sets_are_aggregated_from_nodes_
         EXPECT_FALSE(s->node_supported_features_repo().node_supported_features(0).two_phase_remove_location);
         EXPECT_FALSE(s->node_supported_features_repo().node_supported_features(0).no_implicit_indexing_of_active_buckets);
         EXPECT_FALSE(s->node_supported_features_repo().node_supported_features(0).document_condition_probe);
+        EXPECT_FALSE(s->node_supported_features_repo().node_supported_features(0).timestamps_in_tas_conditions);
 
-        EXPECT_TRUE(s->node_supported_features_repo().node_supported_features(1).unordered_merge_chaining);
-        EXPECT_TRUE(s->node_supported_features_repo().node_supported_features(1).two_phase_remove_location);
-        EXPECT_TRUE(s->node_supported_features_repo().node_supported_features(1).no_implicit_indexing_of_active_buckets);
-        EXPECT_TRUE(s->node_supported_features_repo().node_supported_features(1).document_condition_probe);
-
-        EXPECT_TRUE(s->node_supported_features_repo().node_supported_features(2).unordered_merge_chaining);
-        EXPECT_TRUE(s->node_supported_features_repo().node_supported_features(2).two_phase_remove_location);
-        EXPECT_TRUE(s->node_supported_features_repo().node_supported_features(2).no_implicit_indexing_of_active_buckets);
-        EXPECT_TRUE(s->node_supported_features_repo().node_supported_features(2).document_condition_probe);
+        for (uint16_t i : {1, 2}) {
+            const auto& node_features = s->node_supported_features_repo().node_supported_features(i);
+            EXPECT_TRUE(node_features.unordered_merge_chaining);
+            EXPECT_TRUE(node_features.two_phase_remove_location);
+            EXPECT_TRUE(node_features.no_implicit_indexing_of_active_buckets);
+            EXPECT_TRUE(node_features.document_condition_probe);
+            EXPECT_TRUE(node_features.timestamps_in_tas_conditions);
+        }
     }
 }
 
@@ -2551,6 +2583,101 @@ TEST_F(TopLevelBucketDBUpdaterTest, outdated_bucket_info_reply_is_ignored) {
     EXPECT_TRUE(handled); // Should be returned as handled even though it's technically ignored.
 }
 
+TEST_F(TopLevelBucketDBUpdaterTest, state_bundle_with_distributon_config_immediately_switches_config) {
+    auto baseline = std::make_shared<lib::ClusterState>("version:10 distributor:1 storage:3");
+    auto dist = std::make_shared<lib::Distribution>(dist_config_6_nodes_across_2_groups());
+
+    lib::ClusterStateBundle initial_bundle(baseline, {}, {}, lib::DistributionConfigBundle::of(dist), false);
+    set_cluster_state_bundle(initial_bundle);
+
+    // Distribution config should have been immediately applied internally
+    EXPECT_EQ(distributor_bucket_space(BucketId(16, 1)).getDistribution(), *dist);
+
+    // We should now have a single set of bucket info requests that have both the correct distribution
+    // config hash and the most recent cluster state version.
+    ASSERT_EQ(_sender.commands().size(), message_count(3));
+    // We sample one command and make the assumption that it holds for the rest...!
+    auto cmd = std::dynamic_pointer_cast<RequestBucketInfoCommand>(_sender.command(0));
+    EXPECT_EQ(cmd->getSystemState().getVersion(), 10);
+    EXPECT_EQ(cmd->getDistributionHash(), dist->getNodeGraph().getDistributionConfigHash());
+}
+
+TEST_F(TopLevelBucketDBUpdaterTest, state_bundle_with_changed_config_but_unchanged_state_sends_to_full_node_set) {
+    auto initial_state = std::make_shared<lib::ClusterState>("version:10 distributor:1 storage:4");
+    auto initial_dist = std::make_shared<lib::Distribution>(dist_config_6_nodes_across_2_groups());
+
+    lib::ClusterStateBundle initial_bundle(initial_state, {}, {}, lib::DistributionConfigBundle::of(initial_dist), false);
+    set_cluster_state_bundle(initial_bundle);
+    ASSERT_NO_FATAL_FAILURE(expect_and_answer_bucket_info_requests(4, *initial_state));
+
+    ASSERT_NO_FATAL_FAILURE(verify_state_bundle_propagated_to_stripes(initial_bundle));
+
+    // New distribution config with same number of nodes, but different topology
+    auto new_dist = std::make_shared<lib::Distribution>(dist_config_6_nodes_across_4_groups());
+    // But the state remains the same aside from the bumped version
+    auto new_state = std::make_shared<lib::ClusterState>("version:11 distributor:1 storage:4");
+
+    lib::ClusterStateBundle new_bundle(new_state, {}, {}, lib::DistributionConfigBundle::of(new_dist), false);
+    set_cluster_state_bundle(new_bundle);
+
+    // We should now consider all nodes as outdated due to the changed distribution config, even
+    // though the state itself is effectively unchanged.
+    ASSERT_EQ(_sender.commands().size(), message_count(4));
+    auto cmd = std::dynamic_pointer_cast<RequestBucketInfoCommand>(_sender.command(0));
+    EXPECT_EQ(cmd->getSystemState().getVersion(), 11);
+    EXPECT_EQ(cmd->getDistributionHash(), new_dist->getNodeGraph().getDistributionConfigHash());
+
+    // Distribution config should have been immediately applied internally
+    EXPECT_EQ(distributor_bucket_space(BucketId(16, 1)).getDistribution(), *new_dist);
+}
+
+TEST_F(TopLevelBucketDBUpdaterTest, state_bundle_with_unchanged_config_and_state_is_immediately_applied) {
+    auto initial_state = std::make_shared<lib::ClusterState>("version:10 distributor:1 storage:4");
+    auto initial_dist = std::make_shared<lib::Distribution>(dist_config_6_nodes_across_2_groups());
+
+    lib::ClusterStateBundle initial_bundle(initial_state, {}, {}, lib::DistributionConfigBundle::of(initial_dist), false);
+    set_cluster_state_bundle(initial_bundle);
+    ASSERT_NO_FATAL_FAILURE(expect_and_answer_bucket_info_requests(4, *initial_state));
+
+    auto new_state = std::make_shared<lib::ClusterState>("version:11 distributor:1 storage:4");
+    lib::ClusterStateBundle new_bundle(new_state, {}, {}, lib::DistributionConfigBundle::of(initial_dist), false);
+    set_cluster_state_bundle(new_bundle);
+
+    EXPECT_EQ(_sender.commands().size(), 0);
+    ASSERT_NO_FATAL_FAILURE(verify_state_bundle_propagated_to_stripes(new_bundle));
+}
+
+TEST_F(TopLevelBucketDBUpdaterTest, internal_distribution_config_usage_is_toggled_by_presence_of_cc_distribution) {
+    auto initial_state = std::make_shared<lib::ClusterState>("version:10 distributor:1 storage:4");
+    auto initial_dist = std::make_shared<lib::Distribution>(dist_config_6_nodes_across_2_groups());
+
+    // State bundle _with_ distribution
+    lib::ClusterStateBundle initial_bundle(initial_state, {}, {}, lib::DistributionConfigBundle::of(initial_dist), false);
+    set_cluster_state_bundle(initial_bundle);
+    ASSERT_NO_FATAL_FAILURE(expect_and_answer_bucket_info_requests(4, *initial_state));
+
+    // We should now _ignore_ node-internal config changes that do not originate via bundles
+    lib::Distribution new_dist(dist_config_6_nodes_across_4_groups());
+    set_distribution(dist_config_6_nodes_across_4_groups());
+    EXPECT_EQ(distributor_bucket_space(BucketId(16, 1)).getDistribution(), *initial_dist); // _not_ new_dist
+    EXPECT_EQ(_sender.commands().size(), 0);
+
+    // State _without_ distribution.
+    // This shall revert to picking up node distribution config (which we updated just above).
+    auto new_state = std::make_shared<lib::ClusterState>("version:11 distributor:1 storage:4");
+    lib::ClusterStateBundle new_bundle(new_state, {}, {}, {}, false);
+    set_cluster_state_bundle(new_bundle);
+    // Manually simulate next tick where new distribution config would normally be picked up.
+    enable_next_distribution_if_changed();
+    ASSERT_EQ(_sender.commands().size(), message_count(4));
+
+    EXPECT_EQ(distributor_bucket_space(BucketId(16, 1)).getDistribution(), new_dist);
+
+    auto cmd = std::dynamic_pointer_cast<RequestBucketInfoCommand>(_sender.command(0));
+    EXPECT_EQ(cmd->getSystemState().getVersion(), 11);
+    // RequestBucketInfo distribution reflects latest node config.
+    EXPECT_EQ(cmd->getDistributionHash(), new_dist.getNodeGraph().getDistributionConfigHash());
+}
 
 struct BucketDBUpdaterSnapshotTest : TopLevelBucketDBUpdaterTest {
     lib::ClusterState empty_state;

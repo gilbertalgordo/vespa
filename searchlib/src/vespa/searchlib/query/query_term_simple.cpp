@@ -23,7 +23,7 @@ constexpr bool isRepresentableByInt64(double d) noexcept {
            (d < double(std::numeric_limits<int64_t>::max()));
 }
 
-bool isFullRange(vespalib::stringref s) noexcept {
+bool isFullRange(std::string_view s) noexcept {
     const size_t sz(s.size());
     return (sz >= 3u) &&
            (s[0] == '<' || s[0] == '[') &&
@@ -33,7 +33,7 @@ bool isFullRange(vespalib::stringref s) noexcept {
 struct IntDecoder {
     static int64_t fromstr(const char * q, const char * qend, const char ** end) noexcept {
         int64_t v(0);
-        for (;q < qend && (isspace(*q) || (*q == '+')); q++);
+        for (;q < qend && (std::isspace(static_cast<unsigned char>(*q)) || (*q == '+')); q++);
         std::from_chars_result err = std::from_chars(q, qend, v, 10);
         if (err.ec == std::errc::result_out_of_range) {
             v = (*q == '-') ? std::numeric_limits<int64_t>::min() : std::numeric_limits<int64_t>::max();
@@ -49,8 +49,8 @@ template <typename T>
 struct FloatDecoder {
     static T fromstr(const char * q, const char * qend, const char ** end) noexcept {
         T v(0);
-#if defined(_LIBCPP_VERSION) && _LIBCPP_VERSION < 180000
-        vespalib::string tmp(q, qend - q);
+#if defined(_LIBCPP_VERSION) && _LIBCPP_VERSION < 200000
+        std::string tmp(q, qend - q);
         char* tmp_end = nullptr;
         const char *tmp_cstring = tmp.c_str();
         if constexpr (std::is_same_v<T, float>) {
@@ -62,7 +62,7 @@ struct FloatDecoder {
             *end = (tmp_end != nullptr) ? (q + (tmp_end - tmp_cstring)) : nullptr;
         }
 #else
-        for (;q < qend && (isspace(*q) || (*q == '+')); q++);
+        for (;q < qend && (std::isspace(static_cast<unsigned char>(*q)) || (*q == '+')); q++);
         std::from_chars_result err = std::from_chars(q, qend, v);
         if (err.ec == std::errc::result_out_of_range) {
             v = (*q == '-') ? -std::numeric_limits<T>::infinity() : std::numeric_limits<T>::infinity();
@@ -248,18 +248,19 @@ QueryTermSimple::QueryTermSimple(const string & term_, Type type)
       _type(type),
       _diversityCutoffStrict(false),
       _valid(true),
+      _fuzzy_prefix_match(false),
       _term(term_),
       _diversityAttribute(),
-      _fuzzyMaxEditDistance(2),
-      _fuzzyPrefixLength(0)
+      _fuzzy_max_edit_distance(2),
+      _fuzzy_prefix_lock_length(0)
 {
     if (isFullRange(_term)) {
-        stringref rest(_term.c_str() + 1, _term.size() - 2);
-        stringref parts[9];
+        string_view rest(_term.c_str() + 1, _term.size() - 2);
+        string_view parts[9];
         size_t numParts(0);
         while (! rest.empty() && ((numParts + 1) < NELEMS(parts))) {
             size_t pos(rest.find(';'));
-            if (pos != vespalib::string::npos) {
+            if (pos != std::string::npos) {
                 parts[numParts++] = rest.substr(0, pos);
                 rest = rest.substr(pos + 1);
                 if (rest.empty()) {
@@ -267,7 +268,7 @@ QueryTermSimple::QueryTermSimple(const string & term_, Type type)
                 }
             } else {
                 parts[numParts++] = rest;
-                rest = stringref();
+                rest = string_view();
             }
         }
         _valid = (numParts >= 2) && (numParts < NELEMS(parts));
@@ -333,7 +334,7 @@ QueryTermSimple::getAsNumericTerm(T & lower, T & upper, D d) const noexcept
             T hh = d.fromstr(q, qend, &err);
             bool hasUpperLimit(q != err);
             if (*err == ';') {
-                err = const_cast<char *>(_term.end() - 1);
+                err = const_cast<char *>(_term.data() + _term.size() - 1);
             }
             valid = (*err == last) && ((last == ']') || (last == '>'));
             if (hasUpperLimit) {
@@ -350,7 +351,7 @@ QueryTermSimple::getAsNumericTerm(T & lower, T & upper, D d) const noexcept
     return valid;
 }
 
-vespalib::string
+std::string
 QueryTermSimple::getClassName() const
 {
     return vespalib::getClassName(*this);
@@ -359,7 +360,7 @@ QueryTermSimple::getClassName() const
 }
 
 void
-visit(vespalib::ObjectVisitor &self, const vespalib::string &name, const search::QueryTermSimple *obj)
+visit(vespalib::ObjectVisitor &self, const std::string &name, const search::QueryTermSimple *obj)
 {
     if (obj != nullptr) {
         self.openStruct(name, obj->getClassName());
@@ -371,7 +372,7 @@ visit(vespalib::ObjectVisitor &self, const vespalib::string &name, const search:
 }
 
 void
-visit(vespalib::ObjectVisitor &self, const vespalib::string &name, const search::QueryTermSimple &obj)
+visit(vespalib::ObjectVisitor &self, const std::string &name, const search::QueryTermSimple &obj)
 {
     visit(self, name, &obj);
 }

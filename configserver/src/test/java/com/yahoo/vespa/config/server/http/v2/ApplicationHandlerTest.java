@@ -79,6 +79,7 @@ import static com.yahoo.container.jdisc.HttpRequest.createTestRequest;
 import static com.yahoo.jdisc.http.HttpRequest.Method.DELETE;
 import static com.yahoo.jdisc.http.HttpRequest.Method.GET;
 import static com.yahoo.jdisc.http.HttpRequest.Method.POST;
+import static com.yahoo.jdisc.http.HttpRequest.Method.PUT;
 import static com.yahoo.test.json.JsonTestHelper.assertJsonEquals;
 import static com.yahoo.vespa.config.server.application.ConfigConvergenceChecker.ServiceListResponse;
 import static com.yahoo.vespa.config.server.application.ConfigConvergenceChecker.ServiceResponse;
@@ -107,7 +108,7 @@ public class ApplicationHandlerTest {
     private final static ApplicationId myTenantApplicationId = ApplicationId.from(mytenantName, ApplicationName.defaultName(), InstanceName.defaultName());
     private final static ApplicationId applicationId = ApplicationId.defaultId();
     private final static MockTesterClient testerClient = new MockTesterClient();
-    private static final MockLogRetriever logRetriever = new MockLogRetriever();
+    private MockLogRetriever logRetriever = new MockLogRetriever();
     private static final Version vespaVersion = Version.fromString("7.8.9");
     private static final SecretStoreValidator secretStoreValidator = new MockSecretStoreValidator();
 
@@ -311,6 +312,11 @@ public class ApplicationHandlerTest {
         assertEquals(expected,
                      database.readReindexingStatus(applicationId).orElseThrow());
 
+        clock.advance(Duration.ofSeconds(1));
+        reindex(applicationId, PUT, "?documentType=bar&speed=0", "{\"message\":\"Set reindexing speed to '0' for document types [bar] in 'boo', [bar] in 'foo' of application default.default\"}");
+        expected = expected.withSpeed("boo", "bar", 0)
+                           .withSpeed("foo", "bar", 0);
+
         reindexing(applicationId, DELETE, "{\"message\":\"Reindexing disabled\"}");
         expected = expected.enabled(false);
         assertEquals(expected,
@@ -333,8 +339,8 @@ public class ApplicationHandlerTest {
                                        "      }," +
                                        "      \"ready\": {" +
                                        "        \"bar\": {" +
-                                       "          \"readyMillis\": " + (now - 1000) + ", " +
-                                       "          \"speed\": 1.0," +
+                                       "          \"readyMillis\": " + (now - 2000) + ", " +
+                                       "          \"speed\": 0.0," +
                                        "          \"cause\": \"reindexing\"," +
                                        "          \"state\": \"pending\"" +
                                        "        }" +
@@ -344,19 +350,19 @@ public class ApplicationHandlerTest {
                                        "      \"pending\": {}," +
                                        "      \"ready\": {" +
                                        "        \"bar\": {" +
-                                       "          \"readyMillis\": " + now + ", " +
-                                       "          \"speed\": 0.1," +
+                                       "          \"readyMillis\": " + (now - 1000) + ", " +
+                                       "          \"speed\": 0.0," +
                                        "          \"cause\": \"reindexing\"," +
                                        "          \"state\": \"pending\"" +
                                        "        }," +
                                        "        \"bax\": {" +
-                                       "          \"readyMillis\": " + (now - 1000) + ", " +
+                                       "          \"readyMillis\": " + (now - 2000) + ", " +
                                        "          \"speed\": 1.0," +
                                        "          \"cause\": \"reindexing\"," +
                                        "          \"state\": \"pending\"" +
                                        "        }," +
                                        "        \"baz\": {" +
-                                       "          \"readyMillis\": " + now + ", " +
+                                       "          \"readyMillis\": " + (now - 1000) + ", " +
                                        "          \"speed\": 0.1," +
                                        "          \"cause\": \"reindexing\"," +
                                        "          \"state\": \"pending\"" +
@@ -427,11 +433,6 @@ public class ApplicationHandlerTest {
     }
 
     @Test
-    public void testPutIsIllegal() throws IOException {
-        assertNotAllowed(Method.PUT);
-    }
-
-    @Test
     public void testFileDistributionStatus() throws Exception {
         applicationRepository.deploy(testApp, prepareParams(applicationId));
         Zone zone = Zone.defaultZone();
@@ -459,6 +460,20 @@ public class ApplicationHandlerTest {
         assertEquals(200, response.getStatus());
 
         assertEquals("log line", getRenderedString(response));
+    }
+
+    @Test
+    public void testGetLogsConnectionTimeout() throws IOException {
+        logRetriever = new MockLogRetriever(504, "Connection error when getting logs");
+        setup();
+        applicationRepository.deploy(new File("src/test/apps/app-logserver-with-container"), prepareParams(applicationId));
+        String url = toUrlPath(applicationId, Zone.defaultZone(), true) + "/logs?from=100&to=200";
+        ApplicationHandler mockHandler = createApplicationHandler();
+
+        HttpResponse response = mockHandler.handle(createTestRequest(url, GET));
+        assertEquals(504, response.getStatus());
+
+        assertEquals("Connection error when getting logs", getRenderedString(response));
     }
 
     @Test
@@ -786,7 +801,7 @@ public class ApplicationHandlerTest {
 
     private void deleteAndAssertOKResponseMocked(ApplicationId applicationId, boolean fullAppIdInUrl) throws IOException {
         Tenant tenant = applicationRepository.getTenant(applicationId);
-        long sessionId = tenant.getApplicationRepo().requireActiveSessionOf(applicationId);
+        tenant.getApplicationRepo().requireActiveSessionOf(applicationId);
         deleteAndAssertResponse(applicationId, Zone.defaultZone(), Response.Status.OK, null, fullAppIdInUrl);
     }
 
@@ -874,8 +889,12 @@ public class ApplicationHandlerTest {
     }
 
     private void reindex(ApplicationId application, String query, String message) throws IOException {
+        reindex(application, POST, query, message);
+    }
+
+    private void reindex(ApplicationId application, Method method, String query, String message) throws IOException {
         String reindexUrl = toUrlPath(application, Zone.defaultZone(), true) + "/reindex" + query;
-        assertHttpStatusCodeAndMessage(createApplicationHandler().handle(createTestRequest(reindexUrl, POST)), 200, message);
+        assertHttpStatusCodeAndMessage(createApplicationHandler().handle(createTestRequest(reindexUrl, method)), 200, message);
     }
 
     private void restart(ApplicationId application, Zone zone) throws IOException {

@@ -57,13 +57,14 @@ TEST_F(FakeSearchableTest, require_that_term_search_works) {
 
     FieldSpecList fields;
     fields.add(FieldSpec("fieldfoo", 1, 1));
-    Blueprint::UP bp = source.createBlueprint(req_ctx, fields, termNode);
+    auto bp = source.createBlueprint(req_ctx, fields, termNode);
     for (int i = 0; i <= 1; ++i) {
         bool strict = (i == 0);
         SCOPED_TRACE(strict ? "strict" : "non-strict");
         MatchData::UP md = MatchData::makeTestInstance(100, 10);
-        bp->fetchPostings(ExecuteInfo::createForTest(strict));
-        SearchIterator::UP search = bp->createSearch(*md, strict);
+        bp->basic_plan(strict, 100);
+        bp->fetchPostings(ExecuteInfo::FULL);
+        SearchIterator::UP search = bp->createSearch(*md);
         search->initFullRange();
 
         EXPECT_TRUE(!search->seek(3));
@@ -111,13 +112,14 @@ TEST_F(FakeSearchableTest, require_that_phrase_search_works) {
 
     FieldSpecList fields;
     fields.add(FieldSpec("fieldfoo", 1, 1));
-    Blueprint::UP bp = source.createBlueprint(req_ctx, fields, phraseNode);
+    auto bp = source.createBlueprint(req_ctx, fields, phraseNode);
     for (int i = 0; i <= 1; ++i) {
         bool strict = (i == 0);
         SCOPED_TRACE(strict ? "strict" : "non-strict");
         MatchData::UP md = MatchData::makeTestInstance(100, 10);
-        bp->fetchPostings(ExecuteInfo::createForTest(strict));
-        SearchIterator::UP search = bp->createSearch(*md, strict);
+        bp->basic_plan(strict, 100);
+        bp->fetchPostings(ExecuteInfo::FULL);
+        SearchIterator::UP search = bp->createSearch(*md);
         search->initFullRange();
 
         EXPECT_TRUE(!search->seek(3));
@@ -162,13 +164,14 @@ TEST_F(FakeSearchableTest, require_that_weigheted_set_search_works) {
 
     FieldSpecList fields;
     fields.add(FieldSpec("fieldfoo", 1, 1));
-    Blueprint::UP bp = source.createBlueprint(req_ctx, fields, weightedSet);
+    auto bp = source.createBlueprint(req_ctx, fields, weightedSet);
     for (int i = 0; i <= 1; ++i) {
         bool strict = (i == 0);
         SCOPED_TRACE(strict ? "strict" : "non-strict");
         MatchData::UP md = MatchData::makeTestInstance(100, 10);
-        bp->fetchPostings(ExecuteInfo::createForTest(strict));
-        SearchIterator::UP search = bp->createSearch(*md, strict);
+        bp->basic_plan(strict, 100);
+        bp->fetchPostings(ExecuteInfo::FULL);
+        SearchIterator::UP search = bp->createSearch(*md);
         search->initFullRange();
 
         EXPECT_TRUE(!search->seek(2));
@@ -233,13 +236,14 @@ TEST_F(FakeSearchableTest, require_that_multi_field_search_works) {
     FieldSpecList fields;
     fields.add(FieldSpec("fieldfoo", 1, 1));
     fields.add(FieldSpec("fieldbar", 2, 2));
-    Blueprint::UP bp = source.createBlueprint(req_ctx, fields, termNode);
+    auto bp = source.createBlueprint(req_ctx, fields, termNode);
     for (int i = 0; i <= 1; ++i) {
         bool strict = (i == 0);
         SCOPED_TRACE(strict ? "strict" : "non-strict");
         MatchData::UP md = MatchData::makeTestInstance(100, 10);
-        bp->fetchPostings(ExecuteInfo::createForTest(strict));
-        SearchIterator::UP search = bp->createSearch(*md, strict);
+        bp->basic_plan(strict, 100);
+        bp->fetchPostings(ExecuteInfo::FULL);
+        SearchIterator::UP search = bp->createSearch(*md);
         search->initFullRange();
 
         EXPECT_TRUE(!search->seek(3));
@@ -317,13 +321,14 @@ TEST_F(FakeSearchableTest, require_that_phrase_with_empty_child_works) {
 
     FieldSpecList fields;
     fields.add(FieldSpec("fieldfoo", 1, 1));
-    Blueprint::UP bp = source.createBlueprint(req_ctx, fields, phraseNode);
+    auto bp = source.createBlueprint(req_ctx, fields, phraseNode);
     for (int i = 0; i <= 1; ++i) {
         bool strict = (i == 0);
         SCOPED_TRACE(strict ? "strict" : "non-strict");
         MatchData::UP md = MatchData::makeTestInstance(100, 10);
-        bp->fetchPostings(ExecuteInfo::createForTest(strict));
-        SearchIterator::UP search = bp->createSearch(*md, strict);
+        bp->basic_plan(strict, 100);
+        bp->fetchPostings(ExecuteInfo::FULL);
+        SearchIterator::UP search = bp->createSearch(*md);
         search->initFullRange();
 
         EXPECT_TRUE(!search->seek(3));
@@ -340,10 +345,11 @@ TEST_F(FakeSearchableTest, require_that_match_data_is_compressed_for_attributes)
     SimpleStringTerm termNode("word1", "viewfoo", 1, w);
     FieldSpecList fields;
     fields.add(FieldSpec("attrfoo", 1, 1));
-    Blueprint::UP bp = source.createBlueprint(req_ctx, fields, termNode);
+    auto bp = source.createBlueprint(req_ctx, fields, termNode);
     MatchData::UP md = MatchData::makeTestInstance(100, 10);
-    bp->fetchPostings(ExecuteInfo::FALSE);
-    SearchIterator::UP search = bp->createSearch(*md, false);
+    bp->basic_plan(false, 100);
+    bp->fetchPostings(ExecuteInfo::FULL);
+    SearchIterator::UP search = bp->createSearch(*md);
     search->initFullRange();
     EXPECT_TRUE(search->seek(5));
     search->unpack(5u);
@@ -367,10 +373,11 @@ TEST_F(FakeSearchableTest, require_that_relevant_data_can_be_obtained_from_fake_
     SimpleStringTerm termNode("word1", "viewfoo", 1, w);
     FieldSpecList fields;
     fields.add(FieldSpec("attrfoo", 1, 1));
-    Blueprint::UP bp = source.createBlueprint(req_ctx, fields, termNode);
+    auto bp = source.createBlueprint(req_ctx, fields, termNode);
     MatchData::UP md = MatchData::makeTestInstance(100, 10);
-    bp->fetchPostings(ExecuteInfo::FALSE);
-    SearchIterator::UP search = bp->createSearch(*md, false);
+    bp->basic_plan(false, 100);
+    bp->fetchPostings(ExecuteInfo::FULL);
+    SearchIterator::UP search = bp->createSearch(*md);
     EXPECT_TRUE(bp->get_attribute_search_context() != nullptr);
     const auto *attr_ctx = bp->get_attribute_search_context();
     ASSERT_TRUE(attr_ctx);

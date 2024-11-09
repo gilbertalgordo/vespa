@@ -1,6 +1,5 @@
 // Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
-#include <vespa/vespalib/testkit/test_kit.h>
 #include <vespa/vespalib/net/connection_auth_context.h>
 #include <vespa/vespalib/net/http/state_server.h>
 #include <vespa/vespalib/net/http/simple_health_producer.h>
@@ -13,60 +12,71 @@
 #include <vespa/vespalib/util/host_name.h>
 #include <vespa/vespalib/process/process.h>
 #include <sys/stat.h>
+#include <vespa/vespalib/testkit/test_kit.h>
+#include <vespa/vespalib/testkit/test_master.hpp>
 
 using namespace vespalib;
 
 //-----------------------------------------------------------------------------
 
-vespalib::string root_path = "/state/v1/";
-vespalib::string short_root_path = "/state/v1";
-vespalib::string metrics_path = "/state/v1/metrics";
-vespalib::string health_path = "/state/v1/health";
-vespalib::string config_path = "/state/v1/config";
+std::string root_path = "/state/v1/";
+std::string short_root_path = "/state/v1";
+std::string metrics_path = "/state/v1/metrics";
+std::string health_path = "/state/v1/health";
+std::string config_path = "/state/v1/config";
 
-vespalib::string total_metrics_path = "/metrics/total";
+std::string total_metrics_path = "/metrics/total";
 
-vespalib::string unknown_path = "/this/path/is/not/known";
-vespalib::string unknown_state_path = "/state/v1/this/path/is/not/known";
-vespalib::string my_path = "/my/path";
+std::string unknown_path = "/this/path/is/not/known";
+std::string unknown_state_path = "/state/v1/this/path/is/not/known";
+std::string my_path = "/my/path";
 
-vespalib::string host_tag = "HOST";
-std::map<vespalib::string,vespalib::string> empty_params;
+std::string host_tag = "HOST";
+std::map<std::string,std::string> empty_params;
 
 //-----------------------------------------------------------------------------
 
-vespalib::string run_cmd(const vespalib::string &cmd) {
-    vespalib::string out;
+std::string run_cmd(const std::string &cmd) {
+    std::string out;
     ASSERT_TRUE(Process::run(cmd.c_str(), out));
     return out;
 }
 
-vespalib::string getPage(int port, const vespalib::string &path, const vespalib::string &extra_params = "") {
+std::string getPage(int port, const std::string &path, const std::string &extra_params = "") {
     return run_cmd(make_string("curl -s %s 'http://localhost:%d%s'", extra_params.c_str(), port, path.c_str()));
 }
 
-vespalib::string getFull(int port, const vespalib::string &path) { return getPage(port, path, "-D -"); }
+std::string getFull(int port, const std::string &path) { return getPage(port, path, "-D -"); }
 
-vespalib::string get_json(const JsonGetHandler &handler,
-                          const vespalib::string &host,
-                          const vespalib::string &path,
-                          const std::map<vespalib::string,vespalib::string> &params)
+std::pair<std::string, std::string>
+get_body_and_content_type(const JsonGetHandler &handler,
+                          const std::string &host,
+                          const std::string &path,
+                          const std::map<std::string,std::string> &params)
 {
     net::ConnectionAuthContext dummy_ctx(net::tls::PeerCredentials(), net::tls::CapabilitySet::all());
     auto res = handler.get(host, path, params, dummy_ctx);
     if (res.ok()) {
-        return res.payload();
+        return {std::string(res.payload()), std::string(res.content_type())};
     }
     return {};
+}
+
+std::string get_json(const JsonGetHandler &handler,
+                          const std::string &host,
+                          const std::string &path,
+                          const std::map<std::string,std::string> &params)
+{
+    return get_body_and_content_type(handler, host, path, params).first;
 }
 
 //-----------------------------------------------------------------------------
 
 struct DummyHandler : JsonGetHandler {
-    vespalib::string result;
-    DummyHandler(const vespalib::string &result_in) : result(result_in) {}
-    Response get(const vespalib::string &, const vespalib::string &,
-                 const std::map<vespalib::string,vespalib::string> &,
+    std::string result;
+    DummyHandler(const std::string &result_in) : result(result_in) {}
+    Response get(const std::string &, const std::string &,
+                 const std::map<std::string,std::string> &,
                  const net::ConnectionAuthContext &) const override
     {
         if (!result.empty()) {
@@ -98,7 +108,7 @@ TEST_FF("require that handler can return a 404 response", DummyHandler(""), Http
 
 TEST_FF("require that non-empty known url returns expected headers", DummyHandler("[123]"), HttpServer(0)) {
     auto token = f2.repo().bind(my_path, f1);
-    vespalib::string expect("HTTP/1.1 200 OK\r\n"
+    std::string expect("HTTP/1.1 200 OK\r\n"
                             "Connection: close\r\n"
                             "Content-Type: application/json\r\n"
                             "Content-Length: 5\r\n"
@@ -133,8 +143,8 @@ TEST_FFFF("require that handler is selected based on longest matching url prefix
 
 struct EchoHost : JsonGetHandler {
     ~EchoHost() override;
-    Response get(const vespalib::string &host, const vespalib::string &,
-                 const std::map<vespalib::string,vespalib::string> &,
+    Response get(const std::string &host, const std::string &,
+                 const std::map<std::string,std::string> &,
                  const net::ConnectionAuthContext &) const override
     {
         return Response::make_ok_with_json("[\"" + host + "\"]");
@@ -146,9 +156,9 @@ EchoHost::~EchoHost() = default;
 TEST_FF("require that host is passed correctly", EchoHost(), HttpServer(0)) {
     auto token = f2.repo().bind(my_path, f1);
     EXPECT_EQUAL(make_string("%s:%d", HostName::get().c_str(), f2.port()), f2.host());
-    vespalib::string default_result = make_string("[\"%s\"]", f2.host().c_str());
-    vespalib::string localhost_result = make_string("[\"%s:%d\"]", "localhost", f2.port());
-    vespalib::string silly_result = "[\"sillyserver\"]";
+    std::string default_result = make_string("[\"%s\"]", f2.host().c_str());
+    std::string localhost_result = make_string("[\"%s:%d\"]", "localhost", f2.port());
+    std::string silly_result = "[\"sillyserver\"]";
     EXPECT_EQUAL(localhost_result, run_cmd(make_string("curl -s http://localhost:%d/my/path", f2.port())));
     EXPECT_EQUAL(silly_result, run_cmd(make_string("curl -s http://localhost:%d/my/path -H \"Host: sillyserver\"", f2.port())));
     EXPECT_EQUAL(default_result, run_cmd(make_string("curl -s http://localhost:%d/my/path -H \"Host:\"", f2.port())));
@@ -156,12 +166,12 @@ TEST_FF("require that host is passed correctly", EchoHost(), HttpServer(0)) {
 
 struct SamplingHandler : JsonGetHandler {
     mutable std::mutex my_lock;
-    mutable vespalib::string my_host;
-    mutable vespalib::string my_path;
-    mutable std::map<vespalib::string,vespalib::string> my_params;
+    mutable std::string my_host;
+    mutable std::string my_path;
+    mutable std::map<std::string,std::string> my_params;
     ~SamplingHandler() override;
-    Response get(const vespalib::string &host, const vespalib::string &path,
-                 const std::map<vespalib::string,vespalib::string> &params,
+    Response get(const std::string &host, const std::string &path,
+                 const std::map<std::string,std::string> &params,
                  const net::ConnectionAuthContext &) const override
     {
         {
@@ -208,7 +218,7 @@ TEST_FFFF("require that the state server wires the appropriate url prefixes",
           SimpleHealthProducer(), SimpleMetricsProducer(), SimpleComponentConfigProducer(),
           StateServer(0, f1, f2, f3))
 {
-    f2.setTotalMetrics("{}"); // avoid empty result
+    f2.setTotalMetrics("{}", MetricsProducer::ExpositionFormat::JSON); // avoid empty result
     int port = f4.getListenPort();
     EXPECT_TRUE(getFull(port, short_root_path).find("HTTP/1.1 200 OK") == 0);
     EXPECT_TRUE(getFull(port, total_metrics_path).find("HTTP/1.1 200 OK") == 0);
@@ -220,12 +230,12 @@ TEST_FFFF("require that the state server exposes the state api handler repo",
           StateServer(0, f1, f2, f3))
 {
     int port = f4.getListenPort();
-    vespalib::string page1 = getPage(port, root_path);
+    std::string page1 = getPage(port, root_path);
     auto token = f4.repo().add_root_resource("state/v1/custom");
-    vespalib::string page2 = getPage(port, root_path);
+    std::string page2 = getPage(port, root_path);
     EXPECT_NOT_EQUAL(page1, page2);
     token.reset();
-    vespalib::string page3 = getPage(port, root_path);
+    std::string page3 = getPage(port, root_path);
     EXPECT_EQUAL(page3, page1);
 }
 
@@ -238,7 +248,7 @@ TEST_FFFF("require that json handlers can be removed from repo",
     auto token1 = f4.bind("/foo", f1);
     auto token2 = f4.bind("/foo/bar", f2);
     auto token3 = f4.bind("/foo/bar/baz", f3);
-    std::map<vespalib::string,vespalib::string> params;
+    std::map<std::string,std::string> params;
     EXPECT_EQUAL("[1]", get_json(f4, "", "/foo", params));
     EXPECT_EQUAL("[2]", get_json(f4, "", "/foo/bar", params));
     EXPECT_EQUAL("[3]", get_json(f4, "", "/foo/bar/baz", params));
@@ -254,7 +264,7 @@ TEST_FFFF("require that json handlers can be shadowed",
 {
     auto token1 = f4.bind("/foo", f1);
     auto token2 = f4.bind("/foo/bar", f2);
-    std::map<vespalib::string,vespalib::string> params;
+    std::map<std::string,std::string> params;
     EXPECT_EQUAL("[1]", get_json(f4, "", "/foo", params));
     EXPECT_EQUAL("[2]", get_json(f4, "", "/foo/bar", params));
     auto token3 = f4.bind("/foo/bar", f3);
@@ -265,15 +275,15 @@ TEST_FFFF("require that json handlers can be shadowed",
 
 TEST_F("require that root resources can be tracked", JsonHandlerRepo())
 {
-    EXPECT_TRUE(std::vector<vespalib::string>({}) == f1.get_root_resources());
+    EXPECT_TRUE(std::vector<std::string>({}) == f1.get_root_resources());
     auto token1 = f1.add_root_resource("/health");
-    EXPECT_TRUE(std::vector<vespalib::string>({"/health"}) == f1.get_root_resources());
+    EXPECT_TRUE(std::vector<std::string>({"/health"}) == f1.get_root_resources());
     auto token2 = f1.add_root_resource("/config");
-    EXPECT_TRUE(std::vector<vespalib::string>({"/health", "/config"}) == f1.get_root_resources());
+    EXPECT_TRUE(std::vector<std::string>({"/health", "/config"}) == f1.get_root_resources());
     auto token3 = f1.add_root_resource("/custom/foo");
-    EXPECT_TRUE(std::vector<vespalib::string>({"/health", "/config", "/custom/foo"}) == f1.get_root_resources());    
+    EXPECT_TRUE(std::vector<std::string>({"/health", "/config", "/custom/foo"}) == f1.get_root_resources());    
     token2.reset();
-    EXPECT_TRUE(std::vector<vespalib::string>({"/health", "/custom/foo"}) == f1.get_root_resources());
+    EXPECT_TRUE(std::vector<std::string>({"/health", "/custom/foo"}) == f1.get_root_resources());
 }
 
 //-----------------------------------------------------------------------------
@@ -282,7 +292,7 @@ TEST_FFFF("require that state api responds to the expected paths",
           SimpleHealthProducer(), SimpleMetricsProducer(), SimpleComponentConfigProducer(),
           StateApi(f1, f2, f3))
 {
-    f2.setTotalMetrics("{}"); // avoid empty result
+    f2.setTotalMetrics("{}", MetricsProducer::ExpositionFormat::JSON); // avoid empty result
     EXPECT_TRUE(!get_json(f4, host_tag, short_root_path, empty_params).empty());
     EXPECT_TRUE(!get_json(f4, host_tag, root_path, empty_params).empty());
     EXPECT_TRUE(!get_json(f4, host_tag, health_path, empty_params).empty());
@@ -340,9 +350,20 @@ TEST_FFFF("require that metrics resource works as expected",
     EXPECT_EQUAL("{\"status\":{\"code\":\"down\",\"message\":\"FAIL MSG\"}}",
                  get_json(f4, host_tag, metrics_path, empty_params));
     f1.setOk();
-    f2.setMetrics("{\"foo\":\"bar\"}");
-    EXPECT_EQUAL("{\"status\":{\"code\":\"up\"},\"metrics\":{\"foo\":\"bar\"}}",
-                 get_json(f4, host_tag, metrics_path, empty_params));
+    f2.setMetrics(R"({"foo":"bar"})", MetricsProducer::ExpositionFormat::JSON);
+    f2.setMetrics(R"(cool_stuff{hello="world"} 1 23456)", MetricsProducer::ExpositionFormat::Prometheus);
+
+    auto result = get_body_and_content_type(f4, host_tag, metrics_path, empty_params);
+    EXPECT_EQUAL(R"({"status":{"code":"up"},"metrics":{"foo":"bar"}})", result.first);
+    EXPECT_EQUAL("application/json", result.second);
+
+    result = get_body_and_content_type(f4, host_tag, metrics_path, {{"format", "json"}}); // Explicit JSON
+    EXPECT_EQUAL(R"({"status":{"code":"up"},"metrics":{"foo":"bar"}})", result.first);
+    EXPECT_EQUAL("application/json", result.second);
+
+    result = get_body_and_content_type(f4, host_tag, metrics_path, {{"format", "prometheus"}}); // Explicit Prometheus
+    EXPECT_EQUAL(R"(cool_stuff{hello="world"} 1 23456)", result.first);
+    EXPECT_EQUAL("text/plain; version=0.0.4", result.second);
 }
 
 TEST_FFFF("require that config resource works as expected",
@@ -367,9 +388,12 @@ TEST_FFFF("require that state api also can return total metric",
           SimpleHealthProducer(), SimpleMetricsProducer(), SimpleComponentConfigProducer(),
           StateApi(f1, f2, f3))
 {
-    f2.setTotalMetrics("{\"foo\":\"bar\"}");
-    EXPECT_EQUAL("{\"foo\":\"bar\"}",
+    f2.setTotalMetrics(R"({"foo":"bar"})", MetricsProducer::ExpositionFormat::JSON);
+    f2.setTotalMetrics(R"(cool_stuff{hello="world"} 1 23456)", MetricsProducer::ExpositionFormat::Prometheus);
+    EXPECT_EQUAL(R"({"foo":"bar"})",
                  get_json(f4, host_tag, total_metrics_path, empty_params));
+    EXPECT_EQUAL(R"(cool_stuff{hello="world"} 1 23456)",
+                 get_json(f4, host_tag, total_metrics_path, {{"format", "prometheus"}}));
 }
 
 TEST_FFFFF("require that custom handlers can be added to the state server",
@@ -384,12 +408,25 @@ TEST_FFFFF("require that custom handlers can be added to the state server",
 }
 
 struct EchoConsumer : MetricsProducer {
-    ~EchoConsumer() override;
-    vespalib::string getMetrics(const vespalib::string &consumer) override {
-        return "[\"" + consumer + "\"]";
+    static constexpr const char* to_string(ExpositionFormat format) noexcept {
+        switch (format) {
+        case ExpositionFormat::JSON: return "JSON";
+        case ExpositionFormat::Prometheus: return "Prometheus";
+        }
+        abort();
     }
-    vespalib::string getTotalMetrics(const vespalib::string &consumer) override {
-        return "[\"" + consumer + "\"]";
+
+    static std::string stringify_params(const std::string &consumer, ExpositionFormat format) {
+        // Not semantically meaningful output if format == Prometheus, but doesn't really matter here.
+        return vespalib::make_string(R"(["%s", "%s"])", to_string(format), consumer.c_str());
+    }
+
+    ~EchoConsumer() override;
+    std::string getMetrics(const std::string &consumer, ExpositionFormat format) override {
+        return stringify_params(consumer, format);
+    }
+    std::string getTotalMetrics(const std::string &consumer, ExpositionFormat format) override {
+        return stringify_params(consumer, format);
     }
 };
 
@@ -399,30 +436,32 @@ TEST_FFFF("require that empty v1 metrics consumer defaults to 'statereporter'",
           SimpleHealthProducer(), EchoConsumer(), SimpleComponentConfigProducer(),
           StateApi(f1, f2, f3))
 {
-    std::map<vespalib::string,vespalib::string> my_params;
-    EXPECT_EQUAL("{\"status\":{\"code\":\"up\"},\"metrics\":[\"statereporter\"]}",
+    EXPECT_EQUAL(R"({"status":{"code":"up"},"metrics":["JSON", "statereporter"]})",
                  get_json(f4, host_tag, metrics_path, empty_params));
+    EXPECT_EQUAL(R"(["Prometheus", "statereporter"])",
+                 get_json(f4, host_tag, metrics_path, {{"format", "prometheus"}}));
 }
 
 TEST_FFFF("require that empty total metrics consumer defaults to the empty string",
           SimpleHealthProducer(), EchoConsumer(), SimpleComponentConfigProducer(),
           StateApi(f1, f2, f3))
 {
-    std::map<vespalib::string,vespalib::string> my_params;
-    EXPECT_EQUAL("[\"\"]", get_json(f4, host_tag, total_metrics_path, empty_params));
+    EXPECT_EQUAL(R"(["JSON", ""])", get_json(f4, host_tag, total_metrics_path, empty_params));
 }
 
 TEST_FFFF("require that metrics consumer is passed correctly",
           SimpleHealthProducer(), EchoConsumer(), SimpleComponentConfigProducer(),
           StateApi(f1, f2, f3))
 {
-    std::map<vespalib::string,vespalib::string> my_params;
+    std::map<std::string,std::string> my_params;
     my_params["consumer"] = "ME";
-    EXPECT_EQUAL("{\"status\":{\"code\":\"up\"},\"metrics\":[\"ME\"]}", get_json(f4, host_tag, metrics_path, my_params));
-    EXPECT_EQUAL("[\"ME\"]", get_json(f4, host_tag, total_metrics_path, my_params));
+    EXPECT_EQUAL(R"({"status":{"code":"up"},"metrics":["JSON", "ME"]})", get_json(f4, host_tag, metrics_path, my_params));
+    EXPECT_EQUAL(R"(["JSON", "ME"])", get_json(f4, host_tag, total_metrics_path, my_params));
+    my_params["format"] = "prometheus";
+    EXPECT_EQUAL(R"(["Prometheus", "ME"])", get_json(f4, host_tag, total_metrics_path, my_params));
 }
 
-void check_json(const vespalib::string &expect_json, const vespalib::string &actual_json) {
+void check_json(const std::string &expect_json, const std::string &actual_json) {
     Slime expect_slime;
     Slime actual_slime;
     EXPECT_TRUE(slime::JsonFormat::decode(expect_json, expect_slime) > 0);
@@ -431,7 +470,7 @@ void check_json(const vespalib::string &expect_json, const vespalib::string &act
 }
 
 TEST("require that generic state can be explored") {
-    vespalib::string json_model =
+    std::string json_model =
         "{"
         "  foo: 'bar',"
         "  cnt: 123,"
@@ -453,7 +492,7 @@ TEST("require that generic state can be explored") {
         "    }"
         "  }"
         "}";
-    vespalib::string json_root =
+    std::string json_root =
         "{"
         "  full: true,"
         "  foo: 'bar',"
@@ -475,7 +514,7 @@ TEST("require that generic state can be explored") {
         "    }"
         "  }"
         "}";
-    vespalib::string json_engine =
+    std::string json_engine =
         "{"
         "  full: true,"
         "  up: 'yes',"
@@ -485,13 +524,13 @@ TEST("require that generic state can be explored") {
         "    url: 'http://HOST/state/v1/engine/stats'"
         "  }"
         "}";
-    vespalib::string json_engine_stats =
+    std::string json_engine_stats =
         "{"
         "  full: true,"
         "  latency: 5,"
         "  qps: 100"
         "}";
-    vespalib::string json_list =
+    std::string json_list =
         "{"
         "  one: {"
         "    size: {"
@@ -504,15 +543,15 @@ TEST("require that generic state can be explored") {
         "    url: 'http://HOST/state/v1/list/two'"
         "  }"
         "}";
-    vespalib::string json_list_one =
+    std::string json_list_one =
         "{"
         "  size: {"
         "    value: 1,"
         "    url: 'http://HOST/state/v1/list/one/size'"
         "  }"
         "}";
-    vespalib::string json_list_one_size = "{ full: true, value: 1 }";
-    vespalib::string json_list_two = "{ full: true, size: 2 }";
+    std::string json_list_one_size = "{ full: true, value: 1 }";
+    std::string json_list_two = "{ full: true, size: 2 }";
     //-------------------------------------------------------------------------
     Slime slime_state;
     EXPECT_TRUE(slime::JsonFormat::decode(json_model, slime_state) > 0);

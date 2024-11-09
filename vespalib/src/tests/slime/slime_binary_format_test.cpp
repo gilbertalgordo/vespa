@@ -1,9 +1,10 @@
 // Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
-#include <vespa/vespalib/testkit/test_kit.h>
+#include "type_traits.h"
 #include <vespa/vespalib/data/slime/slime.h>
 #include <vespa/vespalib/data/simple_buffer.h>
-#include "type_traits.h"
 #include <vespa/vespalib/util/stringfmt.h>
+#include <vespa/vespalib/testkit/test_kit.h>
+#include <vespa/vespalib/testkit/test_master.hpp>
 
 using namespace vespalib::slime::convenience;
 using namespace vespalib::slime::binary_format;
@@ -631,7 +632,7 @@ TEST("testOptionalDecodeOrder") {
     EXPECT_TRUE(!c[5].valid()); // not ARRAY
 }
 
-Slime from_json(const vespalib::string &json) {
+Slime from_json(const std::string &json) {
     Slime slime;
     EXPECT_TRUE(vespalib::slime::JsonFormat::decode(json, slime) > 0);
     return slime;

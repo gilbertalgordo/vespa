@@ -19,14 +19,14 @@ public:
     FieldSetRepo(const DocumentTypeRepo& repo);
     ~FieldSetRepo();
 
-    FieldSet::SP getFieldSet(vespalib::stringref fieldSetString) const;
+    FieldSet::SP getFieldSet(std::string_view fieldSetString) const;
 
-    static FieldSet::SP parse(const DocumentTypeRepo& repo, vespalib::stringref fieldSetString);
-    static vespalib::string serialize(const FieldSet& fs);
+    static FieldSet::SP parse(const DocumentTypeRepo& repo, std::string_view fieldSetString);
+    static std::string serialize(const FieldSet& fs);
 private:
     void configureDocumentType(const DocumentType & documentType);
     const DocumentTypeRepo & _doumentTyperepo;
-    vespalib::hash_map<vespalib::string, FieldSet::SP> _configuredFieldSets;
+    vespalib::hash_map<std::string, FieldSet::SP> _configuredFieldSets;
 };
 
 }

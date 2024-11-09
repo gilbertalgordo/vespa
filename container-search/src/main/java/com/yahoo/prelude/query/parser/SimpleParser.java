@@ -97,7 +97,7 @@ abstract class SimpleParser extends StructuredParser {
             }
 
             if (item == null) {
-                item = indexableItem().getFirst();
+                item = indexableItem("").getFirst();
                 if (item != null) {
                     if (topLevelItem == null) {
                         topLevelItem = item;
@@ -134,10 +134,8 @@ abstract class SimpleParser extends StructuredParser {
             if (topLevelItem != null && topLevelItem != not) {
                 // => neutral rank items becomes implicit positives
                 not.addPositiveItem(getItemAsPositiveItem(topLevelItem, not));
-                return not;
-            } else {
-                return not;
             }
+            return not;
         }
         if (topLevelItem != null) {
             return topLevelItem;
@@ -181,7 +179,7 @@ abstract class SimpleParser extends StructuredParser {
                 return null;
             }
 
-            item = indexableItem().getFirst();
+            item = indexableItem("").getFirst();
 
             if (item == null) {
                 item = compositeItem();

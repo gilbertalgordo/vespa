@@ -9,6 +9,7 @@
 #include "rank_program.h"
 #include <vespa/searchlib/common/stringmap.h>
 #include <vespa/vespalib/fuzzy/fuzzy_matching_algorithm.h>
+#include <optional>
 
 namespace search::fef {
 
@@ -28,13 +29,14 @@ public:
     struct MutateOperation {
     public:
         MutateOperation() : MutateOperation("", "") {}
-        MutateOperation(vespalib::stringref attribute, vespalib::stringref operation)
+        MutateOperation(std::string_view attribute, std::string_view operation)
             : _attribute(attribute),
               _operation(operation)
         {}
+        ~MutateOperation();
         bool enabled() const noexcept { return !_attribute.empty() && !_operation.empty(); }
-        vespalib::string _attribute;
-        vespalib::string _operation;
+        std::string _attribute;
+        std::string _operation;
     };
 private:
     const BlueprintFactory  &_factory;
@@ -44,9 +46,9 @@ private:
     BlueprintResolver::SP    _match_resolver;
     BlueprintResolver::SP    _summary_resolver;
     BlueprintResolver::SP    _dumpResolver;
-    vespalib::string         _firstPhaseRankFeature;
-    vespalib::string         _secondPhaseRankFeature;
-    vespalib::string         _degradationAttribute;
+    std::string         _firstPhaseRankFeature;
+    std::string         _secondPhaseRankFeature;
+    std::string         _degradationAttribute;
     double                   _termwise_limit;
     uint32_t                 _numThreads;
     uint32_t                 _minHitsPerThread;
@@ -59,10 +61,11 @@ private:
     double                   _degradationMaxFilterCoverage;
     double                   _degradationSamplePercentage;
     double                   _degradationPostFilterMultiplier;
-    feature_t                _rankScoreDropLimit;
-    std::vector<vespalib::string> _match_features;
-    std::vector<vespalib::string> _summaryFeatures;
-    std::vector<vespalib::string> _dumpFeatures;
+    std::optional<feature_t> _first_phase_rank_score_drop_limit;
+    std::optional<feature_t> _second_phase_rank_score_drop_limit;
+    std::vector<std::string> _match_features;
+    std::vector<std::string> _summaryFeatures;
+    std::vector<std::string> _dumpFeatures;
     Warnings                 _warnings;
     StringStringMap          _feature_rename_map;
     bool                     _sort_blueprints_by_cost;
@@ -71,15 +74,18 @@ private:
     bool                     _compileError;
     bool                     _degradationAscendingOrder;
     bool                     _always_mark_phrase_expensive;
-    vespalib::string         _diversityAttribute;
+    std::string         _diversityAttribute;
     uint32_t                 _diversityMinGroups;
     double                   _diversityCutoffFactor;
-    vespalib::string         _diversityCutoffStrategy;
+    std::string         _diversityCutoffStrategy;
     bool                     _softTimeoutEnabled;
     double                   _softTimeoutTailCost;
     double                   _global_filter_lower_limit;
     double                   _global_filter_upper_limit;
     double                   _target_hits_max_adjustment_factor;
+    double                   _weakand_range;
+    double                   _weakand_stop_word_adjust_limit;
+    double                   _weakand_stop_word_drop_limit;
     vespalib::FuzzyMatchingAlgorithm _fuzzy_matching_algorithm;
     MutateOperation          _mutateOnMatch;
     MutateOperation          _mutateOnFirstPhase;
@@ -120,14 +126,14 @@ public:
      *
      * @param featureName full feature name for first phase rank
      **/
-    void setFirstPhaseRank(const vespalib::string &featureName);
+    void setFirstPhaseRank(const std::string &featureName);
 
     /**
      * Returns the first phase ranking.
      *
      * @return feature name for first phase rank
      **/
-    const vespalib::string &getFirstPhaseRank() const { return _firstPhaseRankFeature; }
+    const std::string &getFirstPhaseRank() const { return _firstPhaseRankFeature; }
 
     /**
      * This method is invoked during setup (before invoking the @ref
@@ -135,14 +141,14 @@ public:
      *
      * @param featureName full feature name for second phase rank
      **/
-    void setSecondPhaseRank(const vespalib::string &featureName);
+    void setSecondPhaseRank(const std::string &featureName);
 
     /**
      * Returns the second phase ranking.
      *
      * @return feature name for second phase rank
      **/
-    const vespalib::string &getSecondPhaseRank() const { return _secondPhaseRankFeature; }
+    const std::string &getSecondPhaseRank() const { return _secondPhaseRankFeature; }
 
     /**
      * Set the termwise limit
@@ -215,7 +221,7 @@ public:
     uint32_t getArraySize() const { return _arraySize; }
 
     /** get name of attribute to use for graceful degradation in match phase */
-    vespalib::string getDegradationAttribute() const {
+    std::string getDegradationAttribute() const {
         return _degradationAttribute;
     }
     /** check whether attribute should be used in ascending order during graceful degradation in match phase */
@@ -240,7 +246,7 @@ public:
     }
 
     /** get the attribute used to ensure diversity during match phase limiting **/
-    vespalib::string getDiversityAttribute() const {
+    std::string getDiversityAttribute() const {
         return _diversityAttribute;
     }
 
@@ -253,12 +259,12 @@ public:
         return _diversityCutoffFactor;
     }
 
-    const vespalib::string & getDiversityCutoffStrategy() const {
+    const std::string & getDiversityCutoffStrategy() const {
         return _diversityCutoffStrategy;
     }
 
     /** set name of attribute to use for graceful degradation in match phase */
-    void setDegradationAttribute(const vespalib::string &name) {
+    void setDegradationAttribute(const std::string &name) {
         _degradationAttribute = name;
     }
     /** set whether attribute should be used in ascending order during graceful degradation in match phase */
@@ -285,7 +291,7 @@ public:
     }
 
     /** set the attribute used to ensure diversity during match phase limiting **/
-    void setDiversityAttribute(const vespalib::string &value) {
+    void setDiversityAttribute(const std::string &value) {
         _diversityAttribute = value;
     }
 
@@ -298,7 +304,7 @@ public:
         _diversityCutoffFactor = value;
     }
 
-    void setDiversityCutoffStrategy(const vespalib::string & value) {
+    void setDiversityCutoffStrategy(const std::string & value) {
         _diversityCutoffStrategy  = value;
     }
 
@@ -331,18 +337,22 @@ public:
     uint32_t getEstimateLimit() const { return _estimateLimit; }
 
     /**
-     * Sets the rank score drop limit to be used in parallel query evaluation.
+     * Sets the first phase rank score drop limit to be used in parallel query evaluation.
      *
-     * @param rankScoreDropLimit the rank score drop limit
+     * @param value the first phase rank score drop limit
      **/
-    void setRankScoreDropLimit(feature_t rankScoreDropLimit) { _rankScoreDropLimit = rankScoreDropLimit; }
+    void set_first_phase_rank_score_drop_limit(std::optional<feature_t> value) { _first_phase_rank_score_drop_limit = value; }
 
     /**
      * Returns the rank score drop limit to be used in parallel query evaluation.
      *
      * @return the rank score drop limit
      **/
-    feature_t getRankScoreDropLimit() const { return _rankScoreDropLimit; }
+    std::optional<feature_t> get_first_phase_rank_score_drop_limit() const noexcept { return _first_phase_rank_score_drop_limit; }
+
+    void set_second_phase_rank_score_drop_limit(std::optional<feature_t> value) { _second_phase_rank_score_drop_limit = value; }
+
+    std::optional<feature_t> get_second_phase_rank_score_drop_limit() const noexcept { return _second_phase_rank_score_drop_limit; }
 
     /**
      * This method may be used to indicate that certain features
@@ -350,7 +360,7 @@ public:
      *
      * @param match_feature full feature name of a match feature
      **/
-    void add_match_feature(const vespalib::string &match_feature);
+    void add_match_feature(const std::string &match_feature);
 
     /**
      * This method may be used to indicate that certain features
@@ -358,7 +368,7 @@ public:
      *
      * @param summaryFeature full feature name of a summary feature
      **/
-    void addSummaryFeature(const vespalib::string &summaryFeature);
+    void addSummaryFeature(const std::string &summaryFeature);
 
     /**
      * @return whether there are any match features
@@ -370,7 +380,7 @@ public:
      *
      * @return vector of match feature names.
      **/
-    const std::vector<vespalib::string> &get_match_features() const { return _match_features; }
+    const std::vector<std::string> &get_match_features() const { return _match_features; }
 
     const StringStringMap &get_feature_rename_map() const { return _feature_rename_map; }
 
@@ -379,7 +389,7 @@ public:
      *
      * @return vector of summary feature names.
      **/
-    const std::vector<vespalib::string> &getSummaryFeatures() const { return _summaryFeatures; }
+    const std::vector<std::string> &getSummaryFeatures() const { return _summaryFeatures; }
 
     /**
      * Set the flag indicating whether we should ignore the default
@@ -402,6 +412,12 @@ public:
     double get_target_hits_max_adjustment_factor() const { return _target_hits_max_adjustment_factor; }
     void set_fuzzy_matching_algorithm(vespalib::FuzzyMatchingAlgorithm v) { _fuzzy_matching_algorithm = v; }
     vespalib::FuzzyMatchingAlgorithm get_fuzzy_matching_algorithm() const { return _fuzzy_matching_algorithm; }
+    void set_weakand_range(double v) { _weakand_range = v; }
+    double get_weakand_range() const { return _weakand_range; }
+    void set_weakand_stop_word_adjust_limit(double v) { _weakand_stop_word_adjust_limit = v; }
+    double get_weakand_stop_word_adjust_limit() const { return _weakand_stop_word_adjust_limit; }
+    void set_weakand_stop_word_drop_limit(double v) { _weakand_stop_word_drop_limit = v; }
+    double get_weakand_stop_word_drop_limit() const { return _weakand_stop_word_drop_limit; }
 
     /**
      * This method may be used to indicate that certain features
@@ -409,14 +425,14 @@ public:
      *
      * @param dumpFeature full feature name of a dump feature
      **/
-    void addDumpFeature(const vespalib::string &dumpFeature);
+    void addDumpFeature(const std::string &dumpFeature);
 
     /**
      * Returns a const view of the dump features added.
      *
      * @return vector of dump feature names.
      **/
-    const std::vector<vespalib::string> &getDumpFeatures() const { return _dumpFeatures; }
+    const std::vector<std::string> &getDumpFeatures() const { return _dumpFeatures; }
 
     /**
      * Create blueprints, resolve dependencies and form a strategy for
@@ -434,7 +450,7 @@ public:
      * Will return any accumulated warnings during compile
      * @return joined string of warnings separated by newline
      */
-    vespalib::string getJoinedWarnings() const;
+    std::string getJoinedWarnings() const;
 
     // These functions create rank programs for different tasks. Note
     // that the setup function must be called on rank programs for

@@ -1,6 +1,5 @@
 // Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
-#include <vespa/vespalib/testkit/testapp.h>
 #include <vespa/vespalib/stllike/asciistream.h>
 #include <vespa/searchlib/common/growablebitvector.h>
 #include <vespa/searchlib/common/partialbitvector.h>
@@ -13,6 +12,8 @@
 #include <vespa/vespalib/util/exceptions.h>
 #include <vespa/vespalib/util/simple_thread_bundle.h>
 #include <algorithm>
+#include <vespa/vespalib/testkit/test_kit.h>
+#include <vespa/vespalib/testkit/test_master.hpp>
 
 using namespace search;
 
@@ -154,7 +155,7 @@ fill(BitVector & bv, const std::vector<uint32_t> & bits, uint32_t offset, bool f
     }
 }
 
-vespalib::string
+std::string
 fill(const std::vector<uint32_t> & bits, uint32_t offset)
 {
     vespalib::asciistream os;

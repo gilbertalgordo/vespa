@@ -25,11 +25,15 @@
 #include <vespa/vespalib/util/compress.h>
 #include <vespa/vespalib/util/simple_thread_bundle.h>
 #include <vespa/vespalib/util/stringfmt.h>
+#include <filesystem>
 #include <initializer_list>
+#include <memory>
 #include <set>
 
 #include <vespa/log/log.h>
 LOG_SETUP("searchcontext_test");
+
+using namespace std::literals;
 
 namespace search {
 
@@ -62,6 +66,7 @@ using attribute::BasicType;
 using attribute::CollectionType;
 using attribute::Config;
 using attribute::HitEstimate;
+using attribute::PostingListSearchContext;
 using attribute::SearchContextParams;
 using attribute::test::AttributeBuilder;
 using fef::MatchData;
@@ -152,12 +157,15 @@ public:
     template <typename V, typename T>
     static SearchContextPtr getSearch(const V & vec, const T & term, TermType termType=TermType::WORD);
 protected:
-    using ConfigMap = std::map<vespalib::string, Config>;
+    using ConfigMap = std::map<std::string, Config>;
     // Map of all config objects
     ConfigMap _integerCfg;
     ConfigMap _floatCfg;
     ConfigMap _stringCfg;
+    static std::string _test_dir;
+    static bool _default_preserve_weight;
 
+    static AttributePtr create_as(const AttributeVector& attr, const std::string& name_suffix);
 
     template <typename T>
     void fillVector(std::vector<T> & values, size_t numValues);
@@ -169,7 +177,7 @@ protected:
     void fillPostingList(PostingList<V, T> & pl, const DocRange & range);
     template <typename V, typename T>
     void fillPostingList(PostingList<V, T> & pl);
-    static void buildTermQuery(std::vector<char> & buffer, const vespalib::string & index, const vespalib::string & term,
+    static void buildTermQuery(std::vector<char> & buffer, const std::string & index, const std::string & term,
                                TermType termType=TermType::WORD);
 
     ResultSetPtr performSearch(SearchIterator & sb, uint32_t numDocs);
@@ -178,14 +186,14 @@ protected:
     template <typename V, typename T>
     ResultSetPtr performSearch(const queryeval::ExecuteInfo & executeInfo, const V & vec, const T & term, TermType termType);
     template <typename V>
-    void performSearch(const V & vec, const vespalib::string & term, const DocSet & expected, TermType termType);
+    void performSearch(const V & vec, const std::string & term, const DocSet & expected, TermType termType);
     template <typename V>
-    void performSearch(const queryeval::ExecuteInfo & executeInfo, const V & vec, const vespalib::string & term,
+    void performSearch(const queryeval::ExecuteInfo & executeInfo, const V & vec, const std::string & term,
                        const DocSet & expected, TermType termType);
     void checkResultSet(const ResultSet & rs, const DocSet & exp, bool bitVector);
 
     template<typename T, typename A>
-    void testSearchIterator(const std::vector<T> & keys, const vespalib::string &keyAsString, const ConfigMap &cfgs);
+    void testSearchIterator(const std::vector<T> & keys, const std::string &keyAsString, const ConfigMap &cfgs);
     // test search functionality
     template <typename V, typename T>
     void testFind(const PostingList<V, T> & first, bool verify_hit_estimate);
@@ -234,14 +242,14 @@ protected:
     // test search iterator functionality
     void testStrictSearchIterator(SearchContext & threeHits, SearchContext & noHits, const IteratorTester & typeTester);
     void testNonStrictSearchIterator(SearchContext & threeHits, SearchContext & noHits, const IteratorTester & typeTester);
-    AttributePtr fillForSearchIteratorTest(const vespalib::string& name, const Config& cfg);
-    AttributePtr fillForSemiNibbleSearchIteratorTest(const vespalib::string& name, const Config& cfg);
+    AttributePtr fillForSearchIteratorTest(const std::string& name, const Config& cfg);
+    AttributePtr fillForSemiNibbleSearchIteratorTest(const std::string& name, const Config& cfg);
 
 
     // test search iterator unpacking
     void fillForSearchIteratorUnpackingTest(IntegerAttribute * ia, bool extra);
     void testSearchIteratorUnpacking(const AttributePtr & ptr, SearchContext & sc, bool extra, bool strict) {
-        sc.fetchPostings(queryeval::ExecuteInfo::createForTest(strict));
+        sc.fetchPostings(queryeval::ExecuteInfo::FULL, true);
         for (bool withElementId : {false, true}) {
             testSearchIteratorUnpacking(ptr, sc, extra, strict, withElementId);
         }
@@ -252,44 +260,47 @@ protected:
 
     // test range search
     template <typename VectorType>
-    void performRangeSearch(const VectorType & vec, const vespalib::string & term, const DocSet & expected);
+    void performRangeSearch(const VectorType & vec, const std::string & term, const DocSet & expected);
     template <typename VectorType, typename ValueType>
     void testRangeSearch(const AttributePtr & ptr, uint32_t numDocs, std::vector<ValueType> values);
 
 
     // test case insensitive search
-    void performCaseInsensitiveSearch(const StringAttribute & vec, const vespalib::string & term, const DocSet & expected);
+    void performCaseInsensitiveSearch(const StringAttribute & vec, const std::string & term, const DocSet & expected);
     void testCaseInsensitiveSearch(const AttributePtr & ptr);
-    void testRegexSearch(const vespalib::string& name, const Config& cfg);
+    void testRegexSearch(const std::string& name, const Config& cfg);
 
 
     // test prefix search
-    void testPrefixSearch(const vespalib::string& name, const Config& cfg);
+    void testPrefixSearch(const std::string& name, const Config& cfg);
+
+    // Test prefix search with weight information
+    void test_weighted_prefix_search(const std::string& name, const Config& cfg);
 
     // test fuzzy search
-    void testFuzzySearch(const vespalib::string& name, const Config& cfg);
+    void testFuzzySearch(const std::string& name, const Config& cfg);
 
     // test that search is working after clear doc
     template <typename VectorType, typename ValueType>
-    void requireThatSearchIsWorkingAfterClearDoc(const vespalib::string & name, const Config & cfg,
-                                                 ValueType startValue, const vespalib::string & term);
+    void requireThatSearchIsWorkingAfterClearDoc(const std::string & name, const Config & cfg,
+                                                 ValueType startValue, const std::string & term);
 
     // test that search is working after load and clear doc
     template <typename VectorType, typename ValueType>
-    void requireThatSearchIsWorkingAfterLoadAndClearDoc(const vespalib::string & name, const Config & cfg,
+    void requireThatSearchIsWorkingAfterLoadAndClearDoc(const std::string & name, const Config & cfg,
                                                         ValueType startValue, ValueType defaultValue,
-                                                        const vespalib::string & term);
+                                                        const std::string & term);
 
     template <typename VectorType, typename ValueType>
-    void requireThatSearchIsWorkingAfterUpdates(const vespalib::string & name, const Config & cfg,
+    void requireThatSearchIsWorkingAfterUpdates(const std::string & name, const Config & cfg,
                                                 ValueType value1, ValueType value2);
 
 
     template <typename VectorType, typename ValueType>
-    void requireThatInvalidSearchTermGivesZeroHits(const vespalib::string & name, const Config & cfg, ValueType value);
+    void requireThatInvalidSearchTermGivesZeroHits(const std::string & name, const Config & cfg, ValueType value);
 
 
-    void requireThatOutOfBoundsSearchTermGivesZeroHits(const vespalib::string &name, const Config &cfg, int32_t maxValue);
+    void requireThatOutOfBoundsSearchTermGivesZeroHits(const std::string &name, const Config &cfg, int32_t maxValue);
 
     // init maps with config objects
     void initIntegerConfig();
@@ -299,8 +310,45 @@ protected:
 public:
     SearchContextTest();
     ~SearchContextTest() override;
+    static void SetUpTestSuite();
+    static void TearDownTestSuite();
+    void SetUp() override;
 };
 
+std::string SearchContextTest::_test_dir = "test_data";
+bool SearchContextTest::_default_preserve_weight = false;
+
+SearchContextTest::SearchContextTest() :
+    _integerCfg(),
+    _floatCfg(),
+    _stringCfg()
+{
+    initIntegerConfig();
+    initFloatConfig();
+    initStringConfig();
+}
+
+SearchContextTest::~SearchContextTest() = default;
+
+void
+SearchContextTest::SetUpTestSuite()
+{
+    std::filesystem::remove_all(_test_dir);
+    std::filesystem::create_directory(_test_dir);
+    _default_preserve_weight = PostingListSearchContext::get_preserve_weight();
+}
+
+void
+SearchContextTest::TearDownTestSuite()
+{
+    std::filesystem::remove_all(_test_dir);
+}
+
+void
+SearchContextTest::SetUp()
+{
+    PostingListSearchContext::set_preserve_weight(_default_preserve_weight);
+}
 
 void
 SearchContextTest::addReservedDoc(AttributeVector &ptr)
@@ -334,14 +382,14 @@ SearchContextTest::fillVector(std::vector<T> & values, size_t numValues)
 
 template <>
 void
-SearchContextTest::fillVector(std::vector<vespalib::string> & values, size_t numValues)
+SearchContextTest::fillVector(std::vector<std::string> & values, size_t numValues)
 {
     values.clear();
     values.reserve(numValues);
     for (size_t i = 0; i < numValues; ++i) {
         vespalib::asciistream ss;
         ss << "string" << (i < 10 ? "0" : "") << i;
-        values.emplace_back(ss.str());
+        values.emplace_back(ss.view());
     }
 }
 
@@ -408,7 +456,7 @@ SearchContextTest::fillPostingList(PostingList<V, T> & pl)
 }
 
 void
-SearchContextTest::buildTermQuery(std::vector<char> & buffer, const vespalib::string & index, const vespalib::string & term, TermType termType)
+SearchContextTest::buildTermQuery(std::vector<char> & buffer, const std::string & index, const std::string & term, TermType termType)
 {
     uint32_t indexLen = index.size();
     uint32_t termLen = term.size();
@@ -449,7 +497,7 @@ SearchContextTest::getSearch(const V & vec, const T & term, TermType termType)
     buildTermQuery(query, vec.getName(), ss.str(), termType);
 
     return (dynamic_cast<const AttributeVector &>(vec)).
-        getSearch(vespalib::stringref(&query[0], query.size()),
+        getSearch(std::string_view(&query[0], query.size()),
                   attribute::SearchContextParams());
 }
 
@@ -469,7 +517,7 @@ template <typename V, typename T>
 ResultSetPtr
 SearchContextTest::performSearch(const V & vec, const T & term)
 {
-    return performSearch(queryeval::ExecuteInfo::TRUE, vec, term, TermType::WORD);
+    return performSearch(queryeval::ExecuteInfo::FULL, vec, term, TermType::WORD);
 }
 
 template <typename V, typename T>
@@ -478,7 +526,7 @@ SearchContextTest::performSearch(const queryeval::ExecuteInfo & executeInfo, con
 {
     TermFieldMatchData dummy;
     SearchContextPtr sc = getSearch(vec, term, termType);
-    sc->fetchPostings(executeInfo);
+    sc->fetchPostings(executeInfo, true);
     SearchBasePtr sb = sc->createIterator(&dummy, true);
     ResultSetPtr rs = performSearch(*sb, vec.getNumDocs());
     return rs;
@@ -486,7 +534,7 @@ SearchContextTest::performSearch(const queryeval::ExecuteInfo & executeInfo, con
 
 template <typename V>
 void
-SearchContextTest::performSearch(const queryeval::ExecuteInfo & executeInfo, const V & vec, const vespalib::string & term,
+SearchContextTest::performSearch(const queryeval::ExecuteInfo & executeInfo, const V & vec, const std::string & term,
                                  const DocSet & expected, TermType termType)
 {
 #if 0
@@ -501,10 +549,10 @@ SearchContextTest::performSearch(const queryeval::ExecuteInfo & executeInfo, con
 }
 template <typename V>
 void
-SearchContextTest::performSearch(const V & vec, const vespalib::string & term,
+SearchContextTest::performSearch(const V & vec, const std::string & term,
                                  const DocSet & expected, TermType termType)
 {
-    performSearch(queryeval::ExecuteInfo::TRUE, vec, term, expected, termType);
+    performSearch(queryeval::ExecuteInfo::FULL, vec, term, expected, termType);
 }
 
 void
@@ -547,7 +595,7 @@ SearchContextTest::testFind(const PostingList<V, T> & pl, bool verify_hit_estima
             EXPECT_EQ(exp_est.est_hits(), act_est.est_hits());
             EXPECT_EQ(exp_est.is_unknown(), act_est.is_unknown());
         }
-        sc->fetchPostings(queryeval::ExecuteInfo::TRUE);
+        sc->fetchPostings(queryeval::ExecuteInfo::FULL, true);
         TermFieldMatchData dummy;
         SearchBasePtr sb = sc->createIterator(&dummy, true);
         ResultSetPtr rs = performSearch(*sb, pl.getAttribute().getNumDocs());
@@ -603,9 +651,9 @@ SearchContextTest::testMultiValueSearchHelper(V & vec, const std::vector<T> & va
 }
 
 AttributePtr
-create_as(const AttributeVector& attr, const std::string& name_suffix)
+SearchContextTest::create_as(const AttributeVector& attr, const std::string& name_suffix)
 {
-    return AttributeFactory::createAttribute(attr.getName() + name_suffix, attr.getConfig());
+    return AttributeFactory::createAttribute(_test_dir + "/" + attr.getName() + name_suffix, attr.getConfig());
 }
 
 
@@ -671,12 +719,12 @@ void SearchContextTest::testSearch(const ConfigMap & cfgs) {
 template<typename T, typename A>
 class Verifier : public search::test::SearchIteratorVerifier {
 public:
-    Verifier(const std::vector<T> & keys, const vespalib::string & keyAsString,
-             const vespalib::string & name, const Config & cfg);
+    Verifier(const std::vector<T> & keys, const std::string & keyAsString,
+             const std::string & name, const Config & cfg);
     ~Verifier() override;
     SearchIterator::UP
     create(bool strict) const override {
-        _sc->fetchPostings(queryeval::ExecuteInfo::createForTest(strict));
+        _sc->fetchPostings(queryeval::ExecuteInfo::FULL, strict);
         return _sc->createIterator(&_dummy, strict);
     }
 private:
@@ -686,8 +734,8 @@ private:
 };
 
 template<typename T, typename A>
-Verifier<T, A>::Verifier(const std::vector<T> & keys, const vespalib::string & keyAsString,
-                         const vespalib::string & name, const Config & cfg)
+Verifier<T, A>::Verifier(const std::vector<T> & keys, const std::string & keyAsString,
+                         const std::string & name, const Config & cfg)
     : _dummy(),
       _attribute(AttributeFactory::createAttribute(name + "-initrange", cfg)),
       _sc()
@@ -707,7 +755,7 @@ template<typename T, typename A>
 Verifier<T, A>::~Verifier() = default;
 
 template<typename T, typename A>
-void SearchContextTest::testSearchIterator(const std::vector<T> & keys, const vespalib::string &keyAsString, const ConfigMap &cfgs) {
+void SearchContextTest::testSearchIterator(const std::vector<T> & keys, const std::string &keyAsString, const ConfigMap &cfgs) {
     for (const auto & cfg : cfgs) {
         {
             Verifier<T, A> verifier(keys, keyAsString, cfg.first, cfg.second);
@@ -727,7 +775,7 @@ TEST_F(SearchContextTest, test_search_iterator_conformance)
     testSearchIterator<AttributeVector::largeint_t, IntegerAttribute>({42,45,46}, "[0;100]", _integerCfg);
     testSearchIterator<AttributeVector::largeint_t, IntegerAttribute>({42}, "42", _integerCfg);
     testSearchIterator<double, FloatingPointAttribute>({42.42}, "42.42", _floatCfg);
-    testSearchIterator<vespalib::string, StringAttribute>({"any-key"}, "any-key", _stringCfg);
+    testSearchIterator<std::string, StringAttribute>({"any-key"}, "any-key", _stringCfg);
 }
 
 TEST_F(SearchContextTest, test_search)
@@ -771,7 +819,7 @@ TEST_F(SearchContextTest, test_search)
 
     testSearch<AttributeVector::largeint_t, IntegerAttribute>(_integerCfg);
     testSearch<double, FloatingPointAttribute>(_floatCfg);
-    testSearch<vespalib::string, StringAttribute>(_stringCfg);
+    testSearch<std::string, StringAttribute>(_stringCfg);
 }
 
 //-----------------------------------------------------------------------------
@@ -784,7 +832,7 @@ SearchContextTest::testStrictSearchIterator(SearchContext & threeHits,
 {
     TermFieldMatchData dummy;
     { // search for value with 3 hits
-        threeHits.fetchPostings(queryeval::ExecuteInfo::TRUE);
+        threeHits.fetchPostings(queryeval::ExecuteInfo::FULL, true);
         SearchBasePtr sb = threeHits.createIterator(&dummy, true);
         sb->initRange(1, threeHits.attribute().getCommittedDocIdLimit());
         EXPECT_TRUE(typeTester.matches(*sb));
@@ -805,7 +853,7 @@ SearchContextTest::testStrictSearchIterator(SearchContext & threeHits,
     }
 
     { // search for value with no hits
-        noHits.fetchPostings(queryeval::ExecuteInfo::TRUE);
+        noHits.fetchPostings(queryeval::ExecuteInfo::FULL, true);
         SearchBasePtr sb = noHits.createIterator(&dummy, true);
         sb->initRange(1, noHits.attribute().getCommittedDocIdLimit());
         ASSERT_TRUE(typeTester.matches(*sb));
@@ -823,7 +871,7 @@ SearchContextTest::testNonStrictSearchIterator(SearchContext & threeHits,
 {
     TermFieldMatchData dummy;
     { // search for value with three hits
-        threeHits.fetchPostings(queryeval::ExecuteInfo::FALSE);
+        threeHits.fetchPostings(queryeval::ExecuteInfo::FULL, false);
         SearchBasePtr sb = threeHits.createIterator(&dummy, false);
         sb->initRange(1, threeHits.attribute().getCommittedDocIdLimit());
         EXPECT_TRUE(typeTester.matches(*sb));
@@ -841,7 +889,7 @@ SearchContextTest::testNonStrictSearchIterator(SearchContext & threeHits,
         EXPECT_TRUE(sb->getDocId() == 5u || sb->isAtEnd());
     }
     { // search for value with no hits
-        noHits.fetchPostings(queryeval::ExecuteInfo::FALSE);
+        noHits.fetchPostings(queryeval::ExecuteInfo::FULL, false);
         SearchBasePtr sb = noHits.createIterator(&dummy, false);
         sb->initRange(1, threeHits.attribute().getCommittedDocIdLimit());
 
@@ -856,13 +904,13 @@ SearchContextTest::testNonStrictSearchIterator(SearchContext & threeHits,
 }
 
 AttributePtr
-SearchContextTest::fillForSearchIteratorTest(const vespalib::string& name, const Config& cfg)
+SearchContextTest::fillForSearchIteratorTest(const std::string& name, const Config& cfg)
 {
     return AttributeBuilder(name, cfg).fill({10, 20, 10, 20, 10}).get();
 }
 
 AttributePtr
-SearchContextTest::fillForSemiNibbleSearchIteratorTest(const vespalib::string& name, const Config& cfg)
+SearchContextTest::fillForSemiNibbleSearchIteratorTest(const std::string& name, const Config& cfg)
 {
     return AttributeBuilder(name, cfg).fill({1, 2, 1, 2, 1}).get();
 }
@@ -907,7 +955,7 @@ TEST_F(SearchContextTest, test_search_iterator)
         Config cfg(BasicType::STRING, CollectionType::SINGLE);
         cfg.setFastSearch(true);
         auto ptr = AttributeBuilder("sfs-string", cfg).
-                fill({"three", "two", "three", "two", "three"}).get();
+                fill({"three"s, "two"s, "three"s, "two"s, "three"s}).get();
 
         SearchContextPtr threeHits = getSearch(*ptr.get(), "three");
         SearchContextPtr noHits = getSearch(*ptr.get(), "none");
@@ -1049,7 +1097,7 @@ SearchContextTest::testSearchIteratorUnpacking(const AttributePtr & attr, Search
 
 TEST_F(SearchContextTest, test_search_iterator_unpacking)
 {
-    std::vector<std::pair<vespalib::string, Config> > config;
+    std::vector<std::pair<std::string, Config> > config;
 
     {
         Config cfg(BasicType::INT32, CollectionType::SINGLE);
@@ -1070,7 +1118,7 @@ TEST_F(SearchContextTest, test_search_iterator_unpacking)
     {
         Config cfg(BasicType::INT32, CollectionType::SINGLE);
         cfg.setFastSearch(true);
-        config.emplace_back(vespalib::string("sfs-int32"), cfg);
+        config.emplace_back(std::string("sfs-int32"), cfg);
     }
     {
         Config cfg(BasicType::INT32, CollectionType::ARRAY);
@@ -1114,11 +1162,11 @@ TEST_F(SearchContextTest, test_search_iterator_unpacking)
 
 template <typename VectorType>
 void
-SearchContextTest::performRangeSearch(const VectorType & vec, const vespalib::string & term, const DocSet & expected)
+SearchContextTest::performRangeSearch(const VectorType & vec, const std::string & term, const DocSet & expected)
 {
     for (size_t num_threads : {1,3}) {
         vespalib::SimpleThreadBundle thread_bundle(num_threads);
-        auto executeInfo = queryeval::ExecuteInfo::create(true, 1.0, vespalib::Doom::never(), thread_bundle);
+        auto executeInfo = queryeval::ExecuteInfo::create(1.0, vespalib::Doom::never(), thread_bundle);
         performSearch(executeInfo, vec, term, expected, TermType::WORD);
     }
 }
@@ -1349,7 +1397,7 @@ TEST_F(SearchContextTest, test_range_search)
 //-----------------------------------------------------------------------------
 
 void
-SearchContextTest::performCaseInsensitiveSearch(const StringAttribute & vec, const vespalib::string & term,
+SearchContextTest::performCaseInsensitiveSearch(const StringAttribute & vec, const std::string & term,
                                                 const DocSet & expected)
 {
     performSearch(vec, term, expected, TermType::WORD);
@@ -1388,7 +1436,7 @@ SearchContextTest::testCaseInsensitiveSearch(const AttributePtr & ptr)
     for (uint32_t j = 0; j < 5; ++j) {
         for (uint32_t i = 0; i < 5; ++i) {
             EXPECT_EQ(ptr->get(doc++, buffer, 1), uint32_t(1));
-            EXPECT_EQ(vespalib::string(buffer[0]), vespalib::string(terms[i][j]));
+            EXPECT_EQ(std::string(buffer[0]), std::string(terms[i][j]));
         }
     }
 
@@ -1417,11 +1465,11 @@ SearchContextTest::testCaseInsensitiveSearch(const AttributePtr & ptr)
 }
 
 void
-SearchContextTest::testRegexSearch(const vespalib::string& name, const Config& cfg)
+SearchContextTest::testRegexSearch(const std::string& name, const Config& cfg)
 {
     LOG(info, "testRegexSearch: vector '%s'", name.c_str());
     auto attr = AttributeBuilder(name, cfg).
-            fill({"abc1def", "abc2Def", "abc2def", "abc4def", "abc5def", "abc6def"}).get();
+            fill({"abc1def"s, "abc2Def"s, "abc2def"s, "abc4def"s, "abc5def"s, "abc6def"s}).get();
 
     std::vector<const char *> terms = { "abc", "bc2de", "^abc1def.*bar" };
     std::vector<DocSet> expected;
@@ -1457,11 +1505,11 @@ TEST_F(SearchContextTest, test_regex_search)
 //-----------------------------------------------------------------------------
 
 void
-SearchContextTest::testPrefixSearch(const vespalib::string& name, const Config& cfg)
+SearchContextTest::testPrefixSearch(const std::string& name, const Config& cfg)
 {
     LOG(info, "testPrefixSearch: vector '%s'", name.c_str());
     auto attr = AttributeBuilder(name, cfg).
-            fill({"prefixsearch", "PREFIXSEARCH", "PrefixSearch", "precommit", "PRECOMMIT", "PreCommit"}).get();
+            fill({"prefixsearch"s, "PREFIXSEARCH"s, "PrefixSearch"s, "precommit"s, "PRECOMMIT"s, "PreCommit"s}).get();
 
     const char * terms[][3] = {{"pre", "PRE", "Pre"},
                                {"pref", "PREF", "Pref"},
@@ -1498,9 +1546,9 @@ SearchContextTest::testPrefixSearch(const vespalib::string& name, const Config& 
     for (uint32_t i = 0; i < longrange_values; ++i) {
         vespalib::asciistream ss;
         ss << "lpref" << i;
-        vespalib::string sss(ss.str());
+        std::string sss(ss.view());
         exp_longrange.put(old_size + i);
-        vec.update(old_size + i, vespalib::string(ss.str()).c_str());
+        vec.update(old_size + i, std::string(ss.view()).c_str());
     }
     attr->commit();
     performSearch(*attr, "lpref", exp_longrange, TermType::PREFIXTERM);
@@ -1514,15 +1562,76 @@ TEST_F(SearchContextTest, test_prefix_search)
     }
 }
 
+void
+SearchContextTest::test_weighted_prefix_search(const std::string& name, const Config& cfg)
+{
+    SCOPED_TRACE(name);
+    auto attr = AttributeBuilder(name, cfg).get();
+    auto string_attr = std::dynamic_pointer_cast<StringAttribute>(attr);
+    ASSERT_TRUE(string_attr);
+    attr->addDocs(800);
+    uint32_t docid = 0;
+    std::string val_a("a");
+    std::string val_A("A");
+    std::string val_aa("aa");
+    std::string val_aaa("aaa");
+    std::string val_AAA("AAA");
+    std::string val_aaaa("aaaa");
+    for (docid = 1; docid < 10; ++docid) {
+        if (attr->hasMultiValue()) {
+            string_attr->append(docid, val_a, 3);
+            string_attr->append(docid, val_A, 2);
+            string_attr->append(docid, val_aa, 10);
+            if (docid == 1) {
+                string_attr->append(docid, val_aaa, 300);
+                string_attr->append(docid, val_AAA, 200);
+                string_attr->append(docid, val_aaaa, 1000);
+            }
+        } else {
+            string_attr->update(docid, val_aaa);
+        }
+    }
+    attr->commit();
+
+    for (auto preserve_weight : { false, true }) {
+        SCOPED_TRACE(std::string("preserve_weight=") + (preserve_weight ? "true" : "false"));
+        PostingListSearchContext::set_preserve_weight(preserve_weight);
+        for (auto common_word : { false, true }) {
+            SCOPED_TRACE(std::string("common_word=") + (common_word ? "true" : "false"));
+            TermFieldMatchData md;
+            auto sc = getSearch(*attr, common_word ? val_a : val_aaa, TermType::PREFIXTERM);
+            sc->fetchPostings(queryeval::ExecuteInfo::FULL, true);
+            auto itr = sc->createIterator(&md, true);
+            itr->initRange(1, attr->getCommittedDocIdLimit());
+            EXPECT_TRUE(itr->seek(1));
+            itr->unpack(1);
+            EXPECT_EQ(1, md.getDocId());
+            int32_t expected_weight = (preserve_weight || !common_word || !cfg.fastSearch()) ?
+                                      (attr->hasWeightedSetType() ?
+                                       (common_word ? (1000 + 300 + 200 + 10 + 3 + 2) : (1000 + 300 + 200)) :
+                                       (attr->hasMultiValue() ? (common_word ? (1 + 1 + 1 + 1 + 1 + 1) : (1 + 1 + 1)) : 1)) :
+                                      1;
+            EXPECT_EQ(expected_weight, md.getWeight());
+        }
+    }
+}
+
+TEST_F(SearchContextTest, test_weighted_prefix_search)
+{
+    for (const auto& cfg : _stringCfg) {
+        test_weighted_prefix_search(cfg.first, cfg.second);
+    }
+}
+
 //-----------------------------------------------------------------------------
 // Test fuzzy search
 //-----------------------------------------------------------------------------
 
 void
-SearchContextTest::testFuzzySearch(const vespalib::string& name, const Config& cfg)
+SearchContextTest::testFuzzySearch(const std::string& name, const Config& cfg)
 {
     LOG(info, "testFuzzySearch: vector '%s'", name.c_str());
-    auto attr = AttributeBuilder(name, cfg).fill({"fuzzysearch", "notthis", "FUZZYSEARCH"}).get();
+    auto attr = AttributeBuilder(name, cfg).fill({"fuzzysearch"s, "notthis"s, "FUZZYSEARCH"s}).get();
 
     const char * terms[][2] = {
         {"fuzzysearch", "FUZZYSEARCH"},
@@ -1552,10 +1661,10 @@ TEST_F(SearchContextTest, test_fuzzy_search)
 
 template <typename VectorType, typename ValueType>
 void
-SearchContextTest::requireThatSearchIsWorkingAfterClearDoc(const vespalib::string & name,
+SearchContextTest::requireThatSearchIsWorkingAfterClearDoc(const std::string & name,
                                                            const Config & cfg,
                                                            ValueType startValue,
-                                                           const vespalib::string & term)
+                                                           const std::string & term)
 {
     AttributePtr a = AttributeFactory::createAttribute(name, cfg);
     LOG(info, "requireThatSearchIsWorkingAfterClearDoc: vector '%s', term '%s'",
@@ -1605,11 +1714,11 @@ TEST_F(SearchContextTest, require_that_search_is_working_after_clear_doc)
 
 template <typename VectorType, typename ValueType>
 void
-SearchContextTest::requireThatSearchIsWorkingAfterLoadAndClearDoc(const vespalib::string & name,
+SearchContextTest::requireThatSearchIsWorkingAfterLoadAndClearDoc(const std::string & name,
                                                                   const Config & cfg,
                                                                   ValueType startValue,
                                                                   ValueType defaultValue,
-                                                                  const vespalib::string & term)
+                                                                  const std::string & term)
 {
     AttributePtr a = AttributeFactory::createAttribute(name, cfg);
     LOG(info, "requireThatSearchIsWorkingAfterLoadAndClearDoc: vector '%s', term '%s'",
@@ -1618,7 +1727,7 @@ SearchContextTest::requireThatSearchIsWorkingAfterLoadAndClearDoc(const vespalib
     a->addDocs(15);
     auto & va = dynamic_cast<VectorType &>(*a);
     resetAttribute(va, startValue); // triggers vector vector in posting list (count 15)
-    AttributePtr b = AttributeFactory::createAttribute(name + "-save", cfg);
+    AttributePtr b = AttributeFactory::createAttribute(_test_dir + "/" + name + "-save", cfg);
     EXPECT_TRUE(a->save(b->getBaseFileName()));
     EXPECT_TRUE(b->load());
     b->clearDoc(6); // goes from vector vector to single vector with count 14
@@ -1654,8 +1763,8 @@ TEST_F(SearchContextTest, require_that_search_is_working_after_load_and_clear_do
                                                                          value, defValue, "10");
     }
     {
-        vespalib::string value = "foo";
-        vespalib::string defValue = "";
+        std::string value = "foo";
+        std::string defValue = "";
         requireThatSearchIsWorkingAfterLoadAndClearDoc<StringAttribute>("s-fs-str", _stringCfg["s-fs-str"],
                                                                         value, defValue, value);
         requireThatSearchIsWorkingAfterLoadAndClearDoc<StringAttribute>("a-fs-str", _stringCfg["a-fs-str"],
@@ -1665,7 +1774,7 @@ TEST_F(SearchContextTest, require_that_search_is_working_after_load_and_clear_do
 
 template <typename VectorType, typename ValueType>
 void
-SearchContextTest::requireThatSearchIsWorkingAfterUpdates(const vespalib::string & name,
+SearchContextTest::requireThatSearchIsWorkingAfterUpdates(const std::string & name,
                                                           const Config & cfg,
                                                           ValueType value1,
                                                           ValueType value2)
@@ -1766,7 +1875,7 @@ TEST_F(SearchContextTest, require_that_flag_attribute_is_working_when_new_docs_a
 
 template <typename VectorType, typename ValueType>
 void
-SearchContextTest::requireThatInvalidSearchTermGivesZeroHits(const vespalib::string & name,
+SearchContextTest::requireThatInvalidSearchTermGivesZeroHits(const std::string & name,
                                                              const Config & cfg,
                                                              ValueType value)
 {
@@ -1807,12 +1916,12 @@ TEST_F(SearchContextTest, require_that_flag_attribute_handles_the_byte_range)
 }
 
 void
-SearchContextTest::requireThatOutOfBoundsSearchTermGivesZeroHits(const vespalib::string &name,
+SearchContextTest::requireThatOutOfBoundsSearchTermGivesZeroHits(const std::string &name,
                                                                  const Config &cfg,
                                                                  int32_t maxValue)
 {
     auto a = AttributeBuilder(name, cfg).fill({maxValue}).get();
-    vespalib::string term = vespalib::make_string("%" PRIu64 "", (int64_t) maxValue + 1);
+    std::string term = vespalib::make_string("%" PRIu64 "", (int64_t) maxValue + 1);
     LOG(info, "requireThatOutOfBoundsSearchTermGivesZeroHits: vector '%s', term '%s'", a->getName().c_str(), term.c_str());
     ResultSetPtr rs = performSearch(*a, term);
     EXPECT_EQ(0u, rs->getNumHits());
@@ -2006,18 +2115,6 @@ SearchContextTest::initStringConfig()
         _stringCfg["w-fs-str"] = cfg;
     }
 }
-
-SearchContextTest::SearchContextTest() :
-    _integerCfg(),
-    _floatCfg(),
-    _stringCfg()
-{
-    initIntegerConfig();
-    initFloatConfig();
-    initStringConfig();
-}
-
-SearchContextTest::~SearchContextTest() = default;
 
 }
 

@@ -36,6 +36,7 @@ class PageDict4RandRead : public index::DictionaryFileRandRead
     uint32_t _ssHeaderLen;
     uint32_t _spHeaderLen;
     uint32_t _pHeaderLen;
+    uint32_t _mmap_file_size_threshold;
 
     void readSSHeader();
     void readSPHeader();
@@ -44,13 +45,14 @@ public:
     PageDict4RandRead();
     ~PageDict4RandRead();
 
-    bool lookup(vespalib::stringref word, uint64_t &wordNum,
+    bool lookup(std::string_view word, uint64_t &wordNum,
                 PostingListOffsetAndCounts &offsetAndCounts) override;
 
-    bool open(const vespalib::string &name, const TuneFileRandRead &tuneFileRead) override;
+    bool open(const std::string &name, const TuneFileRandRead &tuneFileRead) override;
 
     bool close() override;
     uint64_t getNumWordIds() const override;
+    void set_mmap_file_size_threshold(uint32_t v) { _mmap_file_size_threshold = v; }
 };
 
 }

@@ -56,6 +56,11 @@ public class SelectTestCase {
     //------------------------------------------------------------------- "where" tests
 
     @Test
+    void testSimple() {
+        assertParse("{'contains' : ['title', 'madonna']}", "title:madonna");
+    }
+
+    @Test
     void test_contains() {
         ObjectNode json = jsonMapper.createObjectNode();
         ArrayNode arrayNode = jsonMapper.createArrayNode();
@@ -65,16 +70,9 @@ public class SelectTestCase {
     }
 
     @Test
-    void test() {
-        assertParse("{'contains' : ['title', 'madonna']}",
-                "title:madonna");
-    }
-
-
-    @Test
     void testDottedFieldNames() {
         assertParse("{ 'contains' : ['my.nested.title', 'madonna']}",
-                "my.nested.title:madonna");
+                    "my.nested.title:madonna");
     }
 
     @Test
@@ -360,12 +358,12 @@ public class SelectTestCase {
     @Test
     void testRaw() {
         Item root = parseWhere("{ \"contains\":[ \"baz\", \"yoni jo dima\" ] }").getRoot();
-        assertTrue(root instanceof WordItem);
+        assertInstanceOf(WordItem.class, root);
         assertFalse(root instanceof ExactStringItem);
         assertEquals("yoni jo dima", ((WordItem) root).getWord());
 
         root = parseWhere("{ \"contains\": { \"children\" : [\"baz\", \"yoni jo dima\"], \"attributes\" : {\"grammar\" : \"raw\"} } }").getRoot();
-        assertTrue(root instanceof WordItem);
+        assertInstanceOf(WordItem.class, root);
         assertFalse(root instanceof ExactStringItem);
         assertEquals("yoni jo dima", ((WordItem) root).getWord());
     }
@@ -671,8 +669,39 @@ public class SelectTestCase {
         QueryTree x = parseWhere("{ \"contains\": [\"description\", { \"fuzzy\": [\"a b\"] }] }");
         Item root = x.getRoot();
         assertSame(FuzzyItem.class, root.getClass());
-        assertEquals("description", ((FuzzyItem) root).getIndexName());
-        assertEquals("a b", ((FuzzyItem) root).stringValue());
+        var fuzzy = (FuzzyItem) root;
+        assertEquals("description", fuzzy.getIndexName());
+        assertEquals("a b", fuzzy.stringValue());
+        assertEquals(FuzzyItem.DEFAULT_MAX_EDIT_DISTANCE, fuzzy.getMaxEditDistance());
+        assertEquals(FuzzyItem.DEFAULT_PREFIX_LENGTH, fuzzy.getPrefixLength());
+        assertFalse(fuzzy.isPrefixMatch());
+    }
+
+    @Test
+    void fuzzy_with_annotations() {
+        var where = """
+                {
+                  "contains": ["description", {
+                    "fuzzy": {
+                      "children": ["a b"],
+                      "attributes": {
+                        "maxEditDistance": 3,
+                        "prefixLength": 10,
+                        "prefix": true
+                      }
+                    }
+                  }]
+                }
+                """;
+        QueryTree x = parseWhere(where);
+        Item root = x.getRoot();
+        assertSame(FuzzyItem.class, root.getClass());
+        var fuzzy = (FuzzyItem) root;
+        assertEquals("description", fuzzy.getIndexName());
+        assertEquals("a b", fuzzy.stringValue());
+        assertEquals(3, fuzzy.getMaxEditDistance());
+        assertEquals(10, fuzzy.getPrefixLength());
+        assertTrue(fuzzy.isPrefixMatch());
     }
 
     //------------------------------------------------------------------- grouping tests

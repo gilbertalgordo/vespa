@@ -210,7 +210,7 @@ public abstract class CompositeItem extends Item {
     public CompositeItem clone() {
         CompositeItem copy = (CompositeItem) super.clone();
 
-        copy.subitems = new java.util.ArrayList<>(subitems.size());
+        copy.subitems = new ArrayList<>(subitems.size());
         for (Item subItem : subitems) {
             Item subItemCopy = subItem.clone();
             subItemCopy.setParent(copy);
@@ -363,12 +363,13 @@ public abstract class CompositeItem extends Item {
 
         @Override
         public void remove() {
-            owner.removing(current);
             wrapped.remove();
+            owner.removing(current);
         }
 
         @Override
         public void set(Item newItem) {
+            if (newItem == current) return;
             owner.removing(current);
             owner.adding(newItem);
             current = newItem;

@@ -190,7 +190,7 @@ PacketDispatcher::handleEntry(const Packet::Entry &entry) {
 }  // namespace
 
 ReplayTransactionLogState::ReplayTransactionLogState(
-        const vespalib::string &name,
+        const std::string &name,
         IFeedView *& feed_view_ptr,
         IBucketDBHandler &bucketDBHandler,
         IReplayConfig &replay_config,
@@ -210,6 +210,27 @@ ReplayTransactionLogState::receive(const PacketWrapper::SP &wrap, Executor &exec
         PacketDispatcher dispatcher(_packet_handler.get());
         dispatcher.handlePacket(*wrap);
     }));
+}
+
+NormalState::NormalState(FeedHandler &handler) noexcept
+    : FeedState(NORMAL),
+      _handler(handler)
+{
+}
+
+NormalState::~NormalState() = default;
+
+void
+NormalState::handleOperation(FeedToken token, FeedOperationUP op)
+{
+    _handler.performOperation(std::move(token), std::move(op));
+}
+
+void
+NormalState::receive(const PacketWrapperSP &wrap, vespalib::Executor &)
+{
+    throwExceptionInReceive(_handler.getDocTypeName().c_str(), wrap->packet.range().from(),
+                            wrap->packet.range().to(), wrap->packet.size());
 }
 
 }  // namespace proton

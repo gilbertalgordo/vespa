@@ -25,7 +25,7 @@ private:
     }
 public:
     ConvertRawScoreToCloseness(const fef::IQueryEnvironment &env, uint32_t fieldId);
-    ConvertRawScoreToCloseness(const fef::IQueryEnvironment &env, const vespalib::string &label);
+    ConvertRawScoreToCloseness(const fef::IQueryEnvironment &env, const std::string &label);
     void execute(uint32_t docId) override;
 };
 
@@ -35,7 +35,7 @@ ConvertRawScoreToCloseness::ConvertRawScoreToCloseness(const fef::IQueryEnvironm
 {
 }
 
-ConvertRawScoreToCloseness::ConvertRawScoreToCloseness(const fef::IQueryEnvironment &env, const vespalib::string &label)
+ConvertRawScoreToCloseness::ConvertRawScoreToCloseness(const fef::IQueryEnvironment &env, const std::string &label)
   : _bundle(env, std::nullopt, label, "closeness"),
     _md(nullptr)
 {
@@ -52,7 +52,7 @@ ConvertRawScoreToCloseness::execute(uint32_t docId)
             feature_t converted = tfmd->getRawScore();
             max_closeness = std::max(max_closeness, converted);
         } else if (elem.calc) {
-            feature_t converted = elem.calc->calc_raw_score(docId);
+            feature_t converted = elem.calc->calc_raw_score<false>(docId);
             max_closeness = std::max(max_closeness, converted);
         }
     }
@@ -108,7 +108,7 @@ ClosenessBlueprint::setup(const IIndexEnvironment & env,
                           const search::fef::ParameterList & params)
 {
     // params[0] = attribute name
-    vespalib::string arg = params[0].getValue();
+    std::string arg = params[0].getValue();
     if (params.size() == 2) {
         // params[0] = field / label
         // params[0] = attribute name / label value

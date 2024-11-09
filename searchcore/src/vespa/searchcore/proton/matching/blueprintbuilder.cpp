@@ -9,6 +9,7 @@
 #include <vespa/searchlib/queryeval/intermediate_blueprints.h>
 #include <vespa/searchlib/queryeval/equiv_blueprint.h>
 #include <vespa/searchlib/queryeval/get_weight_from_node.h>
+#include <vespa/searchlib/attribute/attribute_blueprint_params.h>
 #include <vespa/vespalib/util/issue.h>
 
 using namespace search::queryeval;
@@ -21,7 +22,7 @@ namespace {
 struct Mixer {
     std::unique_ptr<OrBlueprint> attributes;
 
-    Mixer() : attributes() {}
+    Mixer() noexcept: attributes() {}
 
     void addAttribute(Blueprint::UP attr) {
         if ( ! attributes) {
@@ -61,12 +62,18 @@ private:
     Blueprint::UP   _result;
 
     void buildChildren(IntermediateBlueprint &parent, const std::vector<Node *> &children);
+    bool is_search_multi_threaded() const noexcept {
+        return _requestContext.thread_bundle().size() > 1;
+    }
 
     template <typename NodeType>
     void buildIntermediate(IntermediateBlueprint *b, NodeType &n) __attribute__((noinline));
 
     void buildWeakAnd(ProtonWeakAnd &n) {
-        auto *wand = new WeakAndBlueprint(n.getTargetNumHits());
+        auto *wand = new WeakAndBlueprint(n.getTargetNumHits(),
+                                          _requestContext.get_attribute_blueprint_params().weakand_range,
+                                          _requestContext.get_attribute_blueprint_params().weakand_stop_word_strategy,
+                                          is_search_multi_threaded());
         Blueprint::UP result(wand);
         for (auto node : n.getChildren()) {
             uint32_t weight = getWeightFromNode(*node).percent();
@@ -88,6 +95,7 @@ private:
             double w = getWeightFromNode(*node).percent();
             eq->addTerm(build(_requestContext, *node, _context), w / eqw);
         }
+        _result->setDocIdLimit(_context.getDocIdLimit());
         n.setDocumentFrequency(_result->getState().estimate().estHits, _context.getDocIdLimit());
     }
 
@@ -123,6 +131,7 @@ private:
             indexBlueprint = _context.getIndexes().createBlueprint(_requestContext, indexFields, n);
         }
         _result = mixer.mix(std::move(indexBlueprint));
+        _result->setDocIdLimit(_context.getDocIdLimit());
         n.setDocumentFrequency(_result->getState().estimate().estHits, _context.getDocIdLimit());
     }
 

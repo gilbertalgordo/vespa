@@ -1,7 +1,5 @@
-/**
- * This file is generated from a config definition file.
- * ------------   D O   N O T   E D I T !   ------------
- */
+// ------------   D O   N O T   E D I T !   ------------
+// This file is generated from a config definition file.
 
 package com.yahoo.configgen;
 
@@ -101,7 +99,7 @@ public final class AllfeaturesConfig extends ConfigInstance {
   }
 
   public static final class Builder implements ConfigInstance.Builder {
-    private Set<String> __uninitialized = new HashSet<String>(Arrays.asList(
+    private Set<String> __uninitialized = new HashSet<String>(List.of(
       "boolVal",
       "intVal",
       "longVal",
@@ -1730,7 +1728,7 @@ public final class AllfeaturesConfig extends ConfigInstance {
   public final static class MyArray extends InnerNode { 
 
     public static final class Builder implements ConfigBuilder {
-      private Set<String> __uninitialized = new HashSet<String>(Arrays.asList(
+      private Set<String> __uninitialized = new HashSet<String>(List.of(
         "refVal"
         ));
 
@@ -2040,7 +2038,7 @@ public final class AllfeaturesConfig extends ConfigInstance {
   public final static class MyMap extends InnerNode { 
 
     public static final class Builder implements ConfigBuilder {
-      private Set<String> __uninitialized = new HashSet<String>(Arrays.asList(
+      private Set<String> __uninitialized = new HashSet<String>(List.of(
         "refVal"
         ));
 

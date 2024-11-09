@@ -15,7 +15,7 @@
 namespace search {
 
 SingleValueSmallNumericAttribute::
-SingleValueSmallNumericAttribute(const vespalib::string & baseFileName,
+SingleValueSmallNumericAttribute(const std::string & baseFileName,
                                  const Config & c,
                                  Word valueMask,
                                  uint32_t valueShiftShift,
@@ -137,6 +137,7 @@ SingleValueSmallNumericAttribute::onLoad(vespalib::Executor *)
         assert(((numDocs + _valueShiftMask) >> _wordShift) + 1 == sz);
         B::setNumDocs(numDocs);
         B::setCommittedDocIdLimit(numDocs);
+        set_size_on_disk(attrReader.size_on_disk());
     }
 
     return ok;
@@ -237,7 +238,7 @@ createConfig(BasicType bt, CollectionType ct, const GrowStrategy & grow) {
 }
 
 SingleValueSemiNibbleNumericAttribute::
-SingleValueSemiNibbleNumericAttribute(const vespalib::string &baseFileName, const search::GrowStrategy & grow)
+SingleValueSemiNibbleNumericAttribute(const std::string &baseFileName, const search::GrowStrategy & grow)
     : SingleValueSmallNumericAttribute(baseFileName,
                                        createConfig(BasicType::UINT2, CollectionType::SINGLE, grow),
                                        0x03u /* valueMask */,
@@ -249,7 +250,7 @@ SingleValueSemiNibbleNumericAttribute(const vespalib::string &baseFileName, cons
 
 
 SingleValueNibbleNumericAttribute::
-SingleValueNibbleNumericAttribute(const vespalib::string &baseFileName, const search::GrowStrategy & grow)
+SingleValueNibbleNumericAttribute(const std::string &baseFileName, const search::GrowStrategy & grow)
     : SingleValueSmallNumericAttribute(baseFileName,
                                        createConfig(BasicType::UINT4, CollectionType::SINGLE, grow),
                                        0x0fu /* valueMask */,

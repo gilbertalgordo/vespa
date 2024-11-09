@@ -2,26 +2,29 @@
 
 #pragma once
 
-#include "distance_function.h"
 #include "distance_function_factory.h"
-#include <vespa/eval/eval/typed_cells.h>
-#include <vespa/vespalib/util/typify.h>
-#include <cmath>
 
 namespace search::tensor {
 
 /**
- * Calculates the Hamming distance defined as
- * "number of cells where the values are different"
- * or (for int8 cells, aka binary data only)
- * "number of bits that are different"
+ * Calculates the Hamming distance defined as "number of cells where the values are different"
+ * or (for int8 cells, aka binary data only) "number of bits that are different".
+ *
+ * When reference_insertion_vector == true:
+ *   - Vectors passed to for_insertion_vector() and BoundDistanceFunction::calc() are assumed to have the same type as FloatType.
+ *   - The TypedCells memory is referenced and used directly in calculations,
+ *     and thus no transformation via a temporary memory buffer occurs.
  */
 template <typename FloatType>
 class HammingDistanceFunctionFactory : public DistanceFunctionFactory {
+private:
+    bool _reference_insertion_vector;
 public:
-    HammingDistanceFunctionFactory() = default;
-    BoundDistanceFunction::UP for_query_vector(const vespalib::eval::TypedCells& lhs) override;
-    BoundDistanceFunction::UP for_insertion_vector(const vespalib::eval::TypedCells& lhs) override;
+    HammingDistanceFunctionFactory() noexcept : HammingDistanceFunctionFactory(false) {}
+    HammingDistanceFunctionFactory(bool reference_insertion_vector) noexcept : _reference_insertion_vector(reference_insertion_vector) {}
+
+    BoundDistanceFunction::UP for_query_vector(TypedCells lhs) const override;
+    BoundDistanceFunction::UP for_insertion_vector(TypedCells lhs) const override;
 };
 
 }

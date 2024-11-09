@@ -11,7 +11,6 @@ import com.yahoo.search.searchchain.model.federation.FederationSearcherModel;
 
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
@@ -35,7 +34,8 @@ public class VespaSearchers {
                     com.yahoo.prelude.searcher.PosSearcher.class,
                     com.yahoo.prelude.semantics.SemanticSearcher.class,
                     com.yahoo.search.grouping.GroupingQueryParser.class,
-                    com.yahoo.search.querytransform.WeakAndReplacementSearcher.class);
+                    com.yahoo.search.querytransform.WeakAndReplacementSearcher.class,
+                    com.yahoo.search.searchers.OpportunisticWeakAndSearcher.class);
 
     public static final Collection<ChainedComponentModel> nativeSearcherModels;
 
@@ -61,7 +61,7 @@ public class VespaSearchers {
     private static FederationSearcherModel federationSearcherModel() {
         return new FederationSearcherModel(new ComponentSpecification("federation"),
                                            Dependencies.emptyDependencies(),
-                                           Collections.emptyList(),
+                                           List.of(),
                                            true);
     }
 

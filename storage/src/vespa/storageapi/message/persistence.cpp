@@ -46,7 +46,7 @@ PutCommand::getDocumentType() const {
     return &_doc->getType();
 }
 
-vespalib::string
+std::string
 PutCommand::getSummary() const
 {
     vespalib::asciistream stream;
@@ -105,11 +105,21 @@ UpdateCommand::UpdateCommand(const document::Bucket &bucket, const document::Doc
     : TestAndSetCommand(MessageType::UPDATE, bucket),
       _update(update),
       _timestamp(time),
-      _oldTimestamp(0)
+      _oldTimestamp(0),
+      _create_if_missing()
 {
     if ( ! _update) {
         throw vespalib::IllegalArgumentException("Cannot update a null update", VESPA_STRLOC);
     }
+}
+
+bool
+UpdateCommand::create_if_missing() const
+{
+    if (_create_if_missing.has_value()) {
+        return *_create_if_missing;
+    }
+    return _update->getCreateIfNonExistent();
 }
 
 const document::DocumentType *
@@ -124,7 +134,7 @@ UpdateCommand::getDocumentId() const {
     return _update->getId();
 }
 
-vespalib::string
+std::string
 UpdateCommand::getSummary() const {
     vespalib::asciistream stream;
     stream << "Update(BucketId(0x" << vespalib::hex << getBucketId().getId() << "), "
@@ -184,7 +194,7 @@ UpdateReply::print(std::ostream& out, bool verbose, const std::string& indent) c
 }
 
 GetCommand::GetCommand(const document::Bucket &bucket, const document::DocumentId& docId,
-                       vespalib::stringref fieldSet, Timestamp before)
+                       std::string_view fieldSet, Timestamp before)
     : BucketInfoCommand(MessageType::GET, bucket),
       _docId(docId),
       _beforeTimestamp(before),
@@ -195,7 +205,7 @@ GetCommand::GetCommand(const document::Bucket &bucket, const document::DocumentI
 
 GetCommand::~GetCommand() = default;
 
-vespalib::string
+std::string
 GetCommand::getSummary() const
 {
     vespalib::asciistream stream;
@@ -263,7 +273,7 @@ RemoveCommand::RemoveCommand(const document::Bucket &bucket, const document::Doc
 
 RemoveCommand::~RemoveCommand() = default;
 
-vespalib::string
+std::string
 RemoveCommand::getSummary() const {
     vespalib::asciistream stream;
     stream << "Remove(BucketId(0x" << vespalib::hex << getBucketId().getId() << "), "

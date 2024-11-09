@@ -1,8 +1,8 @@
 // Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 #pragma once
 
-#include <optional>
 #include <cstdint>
+#include <optional>
 #include <span>
 
 namespace vespalib {
@@ -19,7 +19,15 @@ namespace vespalib {
  */
 class LevenshteinDistance {
 public:
-    static std::optional<uint32_t> calculate(std::span<const uint32_t> left, std::span<const uint32_t> right, uint32_t threshold);
+    // Iff `prefix_match` == true, `right` is the candidate to match against prefix `left`
+    static std::optional<uint32_t> calculate(std::span<const uint32_t> left,
+                                             std::span<const uint32_t> right,
+                                             uint32_t threshold,
+                                             bool prefix_match);
+
+    static std::optional<uint32_t> calculate(std::span<const uint32_t> left,
+                                             std::span<const uint32_t> right,
+                                             uint32_t threshold);
 };
 
 }

@@ -23,7 +23,9 @@
   },
   "com.yahoo.component.chain.ChainedComponent" : {
     "superClass" : "com.yahoo.component.AbstractComponent",
-    "interfaces" : [ ],
+    "interfaces" : [
+      "com.yahoo.component.chain.model.Chainable"
+    ],
     "attributes" : [
       "public",
       "abstract"
@@ -32,9 +34,7 @@
       "public void <init>(com.yahoo.component.ComponentId)",
       "protected void <init>()",
       "public void initDependencies(com.yahoo.component.chain.dependencies.Dependencies)",
-      "public com.yahoo.component.chain.dependencies.Dependencies getDependencies()",
-      "protected com.yahoo.component.chain.dependencies.Dependencies getDefaultAnnotatedDependencies()",
-      "protected com.yahoo.component.chain.dependencies.Dependencies getAnnotatedDependencies(java.lang.Class, java.lang.Class, java.lang.Class)"
+      "public com.yahoo.component.chain.dependencies.Dependencies getDependencies()"
     ],
     "fields" : [ ]
   },
@@ -1047,12 +1047,50 @@
       "public com.yahoo.jdisc.http.ConnectorConfig$AccessLog$Builder remoteAddressHeaders(java.util.Collection)",
       "public com.yahoo.jdisc.http.ConnectorConfig$AccessLog$Builder remotePortHeaders(java.lang.String)",
       "public com.yahoo.jdisc.http.ConnectorConfig$AccessLog$Builder remotePortHeaders(java.util.Collection)",
+      "public com.yahoo.jdisc.http.ConnectorConfig$AccessLog$Builder content(com.yahoo.jdisc.http.ConnectorConfig$AccessLog$Content$Builder)",
+      "public com.yahoo.jdisc.http.ConnectorConfig$AccessLog$Builder content(java.util.function.Consumer)",
+      "public com.yahoo.jdisc.http.ConnectorConfig$AccessLog$Builder content(java.util.List)",
       "public com.yahoo.jdisc.http.ConnectorConfig$AccessLog build()"
     ],
     "fields" : [
       "public java.util.List remoteAddressHeaders",
-      "public java.util.List remotePortHeaders"
+      "public java.util.List remotePortHeaders",
+      "public java.util.List content"
     ]
+  },
+  "com.yahoo.jdisc.http.ConnectorConfig$AccessLog$Content$Builder" : {
+    "superClass" : "java.lang.Object",
+    "interfaces" : [
+      "com.yahoo.config.ConfigBuilder"
+    ],
+    "attributes" : [
+      "public",
+      "final"
+    ],
+    "methods" : [
+      "public void <init>()",
+      "public void <init>(com.yahoo.jdisc.http.ConnectorConfig$AccessLog$Content)",
+      "public com.yahoo.jdisc.http.ConnectorConfig$AccessLog$Content$Builder pathPrefix(java.lang.String)",
+      "public com.yahoo.jdisc.http.ConnectorConfig$AccessLog$Content$Builder maxSize(long)",
+      "public com.yahoo.jdisc.http.ConnectorConfig$AccessLog$Content$Builder sampleRate(double)",
+      "public com.yahoo.jdisc.http.ConnectorConfig$AccessLog$Content build()"
+    ],
+    "fields" : [ ]
+  },
+  "com.yahoo.jdisc.http.ConnectorConfig$AccessLog$Content" : {
+    "superClass" : "com.yahoo.config.InnerNode",
+    "interfaces" : [ ],
+    "attributes" : [
+      "public",
+      "final"
+    ],
+    "methods" : [
+      "public void <init>(com.yahoo.jdisc.http.ConnectorConfig$AccessLog$Content$Builder)",
+      "public java.lang.String pathPrefix()",
+      "public long maxSize()",
+      "public double sampleRate()"
+    ],
+    "fields" : [ ]
   },
   "com.yahoo.jdisc.http.ConnectorConfig$AccessLog" : {
     "superClass" : "com.yahoo.config.InnerNode",
@@ -1066,7 +1104,9 @@
       "public java.util.List remoteAddressHeaders()",
       "public java.lang.String remoteAddressHeaders(int)",
       "public java.util.List remotePortHeaders()",
-      "public java.lang.String remotePortHeaders(int)"
+      "public java.lang.String remotePortHeaders(int)",
+      "public java.util.List content()",
+      "public com.yahoo.jdisc.http.ConnectorConfig$AccessLog$Content content(int)"
     ],
     "fields" : [ ]
   },
@@ -2330,7 +2370,9 @@
   },
   "com.yahoo.jdisc.http.filter.RequestFilterBase" : {
     "superClass" : "java.lang.Object",
-    "interfaces" : [ ],
+    "interfaces" : [
+      "com.yahoo.component.chain.model.Chainable"
+    ],
     "attributes" : [
       "public",
       "interface",
@@ -2374,7 +2416,9 @@
   },
   "com.yahoo.jdisc.http.filter.ResponseFilterBase" : {
     "superClass" : "java.lang.Object",
-    "interfaces" : [ ],
+    "interfaces" : [
+      "com.yahoo.component.chain.model.Chainable"
+    ],
     "attributes" : [
       "public",
       "interface",
@@ -2386,7 +2430,8 @@
   "com.yahoo.jdisc.http.filter.SecurityRequestFilter" : {
     "superClass" : "java.lang.Object",
     "interfaces" : [
-      "com.yahoo.jdisc.http.filter.RequestFilterBase"
+      "com.yahoo.jdisc.http.filter.RequestFilterBase",
+      "com.yahoo.component.chain.model.Chainable"
     ],
     "attributes" : [
       "public",
@@ -2419,7 +2464,8 @@
   "com.yahoo.jdisc.http.filter.SecurityResponseFilter" : {
     "superClass" : "java.lang.Object",
     "interfaces" : [
-      "com.yahoo.jdisc.http.filter.ResponseFilterBase"
+      "com.yahoo.jdisc.http.filter.ResponseFilterBase",
+      "com.yahoo.component.chain.model.Chainable"
     ],
     "attributes" : [
       "public",

@@ -8,6 +8,7 @@
 #include <vespa/searchlib/common/resultset.h>
 #include <vespa/vespalib/util/sort.h>
 #include <algorithm>
+#include <optional>
 #include <vector>
 
 namespace search::queryeval {
@@ -35,11 +36,9 @@ private:
     std::vector<Hit>            _reRankedHits;
 
     std::pair<Scores, Scores> _ranges;
-    feature_t _scale;
-    feature_t _adjust;
 
     struct ScoreComparator {
-        bool operator() (const Hit & lhs, const Hit & rhs) const {
+        bool operator() (const Hit & lhs, const Hit & rhs) const noexcept {
             if (lhs.second == rhs.second) {
                 return (lhs.first < rhs.first);
             }
@@ -48,7 +47,7 @@ private:
     };
 
     struct IndirectScoreComparator {
-        IndirectScoreComparator(const Hit * hits) : _hits(hits) { }
+        explicit IndirectScoreComparator(const Hit * hits) noexcept : _hits(hits) { }
         bool operator() (uint32_t lhs, uint32_t rhs) const {
             if (_hits[lhs].second == _hits[rhs].second) {
                 return (_hits[lhs].first < _hits[rhs].first);
@@ -59,17 +58,17 @@ private:
     };
 
     struct IndirectScoreRadix {
-        IndirectScoreRadix(const Hit * hits) : _hits(hits) { }
-        uint64_t operator () (uint32_t v) {
+        explicit IndirectScoreRadix(const Hit * hits) noexcept : _hits(hits) { }
+        uint64_t operator () (uint32_t v) const noexcept {
             return vespalib::convertForSort<double, false>::convert(_hits[v].second);
         }
         const Hit * _hits;
     };
     struct DocIdRadix {
-        uint32_t operator () (const Hit & v) { return v.first; }
+        uint32_t operator () (const Hit & v) const noexcept { return v.first; }
     };
     struct DocIdComparator {
-        bool operator() (const Hit & lhs, const Hit & rhs) const {
+        bool operator() (const Hit & lhs, const Hit & rhs) const noexcept {
             return (lhs.first < rhs.first);
         }
     };
@@ -77,54 +76,53 @@ private:
     class Collector {
     public:
         using UP = std::unique_ptr<Collector>;
-        virtual ~Collector() {}
+        virtual ~Collector() = default;
         virtual void collect(uint32_t docId, feature_t score) = 0;
-        virtual bool isDocIdCollector() const { return false; }
+        virtual bool isDocIdCollector() const noexcept { return false; }
     };
 
     Collector::UP _collector;
 
     class CollectorBase : public Collector {
     public:
-        CollectorBase(HitCollector &hc) : _hc(hc) { }
+        explicit CollectorBase(HitCollector &hc) noexcept : _hc(hc) { }
         void considerForHitVector(uint32_t docId, feature_t score) {
             if (__builtin_expect((score > _hc._hits[0].second), false)) {
                 replaceHitInVector(docId, score);
             }
         }
     protected:
-        void replaceHitInVector(uint32_t docId, feature_t score);
+        VESPA_DLL_LOCAL void replaceHitInVector(uint32_t docId, feature_t score) noexcept;
         HitCollector &_hc;
     };
 
-    class RankedHitCollector : public CollectorBase {
+    class RankedHitCollector final : public CollectorBase {
     public:
-        RankedHitCollector(HitCollector &hc) : CollectorBase(hc) { }
+        explicit RankedHitCollector(HitCollector &hc) noexcept : CollectorBase(hc) { }
         void collect(uint32_t docId, feature_t score) override;
         void collectAndChangeCollector(uint32_t docId, feature_t score) __attribute__((noinline));
     };
 
     template <bool CollectRankedHit>
-    class DocIdCollector : public CollectorBase {
+    class DocIdCollector final : public CollectorBase {
     public:
-        DocIdCollector(HitCollector &hc) : CollectorBase(hc) { }
+        explicit DocIdCollector(HitCollector &hc) noexcept : CollectorBase(hc) { }
         void collect(uint32_t docId, feature_t score) override;
         void collectAndChangeCollector(uint32_t docId) __attribute__((noinline));
-        bool isDocIdCollector() const override { return true; }
+        bool isDocIdCollector() const noexcept override { return true; }
     };
 
     template <bool CollectRankedHit>
-    class BitVectorCollector : public CollectorBase {
+    class BitVectorCollector final : public CollectorBase {
     public:
-        BitVectorCollector(HitCollector &hc) : CollectorBase(hc) { }
-        virtual void collect(uint32_t docId, feature_t score) override;
+        explicit BitVectorCollector(HitCollector &hc) noexcept : CollectorBase(hc) { }
+        void collect(uint32_t docId, feature_t score) override;
     };
 
-    HitRank getReScore(feature_t score) const {
-        return ((score * _scale) - _adjust);
-    }
     VESPA_DLL_LOCAL void sortHitsByScore(size_t topn);
     VESPA_DLL_LOCAL void sortHitsByDocId();
+
+    bool save_rank_scores() const noexcept { return _maxHitsSize != 0; }
 
 public:
     HitCollector(const HitCollector &) = delete;
@@ -169,15 +167,17 @@ public:
     const std::pair<Scores, Scores> &getRanges() const { return _ranges; }
     void setRanges(const std::pair<Scores, Scores> &ranges);
 
+    std::unique_ptr<ResultSet>
+    get_result_set(std::optional<double> second_phase_rank_drop_limit, std::vector<uint32_t>* dropped);
+
     /**
      * Returns a result set based on the content of this collector.
      * Invoking this method will destroy the heap property of the
      * ranked hits and the match data heap.
      *
-     * @param auto pointer to the result set
-     * @param default_value rank value to be used for results without rank value
+     * @return unique pointer to the result set
      **/
-    std::unique_ptr<ResultSet> getResultSet(HitRank default_value = default_rank_value);
+    std::unique_ptr<ResultSet> getResultSet();
 };
 
 }

@@ -15,9 +15,9 @@ namespace search {
 
 namespace {
 
-const vespalib::string versionTag = "version";
-const vespalib::string docIdLimitTag = "docIdLimit";
-const vespalib::string createSerialNumTag = "createSerialNum";
+const std::string versionTag = "version";
+const std::string docIdLimitTag = "docIdLimit";
+const std::string createSerialNumTag = "createSerialNum";
 
 uint64_t
 extractCreateSerialNum(const vespalib::GenericHeader &header)
@@ -138,6 +138,12 @@ ReaderBase::getNextValueCount()
     uint32_t numValues = nextIdx - _currIdx;
     _currIdx = nextIdx;
     return numValues;
+}
+
+uint64_t
+ReaderBase::size_on_disk() const
+{
+    return _datFile.size_on_disk() + _idxFile.size_on_disk() + _weightFile.size_on_disk();
 }
 
 }

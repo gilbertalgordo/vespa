@@ -1,8 +1,8 @@
 // Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 #pragma once
 
-#include <vespa/vespalib/stllike/string.h>
 #include <memory>
+#include <string>
 
 namespace search::index {
 
@@ -20,7 +20,7 @@ class WordDocElementWordPosFeatures;
 class FieldIndexBuilder {
 public:
     virtual ~FieldIndexBuilder() = default;
-    virtual void startWord(vespalib::stringref word) = 0;
+    virtual void startWord(std::string_view word) = 0;
     virtual void endWord() = 0;
     virtual void add_document(const DocIdAndFeatures &features) = 0;
 };

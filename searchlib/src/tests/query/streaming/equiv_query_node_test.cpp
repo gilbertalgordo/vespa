@@ -33,7 +33,7 @@ using search::streaming::QueryTermList;
 class AllowRewrite : public QueryNodeResultFactory
 {
 public:
-    bool allow_float_terms_rewrite(vespalib::stringref) const noexcept override { return true; }
+    bool allow_float_terms_rewrite(std::string_view) const noexcept override { return true; }
 };
 
 class EquivQueryNodeTest : public ::testing::Test
@@ -42,13 +42,13 @@ public:
     EquivQueryNodeTest();
     ~EquivQueryNodeTest();
 
-    void assert_tfmd_pos(const vespalib::string label,
+    void assert_tfmd_pos(const std::string label,
                          const TermFieldMatchDataPosition &tfmd_pos,
                          uint32_t exp_element_id,
                          uint32_t exp_position,
                          int32_t exp_element_weight,
                          uint32_t exp_element_length);
-    vespalib::string make_simple_equiv_stack_dump();
+    std::string make_simple_equiv_stack_dump();
 };
 
 EquivQueryNodeTest::EquivQueryNodeTest()
@@ -59,7 +59,7 @@ EquivQueryNodeTest::EquivQueryNodeTest()
 EquivQueryNodeTest::~EquivQueryNodeTest() = default;
 
 void
-EquivQueryNodeTest::assert_tfmd_pos(const vespalib::string label,
+EquivQueryNodeTest::assert_tfmd_pos(const std::string label,
                                     const TermFieldMatchDataPosition &tfmd_pos,
                                     uint32_t exp_element_id,
                                     uint32_t exp_position,
@@ -73,7 +73,7 @@ EquivQueryNodeTest::assert_tfmd_pos(const vespalib::string label,
     EXPECT_EQ(exp_element_length, tfmd_pos.getElementLen());
 }
 
-vespalib::string
+std::string
 EquivQueryNodeTest::make_simple_equiv_stack_dump()
 {
     QueryBuilder<SimpleQueryNodeTypes> builder;

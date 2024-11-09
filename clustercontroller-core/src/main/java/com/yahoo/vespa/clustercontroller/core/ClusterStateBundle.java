@@ -2,9 +2,9 @@
 package com.yahoo.vespa.clustercontroller.core;
 
 import com.yahoo.vdslib.state.ClusterState;
+import com.yahoo.vespa.config.content.StorDistributionConfig;
 
-import java.util.Arrays;
-import java.util.Collections;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -35,6 +35,7 @@ public class ClusterStateBundle {
 
     private final AnnotatedClusterState baselineState;
     private final Map<String, AnnotatedClusterState> derivedBucketSpaceStates;
+    private final DistributionConfigBundle distributionConfig;
     private final FeedBlock feedBlock;
     private final boolean deferredActivation;
 
@@ -56,7 +57,7 @@ public class ClusterStateBundle {
         public FeedBlock(boolean blockFeedInCluster, String description) {
             this.blockFeedInCluster = blockFeedInCluster;
             this.description = description;
-            this.concreteExhaustions = Collections.emptySet();
+            this.concreteExhaustions = Set.of();
         }
 
         public FeedBlock(boolean blockFeedInCluster, String description,
@@ -114,6 +115,7 @@ public class ClusterStateBundle {
     public static class Builder {
         private final AnnotatedClusterState baselineState;
         private Map<String, AnnotatedClusterState> explicitDerivedStates;
+        private DistributionConfigBundle distributionConfig;
         private ClusterStateDeriver stateDeriver;
         private Set<String> bucketSpaces;
         private boolean deferredActivation = false;
@@ -138,7 +140,7 @@ public class ClusterStateBundle {
         }
 
         public Builder bucketSpaces(String... bucketSpaces) {
-            return bucketSpaces(new TreeSet<>(Arrays.asList(bucketSpaces)));
+            return bucketSpaces(new TreeSet<>(List.of(bucketSpaces)));
         }
 
         public Builder explicitDerivedStates(Map<String, AnnotatedClusterState> derivedStates) {
@@ -147,6 +149,16 @@ public class ClusterStateBundle {
                                                 "that already has bucket spaces or deriver set");
             }
             this.explicitDerivedStates = derivedStates;
+            return this;
+        }
+
+        public Builder distributionConfig(StorDistributionConfig config) {
+            this.distributionConfig = DistributionConfigBundle.of(config);
+            return this;
+        }
+
+        public Builder distributionConfig(DistributionConfigBundle config) {
+            this.distributionConfig = config;
             return this;
         }
 
@@ -162,31 +174,29 @@ public class ClusterStateBundle {
 
         public ClusterStateBundle deriveAndBuild() {
             if ((stateDeriver == null || bucketSpaces == null || bucketSpaces.isEmpty()) && explicitDerivedStates == null) {
-                return ClusterStateBundle.ofBaselineOnly(baselineState, feedBlock, deferredActivation);
+                return ClusterStateBundle.ofBaselineOnly(baselineState, distributionConfig, feedBlock, deferredActivation);
             }
             Map<String, AnnotatedClusterState> derived;
-            if (explicitDerivedStates != null) {
-                derived = explicitDerivedStates;
-            } else {
-                derived = bucketSpaces.stream()
-                        .collect(Collectors.toMap(
-                                Function.identity(),
-                                s -> stateDeriver.derivedFrom(baselineState, s)));
-            }
-            return new ClusterStateBundle(baselineState, derived, feedBlock, deferredActivation);
+            derived = Objects.requireNonNullElseGet(explicitDerivedStates, () -> bucketSpaces.stream()
+                    .collect(Collectors.toUnmodifiableMap(
+                            Function.identity(),
+                            s -> stateDeriver.derivedFrom(baselineState, s))));
+            return new ClusterStateBundle(baselineState, derived, distributionConfig, feedBlock, deferredActivation);
         }
     }
 
     private ClusterStateBundle(AnnotatedClusterState baselineState, Map<String, AnnotatedClusterState> derivedBucketSpaceStates) {
-        this(baselineState, derivedBucketSpaceStates, null, false);
+        this(baselineState, derivedBucketSpaceStates, null, null, false);
     }
 
     private ClusterStateBundle(AnnotatedClusterState baselineState,
                                Map<String, AnnotatedClusterState> derivedBucketSpaceStates,
+                               DistributionConfigBundle distributionConfig,
                                FeedBlock feedBlock,
                                boolean deferredActivation) {
         this.baselineState = baselineState;
-        this.derivedBucketSpaceStates = Collections.unmodifiableMap(derivedBucketSpaceStates);
+        this.derivedBucketSpaceStates = Map.copyOf(derivedBucketSpaceStates);
+        this.distributionConfig = distributionConfig;
         this.feedBlock = feedBlock;
         this.deferredActivation = deferredActivation;
     }
@@ -203,17 +213,32 @@ public class ClusterStateBundle {
                                         Map<String, AnnotatedClusterState> derivedBucketSpaceStates,
                                         FeedBlock feedBlock,
                                         boolean deferredActivation) {
-        return new ClusterStateBundle(baselineState, derivedBucketSpaceStates, feedBlock, deferredActivation);
+        return new ClusterStateBundle(baselineState, derivedBucketSpaceStates, null, feedBlock, deferredActivation);
+    }
+
+    public static ClusterStateBundle of(AnnotatedClusterState baselineState,
+                                        Map<String, AnnotatedClusterState> derivedBucketSpaceStates,
+                                        FeedBlock feedBlock,
+                                        DistributionConfigBundle distributionConfig,
+                                        boolean deferredActivation) {
+        return new ClusterStateBundle(baselineState, derivedBucketSpaceStates, distributionConfig, feedBlock, deferredActivation);
     }
 
     public static ClusterStateBundle ofBaselineOnly(AnnotatedClusterState baselineState,
                                                     FeedBlock feedBlock,
                                                     boolean deferredActivation) {
-        return new ClusterStateBundle(baselineState, Collections.emptyMap(), feedBlock, deferredActivation);
+        return new ClusterStateBundle(baselineState, Map.of(), null, feedBlock, deferredActivation);
+    }
+
+    public static ClusterStateBundle ofBaselineOnly(AnnotatedClusterState baselineState,
+                                                    DistributionConfigBundle distributionConfig,
+                                                    FeedBlock feedBlock,
+                                                    boolean deferredActivation) {
+        return new ClusterStateBundle(baselineState, Map.of(), distributionConfig, feedBlock, deferredActivation);
     }
 
     public static ClusterStateBundle ofBaselineOnly(AnnotatedClusterState baselineState) {
-        return new ClusterStateBundle(baselineState, Collections.emptyMap());
+        return new ClusterStateBundle(baselineState, Map.of());
     }
 
     public static ClusterStateBundle empty() {
@@ -238,9 +263,9 @@ public class ClusterStateBundle {
         AnnotatedClusterState clonedBaseline = baselineState.cloneWithClusterState(
                 mapper.apply(baselineState.getClusterState().clone()));
         Map<String, AnnotatedClusterState> clonedDerived = derivedBucketSpaceStates.entrySet().stream()
-                .collect(Collectors.toMap(e -> e.getKey(), e -> e.getValue().cloneWithClusterState(
+                .collect(Collectors.toMap(Map.Entry::getKey, e -> e.getValue().cloneWithClusterState(
                         mapper.apply(e.getValue().getClusterState().clone()))));
-        return new ClusterStateBundle(clonedBaseline, clonedDerived, feedBlock, deferredActivation);
+        return new ClusterStateBundle(clonedBaseline, clonedDerived, distributionConfig, feedBlock, deferredActivation);
     }
 
     public ClusterStateBundle clonedWithVersionSet(int version) {
@@ -260,6 +285,11 @@ public class ClusterStateBundle {
         if (clusterFeedIsBlocked() && !feedBlock.similarTo(other.feedBlock)) {
             return false;
         }
+        // Distribution configs must match exactly for bundles to be similar.
+        // It may be the case that they are both null, in which case they are also considered equal.
+        if (!Objects.equals(distributionConfig, other.distributionConfig)) {
+            return false;
+        }
         // FIXME we currently treat mismatching bucket space sets as unchanged to avoid breaking some tests
         return derivedBucketSpaceStates.entrySet().stream()
                 .allMatch(entry -> other.derivedBucketSpaceStates.getOrDefault(entry.getKey(), entry.getValue())
@@ -268,6 +298,10 @@ public class ClusterStateBundle {
 
     public int getVersion() {
         return baselineState.getClusterState().getVersion();
+    }
+
+    public Optional<DistributionConfigBundle> distributionConfig() {
+        return Optional.ofNullable(distributionConfig);
     }
 
     public Optional<FeedBlock> getFeedBlock() {
@@ -287,17 +321,20 @@ public class ClusterStateBundle {
         String feedBlockedStr = clusterFeedIsBlocked()
                 ? String.format(", feed blocked: '%s'", feedBlock.description)
                 : "";
+        String distributionConfigStr = (distributionConfig != null)
+                ? ", distribution config: %s".formatted(distributionConfig.highLevelDescription())
+                : "";
         if (derivedBucketSpaceStates.isEmpty()) {
-            return String.format("ClusterStateBundle('%s'%s%s)", baselineState,
+            return String.format("ClusterStateBundle('%s'%s%s%s)", baselineState,
                     deferredActivation ? " (deferred activation)" : "",
-                    feedBlockedStr);
+                    feedBlockedStr, distributionConfigStr);
         }
         Map<String, AnnotatedClusterState> orderedStates = new TreeMap<>(derivedBucketSpaceStates);
-        return String.format("ClusterStateBundle('%s', %s%s%s)", baselineState, orderedStates.entrySet().stream()
+        return String.format("ClusterStateBundle('%s', %s%s%s%s)", baselineState, orderedStates.entrySet().stream()
                 .map(e -> String.format("%s '%s'", e.getKey(), e.getValue()))
                 .collect(Collectors.joining(", ")),
                 deferredActivation ? " (deferred activation)" : "",
-                feedBlockedStr);
+                feedBlockedStr, distributionConfigStr);
     }
 
     @Override
@@ -308,11 +345,12 @@ public class ClusterStateBundle {
         return (deferredActivation == that.deferredActivation &&
                 Objects.equals(baselineState, that.baselineState) &&
                 Objects.equals(derivedBucketSpaceStates, that.derivedBucketSpaceStates) &&
+                Objects.equals(distributionConfig, that.distributionConfig) &&
                 Objects.equals(feedBlock, that.feedBlock));
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(baselineState, derivedBucketSpaceStates, feedBlock, deferredActivation);
+        return Objects.hash(baselineState, derivedBucketSpaceStates, distributionConfig, feedBlock, deferredActivation);
     }
 }

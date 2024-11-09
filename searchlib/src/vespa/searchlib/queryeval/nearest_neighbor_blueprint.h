@@ -47,6 +47,7 @@ private:
     std::optional<uint32_t> _global_filter_hits;
     std::optional<double> _global_filter_hit_ratio;
     const vespalib::Doom& _doom;
+    MatchingPhase _matching_phase;
 
     void perform_top_k(const search::tensor::NearestNeighborIndex* nns_index);
 public:
@@ -69,17 +70,18 @@ public:
     Algorithm get_algorithm() const { return _algorithm; }
     double get_distance_threshold() const { return _distance_threshold; }
 
+    void sort(InFlow in_flow) override;
     FlowStats calculate_flow_stats(uint32_t docid_limit) const override {
         return default_flow_stats(docid_limit, getState().estimate().estHits, 0);
     }
     
-    std::unique_ptr<SearchIterator> createLeafSearch(const search::fef::TermFieldMatchDataArray& tfmda,
-                                                     bool strict) const override;
-    SearchIteratorUP createFilterSearch(bool strict, FilterConstraint constraint) const override {
-        return create_default_filter(strict, constraint);
+    std::unique_ptr<SearchIterator> createLeafSearch(const search::fef::TermFieldMatchDataArray& tfmda) const override;
+    SearchIteratorUP createFilterSearch(FilterConstraint constraint) const override {
+        return create_default_filter(constraint);
     }
     void visitMembers(vespalib::ObjectVisitor& visitor) const override;
     bool always_needs_unpack() const override;
+    void set_matching_phase(MatchingPhase matching_phase) noexcept override;
 };
 
 std::ostream&

@@ -26,36 +26,28 @@ namespace storage::distributor {
 
 using IndexList = lib::Distribution::IndexList;
 
-vespalib::string
+std::string
 ActiveCopy::getReason() const {
+    vespalib::asciistream ost;
     if (_ready && (_doc_count > 0) && valid_ideal()) {
-        vespalib::asciistream ost;
         ost << "copy is ready, has " << _doc_count
             << " docs and ideal state priority " << _ideal;
-        return ost.str();
     } else if (_ready && (_doc_count > 0)) {
-        vespalib::asciistream ost;
         ost << "copy is ready with " << _doc_count << " docs";
-        return ost.str();
     } else if (_ready) {
         return "copy is ready";
     } else if ((_doc_count > 0) && valid_ideal()) {
-        vespalib::asciistream ost;
         ost << "copy has " << _doc_count << " docs and ideal state priority " << _ideal;
-        return ost.str();
     } else if (_doc_count > 0) {
-        vespalib::asciistream ost;
         ost << "copy has " << _doc_count << " docs";
-        return ost.str();
     } else if (_active) {
         return "copy is already active";
     } else if (valid_ideal()) {
-        vespalib::asciistream ost;
         ost << "copy is ideal state priority " << _ideal;
-        return ost.str();
     } else {
         return "first available copy";
     }
+    return ost.str();
 }
 
 std::ostream&
@@ -93,7 +85,7 @@ using SmallActiveCopyList = vespalib::SmallVector<ActiveCopy, 2>;
 static_assert(sizeof(SmallActiveCopyList) == 40);
 
 SmallActiveCopyList
-buildNodeList(const BucketDatabase::Entry& e,vespalib::ConstArrayRef<uint16_t> nodeIndexes, const IdealServiceLayerNodesBundle::Node2Index & idealState)
+buildNodeList(const BucketDatabase::Entry& e,std::span<const uint16_t> nodeIndexes, const IdealServiceLayerNodesBundle::Node2Index & idealState)
 {
     SmallActiveCopyList result;
     result.reserve(nodeIndexes.size());
@@ -108,6 +100,7 @@ buildNodeList(const BucketDatabase::Entry& e,vespalib::ConstArrayRef<uint16_t> n
 
 struct ActiveStateOrder {
     bool operator()(const ActiveCopy & e1, const ActiveCopy & e2) noexcept {
+        // Replica selection order should be kept in sync with OperationTargetResolverImpl's InstanceOrder.
         if (e1._ready != e2._ready) {
             return e1._ready;
         }
@@ -120,7 +113,9 @@ struct ActiveStateOrder {
         if (e1._active != e2._active) {
             return e1._active;
         }
-        return e1.nodeIndex() < e2.nodeIndex();
+        // Use _entry_ order instead of node index, as it is in ideal state order (even for retired
+        // nodes), which avoids unintentional affinities towards lower node indexes.
+        return e1.entryIndex() < e2.entryIndex();
     }
 };
 

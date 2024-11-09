@@ -21,10 +21,10 @@ namespace proton {
  * The feed handler owner is initializing components.
  */
 class InitState : public FeedState {
-    vespalib::string _doc_type_name;
+    std::string _doc_type_name;
 
 public:
-    InitState(const vespalib::string &name) noexcept
+    InitState(const std::string &name) noexcept
         : FeedState(INIT),
           _doc_type_name(name)
     {
@@ -46,11 +46,11 @@ public:
  * Replayed messages from the transaction log are sent to the active feed view.
  */
 class ReplayTransactionLogState : public FeedState {
-    vespalib::string _doc_type_name;
+    std::string _doc_type_name;
     std::unique_ptr<IReplayPacketHandler> _packet_handler;
 
 public:
-    ReplayTransactionLogState(const vespalib::string &name,
+    ReplayTransactionLogState(const std::string &name,
             IFeedView *& feed_view_ptr,
             bucketdb::IBucketDBHandler &bucketDBHandler,
             IReplayConfig &replay_config,
@@ -75,19 +75,10 @@ class NormalState : public FeedState {
     FeedHandler         &_handler;
 
 public:
-    NormalState(FeedHandler &handler) noexcept
-        : FeedState(NORMAL),
-          _handler(handler) {
-    }
-
-    void handleOperation(FeedToken token, FeedOperationUP op) override {
-        _handler.performOperation(std::move(token), std::move(op));
-    }
-
-    void receive(const PacketWrapperSP &wrap, vespalib::Executor &) override {
-        throwExceptionInReceive(_handler.getDocTypeName().c_str(), wrap->packet.range().from(),
-                                wrap->packet.range().to(), wrap->packet.size());
-    }
+    NormalState(FeedHandler &handler) noexcept;
+    ~NormalState() override;
+    void handleOperation(FeedToken token, FeedOperationUP op) override;
+    void receive(const PacketWrapperSP &wrap, vespalib::Executor &) override;
 };
 }  // namespace proton
 

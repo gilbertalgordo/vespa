@@ -43,18 +43,18 @@ public class NormalizeTestCase {
     public void requireThatExpressionCanBeVerified() {
         Expression exp = new NormalizeExpression(new SimpleLinguistics());
         assertVerify(DataType.STRING, exp, DataType.STRING);
-        assertVerifyThrows(null, exp, "Expected string input, but no input is specified");
-        assertVerifyThrows(DataType.INT, exp, "Expected string input, got int");
+        assertVerifyThrows("Invalid expression 'normalize': Expected string input, but no input is specified", null, exp);
+        assertVerifyThrows("Invalid expression 'normalize': Expected string input, got int", DataType.INT, exp);
     }
 
     @Test
     public void requireThatInputIsNormalized() {
         ExecutionContext ctx = new ExecutionContext(new SimpleTestAdapter());
         ctx.setLanguage(Language.ENGLISH);
-        ctx.setValue(new StringFieldValue("b\u00e9yonc\u00e8"));
+        ctx.setCurrentValue(new StringFieldValue("b\u00e9yonc\u00e8"));
         new NormalizeExpression(new SimpleLinguistics()).execute(ctx);
 
-        FieldValue val = ctx.getValue();
+        FieldValue val = ctx.getCurrentValue();
         assertTrue(val instanceof StringFieldValue);
         assertEquals("beyonce", ((StringFieldValue)val).getString());
     }
@@ -93,11 +93,11 @@ public class NormalizeTestCase {
     public void requireThatBadNormalizeRetries() {
         ExecutionContext ctx = new ExecutionContext(new SimpleTestAdapter());
         ctx.setLanguage(Language.ENGLISH);
-        ctx.setValue(new StringFieldValue("bad norm"));
+        ctx.setCurrentValue(new StringFieldValue("bad norm"));
         var linguistics = new MyMockLinguistics();
         assertTrue(getFirst(linguistics.getTransformer()));
         new NormalizeExpression(linguistics).execute(ctx);
-        FieldValue val = ctx.getValue();
+        FieldValue val = ctx.getCurrentValue();
         assertTrue(val instanceof StringFieldValue);
         assertEquals("bad/norm", ((StringFieldValue)val).getString());
         assertFalse(getFirst(linguistics.getTransformer()));
@@ -108,11 +108,11 @@ public class NormalizeTestCase {
         ExecutionContext ctx = new ExecutionContext(new SimpleTestAdapter());
         ctx.setLanguage(Language.ENGLISH);
         var orig = new StringFieldValue("");
-        ctx.setValue(orig);
+        ctx.setCurrentValue(orig);
         var linguistics = new MyMockLinguistics();
         assertTrue(getFirst(linguistics.getTransformer()));
         new NormalizeExpression(linguistics).execute(ctx);
-        FieldValue val = ctx.getValue();
+        FieldValue val = ctx.getCurrentValue();
         assertTrue(val == orig);
         assertTrue(getFirst(linguistics.getTransformer()));
     }

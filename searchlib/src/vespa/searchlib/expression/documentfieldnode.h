@@ -34,12 +34,12 @@ public:
     DECLARE_EXPRESSIONNODE(DocumentFieldNode);
     DocumentFieldNode() : _fieldPath(), _value(), _fieldName(), _doc(nullptr) { }
     ~DocumentFieldNode() override;
-    DocumentFieldNode(vespalib::stringref name) : _fieldPath(), _value(), _fieldName(name), _doc(nullptr) { }
+    DocumentFieldNode(std::string_view name) : _fieldPath(), _value(), _fieldName(name), _doc(nullptr) { }
     DocumentFieldNode(const DocumentFieldNode & rhs);
     DocumentFieldNode & operator = (const DocumentFieldNode & rhs);
     DocumentFieldNode(DocumentFieldNode && rhs) noexcept = default;
     DocumentFieldNode & operator = (DocumentFieldNode && rhs) noexcept = default;
-    const vespalib::string & getFieldName() const override { return _fieldName; }
+    const std::string & getFieldName() const override { return _fieldName; }
 public:
     class Handler : public document::fieldvalue::IteratorHandler {
     public:
@@ -76,7 +76,7 @@ protected:
     document::FieldPath                _fieldPath;
     mutable ResultNode::CP             _value;
     mutable std::unique_ptr<Handler>   _handler;
-    vespalib::string                   _fieldName;
+    std::string                   _fieldName;
     const document::Document         * _doc;
 
 };

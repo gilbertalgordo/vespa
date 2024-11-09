@@ -5,6 +5,7 @@
 #include <vespa/document/select/parser.h>
 #include <vespa/document/update/documentupdate.h>
 #include <vespa/document/util/serializableexceptions.h>
+#include <vespa/document/repo/documenttyperepo.h>
 #include <vespa/documentapi/documentapi.h>
 #include <vespa/documentapi/messagebus/docapi_common.pb.h>
 #include <vespa/documentapi/messagebus/docapi_feed.pb.h>
@@ -41,30 +42,30 @@ document::DocumentId get_document_id(const protobuf::DocumentId& src) {
 }
 
 // TODO DocumentAPI should be extended to use actual document::FieldSet enums instead of always passing strings.
-void set_raw_field_set(protobuf::FieldSet& dest, vespalib::stringref src) {
+void set_raw_field_set(protobuf::FieldSet& dest, std::string_view src) {
     dest.set_spec(src.data(), src.size());
 }
 
 // Note: returns by ref
-vespalib::stringref get_raw_field_set(const protobuf::FieldSet& src) noexcept {
+std::string_view get_raw_field_set(const protobuf::FieldSet& src) noexcept {
     return src.spec();
 }
 
-void set_raw_selection(protobuf::DocumentSelection& dest, vespalib::stringref src) {
+void set_raw_selection(protobuf::DocumentSelection& dest, std::string_view src) {
     dest.set_selection(src.data(), src.size());
 }
 
 // Note: returns by ref
-vespalib::stringref get_raw_selection(const protobuf::DocumentSelection& src) noexcept {
+std::string_view get_raw_selection(const protobuf::DocumentSelection& src) noexcept {
     return src.selection();
 }
 
-void set_bucket_space(protobuf::BucketSpace& dest, vespalib::stringref space_name) {
+void set_bucket_space(protobuf::BucketSpace& dest, std::string_view space_name) {
     dest.set_name(space_name.data(), space_name.size());
 }
 
 // Note: returns by ref
-vespalib::stringref get_bucket_space(const protobuf::BucketSpace& src) noexcept {
+std::string_view get_bucket_space(const protobuf::BucketSpace& src) noexcept {
     return src.name();
 }
 
@@ -83,12 +84,25 @@ document::GlobalId get_global_id(const protobuf::GlobalId& src) {
     return document::GlobalId(src.raw_gid().data()); // By copy
 }
 
-documentapi::TestAndSetCondition get_tas_condition(const protobuf::TestAndSetCondition& src) {
-    return documentapi::TestAndSetCondition(src.selection());
+TestAndSetCondition get_tas_condition(const protobuf::TestAndSetCondition& src) {
+    if (!src.selection().empty()) {
+        if (src.required_timestamp() != 0) {
+            return {src.required_timestamp(), src.selection()};
+        }
+        return TestAndSetCondition(src.selection());
+    } else if (src.required_timestamp() != 0) {
+        return TestAndSetCondition(src.required_timestamp());
+    }
+    return {};
 }
 
-void set_tas_condition(protobuf::TestAndSetCondition& dest, const documentapi::TestAndSetCondition& src) {
-    dest.set_selection(src.getSelection().data(), src.getSelection().size());
+void set_tas_condition(protobuf::TestAndSetCondition& dest, const TestAndSetCondition& src) {
+    if (src.has_selection()) {
+        dest.set_selection(src.getSelection().data(), src.getSelection().size());
+    }
+    if (src.has_required_timestamp()) {
+        dest.set_required_timestamp(src.required_timestamp());
+    }
 }
 
 std::shared_ptr<document::Document> get_document(const protobuf::Document& src_doc,
@@ -148,8 +162,8 @@ void log_codec_error(const char* op, const char* type, const char* msg) noexcept
     LOGBM(error, "Error during Protobuf %s for message type %s: %s", op, type, msg);
 }
 
-[[noreturn]] void rethrow_as_decorated_exception(const char* type, const vespalib::string& msg) __attribute((noinline));
-[[noreturn]] void rethrow_as_decorated_exception(const char* type, const vespalib::string& msg) {
+[[noreturn]] void rethrow_as_decorated_exception(const char* type, const std::string& msg) __attribute((noinline));
+[[noreturn]] void rethrow_as_decorated_exception(const char* type, const std::string& msg) {
     throw vespalib::IllegalArgumentException(vespalib::make_string("Failed decoding message of type %s: %s", type, msg.c_str()), VESPA_STRLOC);
 }
 
@@ -271,6 +285,7 @@ std::shared_ptr<IRoutableFactory> RoutableFactories80::put_document_message_fact
             if (src.getDocumentSP()) [[likely]] { // This should always be present in practice
                 set_document(*dest.mutable_document(), src.getDocument());
             }
+            dest.set_persisted_timestamp(src.persisted_timestamp());
             dest.set_create_if_missing(src.get_create_if_non_existent());
         },
         [type_repo = std::move(repo)](const protobuf::PutDocumentRequest& src) {
@@ -280,6 +295,7 @@ std::shared_ptr<IRoutableFactory> RoutableFactories80::put_document_message_fact
                 msg->setCondition(get_tas_condition(src.condition()));
             }
             msg->setTimestamp(src.force_assign_timestamp());
+            msg->set_persisted_timestamp(src.persisted_timestamp());
             msg->set_create_if_non_existent(src.create_if_missing());
             return msg;
         }
@@ -312,6 +328,10 @@ std::shared_ptr<IRoutableFactory> RoutableFactories80::update_document_message_f
             }
             dest.set_expected_old_timestamp(src.getOldTimestamp());
             dest.set_force_assign_timestamp(src.getNewTimestamp());
+            if (src.has_cached_create_if_missing()) {
+                dest.set_create_if_missing(src.create_if_missing() ? protobuf::UpdateDocumentRequest_CreateIfMissing_TRUE
+                                                                   : protobuf::UpdateDocumentRequest_CreateIfMissing_FALSE);
+            }
         },
         [type_repo = std::move(repo)](const protobuf::UpdateDocumentRequest& src) {
             auto msg = std::make_unique<UpdateDocumentMessage>();
@@ -321,6 +341,9 @@ std::shared_ptr<IRoutableFactory> RoutableFactories80::update_document_message_f
             }
             msg->setOldTimestamp(src.expected_old_timestamp());
             msg->setNewTimestamp(src.force_assign_timestamp());
+            if (src.create_if_missing() != protobuf::UpdateDocumentRequest_CreateIfMissing_UNSPECIFIED) {
+                msg->set_cached_create_if_missing(src.create_if_missing() == protobuf::UpdateDocumentRequest_CreateIfMissing_TRUE);
+            }
             return msg;
         }
     );
@@ -352,6 +375,7 @@ std::shared_ptr<IRoutableFactory> RoutableFactories80::remove_document_message_f
             if (src.getCondition().isPresent()) {
                 set_tas_condition(*dest.mutable_condition(), src.getCondition());
             }
+            dest.set_persisted_timestamp(src.persisted_timestamp());
         },
         [](const protobuf::RemoveDocumentRequest& src) {
             auto msg = std::make_unique<RemoveDocumentMessage>();
@@ -359,6 +383,7 @@ std::shared_ptr<IRoutableFactory> RoutableFactories80::remove_document_message_f
             if (src.has_condition()) {
                 msg->setCondition(get_tas_condition(src.condition()));
             }
+            msg->set_persisted_timestamp(src.persisted_timestamp());
             return msg;
         }
     );
@@ -393,8 +418,8 @@ RoutableFactories80::remove_location_message_factory(std::shared_ptr<const docum
         [type_repo = std::move(repo)](const protobuf::RemoveLocationRequest& src) {
             document::BucketIdFactory factory;
             document::select::Parser parser(*type_repo, factory);
-            auto msg = std::make_unique<RemoveLocationMessage>(factory, parser, get_raw_selection(src.selection()));
-            msg->setBucketSpace(get_bucket_space(src.bucket_space()));
+            auto msg = std::make_unique<RemoveLocationMessage>(factory, parser, string(get_raw_selection(src.selection())));
+            msg->setBucketSpace(std::string(get_bucket_space(src.bucket_space())));
             return msg;
         }
     );
@@ -487,9 +512,9 @@ std::shared_ptr<IRoutableFactory> RoutableFactories80::create_visitor_message_fa
             msg->setInstanceId(src.instance_id());
             msg->setControlDestination(src.control_destination());
             msg->setDataDestination(src.data_destination());
-            msg->setDocumentSelection(get_raw_selection(src.selection()));
+            msg->setDocumentSelection(string(get_raw_selection(src.selection())));
             msg->setMaximumPendingReplyCount(src.max_pending_reply_count());
-            msg->setBucketSpace(get_bucket_space(src.bucket_space()));
+            msg->setBucketSpace(string(get_bucket_space(src.bucket_space())));
             msg->setBuckets(get_bucket_id_vector(src.buckets()));
             msg->setFromTimestamp(src.from_timestamp());
             msg->setToTimestamp(src.to_timestamp());
@@ -662,7 +687,7 @@ std::shared_ptr<IRoutableFactory> RoutableFactories80::visitor_info_message_fact
     return make_codec<VisitorInfoMessage, protobuf::VisitorInfoRequest>(
         [](const VisitorInfoMessage& src, protobuf::VisitorInfoRequest& dest) {
             set_bucket_id_vector(*dest.mutable_finished_buckets(), src.getFinishedBuckets());
-            dest.set_error_message(src.getErrorMessage());
+            dest.set_error_message(static_cast<std::string_view>(src.getErrorMessage()));
         },
         [](const protobuf::VisitorInfoRequest& src) {
             auto msg = std::make_unique<VisitorInfoMessage>();
@@ -765,7 +790,7 @@ std::shared_ptr<IRoutableFactory> RoutableFactories80::get_bucket_list_message_f
         },
         [](const protobuf::GetBucketListRequest& src) {
             auto msg = std::make_unique<GetBucketListMessage>(get_bucket_id(src.bucket_id()));
-            msg->setBucketSpace(get_bucket_space(src.bucket_space()));
+            msg->setBucketSpace(string(get_bucket_space(src.bucket_space())));
             return msg;
         }
     );
@@ -861,8 +886,8 @@ std::shared_ptr<IRoutableFactory> RoutableFactories80::stat_bucket_message_facto
         [](const protobuf::StatBucketRequest& src) {
             auto msg = std::make_unique<StatBucketMessage>();
             msg->setBucketId(get_bucket_id(src.bucket_id()));
-            msg->setDocumentSelection(get_raw_selection(src.selection()));
-            msg->setBucketSpace(get_bucket_space(src.bucket_space()));
+            msg->setDocumentSelection(string(get_raw_selection(src.selection())));
+            msg->setBucketSpace(string(get_bucket_space(src.bucket_space())));
             return msg;
         }
     );
@@ -871,7 +896,7 @@ std::shared_ptr<IRoutableFactory> RoutableFactories80::stat_bucket_message_facto
 std::shared_ptr<IRoutableFactory> RoutableFactories80::stat_bucket_reply_factory() {
     return make_codec<StatBucketReply, protobuf::StatBucketResponse>(
         [](const StatBucketReply& src, protobuf::StatBucketResponse& dest) {
-            dest.set_results(src.getResults());
+            dest.set_results(static_cast<std::string_view>(src.getResults()));
         },
         [](const protobuf::StatBucketResponse& src) {
             auto reply = std::make_unique<StatBucketReply>();
@@ -888,7 +913,7 @@ std::shared_ptr<IRoutableFactory> RoutableFactories80::stat_bucket_reply_factory
 std::shared_ptr<IRoutableFactory> RoutableFactories80::wrong_distribution_reply_factory() {
     return make_codec<WrongDistributionReply, protobuf::WrongDistributionResponse>(
         [](const WrongDistributionReply& src, protobuf::WrongDistributionResponse& dest) {
-            dest.mutable_cluster_state()->set_state_string(src.getSystemState());
+            dest.mutable_cluster_state()->set_state_string(static_cast<std::string_view>(src.getSystemState()));
         },
         [](const protobuf::WrongDistributionResponse& src) {
             auto reply = std::make_unique<WrongDistributionReply>();

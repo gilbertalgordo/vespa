@@ -149,7 +149,7 @@ ClosestSerializedExecutor::execute(uint32_t docId)
 ClosestDirectExecutor::ClosestDirectExecutor(DistanceCalculatorBundle&& bundle, Value& empty_output, TypedCells identity, const ITensorAttribute& attr)
     : ClosestExecutor(std::move(bundle), empty_output, identity, attr),
       _subspace_type(attr.getTensorType()),
-      _labels(1),
+      _labels(attr.getTensorType().count_mapped_dimensions()),
       _label_ptrs(_labels.size())
 {
     for (size_t i = 0; i < _labels.size(); ++i) {
@@ -232,13 +232,13 @@ ClosestBlueprint::setup(const fef::IIndexEnvironment & env, const fef::Parameter
     }
     auto fi = env.getFieldByName(_field_name);
     assert(fi != nullptr);
-    vespalib::string attr_type_spec = type::Attribute::lookup(env.getProperties(), _field_name);
+    std::string attr_type_spec = type::Attribute::lookup(env.getProperties(), _field_name);
     if (attr_type_spec.empty()) {
         LOG(error, "%s: Field %s lacks a type in index properties", getName().c_str(), _field_name.c_str());
         return false;
     }
     _field_tensor_type = ValueType::from_spec(attr_type_spec);
-    if (_field_tensor_type.is_error() || _field_tensor_type.is_double() || _field_tensor_type.count_mapped_dimensions() != 1 || _field_tensor_type.count_indexed_dimensions() != 1) {
+    if (_field_tensor_type.is_error() || _field_tensor_type.is_double() || _field_tensor_type.count_mapped_dimensions() < 1 || _field_tensor_type.count_indexed_dimensions() != 1) {
         LOG(error, "%s: Field %s has invalid type: '%s'", getName().c_str(), _field_name.c_str(), attr_type_spec.c_str());
         return false;
     }

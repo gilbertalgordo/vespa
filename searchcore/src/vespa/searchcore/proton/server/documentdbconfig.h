@@ -111,8 +111,8 @@ public:
     using ImportedFieldsConfigSP = std::shared_ptr<ImportedFieldsConfig>;
 
 private:
-    vespalib::string                          _configId;
-    vespalib::string                          _docTypeName;
+    std::string                          _configId;
+    std::string                          _docTypeName;
     int64_t                                   _generation;
     RankProfilesConfigSP                      _rankProfiles;
     std::shared_ptr<const RankingConstants>   _rankingConstants;
@@ -126,7 +126,7 @@ private:
     std::shared_ptr<const document::DocumentTypeRepo>   _repo;
     ImportedFieldsConfigSP                    _importedFields;
     search::TuneFileDocumentDB::SP            _tuneFileDocumentDB;
-    search::index::Schema::SP                 _schema;
+    std::shared_ptr<const search::index::Schema> _schema;
     MaintenanceConfigSP                       _maintenance;
     search::LogDocumentStore::Config          _storeConfig;
     const ThreadingServiceConfig              _threading_service_config;
@@ -165,22 +165,22 @@ public:
                      const std::shared_ptr<const document::DocumentTypeRepo> &repo,
                      const ImportedFieldsConfigSP &importedFields,
                      const search::TuneFileDocumentDB::SP &tuneFileDocumentDB,
-                     const search::index::Schema::SP &schema,
+                     std::shared_ptr<const search::index::Schema> schema,
                      const DocumentDBMaintenanceConfig::SP &maintenance,
                      const search::LogDocumentStore::Config & storeConfig,
                      const ThreadingServiceConfig & threading_service_config,
                      const AllocConfig & alloc_config,
-                     const vespalib::string &configId,
-                     const vespalib::string &docTypeName) noexcept;
+                     const std::string &configId,
+                     const std::string &docTypeName) noexcept;
 
     DocumentDBConfig(const DocumentDBConfig &cfg) noexcept;
     DocumentDBConfig & operator=(const DocumentDBConfig &cfg) = delete;
     ~DocumentDBConfig();
 
-    const vespalib::string &getConfigId() const { return _configId; }
-    void setConfigId(const vespalib::string &configId) { _configId = configId; }
+    const std::string &getConfigId() const { return _configId; }
+    void setConfigId(const std::string &configId) { _configId = configId; }
 
-    const vespalib::string &getDocTypeName() const { return _docTypeName; }
+    const std::string &getDocTypeName() const { return _docTypeName; }
 
     int64_t getGeneration() const { return _generation; }
 
@@ -206,7 +206,7 @@ public:
     const document::DocumentType *getDocumentType() const;
     const ImportedFieldsConfig &getImportedFieldsConfig() const { return *_importedFields; }
     const ImportedFieldsConfigSP &getImportedFieldsConfigSP() const { return _importedFields; }
-    const search::index::Schema::SP &getSchemaSP() const { return _schema; }
+    const std::shared_ptr<const search::index::Schema>& getSchemaSP() const noexcept { return _schema; }
     const MaintenanceConfigSP &getMaintenanceConfigSP() const { return _maintenance; }
     const search::TuneFileDocumentDB::SP &getTuneFileDocumentDBSP() const { return _tuneFileDocumentDB; }
     bool getDelayedAttributeAspects() const { return _delayedAttributeAspects; }
@@ -253,7 +253,7 @@ public:
     static SP makeDelayedAttributeAspectConfig(const SP &newCfg, const DocumentDBConfig &oldCfg);
     SP make_copy() const;
 
-    static std::shared_ptr<search::index::Schema>
+    static std::shared_ptr<const search::index::Schema>
     build_schema(const AttributesConfig& attributes_config,
                  const IndexschemaConfig &indexschema_config);
 };

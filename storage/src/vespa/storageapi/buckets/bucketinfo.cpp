@@ -2,6 +2,7 @@
 #include "bucketinfo.h"
 #include <vespa/vespalib/stllike/asciistream.h>
 #include <vespa/vespalib/util/xmlstream.h>
+#include <ostream>
 
 namespace storage::api {
 
@@ -83,7 +84,7 @@ BucketInfo::operator==(const BucketInfo& info) const noexcept
 }
 
 // TODO: add ready/active to printing
-vespalib::string
+std::string
 BucketInfo::toString() const
 {
     vespalib::asciistream out;

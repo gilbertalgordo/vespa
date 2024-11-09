@@ -1,9 +1,9 @@
 // Copyright Vespa.ai. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
-#include <vespa/vespalib/testkit/testapp.h>
 #include <vespa/searchlib/common/bitvector.h>
 #include <vespa/searchlib/fef/fef.h>
 #include <vespa/searchlib/queryeval/hitcollector.h>
+#include <vespa/vespalib/gtest/gtest.h>
 
 #include <vespa/log/log.h>
 LOG_SETUP("hitcollector_test");
@@ -13,6 +13,8 @@ using namespace search::fef;
 using namespace search::queryeval;
 
 using ScoreMap = std::map<uint32_t, feature_t>;
+using DocidVector = std::vector<uint32_t>;
+using RankedHitVector = std::vector<RankedHit>;
 
 using Ranges = std::pair<Scores, Scores>;
 
@@ -67,11 +69,11 @@ void checkResult(const ResultSet & rs, const std::vector<RankedHit> & exp)
     if ( ! exp.empty()) {
         const RankedHit * rh = rs.getArray();
         ASSERT_TRUE(rh != nullptr);
-        ASSERT_EQUAL(rs.getArrayUsed(), exp.size());
+        ASSERT_EQ(rs.getArrayUsed(), exp.size());
 
         for (uint32_t i = 0; i < exp.size(); ++i) {
-            EXPECT_EQUAL(rh[i].getDocId(), exp[i].getDocId());
-            EXPECT_EQUAL(rh[i].getRank() + 1.0, exp[i].getRank() + 1.0);
+            EXPECT_EQ(rh[i].getDocId(), exp[i].getDocId());
+            EXPECT_DOUBLE_EQ(rh[i].getRank() + 64.0, exp[i].getRank() + 64.0);
         }
     } else {
         ASSERT_TRUE(rs.getArray() == nullptr);
@@ -93,21 +95,24 @@ void checkResult(ResultSet & rs, BitVector * exp)
     }
 }
 
-void testAddHit(uint32_t numDocs, uint32_t maxHitsSize)
+void testAddHit(uint32_t numDocs, uint32_t maxHitsSize, const std::string& label)
 {
 
+    SCOPED_TRACE(label);
     LOG(info, "testAddHit: no hits");
-    { // no hits
+    {
+        SCOPED_TRACE("no hits");
         HitCollector hc(numDocs, maxHitsSize);
         std::vector<RankedHit> expRh;
 
         std::unique_ptr<ResultSet> rs = hc.getResultSet();
-        TEST_DO(checkResult(*rs, expRh));
-        TEST_DO(checkResult(*rs, nullptr));
+        checkResult(*rs, expRh);
+        checkResult(*rs, nullptr);
     }
 
     LOG(info, "testAddHit: only ranked hits");
-    { // only ranked hits
+    {
+        SCOPED_TRACE("only ranked hits");
         HitCollector hc(numDocs, maxHitsSize);
         std::vector<RankedHit> expRh;
 
@@ -121,12 +126,13 @@ void testAddHit(uint32_t numDocs, uint32_t maxHitsSize)
         }
 
         std::unique_ptr<ResultSet> rs = hc.getResultSet();
-        TEST_DO(checkResult(*rs, expRh));
-        TEST_DO(checkResult(*rs, nullptr));
+        checkResult(*rs, expRh);
+        checkResult(*rs, nullptr);
     }
 
     LOG(info, "testAddHit: both ranked hits and bit vector hits");
-    { // both ranked hits and bit vector hits
+    {
+        SCOPED_TRACE("both ranked hits and bitvector hits");
         HitCollector hc(numDocs, maxHitsSize);
         std::vector<RankedHit> expRh;
         BitVector::UP expBv(BitVector::create(numDocs));
@@ -144,14 +150,15 @@ void testAddHit(uint32_t numDocs, uint32_t maxHitsSize)
         }
 
         std::unique_ptr<ResultSet> rs = hc.getResultSet();
-        TEST_DO(checkResult(*rs, expRh));
-        TEST_DO(checkResult(*rs, expBv.get()));
+        checkResult(*rs, expRh);
+        checkResult(*rs, expBv.get());
     }
 }
 
-TEST("testAddHit") {
-    TEST_DO(testAddHit(30, 10));
-    TEST_DO(testAddHit(400, 10)); // 400/32 = 12 which is bigger than 10.
+TEST(HitCollectorTest, testAddHit)
+{
+    testAddHit(30, 10, "numDocs==30");
+    testAddHit(400, 10, "numDocs==400"); // 400/32 = 12 which is bigger than 10.
 }
 
 struct Fixture {
@@ -197,14 +204,17 @@ struct DescendingScoreFixture : Fixture {
 
 DescendingScoreFixture::~DescendingScoreFixture() = default;
 
-TEST_F("testReRank - empty", Fixture) {
-    EXPECT_EQUAL(0u, f.reRank());
+TEST(HitCollectorTest, rerank_empty)
+{
+    Fixture f;
+    EXPECT_EQ(0u, f.reRank());
 }
 
-TEST_F("testReRank - ascending", AscendingScoreFixture)
+TEST(HitCollectorTest, rerank_ascending)
 {
+    AscendingScoreFixture f;
     f.addHits();
-    EXPECT_EQUAL(5u, f.reRank());
+    EXPECT_EQ(5u, f.reRank());
 
     std::vector<RankedHit> expRh;
     for (uint32_t i = 10; i < 20; ++i) {  // 10 last are the best
@@ -213,17 +223,18 @@ TEST_F("testReRank - ascending", AscendingScoreFixture)
             expRh.back()._rankValue = i + 200; // after reranking
         }
     }
-    EXPECT_EQUAL(expRh.size(), 10u);
+    EXPECT_EQ(expRh.size(), 10u);
 
     std::unique_ptr<ResultSet> rs = f.hc.getResultSet();
-    TEST_DO(checkResult(*rs, expRh));
-    TEST_DO(checkResult(*rs, f.expBv.get()));
+    checkResult(*rs, expRh);
+    checkResult(*rs, f.expBv.get());
 }
 
-TEST_F("testReRank - descending", DescendingScoreFixture)
+TEST(HitCollectorTest, rerank_descending)
 {
+    DescendingScoreFixture f;
     f.addHits();
-    EXPECT_EQUAL(5u, f.reRank());
+    EXPECT_EQ(5u, f.reRank());
 
     std::vector<RankedHit> expRh;
     for (uint32_t i = 0; i < 10; ++i) {  // 10 first are the best
@@ -232,17 +243,18 @@ TEST_F("testReRank - descending", DescendingScoreFixture)
             expRh.back()._rankValue = i + 200; // after reranking
         }
     }
-    EXPECT_EQUAL(expRh.size(), 10u);
+    EXPECT_EQ(expRh.size(), 10u);
 
     std::unique_ptr<ResultSet> rs = f.hc.getResultSet();
-    TEST_DO(checkResult(*rs, expRh));
-    TEST_DO(checkResult(*rs, f.expBv.get()));
+    checkResult(*rs, expRh);
+    checkResult(*rs, f.expBv.get());
 }
 
-TEST_F("testReRank - partial", AscendingScoreFixture)
+TEST(HitCollectorTest, rerank_partial)
 {
+    AscendingScoreFixture f;
     f.addHits();
-    EXPECT_EQUAL(3u, f.reRank(3));
+    EXPECT_EQ(3u, f.reRank(3));
 
     std::vector<RankedHit> expRh;
     for (uint32_t i = 10; i < 20; ++i) {  // 10 last are the best
@@ -251,36 +263,39 @@ TEST_F("testReRank - partial", AscendingScoreFixture)
             expRh.back()._rankValue = i + 200; // after reranking
         }
     }
-    EXPECT_EQUAL(expRh.size(), 10u);
+    EXPECT_EQ(expRh.size(), 10u);
 
     std::unique_ptr<ResultSet> rs = f.hc.getResultSet();
-    TEST_DO(checkResult(*rs, expRh));
-    TEST_DO(checkResult(*rs, f.expBv.get()));
+    checkResult(*rs, expRh);
+    checkResult(*rs, f.expBv.get());
 }
 
-TEST_F("require that hits for 2nd phase candidates can be retrieved", DescendingScoreFixture)
+TEST(HitCollectorTest, require_that_hits_for_2nd_phase_candidates_can_be_retrieved)
 {
+    DescendingScoreFixture f;
     f.addHits();
     std::vector<HitCollector::Hit> scores = extract(f.hc.getSortedHitSequence(5));
-    ASSERT_EQUAL(5u, scores.size());
-    EXPECT_EQUAL(100, scores[0].second);
-    EXPECT_EQUAL(99, scores[1].second);
-    EXPECT_EQUAL(98, scores[2].second);
-    EXPECT_EQUAL(97, scores[3].second);
-    EXPECT_EQUAL(96, scores[4].second);
+    ASSERT_EQ(5u, scores.size());
+    EXPECT_EQ(100, scores[0].second);
+    EXPECT_EQ(99, scores[1].second);
+    EXPECT_EQ(98, scores[2].second);
+    EXPECT_EQ(97, scores[3].second);
+    EXPECT_EQ(96, scores[4].second);
 }
 
-TEST("require that score ranges can be read and set.") {
+TEST(HitCollectorTest, require_that_score_ranges_can_be_read_and_set)
+{
     std::pair<Scores, Scores> ranges = std::make_pair(Scores(1.0, 2.0), Scores(3.0, 4.0));
     HitCollector hc(20, 10);
     hc.setRanges(ranges);
-    EXPECT_EQUAL(ranges.first.low, hc.getRanges().first.low);
-    EXPECT_EQUAL(ranges.first.high, hc.getRanges().first.high);
-    EXPECT_EQUAL(ranges.second.low, hc.getRanges().second.low);
-    EXPECT_EQUAL(ranges.second.high, hc.getRanges().second.high);
+    EXPECT_EQ(ranges.first.low, hc.getRanges().first.low);
+    EXPECT_EQ(ranges.first.high, hc.getRanges().first.high);
+    EXPECT_EQ(ranges.second.low, hc.getRanges().second.low);
+    EXPECT_EQ(ranges.second.high, hc.getRanges().second.high);
 }
 
-TEST("testNoHitsToReRank") {
+TEST(HitCollectorTest, no_hits_to_rerank)
+{
     uint32_t numDocs = 20;
     uint32_t maxHitsSize = 10;
 
@@ -299,8 +314,8 @@ TEST("testNoHitsToReRank") {
         }
 
         std::unique_ptr<ResultSet> rs = hc.getResultSet();
-        TEST_DO(checkResult(*rs, expRh));
-        TEST_DO(checkResult(*rs, nullptr));
+        checkResult(*rs, expRh);
+        checkResult(*rs, nullptr);
     }
 }
 
@@ -317,14 +332,15 @@ void testScaling(const std::vector<feature_t> &initScores,
 
     PredefinedScorer scorer(std::move(finalScores));
     // perform second phase ranking
-    EXPECT_EQUAL(2u, do_reRank(scorer, hc, 2));
+    EXPECT_EQ(2u, do_reRank(scorer, hc, 2));
 
     // check results
     std::unique_ptr<ResultSet> rs = hc.getResultSet();
-    TEST_DO(checkResult(*rs, expected));
+    checkResult(*rs, expected);
 }
 
-TEST("testScaling") {
+TEST(HitCollectorTest, scaling)
+{
     std::vector<feature_t> initScores(5);
     initScores[0] = 1000;
     initScores[1] = 2000;
@@ -338,7 +354,8 @@ TEST("testScaling") {
         exp[i]._docId = i;
     }
 
-    { // scale down and adjust down
+    {
+        SCOPED_TRACE("scale down and adjust down");
         exp[0]._rankValue = 0;   // scaled
         exp[1]._rankValue = 100; // scaled
         exp[2]._rankValue = 200; // scaled
@@ -350,9 +367,10 @@ TEST("testScaling") {
         finalScores[3] = 300;
         finalScores[4] = 400;
 
-        TEST_DO(testScaling(initScores, std::move(finalScores), exp));
+        testScaling(initScores, std::move(finalScores), exp);
     }
-    { // scale down and adjust up
+    {
+        SCOPED_TRACE("scale down and adjust up");
         exp[0]._rankValue = 200; // scaled
         exp[1]._rankValue = 300; // scaled
         exp[2]._rankValue = 400; // scaled
@@ -364,10 +382,10 @@ TEST("testScaling") {
         finalScores[3] = 500;
         finalScores[4] = 600;
 
-        TEST_DO(testScaling(initScores, std::move(finalScores), exp));
+        testScaling(initScores, std::move(finalScores), exp);
     }
-    { // scale up and adjust down
-
+    {
+        SCOPED_TRACE("scale up and adjust down");
         exp[0]._rankValue = -500; // scaled (-500)
         exp[1]._rankValue = 750;  // scaled
         exp[2]._rankValue = 2000; // scaled
@@ -379,9 +397,10 @@ TEST("testScaling") {
         finalScores[3] = 3250;
         finalScores[4] = 4500;
 
-        TEST_DO(testScaling(initScores, std::move(finalScores), exp));
+        testScaling(initScores, std::move(finalScores), exp);
     }
-    { // minimal scale (second phase range = 0 (4 - 4) -> 1)
+    {
+        SCOPED_TRACE("minimal scale (second phase range = 0 (4 - 4) -> 1)");
         exp[0]._rankValue = 1; // scaled
         exp[1]._rankValue = 2; // scaled
         exp[2]._rankValue = 3; // scaled
@@ -393,9 +412,10 @@ TEST("testScaling") {
         finalScores[3] = 4;
         finalScores[4] = 4;
 
-        TEST_DO(testScaling(initScores, std::move(finalScores), exp));
+        testScaling(initScores, std::move(finalScores), exp);
     }
-    { // minimal scale (first phase range = 0 (4000 - 4000) -> 1)
+    {
+        SCOPED_TRACE("minimal scale (first phase range = 0 (4000 - 4000) -> 1)");
         std::vector<feature_t> is(initScores);
         is[4] = 4000;
         exp[0]._rankValue = -299600; // scaled
@@ -409,11 +429,12 @@ TEST("testScaling") {
         finalScores[3] = 400;
         finalScores[4] = 500;
 
-        TEST_DO(testScaling(is, std::move(finalScores), exp));
+        testScaling(is, std::move(finalScores), exp);
     }
 }
 
-TEST("testOnlyBitVector") {
+TEST(HitCollectorTest, only_bitvector)
+{
     uint32_t numDocs = 20;
     LOG(info, "testOnlyBitVector: test it");
     {
@@ -428,8 +449,8 @@ TEST("testOnlyBitVector") {
 
         std::unique_ptr<ResultSet> rs = hc.getResultSet();
         std::vector<RankedHit> expRh;
-        TEST_DO(checkResult(*rs, expRh));  // no ranked hits
-        TEST_DO(checkResult(*rs, expBv.get())); // only bit vector
+        checkResult(*rs, expRh);  // no ranked hits
+        checkResult(*rs, expBv.get()); // only bit vector
     }
 }
 
@@ -443,9 +464,9 @@ struct MergeResultSetFixture {
     {}
 };
 
-TEST_F("require that result set is merged correctly with first phase ranking",
-        MergeResultSetFixture)
+TEST(HitCollectorTest, require_that_result_set_is_merged_correctly_with_first_phase_ranking)
 {
+    MergeResultSetFixture f;
     std::vector<RankedHit> expRh;
     for (uint32_t i = 0; i < f.numDocs; ++i) {
         f.hc.addHit(i, i + 1000);
@@ -457,7 +478,7 @@ TEST_F("require that result set is merged correctly with first phase ranking",
         expRh.back()._rankValue = (i < f.numDocs - f.maxHitsSize) ? default_rank_value : i + 1000;
     }
     std::unique_ptr<ResultSet> rs = f.hc.getResultSet();
-    TEST_DO(checkResult(*rs, expRh));
+    checkResult(*rs, expRh);
 }
 
 void
@@ -474,9 +495,9 @@ addExpectedHitForMergeTest(const MergeResultSetFixture &f, std::vector<RankedHit
     }
 }
 
-TEST_F("require that result set is merged correctly with second phase ranking (document scorer)",
-        MergeResultSetFixture)
+TEST(HitCollectorTest, require_that_result_set_is_merged_correctly_with_second_phase_ranking_using_document_scorer)
 {
+    MergeResultSetFixture f;
     // with second phase ranking that triggers rescoring / scaling
     BasicScorer scorer(500); // second phase ranking setting score to docId + 500
     std::vector<RankedHit> expRh;
@@ -484,12 +505,13 @@ TEST_F("require that result set is merged correctly with second phase ranking (d
         f.hc.addHit(i, i + 1000);
         addExpectedHitForMergeTest(f, expRh, i);
     }
-    EXPECT_EQUAL(f.maxHeapSize, do_reRank(scorer, f.hc, f.maxHeapSize));
+    EXPECT_EQ(f.maxHeapSize, do_reRank(scorer, f.hc, f.maxHeapSize));
     std::unique_ptr<ResultSet> rs = f.hc.getResultSet();
-    TEST_DO(checkResult(*rs, expRh));
+    checkResult(*rs, expRh);
 }
 
-TEST("require that hits can be added out of order") {
+TEST(HitCollectorTest, require_that_hits_can_be_added_out_of_order)
+{
     HitCollector hc(1000, 100);
     std::vector<RankedHit> expRh;
     // produce expected result in normal order
@@ -503,11 +525,12 @@ TEST("require that hits can be added out of order") {
         hc.addHit(i, i + 100);
     }
     std::unique_ptr<ResultSet> rs = hc.getResultSet();
-    TEST_DO(checkResult(*rs, expRh));
-    TEST_DO(checkResult(*rs, nullptr));
+    checkResult(*rs, expRh);
+    checkResult(*rs, nullptr);
 }
 
-TEST("require that hits can be added out of order when passing array limit") {
+TEST(HitCollectorTest, require_that_hits_can_be_added_out_of_order_when_passing_array_limit)
+{
     HitCollector hc(10000, 100);
     std::vector<RankedHit> expRh;
     // produce expected result in normal order
@@ -525,11 +548,12 @@ TEST("require that hits can be added out of order when passing array limit") {
         hc.addHit(i, i + 100);
     }
     std::unique_ptr<ResultSet> rs = hc.getResultSet();
-    TEST_DO(checkResult(*rs, expRh));
-    TEST_DO(checkResult(*rs, nullptr));
+    checkResult(*rs, expRh);
+    checkResult(*rs, nullptr);
 }
 
-TEST("require that hits can be added out of order only after passing array limit") {
+TEST(HitCollectorTest, require_that_hits_can_be_added_out_of_order_only_after_passing_array_limit)
+{
     HitCollector hc(10000, 100);
     std::vector<RankedHit> expRh;
     // produce expected result in normal order
@@ -548,8 +572,90 @@ TEST("require that hits can be added out of order only after passing array limit
         hc.addHit(i, i + 100);
     }
     std::unique_ptr<ResultSet> rs = hc.getResultSet();
-    TEST_DO(checkResult(*rs, expRh));
-    TEST_DO(checkResult(*rs, nullptr));
+    checkResult(*rs, expRh);
+    checkResult(*rs, nullptr);
 }
 
-TEST_MAIN() { TEST_RUN_ALL(); }
+struct RankDropFixture {
+    uint32_t              _docid_limit;
+    HitCollector          _hc;
+    std::vector<uint32_t> _dropped;
+    RankDropFixture(uint32_t docid_limit, uint32_t max_hits_size)
+        : _docid_limit(docid_limit),
+          _hc(docid_limit, max_hits_size)
+    {
+    }
+    ~RankDropFixture();
+    void add(std::vector<RankedHit> hits) {
+        for (const auto& hit : hits) {
+            _hc.addHit(hit.getDocId(), hit.getRank());
+        }
+    }
+    void rerank(ScoreMap score_map, size_t count) {
+        PredefinedScorer scorer(score_map);
+        EXPECT_EQ(count, do_reRank(scorer, _hc, count));
+    }
+    std::unique_ptr<BitVector> make_bv(DocidVector docids) {
+        auto bv = BitVector::create(_docid_limit);
+        for (auto& docid : docids) {
+            bv->setBit(docid);
+        }
+        return bv;
+    }
+
+    void setup() {
+        // Initial 7 hits from first phase
+        add({{5, 1100},{10, 1200},{11, 1300},{12, 1400},{14, 500},{15, 900},{16,1000}});
+        // Rerank two best hits, calculate old and new ranges for reranked
+        // hits that will cause hits not reranked to later be rescored by
+        // dividing by 100.
+        rerank({{11,14},{12,13}}, 2);
+    }
+    void check_result(std::optional<double> rank_drop_limit, RankedHitVector exp_array,
+                      std::unique_ptr<BitVector> exp_bv, DocidVector exp_dropped) {
+        auto rs = _hc.get_result_set(rank_drop_limit, &_dropped);
+        checkResult(*rs, exp_array);
+        checkResult(*rs, exp_bv.get());
+        EXPECT_EQ(exp_dropped, _dropped);
+    }
+};
+
+RankDropFixture::~RankDropFixture() = default;
+
+TEST(HitCollectorTest, require_that_second_phase_rank_drop_limit_is_enforced)
+{
+    // Track rank score for all 7 hits from first phase
+    RankDropFixture f(10000, 10);
+    f.setup();
+    f.check_result(9.0, {{5,11},{10,12},{11,14},{12,13},{16,10}},
+                   {}, {14, 15});
+}
+
+TEST(HitCollectorTest, require_that_second_phase_rank_drop_limit_is_enforced_when_docid_vector_is_used)
+{
+    // Track rank score for 4 best hits from first phase, overflow to docid vector
+    RankDropFixture f(10000, 4);
+    f.setup();
+    f.check_result(13.0, {{11,14}},
+                   {}, {5,10,12,14,15,16});
+}
+
+TEST(HitCollectorTest, require_that_bitvector_is_not_dropped_without_second_phase_rank_drop_limit)
+{
+    // Track rank score for 4 best hits from first phase, overflow to bitvector
+    RankDropFixture f(20, 4);
+    f.setup();
+    f.check_result(std::nullopt, {{5,11},{10,12},{11,14},{12,13}},
+                   f.make_bv({5,10,11,12,14,15,16}), {});
+}
+
+TEST(HitCollectorTest, require_that_bitvector_is_dropped_with_second_phase_rank_drop_limit)
+{
+    // Track rank for 4 best hits from first phase, overflow to bitvector
+    RankDropFixture f(20, 4);
+    f.setup();
+    f.check_result(9.0, {{5,11},{10,12},{11,14},{12,13}},
+                   {}, {14,15,16});
+}
+
+GTEST_MAIN_RUN_ALL_TESTS()

@@ -186,7 +186,8 @@
       "public void <init>(java.lang.Throwable)",
       "public void <init>(ai.vespa.feed.client.DocumentId, java.lang.Throwable)",
       "public void <init>(ai.vespa.feed.client.DocumentId, java.lang.String, java.lang.Throwable)",
-      "public java.util.Optional documentId()"
+      "public java.util.Optional documentId()",
+      "public java.lang.String getMessage()"
     ],
     "fields" : [ ]
   },
@@ -308,7 +309,7 @@
       "public"
     ],
     "methods" : [
-      "public void <init>(long, java.util.Map, long, long, long, long, long, long, long)",
+      "public void <init>(double, long, java.util.Map, long, long, long, long, long, long, long, long)",
       "public ai.vespa.feed.client.OperationStats since(ai.vespa.feed.client.OperationStats)",
       "public long requests()",
       "public long responses()",

@@ -14,7 +14,9 @@ import com.yahoo.search.query.ranking.MatchPhase;
 import com.yahoo.search.query.ranking.Matching;
 import com.yahoo.search.query.ranking.RankFeatures;
 import com.yahoo.search.query.ranking.RankProperties;
+import com.yahoo.search.query.ranking.SecondPhase;
 import com.yahoo.search.query.ranking.SoftTimeout;
+import com.yahoo.search.query.ranking.Significance;
 import com.yahoo.search.result.ErrorMessage;
 
 import java.util.Objects;
@@ -45,8 +47,10 @@ public class Ranking implements Cloneable {
     public static final String KEEPRANKCOUNT = "keepRankCount";
     public static final String RANKSCOREDROPLIMIT = "rankScoreDropLimit";
     public static final String MATCH_PHASE = "matchPhase";
+    public static final String SECOND_PHASE = "secondPhase";
     public static final String GLOBAL_PHASE = "globalPhase";
     public static final String DIVERSITY = "diversity";
+    public static final String SIGNIFICANCE = "significance";
     public static final String SOFTTIMEOUT = "softtimeout";
     public static final String MATCHING = "matching";
     public static final String FEATURES = "features";
@@ -69,9 +73,11 @@ public class Ranking implements Cloneable {
         argumentType.addField(new FieldDescription(RANKSCOREDROPLIMIT, "double"));
         argumentType.addField(new FieldDescription(GLOBAL_PHASE, new QueryProfileFieldType(GlobalPhase.getArgumentType())));
         argumentType.addField(new FieldDescription(MATCH_PHASE,  new QueryProfileFieldType(MatchPhase.getArgumentType()), "matchPhase"));
+        argumentType.addField(new FieldDescription(SECOND_PHASE, new QueryProfileFieldType(SecondPhase.getArgumentType())));
         argumentType.addField(new FieldDescription(DIVERSITY, new QueryProfileFieldType(Diversity.getArgumentType())));
         argumentType.addField(new FieldDescription(SOFTTIMEOUT, new QueryProfileFieldType(SoftTimeout.getArgumentType())));
         argumentType.addField(new FieldDescription(MATCHING, new QueryProfileFieldType(Matching.getArgumentType())));
+        argumentType.addField(new FieldDescription(SIGNIFICANCE, new QueryProfileFieldType(Significance.getArgumentType())));
         argumentType.addField(new FieldDescription(FEATURES, "query-profile", "rankfeature input")); // Repeated at the end of RankFeatures
         argumentType.addField(new FieldDescription(PROPERTIES, "query-profile", "rankproperty"));
         argumentType.freeze();
@@ -107,11 +113,15 @@ public class Ranking implements Cloneable {
 
     private MatchPhase matchPhase = new MatchPhase();
 
+    private SecondPhase secondPhase = new SecondPhase();
+
     private GlobalPhase globalPhase = new GlobalPhase();
 
     private Matching matching = new Matching();
 
     private SoftTimeout softTimeout = new SoftTimeout();
+
+    private Significance significance = new Significance();
 
     public Ranking(Query parent) {
         this.parent = parent;
@@ -220,6 +230,9 @@ public class Ranking implements Cloneable {
     /** Returns the match phase rank settings of this. This is never null. */
     public MatchPhase getMatchPhase() { return matchPhase; }
 
+    /** Return the second-phase rank settings of this. This is never null. */
+    public SecondPhase getSecondPhase() { return secondPhase; }
+
     /** Returns the global-phase rank settings of this. This is never null. */
     public GlobalPhase getGlobalPhase() { return globalPhase; }
 
@@ -228,6 +241,10 @@ public class Ranking implements Cloneable {
 
     /** Returns the soft timeout settings of this. This is never null. */
     public SoftTimeout getSoftTimeout() { return softTimeout; }
+
+    /** Returns the significance settings of this. This is never null. */
+    @com.yahoo.api.annotations.Beta
+    public Significance getSignificance() { return significance; }
 
     /** Returns the sorting spec of this query, or null if none is set */
     public Sorting getSorting() { return sorting; }
@@ -256,6 +273,7 @@ public class Ranking implements Cloneable {
     public void prepare() {
         rankFeatures.prepare(rankProperties);
         matchPhase.prepare(rankProperties);
+        secondPhase.prepare(rankProperties);
         matching.prepare(rankProperties);
         softTimeout.prepare(rankProperties);
         prepareNow(freshness);

@@ -13,7 +13,7 @@ public:
     struct MyElement {
         int32_t  weight;
         uint32_t length;
-        MyElement(int32_t w, uint32_t l) : weight(w), length(l) {}
+        MyElement(int32_t w, uint32_t l) noexcept : weight(w), length(l) {}
     };
     struct MyField {
         uint32_t fieldLength;
@@ -21,7 +21,7 @@ public:
         MyField() : fieldLength(0), elements() {}
         MyElement &getElement(uint32_t eid) {
             while (elements.size() <= eid) {
-                elements.push_back(MyElement(0, 0));
+                elements.emplace_back(0, 0);
             }
             return elements[eid];
         }
@@ -68,6 +68,8 @@ public:
      * @param data     The match data to build in.
      */
     MatchDataBuilder(QueryEnvironment &queryEnv, MatchData &data);
+    MatchDataBuilder(const MatchDataBuilder &) = delete;
+    MatchDataBuilder & operator=(const MatchDataBuilder &) = delete;
     ~MatchDataBuilder();
 
     /**
@@ -88,7 +90,7 @@ public:
      * @param length    The length to set.
      * @return          Whether or not the field length could be set.
      */
-    bool setFieldLength(const vespalib::string &fieldName, uint32_t length);
+    bool setFieldLength(const std::string &fieldName, uint32_t length);
 
     /**
      * Adds an element to a named field. This will fail if the named field does not exist.
@@ -98,7 +100,7 @@ public:
      * @param length    The length of the element.
      * @return          Whether or not the element could be added.
      */
-    bool addElement(const vespalib::string &fieldName, int32_t weight, uint32_t length);
+    bool addElement(const std::string &fieldName, int32_t weight, uint32_t length);
 
     /**
      * Adds an occurence of a term to the named field, at the given
@@ -112,7 +114,7 @@ public:
      * @param element   The element containing the occurence.
      * @return          Whether or not the occurence could be added.
      */
-    bool addOccurence(const vespalib::string &fieldName, uint32_t termId, uint32_t pos, uint32_t element = 0);
+    bool addOccurence(const std::string &fieldName, uint32_t termId, uint32_t pos, uint32_t element = 0);
 
     /**
      * Sets the weight for an attribute match.
@@ -122,7 +124,7 @@ public:
      * @param weight    The weight of the match.
      * @return          Whether or not the occurence could be added.
      **/
-    bool setWeight(const vespalib::string &fieldName, uint32_t termId, int32_t weight);
+    bool setWeight(const std::string &fieldName, uint32_t termId, int32_t weight);
 
     /**
      * Apply the content of this builder to the underlying match data.
@@ -131,10 +133,6 @@ public:
      * @return Whether or not the content of this could be applied.
      */
     bool apply(uint32_t docId);
-
-private:
-    MatchDataBuilder(const MatchDataBuilder &);             // hide
-    MatchDataBuilder & operator=(const MatchDataBuilder &); // hide
 
 private:
     QueryEnvironment &_queryEnv;

@@ -48,24 +48,24 @@ public:
      *
      * @throws IdParseException If the identifier given is invalid.
      */
-    explicit DocumentId(vespalib::stringref id);
+    explicit DocumentId(std::string_view id);
 
     /**
      * Precondition: `id` MUST be null-terminated.
      */
-    void set(vespalib::stringref id);
+    void set(std::string_view id);
 
     /**
        Hides the printable toString() for effiency reasons.
     */
-    vespalib::string toString() const;
+    std::string toString() const;
 
     bool operator==(const DocumentId& other) const { return _id == other._id; }
     bool operator!=(const DocumentId& other) const { return ! (_id == other._id); }
 
     const IdString& getScheme() const { return _id; }
     bool hasDocType() const { return _id.hasDocType(); }
-    vespalib::stringref getDocType() const { return _id.getDocType(); }
+    std::string_view getDocType() const { return _id.getDocType(); }
 
     const GlobalId& getGlobalId() const {
         if (!_globalId.first) { calculateGlobalId(); }
